@@ -22,46 +22,65 @@ export function PodcastPlaybackWaveform({ player }: { player: PlayerContext }) {
     let source: MediaStreamAudioSourceNode | undefined;
     let stream: MediaStream | undefined;
     let timer: ReturnType<typeof setInterval> | undefined;
+    let released = false;
     const release = () => {
+      if (released) return;
+      released = true;
+      audio.removeEventListener("playing", startAnalysis);
+      stream?.removeEventListener("addtrack", startAnalysis);
       if (timer) clearInterval(timer);
       source?.disconnect();
       stream?.getTracks().forEach(track => track.stop());
       if (context) void context.close().catch(() => {});
     };
-    try {
-      stream = capture.call(audio);
-      if (stream.getAudioTracks().length === 0) {
-        release();
+    function startAnalysis() {
+      if (released) return;
+      if (context) {
+        // A capture graph can be created before the browser grants playback.
+        // Retry resume when the media starts after a user gesture.
+        if (context.state === "suspended") void context.resume().catch(() => {});
         return;
       }
-      context = new AudioContext();
-      source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-      void context.resume().catch(() => {});
-      const frequencies = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
-      timer = setInterval(() => {
-        analyser.getByteFrequencyData(frequencies);
-        const next = restingLevels.map((_, band) => {
-          const start = band * 8 + 1;
-          let peak = 0;
-          for (let i = start; i < start + 8; i++) peak = Math.max(peak, frequencies[i] ?? 0);
-          return Math.max(0.08, peak / 255);
-        });
-        setAnalyzing(context?.state === "running");
-        setLevels(next);
-      }, 100);
+      if (!stream || stream.getAudioTracks().length === 0) return;
+      try {
+        context = new AudioContext();
+        source = context.createMediaStreamSource(stream);
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        void context.resume().catch(() => {});
+        const frequencies = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+        timer = setInterval(() => {
+          analyser.getByteFrequencyData(frequencies);
+          const next = restingLevels.map((_, band) => {
+            const start = band * 8 + 1;
+            let peak = 0;
+            for (let i = start; i < start + 8; i++) peak = Math.max(peak, frequencies[i] ?? 0);
+            return Math.max(0.08, peak / 255);
+          });
+          setAnalyzing(context?.state === "running");
+          setLevels(next);
+        }, 100);
+      } catch {
+        release();
+      }
+    }
+    try {
+      stream = capture.call(audio);
+      // Chromium may expose an empty stream before the media is ready. Keep the
+      // capture alive and start analysis once its audio track arrives.
+      stream.addEventListener("addtrack", startAnalysis);
+      audio.addEventListener("playing", startAnalysis);
+      startAnalysis();
     } catch {
       release();
-      return;
     }
     return () => { release(); setAnalyzing(false); setLevels(restingLevels); };
   }, [playing, getAudioElement, episodeId]);
   if (!playing) return null;
   return <span aria-hidden="true" className="flex h-4 w-5 shrink-0 items-center justify-center gap-0.5 text-primary">
     {levels.map((level, index) => <span key={index}
-      className={`w-0.5 rounded-full bg-current transition-[height] duration-100 ${analyzing ? "" : "animate-pulse motion-reduce:animate-none"}`}
-      style={{ height: `${Math.round(level * 16)}px`, animationDelay: `${index * 130}ms` }} />)}
+      className={`w-0.5 rounded-full bg-current transition-[height] duration-100 ${analyzing ? "" : "podcast-waveform-indicator motion-reduce:animate-none"}`}
+      style={{ height: `${Math.round(level * 16)}px`, animationDelay: `${-index * 170}ms` }} />)}
   </span>;
 }
