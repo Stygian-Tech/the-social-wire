@@ -21,8 +21,10 @@ struct FinanceDiscoveryRoutes {
       guard region == nil || region == "outside-us" else { throw WireServingError.invalidCursor }
       let refresh = request.uri.queryParameters.get("refreshSelections")
       guard refresh == nil || ["true", "false"].contains(refresh!) else { throw WireServingError.invalidCursor }
+      let hideCrypto = request.uri.queryParameters.get("hideCrypto")
+      guard hideCrypto == nil || ["true", "false"].contains(hideCrypto!) else { throw WireServingError.invalidCursor }
       let page = try await store.page(cursor: request.uri.queryParameters.get("cursor"), limit: rawLimit.flatMap(Int.init) ?? 30,
-        language: request.uri.queryParameters.get("lang"), viewerDID: Self.viewer(context), refresh: refresh == "true", now: now, feed: request.uri.queryParameters.get("feed") ?? "finance")
+        language: request.uri.queryParameters.get("lang"), viewerDID: Self.viewer(context), refresh: refresh == "true", now: now, feed: request.uri.queryParameters.get("feed") ?? "finance", hideCrypto: hideCrypto == "true")
       _ = await telemetry?.enqueue(.metric(OperationsMetricSample(name: "finance.feed.items", value: Double(page.items.count),
         dimensions: ["source": page.source.rawValue, "degraded": String(page.degraded)])))
       return try Self.response(page, generationID: page.generationId, source: page.source.rawValue)

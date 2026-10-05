@@ -6,7 +6,10 @@ public enum FinanceCatalogRefresh {
   public static func candidate(previous: FinanceCatalogSnapshot?, securities: [FinanceInstrument],
     crypto: [FinanceInstrument], reviewed: [FinanceInstrument] = FinanceReviewedCatalog.instruments,
     now: Date = Date()) throws -> FinanceCatalogSnapshot {
-    let all = securities + crypto + reviewed
+    // Reviewed bootstrap identities yield to refreshed provider rows with the same canonical ID.
+    let cryptoIDs = Set(crypto.map(\.id))
+    let reviewedRows = reviewed.filter { !($0.kind == "crypto" && cryptoIDs.contains($0.id)) }
+    let all = securities + crypto + reviewedRows
     guard !all.isEmpty, Set(all.map(\.id)).count == all.count,
       all.allSatisfy({ !$0.id.isEmpty && !$0.providerID.isEmpty && !$0.symbol.isEmpty })
     else { throw FinanceProviderError.invalidResponse }

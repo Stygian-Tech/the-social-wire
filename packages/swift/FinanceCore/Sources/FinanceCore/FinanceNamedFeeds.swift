@@ -1,13 +1,13 @@
 import Foundation
 
 public enum FinanceNamedFeeds {
-  public static let version = "finance-named-feeds-v3"
+  public static let version = "finance-named-feeds-v4"
   /// Verified through OpenFIGI v3 TICKER/US/Equity mapping on 2026-10-02.
   public static let seedFIGIs = FinanceReviewedInstrumentMetadata.entries.map(\.expectedProviderID)
   /// Only explicit stock/fund classifications participate in named-feed menus; reference search stays broader.
   public static func supportsNamedFeed(_ instrument: FinanceInstrument) -> Bool {
     let supported = Set(["common stock", "equity", "stock", "preferred stock", "depositary receipt", "adr", "reit",
-      "etf", "mutual fund", "closed-end fund", "closed end fund"])
+      "etf", "mutual fund", "closed-end fund", "closed end fund", "crypto", "index"])
     return instrument.isActive && supported.contains(instrument.kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
   }
   private static func identities(_ figis: [String]) -> [String] {
@@ -35,8 +35,15 @@ public enum FinanceNamedFeeds {
         feeds.append(.init(id: "group:" + id, title: title, kind: "group", instrumentIDs: members, description: "Stories associated with the reviewed " + title + " members."))
       }
     }
+    for (kind, title) in [("etf", "ETFs"), ("crypto", "Crypto"), ("index", "Indices")] {
+      let members = active.filter { FinanceAssetKind.classify($0) == kind }.map(\.id).sorted()
+      if !members.isEmpty {
+        feeds.append(.init(id: "asset:" + kind, title: title, kind: "asset", assetKind: kind,
+          instrumentIDs: members, description: "Stories associated with supported " + title + "."))
+      }
+    }
     feeds += active.sorted { ($0.symbol, $0.exchange ?? "", $0.id) < ($1.symbol, $1.exchange ?? "", $1.id) }.map {
-      .init(id: "instrument:" + $0.id, title: "$" + $0.symbol + " · " + $0.name + ($0.exchangeLabel.map { " · " + $0 } ?? ""), kind: "instrument", instrumentIDs: [$0.id], description: "Stories associated with this specific security.")
+      .init(id: "instrument:" + $0.id, title: "$" + $0.symbol + " · " + $0.name + ($0.exchangeLabel.map { " · " + $0 } ?? ""), kind: "instrument", assetKind: FinanceAssetKind.classify($0), instrumentIDs: [$0.id], description: "Stories associated with this specific security.")
     }
     return feeds
   }

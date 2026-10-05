@@ -4,12 +4,13 @@ public struct FinanceFeedDefinition: Codable, Equatable, Sendable {
   public let id: String
   public let title: String
   public let kind: String
+  public let assetKind: String?
   public let instrumentIDs: [String]
   public let sectorIDs: [String]
   public let description: String
 
-  public init(id: String, title: String, kind: String, instrumentIDs: [String] = [], sectorIDs: [String] = [], description: String) {
-    self.id = id; self.title = title; self.kind = kind; self.instrumentIDs = instrumentIDs
+  public init(id: String, title: String, kind: String, assetKind: String? = nil, instrumentIDs: [String] = [], sectorIDs: [String] = [], description: String) {
+    self.id = id; self.title = title; self.kind = kind; self.assetKind = assetKind; self.instrumentIDs = instrumentIDs
     self.sectorIDs = sectorIDs; self.description = description
   }
 

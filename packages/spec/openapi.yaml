@@ -2254,6 +2254,7 @@ paths:
                 $ref: "#/components/schemas/FinancePage"
         "400": { description: Invalid parameters or event. }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        - { name: hideCrypto, in: query, schema: { type: boolean, default: false } }
         "429": { description: Request budget exhausted. }
         "503": { description: Finance unavailable or rollout disabled. }
         "410": { description: CursorExpired; restart at page one. }

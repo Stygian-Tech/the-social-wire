@@ -9,6 +9,7 @@ struct PreferencesRecord: Codable, Equatable, Sendable {
     var showCircle: Bool?
     var showFinance: Bool? = nil
     var hideFinancePerformance: Bool? = nil
+    var hideFinanceCrypto: Bool? = nil
     var showSports: Bool? = nil
     var hideSportsScores: Bool? = nil
     var showTopLevelFeedUnreadCounts: Bool?
@@ -26,6 +27,7 @@ struct PreferencesRecord: Codable, Equatable, Sendable {
         case showCircle
         case showFinance
         case hideFinancePerformance
+        case hideFinanceCrypto
         case showSports
         case hideSportsScores
         case showTopLevelFeedUnreadCounts

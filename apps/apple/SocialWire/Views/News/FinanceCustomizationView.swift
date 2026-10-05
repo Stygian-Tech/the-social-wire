@@ -19,6 +19,9 @@ struct FinanceCustomizationView: View {
                     Toggle("Hide Performance Data", isOn: Binding(get: { appModel.feedPreferences.hideFinancePerformance }, set: { value in
                         Task { await appModel.setFinancePerformanceHidden(value) }
                     }))
+                    Toggle("Hide Crypto", isOn: Binding(get: { appModel.feedPreferences.hideFinanceCrypto }, set: { value in
+                        Task { await appModel.setFinanceCryptoHidden(value) }
+                    }))
                 }
                 Section("Instruments") {
                     TextField("Search Instruments", text: $query)

@@ -80,6 +80,7 @@ export function useFeedDisplayPreferences() {
           showSports: next.showSports,
           hideSportsScores: next.hideSportsScores,
           hideFinancePerformance: next.hideFinancePerformance,
+          hideFinanceCrypto: next.hideFinanceCrypto,
           feedsWithUnreadCounts: next.feedsWithUnreadCounts,
           rssArticleOpenMode: next.rssArticleOpenMode,
           showTopLevelFeedUnreadCounts:
@@ -137,6 +138,7 @@ export function useFeedDisplayPreferences() {
             showSports: normalized.showSports,
             hideSportsScores: normalized.hideSportsScores,
             hideFinancePerformance: normalized.hideFinancePerformance,
+            hideFinanceCrypto: normalized.hideFinanceCrypto,
             feedsWithUnreadCounts: normalized.feedsWithUnreadCounts,
             rssArticleOpenMode: normalized.rssArticleOpenMode,
             showTopLevelFeedUnreadCounts:
@@ -242,6 +244,7 @@ export function useFeedDisplayPreferences() {
     setFeedUnreadCountVisible,
     setRssArticleOpenInReader,
     setHideSportsScores: (hidden: boolean) => mutation.mutate({ ...preferences, hideSportsScores: hidden }),
+    setHideFinanceCrypto: (hidden: boolean) => mutation.mutate({ ...preferences, hideFinanceCrypto: hidden }),
     setHideFinancePerformance: (hidden: boolean) => mutation.mutate({ ...preferences, hideFinancePerformance: hidden }),
     isLoading: accountPreferences.isLoading,
     isPending: mutation.isPending,

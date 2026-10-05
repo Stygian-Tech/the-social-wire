@@ -949,7 +949,8 @@
             "all",
             "instrument",
             "industry",
-            "group"
+            "group",
+            "asset"
           ]
         },
         "instrumentIDs": {
@@ -971,6 +972,16 @@
         "description": {
           "type": "string",
           "maxLength": 1000
+        },
+        "assetKind": {
+          "type": "string",
+          "knownValues": [
+            "stock",
+            "etf",
+            "crypto",
+            "index",
+            "commodity"
+          ]
         }
       }
     },

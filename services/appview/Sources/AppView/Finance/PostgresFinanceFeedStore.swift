@@ -122,7 +122,7 @@ actor PostgresFinanceFeedStore {
     return false
   }
 
-  func page(cursor: String?, limit: Int, language: String?, viewerDID: String?, refresh: Bool, now: Date, feed: String = "finance") async throws -> FinancePage {
+  func page(cursor: String?, limit: Int, language: String?, viewerDID: String?, refresh: Bool, now: Date, feed: String = "finance", hideCrypto: Bool = false) async throws -> FinancePage {
     guard config.mode.canServeAPI, config.catalogRightsConfirmed else { throw WireServingError.unavailable }
     let lang = Self.language(language)
     guard feed.utf8.count <= 256 else { throw WireServingError.invalidCursor }
@@ -130,9 +130,10 @@ actor PostgresFinanceFeedStore {
     let initialCatalog = try await loadCatalog()
     // Named definitions are resolved again after source import, which may hydrate a cold catalog.
     let preference = try await selections.selections(viewerDID: viewerDID, refresh: refresh && cursor == nil, now: now)
-    let revision = feed == "finance" ? FinanceIdentity.preferenceFingerprint(instrumentIDs: preference.instruments, sectorIDs: preference.sectors)
+    let baseRevision = feed == "finance" ? FinanceIdentity.preferenceFingerprint(instrumentIDs: preference.instruments, sectorIDs: preference.sectors)
       + ":" + config.providerPolicy.revision
       : FinanceNamedFeeds.revision(instruments: initialCatalog) + ":" + config.providerPolicy.revision
+    let revision = baseRevision + (hideCrypto ? ":hide-crypto-v1" : ":show-crypto-v1")
     let snapshotScope = feed == "finance" ? try hasher.hash(viewerDID ?? "anonymous-finance") : "shared:" + feed
     let scope = try hasher.hash(viewerDID ?? "anonymous-finance")
     let snapshot: FinanceSourceGeneration
@@ -155,14 +156,15 @@ actor PostgresFinanceFeedStore {
       let permittedIDs = Set(catalog.map(\.id))
       let ranked: [FinanceRankCandidate]
       if feed == "finance" {
-        ranked = FinanceRanker.rank(candidates: source.candidates,
+        ranked = FinanceRanker.rank(candidates: source.candidates.filter { !hideCrypto || !FinanceAssetKind.isCryptoStory(title: $0.item.title, summary: $0.item.summary, analysis: $0.analysis, catalog: catalog) },
           instrumentIDs: Set(preference.instruments).intersection(permittedIDs), sectorIDs: Set(preference.sectors))
       } else {
         let matching = source.candidates.compactMap { candidate -> FinanceRankCandidate? in
           let analysis = FinanceResolver.analyze(title: candidate.item.title, summary: candidate.item.summary,
               structuredInstrumentIDs: candidate.analysis.associations.filter { $0.evidence.contains("structured-metadata") && $0.confidence.isFinite && (0.9...1).contains($0.confidence) && $0.resolverVersion == FinanceResolver.version }.map(\.instrumentID),
               verifiedInstrumentIDs: FinanceReviewedInstrumentMetadata.verifiedInstrumentIDs(domain: candidate.item.source.domain, account: nil), catalog: catalog)
-          guard definition.matches(analysis, title: candidate.item.title, summary: candidate.item.summary) else { return nil }
+          guard definition.matches(analysis, title: candidate.item.title, summary: candidate.item.summary),
+            !hideCrypto || !FinanceAssetKind.isCryptoStory(title: candidate.item.title, summary: candidate.item.summary, analysis: analysis, catalog: catalog) else { return nil }
           return FinanceRankCandidate(item: candidate.item, analysis: analysis, baseScore: candidate.baseScore, majorGlobal: candidate.majorGlobal)
         }
         ranked = FinanceRanker.rank(candidates: matching, reserveGlobal: false)
@@ -201,7 +203,8 @@ actor PostgresFinanceFeedStore {
           structuredInstrumentIDs: item.title == candidate.item.title && item.summary == candidate.item.summary && item.source.domain == candidate.item.source.domain
             ? candidate.analysis.associations.filter { $0.evidence.contains("structured-metadata") && $0.confidence.isFinite && (0.9...1).contains($0.confidence) && $0.resolverVersion == FinanceResolver.version }.map(\.instrumentID) : [],
           verifiedInstrumentIDs: FinanceReviewedInstrumentMetadata.verifiedInstrumentIDs(domain: item.source.domain, account: nil), catalog: catalog)
-        guard analysis.eligible, definition.matches(analysis, title: item.title, summary: item.summary) else { continue }
+        guard analysis.eligible, definition.matches(analysis, title: item.title, summary: item.summary),
+          !hideCrypto || !FinanceAssetKind.isCryptoStory(title: item.title, summary: item.summary, analysis: analysis, catalog: catalog) else { continue }
         let matches = analysis.associations.compactMap { match -> FinanceMatchedInstrument? in
           guard match.confidence.isFinite, (0.9...1).contains(match.confidence), let instrument = byID[match.instrumentID] else { return nil }
           return FinanceMatchedInstrument(instrument: instrument, confidence: match.confidence, prominence: match.prominence, evidence: match.evidence, resolverVersion: match.resolverVersion)

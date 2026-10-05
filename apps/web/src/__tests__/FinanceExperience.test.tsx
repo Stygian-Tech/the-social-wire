@@ -121,7 +121,7 @@ describe("Finance article navigation", () => {
     spyOn(Customize, "FinanceCustomize").mockImplementation(({ open }) => open ? <div role="dialog" aria-label="Customize Finance" /> : <></>);
     render(<FinanceExperience />);
     expect(screen.getByRole("combobox", { name: "Finance Feed" })).toBeTruthy();
-    expect(screen.getByRole("searchbox", { name: "Find a Company" })).toBeTruthy();
+    expect(screen.getByRole("searchbox", { name: "Find an Instrument" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Customize" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Finance Options" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Customize" }));
@@ -170,15 +170,15 @@ describe("Finance article navigation", () => {
     expect(screen.queryByText("No finance stories are available right now.")).toBeNull();
     await userEvent.click(screen.getByRole("option", {name:"Mag7"}));
     expect(changed).toEqual(["group:mag7"]);
-    fireEvent.change(screen.getByRole("searchbox",{name:"Find a Company"}),{target:{value:"NASDAQ"}});
+    fireEvent.change(screen.getByRole("searchbox",{name:"Find an Instrument"}),{target:{value:"NASDAQ"}});
     fireEvent.click(screen.getByRole("combobox", {name:"Finance Feed"}));
     expect(await screen.findByRole("option",{name:"Apple · AAPL · NASDAQ"})).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
-    fireEvent.change(screen.getByRole("searchbox",{name:"Find a Company"}),{target:{value:"unknown"}});
+    fireEvent.change(screen.getByRole("searchbox",{name:"Find an Instrument"}),{target:{value:"unknown"}});
     fireEvent.click(screen.getByRole("combobox", {name:"Finance Feed"}));
     await screen.findByRole("option", {name:"Mag7"});
     expect(screen.queryByRole("option",{name:"Apple · AAPL · NASDAQ"})).toBeNull();
-    expect(screen.getByText("No companies match your search.")).toBeTruthy();
+    expect(screen.getByText("No instruments match your search.")).toBeTruthy();
     expect(screen.getByRole("option",{name:"Mag7"})).toBeTruthy();
   });
 

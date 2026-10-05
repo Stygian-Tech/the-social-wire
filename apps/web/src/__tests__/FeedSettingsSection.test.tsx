@@ -9,6 +9,7 @@ import * as ReadLaterPreferences from "@/hooks/useReadLaterPreferences";
 import { DEFAULT_FEED_DISPLAY_PREFERENCES } from "@/lib/feedPreferences";
 import { findReadLaterService } from "@/lib/readLaterServices";
 
+const setHideFinanceCrypto = mock((hidden: boolean) => hidden);
 const setFeedVisible = mock(() => undefined);
 const setFeedUnreadCountVisible = mock(() => undefined);
 
@@ -19,6 +20,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  setHideFinanceCrypto.mockClear();
   setFeedVisible.mockClear();
   setFeedUnreadCountVisible.mockClear();
   spyOn(Appearance, "AppearanceSettingsSection").mockImplementation(() => <></>);
@@ -38,6 +40,7 @@ beforeEach(() => {
     setDiscoveryFeedVisible: () => undefined,
     setRssArticleOpenInReader: () => undefined,
     setHideSportsScores: () => undefined,
+    setHideFinanceCrypto,
     setHideFinancePerformance: () => undefined,
     isLoading: false,
     isPending: false, error: null,
@@ -67,4 +70,11 @@ test("disables counts for explicitly hidden feeds", () => {
   expect(setFeedUnreadCountVisible).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("switch", { name: "Show Following Count" }));
   expect(setFeedUnreadCountVisible).not.toHaveBeenCalled();
+});
+
+test("Finance crypto control is available independently of feed visibility", () => {
+  render(<FeedSettingsSection />);
+  expect(screen.getByRole("switch", { name: "Hide Crypto in Finance" }).getAttribute("aria-checked")).toBe("false");
+  expect(screen.getByText("Exclude cryptocurrency stories and interests from Finance.")).toBeDefined();
+  expect(setFeedVisible).not.toHaveBeenCalled();
 });

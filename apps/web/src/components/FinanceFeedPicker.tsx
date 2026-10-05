@@ -4,6 +4,8 @@ import { createElement } from "react";
 import { Select } from "@base-ui/react/select";
 import {
   Building2,
+  Bitcoin,
+  Layers,
   Car,
   ChartNoAxesCombined,
   Check,
@@ -71,7 +73,10 @@ const industryIcons: Record<string, LucideIcon> = {
 };
 function feedIcon(feed: FinanceFeedDefinition | undefined) {
   const Icon =
-    feed?.kind === "industry"
+    feed?.assetKind === "crypto" ? Bitcoin
+      : feed?.assetKind === "etf" ? Layers
+      : feed?.assetKind === "index" ? ChartNoAxesCombined
+      : feed?.kind === "industry"
       ? (industryIcons[feed.id.slice("industry:".length)] ?? Factory)
       : feed?.kind === "group"
         ? UsersRound
@@ -87,7 +92,11 @@ const groups = [
   ["all", "All"],
   ["industry", "Industries"],
   ["group", "Groups"],
+  ["asset", "Asset Classes"],
   ["instrument", "Companies"],
+  ["etf", "ETFs"],
+  ["crypto", "Crypto"],
+  ["index", "Indices"],
 ] as const;
 
 type Props = {
@@ -155,8 +164,10 @@ export function FinanceFeedPicker({
               {groups.map(([kind, label]) => {
                 const feeds = definitions.filter(
                   (feed) =>
-                    feed.kind === kind &&
-                    (kind !== "instrument" ||
+                    (kind === "etf" || kind === "crypto" || kind === "index"
+                      ? feed.assetKind === kind && feed.kind === "instrument"
+                      : feed.kind === kind && (kind !== "instrument" || !["etf", "crypto", "index"].includes(feed.assetKind ?? ""))) &&
+                    (feed.kind !== "instrument" ||
                       feed.id === feedID ||
                       feed.title.toLocaleLowerCase().includes(query)),
                 );

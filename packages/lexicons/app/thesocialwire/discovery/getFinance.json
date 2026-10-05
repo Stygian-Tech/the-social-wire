@@ -37,6 +37,11 @@
             "maxLength": 256,
             "default": "finance",
             "description": "Server catalog feed ID. Named feeds contain only validated matching stories."
+          },
+          "hideCrypto": {
+            "type": "boolean",
+            "default": false,
+            "description": "Exclude cryptocurrency stories; continuation cursors are bound to this setting."
           }
         }
       },

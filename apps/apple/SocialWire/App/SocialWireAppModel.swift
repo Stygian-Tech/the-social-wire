@@ -1521,13 +1521,29 @@ final class SocialWireAppModel {
         guard count > 0 else { return }
         await gateway.recordFinanceComposition(event: event, suggestionCount: count)
     }
+    func setFinanceCryptoHidden(_ hidden: Bool) async {
+        guard !isSavingDiscoveryFeedVisibility, feedPreferences.hideFinanceCrypto != hidden else { return }
+        let viewer = viewerDID
+        financeRequestEpoch += 1
+        financeContinuationSuspended = true
+        await setDiscoveryFeedVisible(hidden, keyPath: \.hideFinanceCrypto)
+        guard viewerDID == viewer else { return }
+        if feedPreferences.hideFinanceCrypto,
+           financeFeeds.first(where: { $0.id == selectedFinanceFeedID })?.assetKind == "crypto" {
+            selectedFinanceFeedID = "finance"
+            financeItems = []
+            financePage = nil
+        }
+        await loadFinance()
+    }
+
 
     func financeSuggestions(for entryID: String) -> [FinanceInstrument] {
         financeItems.first { $0.id == entryID }?.suggestions ?? []
     }
 
     func selectFinanceFeed(_ id: String) async {
-        guard id != selectedFinanceFeedID, financeFeeds.contains(where: { $0.id == id }) else { return }
+        guard id != selectedFinanceFeedID, financeFeeds.contains(where: { $0.id == id && $0.isVisible(hideCrypto: feedPreferences.hideFinanceCrypto) }) else { return }
         financeRequestEpoch += 1
         selectedFinanceFeedID = id
         financeItems = []
@@ -1544,7 +1560,7 @@ final class SocialWireAppModel {
             let feeds = try await gateway.fetchFinanceFeeds()
             guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
             financeFeeds = feeds
-            if !feeds.contains(where: { $0.id == selectedFinanceFeedID }) {
+            if !feeds.contains(where: { $0.id == selectedFinanceFeedID && $0.isVisible(hideCrypto: feedPreferences.hideFinanceCrypto) }) {
                 selectedFinanceFeedID = "finance"
                 financeRequestEpoch += 1
                 isLoadingFinance = false
@@ -1570,7 +1586,7 @@ final class SocialWireAppModel {
         financeError = nil
         defer { if epoch == financeRequestEpoch { isLoadingFinance = false } }
         do {
-            let page = try await gateway.fetchFinance(language: language, feed: feedID, cursor: cursor)
+            let page = try await gateway.fetchFinance(language: language, feed: feedID, cursor: cursor, hideCrypto: feedPreferences.hideFinanceCrypto)
             guard self.viewerDID == viewerDID, epoch == financeRequestEpoch,
                   fingerprint == financeSelectionFingerprint, language == preferredWireLanguage,
                   selectedFinanceFeedID == feedID, page.feedId == feedID else { return }
@@ -1586,7 +1602,7 @@ final class SocialWireAppModel {
             if cursor == nil {
                 let cacheKey = FinanceCacheIdentity.key(viewer: viewerDID, language: language,
                     region: Locale.current.region?.identifier == "US" ? "us" : "outside-us",
-                    moderation: financeModerationContext, preferences: page.preferenceRevision, generation: page.generationId, feed: feedID)
+                    moderation: financeModerationContext, preferences: page.preferenceRevision, generation: page.generationId, feed: feedID, hideCrypto: feedPreferences.hideFinanceCrypto)
                 try? readerCacheCoordinator?.upsertFinancePage(page, contextKey: cacheKey, viewerDID: viewerDID)
             }
         } catch {
@@ -1602,7 +1618,7 @@ final class SocialWireAppModel {
     }
 
     private var financeSelectionFingerprint: String {
-        financeSelections.map(\.key).sorted().joined(separator: ":")
+        financeSelections.map(\.key).sorted().joined(separator: ":") + (feedPreferences.hideFinanceCrypto ? ":hide-crypto" : ":show-crypto")
     }
 
     func loadFinanceCustomization() async {
@@ -1742,6 +1758,7 @@ final class SocialWireAppModel {
             hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
@@ -1805,6 +1822,7 @@ final class SocialWireAppModel {
             hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
@@ -1834,6 +1852,7 @@ final class SocialWireAppModel {
             hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
@@ -3671,6 +3690,7 @@ final class SocialWireAppModel {
             hideSportsScores: previous?.hideSportsScores,
                 showTopLevelFeedUnreadCounts: previous?.showTopLevelFeedUnreadCounts,
                 feedsWithUnreadCounts: previous?.feedsWithUnreadCounts,
+            hideFinanceCrypto: previous?.hideFinanceCrypto,
                 rssArticleOpenMode: previous?.rssArticleOpenMode,
                 createdAt: previous?.createdAt ?? now,
                 updatedAt: now

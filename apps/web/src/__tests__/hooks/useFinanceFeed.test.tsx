@@ -79,3 +79,15 @@ describe("Finance generation handoff",()=>{
  });
 
 });
+
+it("isolates hidden crypto generations and never reuses the visible continuation", async () => {
+ const requested: {hideCrypto?: boolean;cursor?: string}[] = [];
+ mock.module("@/lib/financeFeedClient", () => ({...realFinance, listFinanceSelections: async () => records, getFinance: async (args: {hideCrypto?: boolean;cursor?: string}) => { requested.push(args); return {...page, generationId: args.hideCrypto ? "hidden" : "visible", cursor: args.hideCrypto ? "hidden-cursor" : "visible-cursor"}; }}));
+ const {result, rerender} = renderHook(({hidden}) => useFinanceFeed("finance", hidden), {wrapper, initialProps:{hidden:false}});
+ await waitFor(() => expect(result.current.feed.data?.pages[0]?.generationId).toBe("visible"));
+ rerender({hidden:true});
+ await waitFor(() => expect(result.current.feed.data?.pages[0]?.generationId).toBe("hidden"));
+ await act(async () => {await result.current.feed.fetchNextPage();});
+ expect(requested.filter(request => request.hideCrypto).every(request => request.cursor !== "visible-cursor")).toBe(true);
+ expect(requested.some(request => request.hideCrypto && request.cursor === "hidden-cursor")).toBe(true);
+});

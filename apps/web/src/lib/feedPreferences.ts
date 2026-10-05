@@ -26,6 +26,7 @@ export type FeedDisplayPreferences = {
   showSports: boolean;
   hideSportsScores: boolean;
   hideFinancePerformance: boolean;
+  hideFinanceCrypto: boolean;
   visibleFeeds: TopLevelFeed[];
   feedsWithUnreadCounts: TopLevelFeed[];
   rssArticleOpenMode: RssArticleOpenMode;
@@ -38,6 +39,7 @@ export const DEFAULT_FEED_DISPLAY_PREFERENCES: FeedDisplayPreferences = {
   showSports: true,
   hideSportsScores: false,
   hideFinancePerformance: false,
+  hideFinanceCrypto: false,
   visibleFeeds: [...TOP_LEVEL_FEEDS],
   feedsWithUnreadCounts: [...TOP_LEVEL_FEEDS],
   rssArticleOpenMode: "original",
@@ -69,6 +71,7 @@ export function normalizeFeedDisplayPreferences(
         | "showSports"
         | "hideSportsScores"
         | "hideFinancePerformance"
+        | "hideFinanceCrypto"
         | "showTopLevelFeedUnreadCounts"
         | "feedsWithUnreadCounts"
         | "rssArticleOpenMode"
@@ -97,6 +100,7 @@ export function normalizeFeedDisplayPreferences(
     showSports: value?.showSports !== false,
     hideSportsScores: value?.hideSportsScores === true,
     hideFinancePerformance: value?.hideFinancePerformance === true,
+    hideFinanceCrypto: value?.hideFinanceCrypto === true,
     visibleFeeds,
     feedsWithUnreadCounts: TOP_LEVEL_FEEDS.filter(
       (feed) =>

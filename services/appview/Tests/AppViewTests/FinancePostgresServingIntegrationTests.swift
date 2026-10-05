@@ -72,8 +72,16 @@ struct FinancePostgresServingIntegrationTests {
       let first = try await fixture.store.page(cursor: nil, limit: 1, language: "en-US",
         viewerDID: fixture.viewer, refresh: false, now: fixture.now)
       #expect(first.items.first?.story.itemID == fixture.items[1].itemID)
-      #expect(first.preferenceRevision == FinanceIdentity.preferenceFingerprint(instrumentIDs: [fixture.instrument.id], sectorIDs: []) + ":providers-reference-v1")
+      #expect(first.preferenceRevision == FinanceIdentity.preferenceFingerprint(instrumentIDs: [fixture.instrument.id], sectorIDs: []) + ":providers-reference-v1:show-crypto-v1")
       let cursor = try #require(first.cursor)
+      await #expect(throws: WireServingError.invalidCursor) {
+        _ = try await fixture.store.page(cursor: cursor, limit: 2, language: "en",
+          viewerDID: fixture.viewer, refresh: false, now: fixture.now, hideCrypto: true)
+      }
+      let hidden = try await fixture.store.page(cursor: nil, limit: 1, language: "en",
+        viewerDID: fixture.viewer, refresh: false, now: fixture.now, hideCrypto: true)
+      #expect(hidden.generationId != first.generationId)
+      #expect(hidden.preferenceRevision != first.preferenceRevision)
       let repeatFirst = try await fixture.store.page(cursor: nil, limit: 1, language: "en",
         viewerDID: fixture.viewer, refresh: false, now: fixture.now)
       #expect(repeatFirst.generationId == first.generationId)
@@ -159,6 +167,25 @@ struct FinancePostgresServingIntegrationTests {
       #expect(refreshed.generationId == first.generationId)
       #expect(refreshed.items.first?.story.source.domain == changed.source.domain)
       #expect(refreshed.items.first?.instruments.isEmpty == true)
+    }
+  }
+
+  @Test("Hide Crypto excludes newly updated crypto stories after snapshot reads")
+  func hideCryptoRechecksCurrentStories() async throws {
+    try await withFixture { fixture in
+      let original = fixture.items[1]
+      let changed = WireFeedItem(itemID: original.itemID, canonicalURL: original.canonicalURL,
+        representativeURI: original.representativeURI, title: "Bitcoin investment rises after ETF launch", summary: nil,
+        publishedAt: original.publishedAt, thumbnailURL: original.thumbnailURL,
+        source: original.source, reasons: original.reasons, provenance: original.provenance)
+      await fixture.wire.replace(changed)
+      let shown = try await fixture.store.page(cursor: nil, limit: 50, language: "en",
+        viewerDID: fixture.viewer, refresh: false, now: fixture.now)
+      #expect(shown.items.contains { $0.story.itemID == changed.itemID })
+      let hidden = try await fixture.store.page(cursor: nil, limit: 50, language: "en",
+        viewerDID: fixture.viewer, refresh: false, now: fixture.now, hideCrypto: true)
+      #expect(!hidden.items.contains { $0.story.itemID == changed.itemID })
+      #expect(hidden.items.count == shown.items.count - 1)
     }
   }
 
