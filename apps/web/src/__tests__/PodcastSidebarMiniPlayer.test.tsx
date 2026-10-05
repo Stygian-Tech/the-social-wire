@@ -38,11 +38,24 @@ function setup(playing = true, duration = 120) {
   return calls;
 }
 
+function touch(target: HTMLElement, type: string, x = 20, y = 20) {
+  const event = new window.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+  Object.defineProperty(event, "pointerType", { value: "touch" });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  fireEvent(target, event);
+}
+async function hold() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)); }); }
+
 describe("Podcast sidebar playback controls", () => {
   it("opens portal controls without navigating, toggles playback and seeks original audio", async () => {
     const calls = setup();
     expect(screen.queryByText("A Sidebar Episode")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Podcast Playback Controls" }));
+    const tab = screen.getByRole("tab", { name: "Podcasts, Beta" });
+    expect(tab.children[0]?.tagName.toLowerCase()).toBe("svg");
+    expect(tab.children[1]?.textContent).toBe("Podcasts");
+    expect(tab.children[2]?.getAttribute("aria-hidden")).toBe("true");
+    expect(tab.children[3]?.textContent).toBe("Beta");
+    fireEvent.focus(screen.getByRole("tab", { name: "Podcasts, Beta" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Podcast Mini Player" })).toBeTruthy());
     expect(screen.getByText("A Sidebar Episode")).toBeTruthy();
     expect(screen.getByText("Opening Chapter")).toBeTruthy();
@@ -64,6 +77,7 @@ describe("Podcast sidebar playback controls", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Play Podcast" })).toBeTruthy());
     fireEvent.click(tab);
     expect(calls).toEqual(["navigate"]);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Podcast Mini Player" })).toBeNull());
   });
 
   it("opens from the Podcasts tab hover and keeps controls available across the pointer gap", async () => {
@@ -85,9 +99,61 @@ describe("Podcast sidebar playback controls", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Podcast Mini Player" })).toBeNull());
   });
 
+  it("opens touch-and-hold controls and suppresses the release click without a separate button", async () => {
+    const calls = setup();
+    const tab = screen.getByRole("tab", { name: "Podcasts, Beta" });
+    expect(screen.queryByRole("button", { name: "Podcast Playback Controls" })).toBeNull();
+    touch(tab, "pointerdown");
+    fireEvent.focus(tab);
+    expect(screen.queryByRole("dialog", { name: "Podcast Mini Player" })).toBeNull();
+    await hold();
+    expect(screen.getByRole("dialog", { name: "Podcast Mini Player" })).toBeTruthy();
+    touch(tab, "pointerup");
+    fireEvent.click(tab);
+    expect(calls).toEqual([]);
+    expect(screen.getByRole("dialog", { name: "Podcast Mini Player" })).toBeTruthy();
+  });
+
+  it("navigates on a short touch tap without opening playback controls", async () => {
+    const calls = setup();
+    const tab = screen.getByRole("tab", { name: "Podcasts, Beta" });
+    touch(tab, "pointerdown");
+    fireEvent.focus(tab);
+    touch(tab, "pointerup");
+    fireEvent.click(tab);
+    await hold();
+    expect(calls).toEqual(["navigate"]);
+    expect(screen.queryByRole("dialog", { name: "Podcast Mini Player" })).toBeNull();
+  });
+
+  it("cancels touch holds on movement and pointer cancellation without accidental navigation", async () => {
+    const calls = setup();
+    const tab = screen.getByRole("tab", { name: "Podcasts, Beta" });
+    touch(tab, "pointerdown");
+    touch(tab, "pointermove", 40, 20);
+    await hold();
+    touch(tab, "pointerup");
+    fireEvent.click(tab);
+    expect(screen.queryByRole("dialog", { name: "Podcast Mini Player" })).toBeNull();
+    touch(tab, "pointerdown");
+    touch(tab, "pointercancel");
+    await hold();
+    fireEvent.click(tab);
+    expect(calls).toEqual([]);
+    expect(screen.queryByRole("dialog", { name: "Podcast Mini Player" })).toBeNull();
+  });
+
+  it("clears a pending hold when the sidebar unmounts", async () => {
+    setup();
+    touch(screen.getByRole("tab", { name: "Podcasts, Beta" }), "pointerdown");
+    cleanup();
+    await hold();
+    expect(screen.queryByRole("dialog", { name: "Podcast Mini Player" })).toBeNull();
+  });
+
   it("disables seeking until duration is known and keeps playback available", async () => {
     setup(false, 0);
-    fireEvent.click(screen.getByRole("button", { name: "Podcast Playback Controls" }));
+    fireEvent.focus(screen.getByRole("tab", { name: "Podcasts, Beta" }));
     await waitFor(() => expect(screen.getByRole("slider", { name: "Seek Podcast From Sidebar" })).toBeTruthy());
     expect((screen.getByRole("slider", { name: "Seek Podcast From Sidebar" }) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Play Podcast" }) as HTMLButtonElement).disabled).toBe(false);

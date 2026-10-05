@@ -1,8 +1,8 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { Headphones, SlidersHorizontal } from "lucide-react";
+import { Headphones } from "lucide-react";
 import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { useOptionalPodcastPlayer } from "@/components/Podcasts/PodcastPlayerProvider";
@@ -14,20 +14,56 @@ export function SidebarAudioSection({ enabled, active, onSelect }: { enabled: bo
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLLIElement | null>(null);
   const triggerId = useId();
+  const instructionsId = useId();
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const press = useRef<{ id: number; x: number; y: number } | null>(null);
+  const touchFocus = useRef(false);
+  const suppressClick = useRef(false);
+  const cancelHold = () => {
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    press.current = null;
+  };
+  useEffect(() => cancelHold, [enabled, player?.episode?.id]);
   if (!enabled) return null;
-  const tab = <SidebarMenuButton type="button" role="tab" aria-label="Podcasts, Beta" aria-selected={active} isActive={active} onClick={onSelect} className={player?.episode ? "pr-11 pointer-coarse:min-h-11" : "pointer-coarse:min-h-11"}>
-    {player?.playing ? <PodcastPlaybackWaveform player={player} /> : <Headphones />}
-    <span>Podcasts</span><WireBetaBadge className="ml-auto" />
+  const tab = <SidebarMenuButton type="button" role="tab" aria-label="Podcasts, Beta" aria-describedby={player?.episode ? instructionsId : undefined} aria-selected={active} isActive={active}
+    onClick={event => {
+      if (suppressClick.current) { event.preventDefault(); suppressClick.current = false; return; }
+      cancelHold(); setOpen(false); onSelect();
+    }}
+    onPointerDown={event => {
+      cancelHold(); suppressClick.current = false;
+      touchFocus.current = event.pointerType === "touch";
+      if (!player?.episode || !touchFocus.current) return;
+      press.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      holdTimer.current = setTimeout(() => { holdTimer.current = null; suppressClick.current = true; setOpen(true); }, 500);
+    }}
+    onPointerMove={event => {
+      const current = press.current;
+      if (!current || event.pointerId !== current.id || Math.hypot(event.clientX - current.x, event.clientY - current.y) <= 10) return;
+      cancelHold(); suppressClick.current = true; setOpen(false);
+    }}
+    onPointerUp={cancelHold}
+    onPointerCancel={() => { cancelHold(); suppressClick.current = true; }}
+    onBlur={() => { touchFocus.current = false; cancelHold(); }}
+    onContextMenu={event => { if (touchFocus.current) event.preventDefault(); }}
+    onKeyDown={() => { touchFocus.current = false; }}
+    className="select-none pointer-coarse:min-h-11">
+    <Headphones /><span>Podcasts</span>
+    {player?.playing ? <PodcastPlaybackWaveform player={player} /> : null}
+    <WireBetaBadge className="ml-auto" />
   </SidebarMenuButton>;
   return <SidebarGroup className="pb-1 pt-1">
     <SidebarGroupLabel>Audio</SidebarGroupLabel>
     <SidebarMenu role="tablist" aria-label="Audio">
       <SidebarMenuItem ref={anchor}>
-        {player?.episode ? <Popover.Root open={open} onOpenChange={setOpen}>
-          <Popover.Trigger id={triggerId} render={tab} openOnHover delay={100} closeDelay={200} onFocus={() => setOpen(true)} />
-          <Popover.Trigger aria-label="Podcast Playback Controls" className="absolute inset-y-0 right-0 flex min-h-8 min-w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11 pointer-coarse:min-w-11">
-            <SlidersHorizontal aria-hidden="true" className="size-3.5" />
-          </Popover.Trigger>
+        {player?.episode ? <Popover.Root triggerId={triggerId} open={open} onOpenChange={(nextOpen, details) => {
+          // Selecting Podcasts navigates; only hover, focus, or a touch hold previews controls.
+          if (details.reason === "trigger-press") { details.cancel(); return; }
+          setOpen(nextOpen);
+        }}>
+          <Popover.Trigger id={triggerId} render={tab} openOnHover delay={100} closeDelay={200} onFocus={() => { if (!touchFocus.current) setOpen(true); }} />
+          <span id={instructionsId} className="sr-only">Hover, Focus, or Touch and Hold for Playback Controls</span>
           <PodcastSidebarMiniPlayer player={player} anchor={anchor} />
         </Popover.Root> : tab}
       </SidebarMenuItem>
