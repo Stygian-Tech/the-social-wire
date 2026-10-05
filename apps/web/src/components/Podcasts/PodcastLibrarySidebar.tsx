@@ -21,7 +21,7 @@ export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, down
   ];
   const subscribed = shows.filter((show) => subscriptions.includes(show.id));
   return (
-    <aside aria-label="Podcast Library" className="min-w-0 space-y-5 rounded-xl border p-4 lg:sticky lg:top-4">
+    <aside aria-label="Podcast Library" className="min-w-0 space-y-5 rounded-xl border p-4">
       <nav aria-label="Podcast Feeds" className="space-y-1">
         {rows.map(({ id, label, Icon, count }) => (
           <button key={id} type="button" aria-current={feed === id ? "page" : undefined}
