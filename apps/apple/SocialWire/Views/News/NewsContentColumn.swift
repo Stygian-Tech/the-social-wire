@@ -9,6 +9,10 @@ struct NewsContentColumn: View {
             switch selectedTab {
             case .wire:
                 WireNewsView(sceneModel: sceneModel)
+            case .finance:
+                FinanceNewsView(sceneModel: sceneModel)
+            case .sports:
+                SportsNewsView()
             case .circle:
                 CircleNewsView(sceneModel: sceneModel)
             case .library:

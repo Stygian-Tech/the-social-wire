@@ -14,6 +14,8 @@ final class NewsSceneModel {
     private var preferredUnavailableTab: NewsTab?
 
     private var wirePath: [NewsRoute] = []
+    private var financePath: [NewsRoute] = []
+    private var sportsPath: [NewsRoute] = []
     private var circlePath: [NewsRoute] = []
     private var libraryPath: [NewsRoute] = []
     private var savedPath: [NewsRoute] = []
@@ -87,6 +89,8 @@ final class NewsSceneModel {
     func path(for tab: NewsTab) -> [NewsRoute] {
         switch tab {
         case .wire: wirePath
+        case .finance: financePath
+        case .sports: sportsPath
         case .circle: circlePath
         case .library: libraryPath
         case .saved: savedPath
@@ -101,6 +105,8 @@ final class NewsSceneModel {
     func setPath(_ path: [NewsRoute], for tab: NewsTab) {
         switch tab {
         case .wire: wirePath = path
+        case .finance: financePath = path
+        case .sports: sportsPath = path
         case .circle: circlePath = path
         case .library: libraryPath = path
         case .saved: savedPath = path
@@ -143,6 +149,8 @@ final class NewsSceneModel {
 
     private func clearPaths() {
         wirePath = []
+        financePath = []
+        sportsPath = []
         circlePath = []
         libraryPath = []
         savedPath = []
@@ -187,6 +195,8 @@ final class NewsSceneModel {
             }
             switch tab {
             case .wire: wirePath = path
+            case .finance: financePath = path
+        case .sports: sportsPath = path
             case .circle: circlePath = path
             case .library: libraryPath = path
             case .saved: savedPath = path

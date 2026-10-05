@@ -4,9 +4,9 @@
 
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import React from "react";
-import { useEntries, useEntry } from "@/hooks/useEntries";
+import { useEntries, useEntry, useAggregateFeedEntries } from "@/hooks/useEntries";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
 import {
   MOCK_ENTRIES,
@@ -320,4 +320,41 @@ describe("useEntry", () => {
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeUndefined();
   });
+  it("refreshes only the resolved list metadata after its prepared first page", async () => {
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    const invalidate = mock(client.invalidateQueries.bind(client));
+    client.invalidateQueries = invalidate;
+    const uri = "at://did:plc:alice/app.standard-reader.list/list";
+    const {result} = renderHook(() => useAggregateFeedEntries({kind: "list", id: uri}), {
+      wrapper: ({children}: {children: React.ReactNode}) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidate).toHaveBeenCalledWith({queryKey: ["standardReaderList", "did:plc:testuser", 0, uri], exact: true});
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    client.clear();
+  });
+
+  it("replaces an initial list resolution still in flight after metadata preparation", async () => {
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    const uri = "at://did:plc:alice/app.standard-reader.list/slow";
+    let finishOldResolution: ((value: {publicationDetails: string[]}) => void) | undefined;
+    const oldResolution = new Promise<{publicationDetails: string[]}>(resolve => {finishOldResolution = resolve;});
+    let resolutionRequests = 0;
+    const resolveList = mock(() => ++resolutionRequests === 1 ? oldResolution : Promise.resolve({publicationDetails: ["Prepared Publication"]}));
+    const {result, unmount} = renderHook(() => {
+      const list = useQuery({queryKey: ["standardReaderList", "did:plc:testuser", 0, uri], queryFn: resolveList, staleTime: 60000});
+      const feed = useAggregateFeedEntries({kind: "list", id: uri});
+      return {list, feed};
+    }, {
+      wrapper: ({children}: {children: React.ReactNode}) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    await waitFor(() => expect(result.current.list.data?.publicationDetails).toEqual(["Prepared Publication"]));
+    expect(resolveList).toHaveBeenCalledTimes(2);
+    finishOldResolution?.({publicationDetails: []});
+    await oldResolution;
+    expect(result.current.list.data?.publicationDetails).toEqual(["Prepared Publication"]);
+    unmount();
+    client.clear();
+  });
+
 });

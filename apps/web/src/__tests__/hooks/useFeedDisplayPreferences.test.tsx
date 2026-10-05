@@ -86,6 +86,32 @@ describe("feed display preference persistence", () => {
     window.localStorage.removeItem(storageKey);
   });
 
+  for (const feed of ["subscribed", "following"] as const) {
+    it(`ignores unread-count changes for explicitly hidden ${feed}`, async () => {
+      const hidden = { ...initial, value: { ...initial.value, visibleFeeds: ["readLater"] as const, feedsWithUnreadCounts: [] } };
+      queryClient.setQueryData(ACCOUNT_PREFERENCES_QUERY_KEY, hidden);
+      const { result } = renderHook(useSettingsAndSidebar, { wrapper });
+      act(() => result.current.settings.setFeedUnreadCountVisible(feed, true));
+      expect(upsertPreferences).not.toHaveBeenCalled();
+      expect(result.current.sidebar.preferences.feedsWithUnreadCounts).toEqual([]);
+    });
+  }
+
+  it("saves hiding the final top-level feed and retains the explicit empty array", async () => {
+    const only = { ...initial, value: { ...initial.value, visibleFeeds: ["subscribed"] as ["subscribed"] } };
+    queryClient.setQueryData(ACCOUNT_PREFERENCES_QUERY_KEY, only);
+    const saved = { ...only, value: { ...only.value, visibleFeeds: [], feedsWithUnreadCounts: [] } };
+    upsertPreferences.mockResolvedValue(saved);
+    fetchPreferences.mockResolvedValue(saved);
+    const { result } = renderHook(useSettingsAndSidebar, { wrapper });
+    act(() => result.current.settings.setFeedVisible("subscribed", false));
+    await waitFor(() => expect(upsertPreferences).toHaveBeenCalledTimes(1));
+    expect(upsertPreferences.mock.calls[0]![0]).toMatchObject({ visibleFeeds: [], feedsWithUnreadCounts: [] });
+    await waitFor(() => expect(result.current.settings.isPending).toBe(false));
+    expect(result.current.sidebar.preferences.visibleFeeds).toEqual([]);
+    expect(loadCachedFeedDisplayPreferences(window.localStorage, did)?.visibleFeeds).toEqual([]);
+  });
+
   for (const feed of ["wire", "circle"] as const) {
     const field = feed === "wire" ? "showWire" : "showCircle";
     const otherField = feed === "wire" ? "showCircle" : "showWire";
@@ -186,4 +212,23 @@ describe("feed display preference persistence", () => {
       expect(result.current.sidebar.preferences[otherField]).toBe(true);
     });
   }
+  it("restores visible Sports scores in PDS and refreshes the Gateway before settling",async()=>{
+    const hidden={...initial,value:{...initial.value,hideSportsScores:true}};
+    const saved={...hidden,cid:"scores-visible",value:{...hidden.value,hideSportsScores:false}};
+    queryClient.setQueryData(ACCOUNT_PREFERENCES_QUERY_KEY,hidden);
+    upsertPreferences.mockResolvedValue(saved);
+    const refreshed=deferred<RepoRecord<PreferencesRecord>>();
+    fetchPreferences.mockReturnValue(refreshed.promise);
+    const {result}=renderHook(useSettingsAndSidebar,{wrapper});
+    act(()=>result.current.settings.setHideSportsScores(false));
+    await waitFor(()=>expect(fetchPreferences).toHaveBeenCalledTimes(1));
+    expect(upsertPreferences.mock.calls[0]?.[0].hideSportsScores).toBe(false);
+    expect(result.current.sidebar.preferences.hideSportsScores).toBe(false);
+    expect(result.current.settings.isPending).toBe(true);
+    await act(async()=>refreshed.resolve(saved));
+    await waitFor(()=>expect(result.current.settings.isPending).toBe(false));
+    expect(result.current.sidebar.preferences.hideSportsScores).toBe(false);
+    expect(result.current.settings.error).toBeNull();
+  });
+
 });

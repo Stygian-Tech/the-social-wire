@@ -22,7 +22,7 @@ export type AppViewEntriesPage = {
 };
 
 export type AggregateAppViewFeed = {
-  kind: "subscribed" | "following" | "folder" | "publication";
+  kind: "subscribed" | "following" | "folder" | "publication" | "list";
   id?: string;
 };
 

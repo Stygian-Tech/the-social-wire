@@ -38,7 +38,8 @@ public actor ATProtoAuthenticatedRepoClient {
     collection: String,
     limit: Int = 50,
     cursor: String? = nil,
-    reverse: Bool = true
+    reverse: Bool = true,
+    requireResolvedRepository: Bool = false
   ) async throws -> (records: [RepoRecord], cursor: String?) {
     guard
       let repoDid = try await ATProtoPdsResolution.resolveRepoDid(
@@ -46,6 +47,7 @@ public actor ATProtoAuthenticatedRepoClient {
         httpClient: httpClient
       )
     else {
+      if requireResolvedRepository { throw PublicRepoResolutionError.unavailable }
       return ([], nil)
     }
 
@@ -56,6 +58,7 @@ public actor ATProtoAuthenticatedRepoClient {
         httpClient: httpClient
       )
     else {
+      if requireResolvedRepository { throw PublicRepoResolutionError.unavailable }
       return ([], nil)
     }
 
@@ -72,12 +75,17 @@ public actor ATProtoAuthenticatedRepoClient {
     if let cursor { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
 
     guard var comps = URLComponents(string: "\(ATProtoPdsResolution.normalizePdsBase(pdsBase))/xrpc/com.atproto.repo.listRecords") else {
+      if requireResolvedRepository { throw PublicRepoResolutionError.unavailable }
       return ([], nil)
     }
     comps.queryItems = queryItems
-    guard let url = comps.url?.absoluteString else { return ([], nil) }
+    guard let url = comps.url?.absoluteString else {
+      if requireResolvedRepository { throw PublicRepoResolutionError.unavailable }
+      return ([], nil)
+    }
 
     let json = try await executeJSON(url: url, auth: auth)
+    if requireResolvedRepository { try Self.validatePublicListRecordsResponse(json) }
     var records = (json["records"] as? [[String: Any]]) ?? []
     if sortPageNewestFirst {
       records = Self.sortRecordsNewestFirst(records)
@@ -89,7 +97,19 @@ public actor ATProtoAuthenticatedRepoClient {
       }
       return RepoRecord(uri: uri, cid: row["cid"] as? String, value: PdsRecordJSON(values: value))
     }
+    if requireResolvedRepository, mapped.count != records.count {
+      throw PublicRepoResolutionError.malformedResponse
+    }
     return (mapped, json["cursor"] as? String)
+  }
+
+  nonisolated static func validatePublicListRecordsResponse(_ json: [String: Any]) throws {
+    guard let records = json["records"] as? [[String: Any]],
+      records.allSatisfy({ $0["uri"] is String && $0["value"] is [String: Any] })
+    else { throw PublicRepoResolutionError.malformedResponse }
+    if let cursor = json["cursor"], !(cursor is NSNull), !(cursor is String) {
+      throw PublicRepoResolutionError.malformedResponse
+    }
   }
 
   public func listAllRecords(

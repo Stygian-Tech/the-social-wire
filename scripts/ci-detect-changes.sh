@@ -125,6 +125,8 @@ filter_changed gateway \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/FinanceCore/**' \
+  'packages/swift/SportsCore/**' \
   'railway/gateway.json' \
   '.github/workflows/ci.yml'
 
@@ -141,6 +143,8 @@ filter_changed appview \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/FinanceCore/**' \
+  'packages/swift/SportsCore/**' \
   'railway/appview.json' \
   '.github/workflows/ci.yml'
 
@@ -179,6 +183,8 @@ filter_changed wire_worker \
   'services/jetstream-ingest/go.sum' \
   'services/wire-worker/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/FinanceCore/**' \
+  'packages/swift/SportsCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'database/migrations/**' \
@@ -200,6 +206,8 @@ filter_changed indexing_worker \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/FinanceCore/**' \
+  'packages/swift/SportsCore/**' \
   'database/migrations/**' \
   '.railway/**' \
   '.github/workflows/ci.yml'
@@ -207,6 +215,8 @@ filter_changed indexing_worker \
 filter_changed wire_corpus_edge \
   'services/wire-corpus-edge/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/FinanceCore/**' \
+  'packages/swift/SportsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'database/migrations/**' \
   'scripts/verify-wire-corpus-serving.sql' \
@@ -263,6 +273,8 @@ filter_changed spec \
   'packages/swift/ReadStateCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/FinanceCore/**' \
+  'packages/swift/SportsCore/**' \
   'services/wire-worker/**' \
   'services/wire-corpus-edge/**' \
   'scripts/apply-database-migrations.sh' \

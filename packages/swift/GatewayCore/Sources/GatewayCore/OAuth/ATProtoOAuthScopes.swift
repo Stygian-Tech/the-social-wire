@@ -11,6 +11,8 @@ public enum ATProtoOAuthScopes {
     "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
     "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
     "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
+    "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
+    "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete",
     "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
     "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
     "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
@@ -65,6 +67,11 @@ public enum ATProtoOAuthScopes {
 
   /// Kept as `iosScope` because `/ios-client-metadata.json` is a stable public client ID used by
   /// the universal iPhone, iPad, and Mac app.
-  static let iosScope = (["atproto"] + iosReadStateScopes + sharedScopes.dropFirst()
+  // Preserve the published native scope order, which groups Finance with reader actions.
+  private static let financeSelectionScope =
+    "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete"
+
+  static let iosScope = (["atproto"] + iosReadStateScopes
+    + sharedScopes.dropFirst().filter { $0 != financeSelectionScope } + [financeSelectionScope]
     + readerActionScopes + iosOnlyScopes).joined(separator: " ")
 }

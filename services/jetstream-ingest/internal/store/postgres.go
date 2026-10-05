@@ -839,7 +839,11 @@ func (p *Postgres) TrackedDIDs(ctx context.Context) (map[string]struct{}, error)
 		UNION
 		SELECT viewer_did AS repo_did
 		FROM appview_publication_scopes
-		WHERE viewer_did <> ''`)
+		WHERE viewer_did <> ''
+		UNION
+		SELECT viewer_did AS repo_did FROM finance_selection_sync WHERE viewer_did <> ''
+		UNION
+		SELECT viewer_did AS repo_did FROM sports_selection_sync WHERE viewer_did <> ''`)
 	if err != nil {
 		return nil, fmt.Errorf("query tracked DIDs: %w", err)
 	}

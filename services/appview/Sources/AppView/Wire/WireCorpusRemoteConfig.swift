@@ -37,7 +37,9 @@ struct WireCorpusRemoteConfig: Equatable, Sendable {
     }
     let isLoopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
     let isLocal = environment["APP_ENV"]?.lowercased() == "local"
-    guard scheme == "https" || (scheme == "http" && isLoopback && isLocal) else {
+    let isDevelopmentPrivate = environment["APP_ENV"]?.lowercased() == "dev"
+      && host.hasSuffix(".railway.internal") && host != "railway.internal"
+    guard scheme == "https" || (scheme == "http" && ((isLoopback && isLocal) || isDevelopmentPrivate)) else {
       throw WireDiscoveryConfigError.invalidCorpusEdgeBaseURL
     }
     var origin = URLComponents()

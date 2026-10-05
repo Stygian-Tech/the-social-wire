@@ -1,3 +1,5 @@
+import FinanceCore
+import SportsCore
 import Foundation
 import Logging
 import PostgresNIO
@@ -20,6 +22,92 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     self.pool = pool
     self.logger = logger
     self.payloadCache = payloadCache
+  }
+
+  func finance(language: String, now: Date) async throws -> FinanceSourceGeneration {
+    try await requireFreshBaseline(now: now)
+    let rows = try await pool.query("""
+      SELECT generation_id, generated_at, expires_at, payload::text, instruments::text
+      FROM wire_serving.finance_generations
+      WHERE language = \(language) AND is_active = TRUE AND expires_at > \(now) LIMIT 1
+      """, logger: logger)
+    for try await row in rows {
+      let (id, generated, expiry, payload, instruments) = try row.decode((UUID, Date, Date, String, String).self)
+      let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+      return FinanceSourceGeneration(generationId: id.uuidString.lowercased(), generatedAt: generated,
+        expiresAt: expiry, language: language,
+        candidates: try decoder.decode([FinanceRankCandidate].self, from: Data(payload.utf8)),
+        instruments: try decoder.decode([FinanceInstrument].self, from: Data(instruments.utf8)))
+    }
+    throw WireCorpusEdgeStoreError.unavailable
+  }
+
+  func sports(language: String, now: Date) async throws -> SportsSourceGeneration {
+    try await requireFreshBaseline(now: now)
+    let rows = try await pool.query("""
+      SELECT generation_id, generated_at, expires_at, payload::text, entities::text
+      FROM wire_serving.sports_generations
+      WHERE language = \(language) AND is_active = TRUE AND expires_at > \(now) LIMIT 1
+      """, logger: logger)
+    for try await row in rows {
+      let (id, generated, expiry, payload, entities) = try row.decode((UUID, Date, Date, String, String).self)
+      let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+      let candidates = try decoder.decode([SportsRankCandidate].self, from: Data(payload.utf8))
+      guard SportsCandidateVersionPolicy.isCurrent(candidates) else { throw WireCorpusEdgeStoreError.unavailable }
+      return SportsSourceGeneration(generationId: id.uuidString.lowercased(), generatedAt: generated,
+        expiresAt: expiry, language: language,
+        candidates: candidates,
+        entities: try decoder.decode([SportsEntity].self, from: Data(entities.utf8)))
+    }
+    throw WireCorpusEdgeStoreError.unavailable
+  }
+
+  func sportsSchedules(now: Date) async throws -> [SportsScheduleStatus] {
+    let rows = try await pool.query("SELECT payload::text FROM wire_serving.sports_schedule_status WHERE expires_at > \(now) ORDER BY updated_at DESC LIMIT 100", logger: logger)
+    let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+    var statuses: [SportsScheduleStatus] = []
+    for try await row in rows { statuses.append(try decoder.decode(SportsScheduleStatus.self, from: Data(try row.decode(String.self).utf8))) }
+    return statuses
+  }
+
+  func sportsStandings(now: Date, preferredIDs: [String] = []) async throws -> [SportsStandingSnapshot] {
+    let catalogRows = try await pool.query("SELECT entities::text FROM wire_serving.sports_catalog LIMIT 1", logger: logger)
+    var catalog: [SportsEntity] = []
+    for try await row in catalogRows { catalog = try JSONDecoder().decode([SportsEntity].self, from: Data(try row.decode(String.self).utf8)) }
+    let competitions = SportsInterestCompetitionScope.competitionIDs(preferredIDs: Set(preferredIDs), catalog: catalog, now: now)
+    let rows = try await pool.query("SELECT payload::text FROM wire_serving.sports_standings WHERE expires_at > \(now) AND (\(preferredIDs.isEmpty) OR competition_id=ANY(\(Array(competitions))::text[])) ORDER BY updated_at DESC LIMIT 100", logger: logger)
+    let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+    var tables: [SportsStandingSnapshot] = []
+    for try await row in rows { tables.append(SportsStandingZones.reviewed(try decoder.decode(SportsStandingSnapshot.self, from: Data(try row.decode(String.self).utf8)))) }
+    return tables
+  }
+
+  func sportsEvents(now: Date, competitionIDs: [String], entityIDs: [String], global: Bool, teamIDs: [String]? = nil, preferredIDs: [String] = [], timeZone: TimeZone = TimeZone(secondsFromGMT: 0)!) async throws -> [SportsEvent] {
+    let catalogRows = try await pool.query("SELECT entities::text FROM wire_serving.sports_catalog LIMIT 1", logger: logger)
+    var catalog: [SportsEntity] = []
+    for try await row in catalogRows { catalog = try JSONDecoder().decode([SportsEntity].self, from: Data(try row.decode(String.self).utf8)) }
+    let identity = SportsEventTeamIdentity(catalog: catalog, now: now)
+    let preferences = Set(preferredIDs)
+    let personalPreferences = catalog.filter { preferences.contains($0.id) && ["team", "ncaa-team", "national-side", "athlete", "driver"].contains($0.kind) }
+    let directPreferences = personalPreferences.map(\.id)
+    let memberships = SportsEventPreferenceMembership.bindings(preferredIDs: preferences, catalog: catalog)
+    let membershipEncoder = JSONEncoder(); membershipEncoder.dateEncodingStrategy = .iso8601
+    let membershipBindings = String(decoding: try membershipEncoder.encode(memberships), as: UTF8.self)
+    let broadPreferences = Set(catalog.filter { preferences.contains($0.id) && !["sport", "team", "ncaa-team", "national-side", "athlete", "driver"].contains($0.kind) }.map(\.id))
+    let competitionPreferences = Array(SportsInterestCompetitionScope.competitionIDs(preferredIDs: broadPreferences, catalog: catalog, now: now))
+    let sportPreferences = SportsSportHierarchy.descendants(of: Set(catalog.filter { preferences.contains($0.id) && $0.kind == "sport" }.map(\.id)), catalog: catalog)
+    let sportCompetitions = Array(catalog.filter { sportPreferences.contains($0.sportID ?? "") && $0.kind == "competition" }.map(\.id))
+    let sportEntities = Array(catalog.filter { sportPreferences.contains($0.sportID ?? "") }.map(\.id))
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timeZone
+    let dayStart = calendar.startOfDay(for: now)
+
+    let scopedIDs = Set(entityIDs + (teamIDs ?? []) + directPreferences + memberships.map(\.entityID))
+    let bindings = String(decoding: try JSONEncoder().encode(identity.bindings.filter { scopedIDs.contains($0.entityID) }), as: UTF8.self)
+    let rows = try await pool.query("SELECT payload::text FROM wire_serving.sports_events WHERE expires_at > \(now) AND (\(global) OR competition_id=ANY(\(competitionIDs)::text[]) OR (payload->'entityIDs') ?| \(entityIDs)::text[] OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(bindings)::jsonb) binding WHERE binding->>'competitionID'=competition_id AND binding->>'entityID'=ANY(\(entityIDs)::text[]) AND binding->>'name' IN (lower(btrim(payload->>'homeName')),lower(btrim(payload->>'awayName'))))) AND (\(teamIDs == nil) OR (payload->'entityIDs') ?| \(teamIDs ?? [])::text[] OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(bindings)::jsonb) binding WHERE binding->>'competitionID'=competition_id AND binding->>'entityID'=ANY(\(teamIDs ?? [])::text[]) AND binding->>'name' IN (lower(btrim(payload->>'homeName')),lower(btrim(payload->>'awayName'))))) AND (\(preferences.isEmpty) OR ((payload->'entityIDs') ?| \(directPreferences)::text[] OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(membershipBindings)::jsonb) membership WHERE (payload->>'startsAt')::timestamptz >= (membership->>'validFrom')::timestamptz AND (membership->>'validUntil' IS NULL OR (payload->>'startsAt')::timestamptz < (membership->>'validUntil')::timestamptz) AND ((payload->'entityIDs') ? (membership->>'entityID') OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(bindings)::jsonb) binding WHERE binding->>'competitionID'=competition_id AND binding->>'entityID'=membership->>'entityID' AND binding->>'name' IN (lower(btrim(payload->>'homeName')),lower(btrim(payload->>'awayName'))))))) OR competition_id=ANY(\(competitionPreferences + sportCompetitions)::text[]) OR (payload->'entityIDs') ?| \(sportEntities)::text[] OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(bindings)::jsonb) binding WHERE binding->>'competitionID'=competition_id AND binding->>'entityID'=ANY(\(directPreferences)::text[]) AND binding->>'name' IN (lower(btrim(payload->>'homeName')),lower(btrim(payload->>'awayName'))))) AND (payload->>'startsAt')::timestamptz >= \(now.addingTimeInterval(-7*86400)) ORDER BY CASE WHEN payload->>'status'='in-progress' THEN 0 WHEN payload->>'status'='finished' AND (payload->>'startsAt')::timestamptz BETWEEN \(dayStart) AND \(now) THEN 1 WHEN payload->>'status' IN ('scheduled','postponed') AND (payload->>'startsAt')::timestamptz >= \(now) THEN 2 ELSE 3 END, CASE WHEN ((payload->'entityIDs') ?| \(directPreferences)::text[] OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(membershipBindings)::jsonb) membership WHERE (payload->>'startsAt')::timestamptz >= (membership->>'validFrom')::timestamptz AND (membership->>'validUntil' IS NULL OR (payload->>'startsAt')::timestamptz < (membership->>'validUntil')::timestamptz) AND ((payload->'entityIDs') ? (membership->>'entityID') OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(bindings)::jsonb) binding WHERE binding->>'competitionID'=competition_id AND binding->>'entityID'=membership->>'entityID' AND binding->>'name' IN (lower(btrim(payload->>'homeName')),lower(btrim(payload->>'awayName'))))))) OR EXISTS (SELECT 1 FROM jsonb_array_elements(\(bindings)::jsonb) binding WHERE binding->>'competitionID'=competition_id AND binding->>'entityID'=ANY(\(directPreferences)::text[]) AND binding->>'name' IN (lower(btrim(payload->>'homeName')),lower(btrim(payload->>'awayName')))) THEN 0 WHEN competition_id=ANY(\(competitionPreferences)::text[]) THEN 1 WHEN competition_id=ANY(\(sportCompetitions)::text[]) OR (payload->'entityIDs') ?| \(sportEntities)::text[] THEN 2 ELSE 3 END, abs(extract(epoch FROM ((payload->>'startsAt')::timestamptz - \(now)::timestamptz))), (payload->>'startsAt')::timestamptz, event_id LIMIT 500", logger: logger)
+    let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+    var events: [SportsEvent] = []
+    for try await row in rows { events.append(identity.hydrate(try decoder.decode(SportsEvent.self, from: Data(try row.decode(String.self).utf8)))) }
+    return events
   }
 
   func ping() async throws {

@@ -96,7 +96,7 @@ enum GatewayRouterBuilder {
         httpClient: httpClient,
         logger: logger
       ).register(on: protected)
-      if config.wireFeedMode.servesAPI {
+      if config.wireFeedMode.servesAPI || config.financeFeedMode.servesAPI || config.sportsFeedMode.servesAPI {
         WireProxyRoutes(
           baseURL: appViewBase,
           internalSecret: config.core.gatewayAppViewInternalSecret,

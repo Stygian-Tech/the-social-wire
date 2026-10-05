@@ -6,6 +6,8 @@ enum GatewayServiceConfigError: Error, Equatable {
   case invalidPDSAttestationReceiptSecret
   case invalidWireFeedMode(String)
   case invalidCircleFeedMode(String)
+  case invalidFinanceFeedMode(String)
+  case invalidSportsFeedMode(String)
 }
 
 /// Gateway-specific configuration (PDS write-through, sync cache, optional AppView read proxy).
@@ -33,6 +35,8 @@ struct GatewayServiceConfig: Sendable {
   let pdsAttestationReceipt: ATProtoSessionAttestationReceipt
   let wireFeedMode: WireFeedMode
   let circleFeedMode: WireFeedMode
+  var financeFeedMode: WireFeedMode = .off
+  var sportsFeedMode: WireFeedMode = .off
 
   enum CacheBackend: Sendable {
     case sqlite(path: String)
@@ -78,6 +82,12 @@ struct GatewayServiceConfig: Sendable {
     guard let circleFeedMode = WireFeedMode(rawValue: rawCircleFeedMode) else {
       throw GatewayServiceConfigError.invalidCircleFeedMode(rawCircleFeedMode)
     }
+    let rawSportsMode = env["SPORTS_FEED_MODE"]?.lowercased() ?? "off"
+    guard let sportsFeedMode = WireFeedMode(rawValue: rawSportsMode) else { throw GatewayServiceConfigError.invalidSportsFeedMode(rawSportsMode) }
+    let rawFinanceMode = env["FINANCE_FEED_MODE"]?.lowercased() ?? "off"
+    guard let financeFeedMode = WireFeedMode(rawValue: rawFinanceMode) else {
+      throw GatewayServiceConfigError.invalidFinanceFeedMode(rawFinanceMode)
+    }
     return GatewayServiceConfig(
       core: core,
       cacheBackend: backend,
@@ -87,7 +97,9 @@ struct GatewayServiceConfig: Sendable {
       latrIosProxy: latrIosProxy,
       pdsAttestationReceipt: pdsAttestationReceipt,
       wireFeedMode: wireFeedMode,
-      circleFeedMode: circleFeedMode
+      circleFeedMode: circleFeedMode,
+      financeFeedMode: financeFeedMode,
+      sportsFeedMode: sportsFeedMode
     )
   }
 

@@ -1,0 +1,14 @@
+{
+  "reviewedAt": "2026-10-04",
+  "environment": "Development",
+  "documentation": "https://www.thesportsdb.com/docs_api_data.php",
+  "scope": "Status samples restricted to the 38 reviewed competition mappings; no live-data rights expansion",
+  "samples": [
+    { "endpoint": "schedule/previous/league/4391", "sport": "American Football", "status": "Q1", "count": 4 },
+    { "endpoint": "schedule/previous/league/4391", "sport": "American Football", "status": "FT", "count": 16 },
+    { "endpoint": "livescore/all", "sport": "Basketball", "status": "Q2", "count": 1 },
+    { "endpoint": "livescore/all", "sport": "Baseball", "status": "IN2", "count": 1 },
+    { "endpoint": "livescore/all", "sport": "Soccer", "status": "1H", "count": 1 }
+  ],
+  "decision": "Normalize only documented explicit event status codes. The live endpoint was used for read-only evidence and is not integrated. Unknown and undocumented cricket statuses remain conservative; neither clock nor scores establish activity or completion."
+}

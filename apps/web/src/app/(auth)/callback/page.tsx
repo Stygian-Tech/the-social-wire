@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { handleCallback, OAUTH_CALLBACK_TIMEOUT_MS } from "@/lib/auth";
+import { consumeOAuthReturnPath } from "@/lib/oauthScopeRecovery";
 
 const WATCHDOG_MS = OAUTH_CALLBACK_TIMEOUT_MS + 15_000;
 
@@ -18,7 +19,7 @@ export default function CallbackPage() {
     handleCallback()
       .then(() => {
         flowFinished.current = true;
-        window.location.replace("/read");
+        window.location.replace(consumeOAuthReturnPath());
       })
       .catch((err) => {
         flowFinished.current = true;

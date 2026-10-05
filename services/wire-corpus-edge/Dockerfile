@@ -2,6 +2,9 @@ FROM swift:6.2.4-jammy AS builder
 
 WORKDIR /src
 
+COPY packages/swift/FinanceCore packages/swift/FinanceCore
+COPY packages/swift/SportsCore packages/swift/SportsCore
+
 COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resolved* packages/swift/WireCore/
 COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
 COPY packages/swift/WireCore/Tests packages/swift/WireCore/Tests
@@ -21,7 +24,7 @@ RUN swift build -c release --product WireCorpusEdge
 FROM ubuntu:22.04
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libssl3 ca-certificates \
+  && apt-get install -y --no-install-recommends libssl3 libcurl4 libicu70 libxml2 ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/services/wire-corpus-edge/.build/release/WireCorpusEdge /usr/local/bin/WireCorpusEdge

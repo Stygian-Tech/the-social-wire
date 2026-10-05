@@ -8,6 +8,8 @@ struct AppViewServiceConfig: Sendable {
   let storeBackend: StoreBackend
   let wire: WireDiscoveryConfig
   let circle: CircleDiscoveryConfig
+  var finance: FinanceDiscoveryConfig = FinanceDiscoveryConfig.disabled
+  var sports: SportsDiscoveryConfig = .disabled
   let semble: SembleProjectionConfig
 
   enum StoreBackend: Sendable {
@@ -30,13 +32,15 @@ struct AppViewServiceConfig: Sendable {
       }
       backend = .postgres(url: dbURL)
     }
+    let finance = try FinanceDiscoveryConfig.fromEnvironment(env)
+    let sports = try SportsDiscoveryConfig.fromEnvironment(env)
     let wire = try WireDiscoveryConfig.fromEnvironment(env)
     let circle = try CircleDiscoveryConfig.fromEnvironment(env)
     let semble = SembleProjectionConfig.fromEnvironment(env)
-    if core.appEnv == .dev, (wire.mode.servesAPI || circle.mode.servesAPI), wire.corpusEdge == nil {
+    if core.appEnv == .dev, (wire.mode.servesAPI || circle.mode.servesAPI || finance.mode.canServeAPI || sports.mode.canServeAPI), wire.corpusEdge == nil {
       throw WireDiscoveryConfigError.missingCorpusEdgeForDevelopment
     }
-    if core.appEnv == .prod, wire.corpusEdge != nil {
+    if core.appEnv == .prod, wire.corpusEdge != nil || sports.corpusEdge != nil {
       throw WireDiscoveryConfigError.remoteCorpusEdgeNotAllowedInProduction
     }
     return AppViewServiceConfig(
@@ -45,6 +49,8 @@ struct AppViewServiceConfig: Sendable {
       storeBackend: backend,
       wire: wire,
       circle: circle,
+      finance: finance,
+      sports: sports,
       semble: semble
     )
   }

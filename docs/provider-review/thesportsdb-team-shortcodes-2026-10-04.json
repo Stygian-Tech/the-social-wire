@@ -1,0 +1,280 @@
+{
+  "reviewedAt": "2026-10-05T00:00:22.930126+00:00",
+  "source": "https://www.thesportsdb.com/documentation",
+  "endpoint": "v2 list/teams/{reviewedLeagueID}",
+  "field": "strTeamShort",
+  "validation": "Numeric provider team ID; trimmed uppercase ASCII letters/digits, length2-8; duplicate codes fail closed within competition. Reviewed canonical codes take precedence.",
+  "results": [
+    {
+      "competitionID": "sp_64c4c6be3ce7466096a38dfa5cc802c6",
+      "providerLeagueID": "4391",
+      "status": "available",
+      "teams": 32,
+      "explicitCodes": 32,
+      "distinctCodes": 32
+    },
+    {
+      "competitionID": "sp_9b4719e1e116a9f5d34bfbeb66a1d674",
+      "providerLeagueID": "4387",
+      "status": "available",
+      "teams": 30,
+      "explicitCodes": 30,
+      "distinctCodes": 30
+    },
+    {
+      "competitionID": "sp_84b02d753082ebd8af144aee532f0483",
+      "providerLeagueID": "4516",
+      "status": "available",
+      "teams": 15,
+      "explicitCodes": 15,
+      "distinctCodes": 15
+    },
+    {
+      "competitionID": "sp_af344f5ef7d4b605b42de5ebc3d7d552",
+      "providerLeagueID": "4424",
+      "status": "available",
+      "teams": 30,
+      "explicitCodes": 30,
+      "distinctCodes": 30
+    },
+    {
+      "competitionID": "sp_3d17d9da8c5f0aabbbff83e0add3f91e",
+      "providerLeagueID": "4380",
+      "status": "available",
+      "teams": 32,
+      "explicitCodes": 32,
+      "distinctCodes": 32
+    },
+    {
+      "competitionID": "sp_d8e01476eb67e6667099efb0f27784a1",
+      "providerLeagueID": "4346",
+      "status": "available",
+      "teams": 30,
+      "explicitCodes": 29,
+      "distinctCodes": 29
+    },
+    {
+      "competitionID": "sp_2a29d95b2516cf2e381529455db0a348",
+      "providerLeagueID": "4479",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_14a817ec3f614f4e3bb65f643ada3f69",
+      "providerLeagueID": "4607",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_3c3166b191b64615d728dd8e08525d13",
+      "providerLeagueID": "4328",
+      "status": "available",
+      "teams": 20,
+      "explicitCodes": 20,
+      "distinctCodes": 20
+    },
+    {
+      "competitionID": "sp_9ce1d550f66c2a1082f71061d7cdbd42",
+      "providerLeagueID": "4849",
+      "status": "available",
+      "teams": 14,
+      "explicitCodes": 1,
+      "distinctCodes": 1
+    },
+    {
+      "competitionID": "sp_2a9b7c90198b6815114c9e82eb3bb37a",
+      "providerLeagueID": "4480",
+      "status": "available",
+      "teams": 81,
+      "explicitCodes": 42,
+      "distinctCodes": 42
+    },
+    {
+      "competitionID": "sp_540bf36583e238a8a63b3744f55c2f00",
+      "providerLeagueID": "4889",
+      "status": "available",
+      "teams": 74,
+      "explicitCodes": 0,
+      "distinctCodes": 0
+    },
+    {
+      "competitionID": "sp_e04d22b60ccee6870b5cd211d40a2c1c",
+      "providerLeagueID": "4335",
+      "status": "available",
+      "teams": 20,
+      "explicitCodes": 14,
+      "distinctCodes": 14
+    },
+    {
+      "competitionID": "sp_c4fe9eb63ed3ef37bab5ca4a13491778",
+      "providerLeagueID": "4331",
+      "status": "available",
+      "teams": 18,
+      "explicitCodes": 7,
+      "distinctCodes": 7
+    },
+    {
+      "competitionID": "sp_6a9ed47ec0d91ce93777b53a9237808f",
+      "providerLeagueID": "4332",
+      "status": "available",
+      "teams": 20,
+      "explicitCodes": 7,
+      "distinctCodes": 7
+    },
+    {
+      "competitionID": "sp_5141ee75f1f3220dcd4b4b9074eb7593",
+      "providerLeagueID": "4334",
+      "status": "available",
+      "teams": 18,
+      "explicitCodes": 13,
+      "distinctCodes": 13
+    },
+    {
+      "competitionID": "sp_81517a0733c7258b2f4abd7308c3eaa2",
+      "providerLeagueID": "4350",
+      "status": "available",
+      "teams": 18,
+      "explicitCodes": 0,
+      "distinctCodes": 0
+    },
+    {
+      "competitionID": "sp_c19e416958b100ee60ded6a470484392",
+      "providerLeagueID": "4351",
+      "status": "available",
+      "teams": 20,
+      "explicitCodes": 17,
+      "distinctCodes": 17
+    },
+    {
+      "competitionID": "sp_9e432c9e0f00c8607d8cd91c504a9bcd",
+      "providerLeagueID": "4501",
+      "status": "available",
+      "teams": 42,
+      "explicitCodes": 7,
+      "distinctCodes": 7
+    },
+    {
+      "competitionID": "sp_a2378fb34d580f92bedf8c8e5cab4882",
+      "providerLeagueID": "4446",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_25e26beeb66a2672c261fea2a3c77be3",
+      "providerLeagueID": "4430",
+      "status": "available",
+      "teams": 14,
+      "explicitCodes": 0,
+      "distinctCodes": 0
+    },
+    {
+      "competitionID": "sp_0c5b5f555d9d2d56acbdd1ef4fdb9d77",
+      "providerLeagueID": "4414",
+      "status": "available",
+      "teams": 10,
+      "explicitCodes": 0,
+      "distinctCodes": 0
+    },
+    {
+      "competitionID": "sp_3e92b23572ee3a237abe9a3094813fe0",
+      "providerLeagueID": "4416",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_0a1d7b8f805cbca6d787d5b3b95962cf",
+      "providerLeagueID": "4415",
+      "status": "available",
+      "teams": 14,
+      "explicitCodes": 0,
+      "distinctCodes": 0
+    },
+    {
+      "competitionID": "sp_810ca64a4e79a2c754a90ed15a9755ac",
+      "providerLeagueID": "4370",
+      "status": "available",
+      "teams": 11,
+      "explicitCodes": 1,
+      "distinctCodes": 1
+    },
+    {
+      "competitionID": "sp_2dc0ea0ced201e1c59fbe5622bfd1936",
+      "providerLeagueID": "4371",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_283741fea32498ad6e979d33de7b758e",
+      "providerLeagueID": "4407",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_590e83ac9875e14c7a5e0aaeb4a30606",
+      "providerLeagueID": "4464",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_8898460ef8c914f514ead9bfd7f4929b",
+      "providerLeagueID": "4517",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_f961cd24ac80f23440694dd2dba46477",
+      "providerLeagueID": "4425",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_54dac22d9b24ffd91ecd0ab7f08461e4",
+      "providerLeagueID": "4553",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_a99bf17e597c575d26dbb404e38d119d",
+      "providerLeagueID": "4443",
+      "status": "available",
+      "teams": 14,
+      "explicitCodes": 0,
+      "distinctCodes": 0
+    },
+    {
+      "competitionID": "sp_d630b2726dd1e069830a1b5c3a26e9ef",
+      "providerLeagueID": "4456",
+      "status": "available",
+      "teams": 18,
+      "explicitCodes": 11,
+      "distinctCodes": 11
+    },
+    {
+      "competitionID": "sp_f947dd1a0d685ac2e6b784f8945f73a3",
+      "providerLeagueID": "5311",
+      "status": "unavailable"
+    },
+    {
+      "competitionID": "sp_82f54c0c5c60bc9755d2fba136f793e8",
+      "providerLeagueID": "4521",
+      "status": "available",
+      "teams": 16,
+      "explicitCodes": 0,
+      "distinctCodes": 0
+    },
+    {
+      "competitionID": "sp_b9b3d4ea88eb0a13ba5bd5bdee6ce6bc",
+      "providerLeagueID": "4329",
+      "status": "available",
+      "teams": 24,
+      "explicitCodes": 24,
+      "distinctCodes": 24
+    },
+    {
+      "competitionID": "sp_86d98ccd79dcbc9314d91f5a4c0ef377",
+      "providerLeagueID": "4396",
+      "status": "available",
+      "teams": 24,
+      "explicitCodes": 23,
+      "distinctCodes": 23
+    },
+    {
+      "competitionID": "sp_83bd7f2799b93d19611ec6f7804a4d9e",
+      "providerLeagueID": "4397",
+      "status": "available",
+      "teams": 24,
+      "explicitCodes": 20,
+      "distinctCodes": 20
+    }
+  ]
+}

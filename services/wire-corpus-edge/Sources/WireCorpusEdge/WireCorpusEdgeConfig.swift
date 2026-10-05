@@ -10,8 +10,10 @@ struct WireCorpusEdgeConfig: Equatable, Sendable {
   static func load(_ environment: [String: String] = ProcessInfo.processInfo.environment) throws
     -> WireCorpusEdgeConfig
   {
-    guard environment["APP_ENV"]?.lowercased() == "prod" else {
-      throw WireCorpusEdgeConfigError.productionOnly
+    guard let appEnvironment = environment["APP_ENV"]?.lowercased(),
+      appEnvironment == "dev" || appEnvironment == "prod"
+    else {
+      throw WireCorpusEdgeConfigError.unsupportedEnvironment
     }
     guard let databaseURL = nonempty(environment["DATABASE_URL"]) else {
       throw WireCorpusEdgeConfigError.missingDatabaseURL
@@ -32,7 +34,9 @@ struct WireCorpusEdgeConfig: Equatable, Sendable {
     }
     let maximumConnections = environment["WIRE_CORPUS_EDGE_POSTGRES_MAX_CONNECTIONS"]
       .flatMap(Int.init)
-      .map { max(2, min($0, 8)) } ?? 4
+      // A view-only role can have a two-connection budget shared by the old and
+      // new containers during a rolling deployment. Permit one per container.
+      .map { max(1, min($0, 8)) } ?? 4
     return WireCorpusEdgeConfig(
       databaseURL: databaseURL,
       sharedSecret: sharedSecret,

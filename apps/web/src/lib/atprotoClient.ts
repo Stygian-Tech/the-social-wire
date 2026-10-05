@@ -64,6 +64,8 @@ export interface DiscoveredPublication {
 }
 
 export interface EntryListItem {
+  sportsItem?: import("@/lib/sportsFeedClient").SportsItem;
+  financeItem?: import("@/lib/financeFeedClient").FinanceItem;
   /** AT-URI of the entry record. */
   entryId: string;
   title: string;
@@ -140,6 +142,8 @@ export interface EntryListItem {
 }
 
 export interface EntryDetail {
+  sportsItem?: import("@/lib/sportsFeedClient").SportsItem;
+  financeItem?: import("@/lib/financeFeedClient").FinanceItem;
   entryId: string;
   title: string;
   summary?: string;

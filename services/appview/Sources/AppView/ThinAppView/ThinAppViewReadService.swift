@@ -398,6 +398,22 @@ actor ThinAppViewReadService {
     }
   }
 
+  func listStandardReaderList(
+    auth: AuthContext, list: StandardReaderListDTO, scopes: [AppViewPublicationScope], filter: EntryListFilter, cursor: String?, limit: Int
+  ) async throws -> AppViewFeedPage {
+    let fingerprint = StandardReaderListCursor.fingerprint(viewerDid: auth.did, list: list, filter: filter.rawValue)
+    let continuation = try StandardReaderListCursor.decode(cursor, fingerprint: fingerprint)
+    let result = try await store.listAggregateEntries(
+      viewerDid: auth.did, scopes: scopes,
+      filter: filter, cursor: continuation, limit: limit
+    )
+    return AppViewFeedPage(
+      response: AppViewEntryListResponse(entries: result.response.entries,
+        cursor: StandardReaderListCursor.encode(result.response.cursor, fingerprint: fingerprint)),
+      membershipUpdatedAt: Date(), databaseDurationMilliseconds: result.diagnostics.queryDuration * 1000
+    )
+  }
+
   func hasFeedProjection(auth: AuthContext) async throws -> Bool {
     try await store.hasViewerFeedProjection(viewerDid: auth.did)
   }

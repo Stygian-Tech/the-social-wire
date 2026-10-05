@@ -1,3 +1,5 @@
+import FinanceCore
+import SportsCore
 import Foundation
 import WireCore
 
@@ -44,9 +46,16 @@ struct WireWorkerConfig: Sendable {
       throw WireWorkerConfigError.missingDatabaseURL
     }
     let rawMode = environment["WIRE_FEED_MODE"]?.lowercased() ?? WireFeedMode.off.rawValue
-    guard let mode = WireFeedMode(rawValue: rawMode) else {
+    guard let publicMode = WireFeedMode(rawValue: rawMode) else {
       throw WireWorkerConfigError.invalidMode(rawMode)
     }
+    // Finance consumes committed Wire candidates independently of public Wire visibility.
+    // Resolve this before validation so internal ingestion still requires the actor HMAC secret.
+    let financeEnabled = FinanceFeedMode(environmentValue: environment["FINANCE_FEED_MODE"]) != .off
+      && environment["FINANCE_CATALOG_RIGHTS_CONFIRMED"] == "true"
+    let sportsEnabled = SportsFeedMode(environmentValue: environment["SPORTS_FEED_MODE"]) != .off
+    let mode: WireFeedMode = (financeEnabled || sportsEnabled) && (publicMode == .off || publicMode == .shadow)
+      ? .api : publicMode
     let rawExternalSignalMode =
       environment["WIRE_EXTERNAL_SIGNAL_MODE"]?.lowercased()
       ?? WireExternalSignalMode.off.rawValue

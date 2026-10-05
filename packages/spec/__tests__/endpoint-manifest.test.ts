@@ -33,7 +33,7 @@ describe("endpoint transport manifest", () => {
     for (const entry of migrations) {
       expect(entry.xrpcNsid).toMatch(/^app\.thesocialwire\.(appview|publication|sync|operations|discovery)\.[a-z][A-Za-z0-9]*$/);
       const verb = entry.xrpcNsid!.split(".").at(-1)!;
-      const query = /^(get|list)/.test(verb);
+      const query = /^(get|list|search)/.test(verb);
       expect(query ? entry.method : ["POST", "PATCH", "DELETE"].includes(entry.method)).toBeTruthy();
     }
   });

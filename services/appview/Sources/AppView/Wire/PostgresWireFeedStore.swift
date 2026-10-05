@@ -586,7 +586,7 @@ actor PostgresWireFeedStore: WireFeedStore {
              (SELECT recovering FROM wire_publication_recovery_health)
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
-      WHERE state.feed_key = 'wire' AND state.language_bucket = \(language)
+      WHERE state.feed_key = 'wire' AND g.feed_key = 'wire' AND state.language_bucket = \(language)
         AND g.status = 'committed'
       LIMIT 1
       """,
@@ -606,7 +606,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       SELECT generation_id, language_bucket, generated_at, expires_at,
              (SELECT recovering FROM wire_publication_recovery_health)
       FROM wire_rank_generations
-      WHERE generation_id = \(id) AND status IN ('committed', 'superseded')
+      WHERE generation_id = \(id) AND feed_key = 'wire' AND status IN ('committed', 'superseded')
         AND expires_at > \(now)
       LIMIT 1
       """,
@@ -629,7 +629,7 @@ actor PostgresWireFeedStore: WireFeedStore {
              (SELECT recovering FROM wire_publication_recovery_health)
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
-      WHERE state.feed_key = 'wire' AND g.status = 'committed'
+      WHERE state.feed_key = 'wire' AND g.feed_key = 'wire' AND g.status = 'committed'
         AND (
           g.language_bucket = 'und' OR EXISTS (
             SELECT 1

@@ -3,6 +3,7 @@
 import { List, ListCollapse, RefreshCw } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 
+import { ReadListHeader } from "./ReadListHeader";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { useReadSidebarScope } from "@/contexts/ReadSidebarScopeContext";
 import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
@@ -30,6 +31,8 @@ export function readFeedHeaderClassName(isWire: boolean) {
 export function ReadArticleFilterBar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const listURI = pathname === "/read" ? searchParams.get("list") : null;
+
   const {
     setArticleListFilter,
     articleListFilter,
@@ -71,6 +74,11 @@ export function ReadArticleFilterBar() {
         : "Subscribed"
     : "Articles";
   const feedTitle = activeFeedScope.displayName.trim() || routeFeedTitle;
+
+  if (listURI) return <ReadListHeader uri={listURI} />;
+
+  // Finance owns its Customize, Refresh, and market-display header.
+  if (editorialFeed === "finance" || editorialFeed === "sports") return null;
 
   if (editorialFeed) {
     const isRefreshing = isCircle

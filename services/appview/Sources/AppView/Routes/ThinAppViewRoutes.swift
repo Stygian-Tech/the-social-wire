@@ -8,6 +8,7 @@ struct ThinAppViewRoutes {
   let readService: ThinAppViewReadService
   let enrollService: ThinAppViewEnrollService
   let projectionService: PublicationProjectionService
+  var listsService: StandardReaderListsService? = nil
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
     for path in ["/v1/appview/feed", "/xrpc/app.thesocialwire.appview.getFeed"] as [RouterPath] {
@@ -42,6 +43,41 @@ struct ThinAppViewRoutes {
           requestId: context.requestId
         )
         let selector = AppViewFeedSelector(kind: kind, id: id)
+        if kind == .list {
+          guard let listsService, let id else { throw HTTPError(.serviceUnavailable) }
+          let prepared: (list: StandardReaderListDTO, scopes: [AppViewPublicationScope])
+          do { prepared = try await listsService.preparedFeed(input: id, viewerDid: auth.did) }
+          catch let error as HTTPError where error.status == .serviceUnavailable {
+            throw AppViewFeedError(status: .serviceUnavailable, code: "feed_projection_warming",
+              message: "The list projection is warming. Refresh to retry.", requestId: context.requestId, retryable: true)
+          }
+          let list = prepared.list
+          // First render uses indexed content immediately; enrollment repairs cold public authors in background.
+          let authors = Array(Set(list.users + list.publications.compactMap {
+            StandardReaderListsService.publicationIdentity($0)?.did
+          }))
+          let enrollmentComplete: Bool
+          if cursor == nil, !authors.isEmpty {
+            let key = StandardReaderListCursor.fingerprint(viewerDid: auth.did, list: list, filter: "initial-enrollment")
+            enrollmentComplete = await listsService.enrollment.begin(key: key) {
+              for start in stride(from: 0, to: authors.count, by: 20) {
+                try Task.checkCancellation()
+                _ = try await enrollService.enroll(auth: auth, authorDids: Array(authors.dropFirst(start).prefix(20)))
+              }
+            }
+          } else { enrollmentComplete = true }
+          let scopes = prepared.scopes
+          return try await AppViewFeedExecution.run(requestId: context.requestId) {
+            let startedAt = Date()
+            let page = try await readService.listStandardReaderList(
+            auth: auth, list: list, scopes: scopes, filter: filter, cursor: cursor, limit: limit)
+            if StandardReaderListEnrollment.shouldWarm(empty: page.response.entries.isEmpty, enrollmentComplete: enrollmentComplete) {
+              throw AppViewFeedError(status: .serviceUnavailable, code: "feed_projection_warming",
+                message: "The list's articles are being indexed. Refresh to retry.", requestId: context.requestId, retryable: true)
+            }
+            return try Self.feedResponse(page: page, durationMilliseconds: Date().timeIntervalSince(startedAt) * 1000)
+          }
+        }
         return try await AppViewFeedExecution.run(requestId: context.requestId) {
           let startedAt = Date()
           var page = try await readService.listFeed(

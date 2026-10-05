@@ -10,8 +10,12 @@ struct WireDiscoveryRoutes {
   let store: any WireFeedStore
   let moderation: WireViewerModerationService
   let telemetry: OperationsTelemetryBuffer?
+  var wireVisible: Bool = true
+  var financeStore: PostgresFinanceFeedStore? = nil
+  var sportsStore: PostgresSportsFeedStore? = nil
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
+    if wireVisible {
     group.get("/xrpc/app.thesocialwire.discovery.getWire") {
       request, context async throws -> Response in
       try await moderation.requireSnapshot(
@@ -67,6 +71,7 @@ struct WireDiscoveryRoutes {
       )
     }
 
+    }
     group.get("/xrpc/app.thesocialwire.discovery.getWireItem") {
       request, context async throws -> Response in
       try await moderation.requireSnapshot(
@@ -97,7 +102,9 @@ struct WireDiscoveryRoutes {
       request, context async throws -> Response in
       let catalog = try await store.getCatalog(now: Date())
       return try Self.response(
-        catalog,
+        FinanceCombinedCatalog(wire: catalog, wireVisible: wireVisible, finance: try await financeStore?.availability(now: Date())
+          ?? FinanceFeedAvailability(enabled: false, available: false, widgetsEnabled: false),
+          sports: try await sportsStore?.availability(now: Date()) ?? SportsFeedAvailability(enabled: false, available: false, eventsEnabled: false)),
         etag: "\"wire-catalog-\(catalog.latestGenerationID ?? "none")-\(catalog.enabled)\"",
         ifNoneMatch: request.headers[.ifNoneMatch],
         authenticated: Self.viewerDID(context) != nil,

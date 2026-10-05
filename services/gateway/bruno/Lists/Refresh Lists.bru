@@ -1,0 +1,17 @@
+meta {
+  name: Refresh Lists
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/v1/lists/refresh
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}

@@ -488,6 +488,12 @@ jobs:
       - name: Test The Wire algorithm
         working-directory: packages/swift/WireCore
         run: swift test
+      - name: Test Finance domain
+        working-directory: packages/swift/FinanceCore
+        run: swift test
+      - name: Test Sports domain
+        working-directory: packages/swift/SportsCore
+        run: swift test
       - name: Test The Wire worker
         working-directory: services/wire-worker
         env:

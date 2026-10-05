@@ -1,0 +1,54 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.searchFinanceInstruments",
+  "defs": {
+    "main": {
+      "type": "query",
+      "parameters": {
+        "type": "params",
+        "properties": {
+          "q": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "instruments"
+          ],
+          "properties": {
+            "instruments": {
+              "type": "array",
+              "maxLength": 50,
+              "items": {
+                "type": "ref",
+                "ref": "app.thesocialwire.discovery.defs#financeInstrument"
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "FeedUnavailable"
+        }
+      ]
+    }
+  }
+}

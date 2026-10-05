@@ -7,6 +7,7 @@ enum BootstrapStreamEventKind: String, Codable, Sendable {
     case selectedPublication
     case entriesPage
     case sidebarFolders
+    case lists
     case warning
     case error
     case done

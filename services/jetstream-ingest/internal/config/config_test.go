@@ -589,3 +589,25 @@ func setRequiredWireAdmission(t *testing.T) {
 	t.Setenv("WIRE_ADMISSION_RATE_PER_SECOND", "1.5")
 	t.Setenv("WIRE_ADMISSION_BURST_EVENTS", "1")
 }
+
+func TestSportsSelectionConfiguredAndDefaultAppViewIntake(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_COLLECTIONS", "app.thesocialwire.sports.selection,app.thesocialwire.finance.selection,site.standard.document")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cfg.Collections, "app.thesocialwire.sports.selection") {
+		t.Fatal("configured Sports selections missing")
+	}
+	t.Setenv("JETSTREAM_COLLECTIONS", "")
+	defaults, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(defaults.Collections, "app.thesocialwire.sports.selection") {
+		t.Fatal("default intake omits Sports selections")
+	}
+}

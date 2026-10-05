@@ -14,6 +14,7 @@ struct BootstrapStreamService {
   let projectionCache: (any AppViewProjectionCacheStore)?
   let telemetry: OperationsTelemetryBuffer?
   let logger: Logger
+  var listsService: StandardReaderListsService? = nil
 
   private enum SidebarBootstrapChunk: Sendable {
     case unreadCounts(PublicationProjectionService.UnreadCounterSnapshot)
@@ -25,7 +26,7 @@ struct BootstrapStreamService {
     let cachedAt: Date?
   }
 
-  func writeStream(auth: AuthContext, writer: inout any ResponseBodyWriter) async throws {
+  func writeStream(auth: AuthContext, writer: inout any ResponseBodyWriter, includeLists: Bool = false) async throws {
     let streamStarted = Date()
     let refreshedAt = Date()
     var cachedEvidenceAt: Date?
@@ -36,7 +37,8 @@ struct BootstrapStreamService {
           auth: auth,
           snapshot: cached.snapshot,
           refreshedAt: cached.cachedAt,
-          writer: &writer
+          writer: &writer,
+          includeLists: includeLists
         )
         scheduleBackgroundWarmers(
           auth: auth,
@@ -69,7 +71,8 @@ struct BootstrapStreamService {
             auth: auth,
             snapshot: cached.snapshot,
             refreshedAt: cached.cachedAt,
-            writer: &writer
+            writer: &writer,
+            includeLists: includeLists
           )
           try await writer.finish(nil)
           return
@@ -303,6 +306,7 @@ struct BootstrapStreamService {
         )
       }
 
+      if includeLists { try await writeListsEvent(auth: auth, writer: &writer) }
       try await writeEvent(
         .done(
           refreshedAt: completionSource == .projectionCache
@@ -393,7 +397,8 @@ struct BootstrapStreamService {
     auth: AuthContext,
     snapshot: BootstrapSidebarCacheSnapshot,
     refreshedAt: Date,
-    writer: inout any ResponseBodyWriter
+    writer: inout any ResponseBodyWriter,
+    includeLists: Bool = false
   ) async throws {
     try await writeEvent(.sidebarPriority(snapshot.priority), writer: &writer)
 
@@ -452,6 +457,7 @@ struct BootstrapStreamService {
       )
     }
 
+    if includeLists { try await writeListsEvent(auth: auth, writer: &writer) }
     try await writeEvent(
       .done(refreshedAt: refreshedAt, source: .projectionCache),
       writer: &writer
@@ -769,6 +775,25 @@ struct BootstrapStreamService {
       thumbnailFallbackUrl: item.thumbnailFallbackUrl,
       originalUrl: item.originalUrl
     )
+  }
+
+  private struct ListsBootstrapEvent: Encodable {
+    let kind = "lists"
+    let lists: StandardReaderListsResponse
+  }
+
+  private func writeListsEvent(auth: AuthContext, writer: inout any ResponseBodyWriter) async throws {
+    guard let listsService else { return }
+    do {
+      let response = try await listsService.lists(viewerDid: auth.did)
+      let data = try JSONEncoder().encode(ListsBootstrapEvent(lists: response))
+      var buffer = ByteBuffer()
+      buffer.writeBytes(data)
+      buffer.writeString("\n")
+      try await writer.write(buffer)
+    } catch {
+      try await writeEvent(.warning("Lists could not be refreshed. Other feeds remain available."), writer: &writer)
+    }
   }
 
   private func writeEvent(

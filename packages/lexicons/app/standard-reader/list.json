@@ -1,0 +1,56 @@
+{
+  "lexicon": 1,
+  "id": "app.standard-reader.list",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A named, ordered, shareable list of publications (like a Bluesky user list, but for site.standard.publication subscriptions). Lists are one level deep; a publication may appear in multiple lists.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "name",
+          "publications",
+          "createdAt"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 640,
+            "maxGraphemes": 64,
+            "description": "Display name of the list."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 3000,
+            "maxGraphemes": 300,
+            "description": "Optional description shown on the list's public page."
+          },
+          "publications": {
+            "type": "array",
+            "maxLength": 500,
+            "items": {
+              "type": "string",
+              "format": "at-uri"
+            },
+            "description": "Ordered AT URIs of the site.standard.publication records in this list."
+          },
+          "users": {
+            "type": "array",
+            "maxLength": 500,
+            "items": {
+              "type": "string",
+              "format": "did"
+            },
+            "description": "Ordered DIDs of the users (authors) in this list. Optional; a list may hold publications, users, or both."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When the list was created."
+          }
+        }
+      }
+    }
+  }
+}

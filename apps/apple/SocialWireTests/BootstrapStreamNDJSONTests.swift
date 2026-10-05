@@ -83,4 +83,13 @@ struct BootstrapStreamNDJSONTests {
         )
         #expect(selected == "pub-sub")
     }
+    @Test
+    func acceptsSupplementalListsWithoutInterruptingBootstrap() {
+        let events = BootstrapStreamNDJSON.parseLines("""
+        {"kind":"lists","lists":{"lists":[],"refreshedAt":"2026-10-02T12:00:00Z","complete":true}}
+        {"kind":"done","done":{"refreshedAt":"2026-10-02T12:00:00Z","source":"live_projection"}}
+        """)
+        #expect(events.map(\.kind) == [.lists, .done])
+    }
+
 }

@@ -62,6 +62,10 @@ describe("OpenAPI route drift", () => {
     const paths = extractOpenAPIPaths(yaml);
 
     const routePatterns: Record<string, string[]> = {
+      "/v1/lists": ['group.get("/v1/lists")'],
+      "/v1/lists/search": ['group.get("/v1/lists/search")'],
+      "/v1/lists/resolve": ['group.post("/v1/lists/resolve")'],
+      "/v1/lists/refresh": ['group.post("/v1/lists/refresh")'],
       "/xrpc/app.thesocialwire.appview.getReadStateStatus": ['"/xrpc/app.thesocialwire.appview.getReadStateStatus"'],
       "/xrpc/app.thesocialwire.appview.exportReadState": ['"/xrpc/app.thesocialwire.appview.exportReadState"'],
       "/xrpc/app.thesocialwire.appview.prepareReadState": ['"/xrpc/app.thesocialwire.appview.prepareReadState"'],
@@ -82,6 +86,15 @@ describe("OpenAPI route drift", () => {
       "/v1/publications/resolve": ['"/v1/publications/resolve"'],
       "/v1/appview/entries": ['"/v1/appview/entries"'],
       "/v1/appview/feed": ['"/v1/appview/feed"'],
+      "/xrpc/app.thesocialwire.discovery.getSports": ['"/xrpc/app.thesocialwire.discovery.getSports"'],
+      "/xrpc/app.thesocialwire.discovery.getSportsCatalog": ['"/xrpc/app.thesocialwire.discovery.getSportsCatalog"'],
+      "/xrpc/app.thesocialwire.discovery.searchSportsEntities": ['"/xrpc/app.thesocialwire.discovery.searchSportsEntities"'],
+      "/xrpc/app.thesocialwire.discovery.getSportsEvents": ['"/xrpc/app.thesocialwire.discovery.getSportsEvents"'],
+      "/xrpc/app.thesocialwire.discovery.getFinance": ['"/xrpc/app.thesocialwire.discovery.getFinance"'],
+      "/xrpc/app.thesocialwire.discovery.getFinanceCatalog": ['"/xrpc/app.thesocialwire.discovery.getFinanceCatalog"'],
+      "/xrpc/app.thesocialwire.discovery.searchFinanceInstruments": ['"/xrpc/app.thesocialwire.discovery.searchFinanceInstruments"'],
+      "/xrpc/app.thesocialwire.discovery.getFinanceSectors": ['"/xrpc/app.thesocialwire.discovery.getFinanceSectors"'],
+      "/xrpc/app.thesocialwire.discovery.recordFinanceComposition": ['"/xrpc/app.thesocialwire.discovery.recordFinanceComposition"'],
       "/xrpc/app.thesocialwire.discovery.getWire": ['"/xrpc/app.thesocialwire.discovery.getWire"'],
       "/xrpc/app.thesocialwire.discovery.getWireEdition": ['"/xrpc/app.thesocialwire.discovery.getWireEdition"'],
       "/xrpc/app.thesocialwire.discovery.getWireItem": ['"/xrpc/app.thesocialwire.discovery.getWireItem"'],
@@ -454,5 +467,50 @@ describe("L@tr bookmark state transport compatibility", () => {
     const bruno = readFileSync(join(import.meta.dir, "../../../services/gateway/bruno/Latr/Set Bookmark State PATCH Compatibility.bru"), "utf8");
     expect(bruno).toContain("patch {");
     expect(bruno).toContain("X-Latr-Gateway-DPoP:");
+  });
+});
+
+describe("Selectable Finance feed contracts", () => {
+  it("keeps feed context and catalog definitions aligned with the lexicons", () => {
+    const document = Bun.YAML.parse(readFileSync(OPENAPI_PATH, "utf8")) as any;
+    const lexiconRoot = join(import.meta.dir, "../../lexicons/app/thesocialwire/discovery");
+    const query = JSON.parse(readFileSync(join(lexiconRoot, "getFinance.json"), "utf8"));
+    const defs = JSON.parse(readFileSync(join(lexiconRoot, "defs.json"), "utf8")).defs;
+    const feed = document.paths["/xrpc/app.thesocialwire.discovery.getFinance"].get.parameters.find((p: any) => p.name === "feed");
+    expect(feed.schema).toEqual(query.defs.main.parameters.properties.feed && {type:"string",maxLength:256,default:"finance"});
+    expect(document.components.schemas.FinancePage.required).toContain("feedId");
+    expect(defs.financePage.required).toContain("feedId");
+    expect(document.components.schemas.FinanceAvailability.required).toContain("feeds");
+    expect(document.components.schemas.FinanceFeedDefinition.required).toEqual(defs.financeFeedDefinition.required);
+    expect(document.components.schemas.FinanceFeedDefinition.properties.kind.enum).toEqual(defs.financeFeedDefinition.properties.kind.enum);
+    for (const service of ["gateway", "appview"]) {
+      const request = readFileSync(join(import.meta.dir, `../../../services/${service}/bruno/XRPC/app.thesocialwire.discovery.getFinance.bru`), "utf8");
+      expect(request).toContain("?feed=finance&");
+      expect(request).toContain("group:mag7");
+    }
+  });
+});
+
+
+describe("Standard Reader list interoperability", () => {
+  it("returns resolved creator identity independently of public list membership", () => {
+    const spec = Bun.YAML.parse(readFileSync(OPENAPI_PATH, "utf8")) as any;
+    const schema = spec.components.schemas.StandardReaderListsResponse;
+    expect(schema.properties.creatorDid.type).toBe("string");
+    expect(schema.required).not.toContain("creatorDid");
+    expect(spec.paths["/v1/lists/search"].get.responses["200"].content["application/json"].schema.$ref)
+      .toBe("#/components/schemas/StandardReaderListsResponse");
+  });
+  it("documents creator lookup, canonical resolution, feed scope, and opt-in bootstrap", () => {
+    const spec = Bun.YAML.parse(readFileSync(OPENAPI_PATH, "utf8")) as any;
+    expect(spec.paths["/v1/lists/search"].get.parameters[0].name).toBe("creator");
+    expect(spec.paths["/v1/lists/resolve"].post.requestBody.content["application/json"].schema.required).toEqual(["input"]);
+    expect(spec.paths["/v1/appview/feed"].get.parameters.find((p: any) => p.name === "kind").schema.enum).toContain("list");
+    expect(spec.paths["/v1/appview/bootstrap-stream"].get.parameters.find((p: any) => p.name === "includeLists").schema.default).toBe(false);
+    for (const service of ["gateway", "appview"]) {
+      for (const name of ["Get Lists", "Search Creator Lists", "Resolve List", "Refresh Lists"]) {
+        expect(readFileSync(join(import.meta.dir, `../../../services/${service}/bruno/Lists/${name}.bru`), "utf8")).toContain("DPoP:");
+      }
+    }
   });
 });

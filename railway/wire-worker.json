@@ -6,6 +6,8 @@
     "watchPatterns": [
       "/services/wire-worker/**",
       "/packages/swift/WireCore/**",
+      "/packages/swift/FinanceCore/**",
+      "/packages/swift/SportsCore/**",
       "/packages/swift/SocialWireRedis/**",
       "/packages/swift/OperationsCore/**",
       "/database/migrations/**",

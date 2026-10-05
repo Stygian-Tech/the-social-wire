@@ -571,7 +571,7 @@ actor FirehoseSubscriber {
       "site.standard.document", "site.standard.entry", "site.standard.publication",
       "site.standard.graph.subscription",
       "app.thesocialwire.readState",
-      "app.skyreader.feed.subscription", "app.thesocialwire.entryReadState",
+      "app.skyreader.feed.subscription", "app.thesocialwire.entryReadState", "app.thesocialwire.finance.selection", "app.thesocialwire.sports.selection",
     ]
     return allowlist.contains(value) ? value : "other"
   }

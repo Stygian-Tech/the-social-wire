@@ -3,6 +3,8 @@ import Foundation
 enum NewsPrimaryFeed: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
     case wire
     case circle
+    case finance
+    case sports
     case subscribed
     case following
 
@@ -12,6 +14,8 @@ enum NewsPrimaryFeed: String, CaseIterable, Codable, Identifiable, Hashable, Sen
         switch self {
         case .wire: "The Wire"
         case .circle: "Your Circle"
+        case .finance: "Finance"
+        case .sports: "Sports"
         case .subscribed: "Subscribed"
         case .following: "Following"
         }
@@ -21,6 +25,8 @@ enum NewsPrimaryFeed: String, CaseIterable, Codable, Identifiable, Hashable, Sen
         switch self {
         case .wire: "newspaper"
         case .circle: "person.2.wave.2"
+        case .finance: "chart.line.uptrend.xyaxis"
+        case .sports: "sportscourt"
         case .subscribed: "tray.full"
         case .following: "person.2"
         }
@@ -30,6 +36,8 @@ enum NewsPrimaryFeed: String, CaseIterable, Codable, Identifiable, Hashable, Sen
         switch self {
         case .wire: .wire
         case .circle: .circle
+        case .finance: .finance
+        case .sports: .sports
         case .subscribed, .following: .library
         }
     }
@@ -37,7 +45,7 @@ enum NewsPrimaryFeed: String, CaseIterable, Codable, Identifiable, Hashable, Sen
     var readerListSource: ReaderListSource? {
         switch self {
         case .wire: .wire
-        case .circle: nil
+        case .circle, .finance, .sports: nil
         case .subscribed: .subscribed
         case .following: .following
         }

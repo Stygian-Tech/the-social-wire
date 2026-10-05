@@ -1,0 +1,28 @@
+meta {
+  name: Resolve List
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/lists/resolve
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {"input": "{{listUri}}"}
+}
+
+docs {
+  input accepts a canonical app.standard-reader.list AT URI or an official
+  HTTPS share URL: https://standard-reader.app/l/{did}/{rkey}
+  Presentation query parameters and fragments are ignored. Handle URL owners
+  are not supported; the resolved response always contains a canonical DID URI.
+}

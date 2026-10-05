@@ -38,6 +38,7 @@ export type WirePageSource =
 export type WireViewerRegion = "outside-us";
 
 export type WireFeedCatalog = {
+  finance?: {enabled:boolean;available:boolean};
   enabled: boolean;
   available: boolean;
   title: "The Wire";
@@ -128,7 +129,7 @@ export function createWireModerationDpopProofPool(
   ]);
 }
 
-async function discoveryGatewayFetch(args: {
+export async function discoveryGatewayFetch(args: {
   path: string;
   signal?: AbortSignal;
   oauthSession?: OAuthSession;

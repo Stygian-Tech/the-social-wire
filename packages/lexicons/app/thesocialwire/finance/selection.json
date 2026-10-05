@@ -1,0 +1,42 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.finance.selection",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Public interest selection, not ownership. Deterministic rkey is lowercase hexadecimal SHA-256(kind + colon + canonical reference). Records may be copied downstream; deletion cannot retract those copies.",
+      "record": {
+        "type": "object",
+        "required": [
+          "kind",
+          "reference",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 16,
+            "enum": [
+              "instrument",
+              "sector"
+            ]
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

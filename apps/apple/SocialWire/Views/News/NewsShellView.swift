@@ -18,7 +18,9 @@ struct NewsShellView: View {
         NewsTab.available(
             preferences: appModel.feedPreferences,
             wireCatalog: appModel.wireCatalog,
-            circleCatalog: appModel.circleCatalog
+            circleCatalog: appModel.circleCatalog,
+            financeAvailable: appModel.wireCatalog?.financeAvailable == true,
+            sportsAvailable: appModel.wireCatalog?.sportsAvailable == true
         )
     }
 
@@ -288,6 +290,10 @@ struct NewsShellView: View {
         switch tab {
         case .wire:
             selectPrimaryFeed(.wire)
+        case .finance:
+            selectPrimaryFeed(.finance)
+        case .sports:
+            selectPrimaryFeed(.sports)
         case .circle:
             selectPrimaryFeed(.circle)
         case .library:
@@ -438,7 +444,7 @@ struct NewsShellView: View {
         switch feed {
         case .subscribed, .following:
             return ReaderMarkReadScope.selectedFeed(appModel.feedSelection)
-        case .wire, .circle:
+        case .wire, .circle, .finance, .sports:
             return .unavailable
         }
     }
