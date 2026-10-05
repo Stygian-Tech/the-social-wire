@@ -24,4 +24,4 @@ USER bun
 EXPOSE 8080
 COPY --from=schema-ready-builder /out/schema-ready /usr/local/bin/schema-ready
 COPY --from=schema-ready-builder /out/required-migrations.txt /etc/socialwire/required-migrations.txt
-ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "bun", "services/podcast-worker/src/index.ts"]
+ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "/usr/local/bin/bun", "services/podcast-worker/src/index.ts"]
