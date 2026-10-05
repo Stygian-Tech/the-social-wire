@@ -8,6 +8,11 @@ final class PodcastDownloadStore {
     private(set) var progress: [String: Double] = [:]
     private(set) var errors: [String: String] = [:]
     private(set) var downloadedIDs: Set<String> = []
+    private(set) var episodes: [String: PodcastEpisode] = [:]
+    @ObservationIgnored var onCompletion: ((PodcastEpisode) -> Void)?
+    @ObservationIgnored var onAuthenticationChallenge: ((PodcastEpisode, HTTPURLResponse) async throws -> URLRequest)?
+    @ObservationIgnored private var nonceRetries: [String: Int] = [:]
+    @ObservationIgnored private var retryingIDs: Set<String> = []
     private(set) var storageBytes: Int64 = 0
     @ObservationIgnored private var viewer: String?
     @ObservationIgnored private var orphanedTasks: [Int: String] = [:]
@@ -24,6 +29,9 @@ final class PodcastDownloadStore {
         progress = [:]
         errors = [:]
         downloadedIDs = []
+        episodes = [:]
+        nonceRetries = [:]
+        retryingIDs = []
         storageBytes = 0
         guard let viewer else { directory = nil; session = nil; return }
         let key = Self.key(viewer)
@@ -38,13 +46,13 @@ final class PodcastDownloadStore {
         configuration = .default
 #endif
         configuration.isDiscretionary = false
-        let delegate = PodcastDownloadDelegate(finished: { [weak self] task, url, error in
+        let delegate = PodcastDownloadDelegate(finished: { [weak self] task, url, response, error in
             Task { @MainActor [weak self] in
                 guard let self, self.viewer == viewer else {
                     if let url { try? FileManager.default.removeItem(at: url) }
                     return
                 }
-                self.finished(task: task, url: url, error: error)
+                self.finished(task: task, url: url, response: response, error: error)
             }
         }, progressed: { [weak self] task, value in
             Task { @MainActor [weak self] in
@@ -79,10 +87,23 @@ final class PodcastDownloadStore {
         }
     }
 
-    func download(_ episode: PodcastEpisode) {
-        guard localURL(episode.id) == nil, progress[episode.id] == nil,
-              let url = URL(string: episode.audioURL), url.scheme == "https", let session else { return }
-        let task = session.downloadTask(with: url)
+    func download(_ episode: PodcastEpisode, request: URLRequest? = nil) {
+        guard localURL(episode.id) == nil, progress[episode.id] == nil else { return }
+        let resolvedRequest: URLRequest
+        if let request { resolvedRequest = request }
+        else {
+            guard !episode.isPrivate, let url = URL(string: episode.audioURL), url.scheme == "https" else { return }
+            resolvedRequest = URLRequest(url: url)
+        }
+        nonceRetries[episode.id] = 0
+        startDownload(episode, request: resolvedRequest)
+    }
+
+    private func startDownload(_ episode: PodcastEpisode, request: URLRequest) {
+        guard let session else { return }
+        episodes[episode.id] = episode
+        persistEpisodes()
+        let task = session.downloadTask(with: request)
         task.taskDescription = episode.id
         tasks[task.taskIdentifier] = episode.id
         progress[episode.id] = 0
@@ -92,6 +113,8 @@ final class PodcastDownloadStore {
     }
 
     func cancel(_ id: String) {
+        retryingIDs.remove(id)
+        progress[id] = nil
         guard let taskID = tasks.first(where: { $0.value == id })?.key else { return }
         let activeSession = session
         activeSession?.getAllTasks { tasks in tasks.first(where: { $0.taskIdentifier == taskID })?.cancel() }
@@ -106,6 +129,8 @@ final class PodcastDownloadStore {
         do {
             try FileManager.default.removeItem(at: directory.appendingPathComponent(Self.key(id)))
             downloadedIDs.remove(id)
+            episodes[id] = nil
+            persistEpisodes()
             persistIndex()
             calculateSize()
         } catch { errors[id] = error.localizedDescription }
@@ -117,13 +142,35 @@ final class PodcastDownloadStore {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    private func finished(task: Int, url: URL?, error: String?) {
+    private func finished(task: Int, url: URL?, response: HTTPURLResponse?, error: String?) {
         guard let id = tasks.removeValue(forKey: task) ?? orphanedTasks.removeValue(forKey: task) else {
             if let url { try? FileManager.default.removeItem(at: url) }
             return
         }
         guard !tasks.values.contains(id) else {
             if let url { try? FileManager.default.removeItem(at: url) }
+            return
+        }
+        if let response, response.statusCode == 401,
+           response.value(forHTTPHeaderField: "DPoP-Nonce") != nil,
+           nonceRetries[id, default: 0] < 1, let episode = episodes[id], episode.isPrivate,
+           let onAuthenticationChallenge {
+            nonceRetries[id] = 1
+            retryingIDs.insert(id)
+            progress[id] = 0
+            persistTasks()
+            let expectedViewer = viewer
+            Task { [weak self] in
+                do {
+                    let request = try await onAuthenticationChallenge(episode, response)
+                    guard let self, self.viewer == expectedViewer, self.retryingIDs.remove(id) != nil else { return }
+                    self.startDownload(episode, request: request)
+                } catch {
+                    guard let self, self.viewer == expectedViewer, self.retryingIDs.remove(id) != nil else { return }
+                    self.progress[id] = nil
+                    self.errors[id] = "Sign In Again, Then Retry Download."
+                }
+            }
             return
         }
         progress[id] = nil
@@ -141,17 +188,40 @@ final class PodcastDownloadStore {
             errors[id] = nil
             persistIndex()
             calculateSize()
-        } catch { errors[id] = error.localizedDescription }
+            if let episode = episodes[id] { onCompletion?(episode) }
+        } catch { errors[id] = "Could Not Store Download. Check Available Device Storage." }
     }
 
     private func restoreFiles() {
         guard let viewer else { return }
+        if let directory, let data = try? Data(contentsOf: directory.appendingPathComponent("episodes.json")) {
+            episodes = (try? JSONDecoder().decode([String: PodcastEpisode].self, from: data)) ?? [:]
+        }
         downloadedIDs = Set(UserDefaults.standard.stringArray(forKey: "podcast-download-index.\(Self.key(viewer))") ?? [])
         downloadedIDs = downloadedIDs.filter { id in
             guard let directory else { return false }
             return FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.key(id)).path)
         }
         calculateSize()
+    }
+
+    private func persistEpisodes() {
+        guard let directory, let data = try? JSONEncoder().encode(episodes) else { return }
+        let file = directory.appendingPathComponent("episodes.json")
+        do {
+            try data.write(to: file, options: .atomic)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var resource = file
+            try resource.setResourceValues(values)
+        } catch { }
+    }
+
+    func exportFilename(for episode: PodcastEpisode) -> String {
+        let mimeExtensions = ["audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/ogg": "ogg", "audio/wav": "wav"]
+        let suffix = mimeExtensions[episode.audioMimeType ?? ""] ?? "mp3"
+        let title = episode.title.components(separatedBy: CharacterSet(charactersIn: "/\\:" )).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+        return String((title.isEmpty ? "Podcast" : title).prefix(100)) + "." + suffix
     }
 
     private func persistIndex() {

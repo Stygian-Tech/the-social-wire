@@ -11,10 +11,13 @@ struct PodcastNowPlayingView: View {
                 Section {
                     Text(episode.title).font(.title2)
                     if let description = episode.description { Text(description).font(.subheadline) }
-                    Toggle("Remove Silences", isOn: Binding(get: { library.player.removesSilence }, set: { value in Task { await library.setRemoveSilences(value) } }))
+                    Toggle("Remove Silences", isOn: Binding(get: { episode.permitsPublicProcessing && library.player.removesSilence }, set: { value in Task { await library.setRemoveSilences(value) } }))
+                        .disabled(!episode.permitsPublicProcessing)
+                    if !episode.permitsPublicProcessing { Text("Private episodes support playback and device downloads. Public clips and silence analysis are unavailable.").font(.caption).foregroundStyle(.secondary) }
                     if library.processingSilence { ProgressView("Analyzing Silences") }
                     if let error = library.error { Text(error).font(.caption).foregroundStyle(.red) }
                     Button("Create Clip", systemImage: "scissors") { clipPresented = true }
+                        .disabled(!episode.permitsPublicProcessing)
                 }
                 Section("Transcript") {
                     let cues = library.transcript.flatMap(\.cues).filter { query.isEmpty || $0.text.localizedCaseInsensitiveContains(query) }

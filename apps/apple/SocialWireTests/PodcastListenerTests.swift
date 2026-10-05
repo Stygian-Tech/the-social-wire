@@ -21,6 +21,56 @@ struct PodcastListenerTests {
         #expect(episode.transcripts.first?.type == "text/vtt")
     }
 
+    @Test("Private feeds and credential-bearing audio cannot enter public processing")
+    func privateMediaBoundaries() throws {
+        func episode(_ audio: String, visibility: String? = nil) throws -> PodcastEpisode {
+            var object: [String: Any] = ["id": "private-episode", "showId": "private-show", "title": "Private Episode", "publishedAt": "2026-10-04T00:00:00Z", "audioUrl": audio, "transcripts": []]
+            if let visibility { object["visibility"] = visibility }
+            return try JSONDecoder().decode(PodcastEpisode.self, from: JSONSerialization.data(withJSONObject: object))
+        }
+        #expect(try episode("https://example.com/audio.mp3").permitsPublicProcessing)
+        #expect(try !episode("https://example.com/audio.mp3", visibility: "private").permitsPublicProcessing)
+        #expect(try episode("/v1/podcasts/media?episodeId=private-episode").isPrivate)
+        #expect(try !episode("https://example.com/audio.mp3?access_token=secret").permitsPublicProcessing)
+        #expect(try !episode("https://user:secret@example.com/audio.mp3").permitsPublicProcessing)
+        let show = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"private-show","title":"Private Show","sourceKind":"private-rss","visibility":"private"}"#.utf8))
+        #expect(show.isPrivate)
+        #expect(show.feedUrl == nil)
+        #expect(show.sourceUri == nil)
+    }
+
+    @Test("Downloaded private episode metadata remains offline and isolated by viewer")
+    @MainActor
+    func privateDownloadRestoration() throws {
+        let viewer = "did:plc:private-download-test-\(UUID().uuidString)"
+        let otherViewer = "did:plc:other-download-test-\(UUID().uuidString)"
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PodcastDownloads")
+        let directory = root.appendingPathComponent(PodcastDownloadStore.key(viewer))
+        let indexKey = "podcast-download-index.\(PodcastDownloadStore.key(viewer))"
+        let episode = try JSONDecoder().decode(PodcastEpisode.self, from: Data(#"{"id":"private-episode","showId":"private-show","title":"Private/Show: Episode","publishedAt":"2026-10-04T00:00:00Z","audioUrl":"/v1/podcasts/media?episodeId=private-episode","audioMimeType":"audio/mp4","visibility":"private","transcripts":[]}"#.utf8))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode([episode.id: episode]).write(to: directory.appendingPathComponent("episodes.json"))
+        try Data([1, 2, 3]).write(to: directory.appendingPathComponent(PodcastDownloadStore.key(episode.id)))
+        UserDefaults.standard.set([episode.id], forKey: indexKey)
+        let store = PodcastDownloadStore()
+        defer {
+            store.configure(viewer: nil)
+            for did in [viewer, otherViewer] {
+                try? FileManager.default.removeItem(at: root.appendingPathComponent(PodcastDownloadStore.key(did)))
+                UserDefaults.standard.removeObject(forKey: "podcast-download-index.\(PodcastDownloadStore.key(did))")
+                UserDefaults.standard.removeObject(forKey: "podcast-download-tasks.\(PodcastDownloadStore.key(did))")
+            }
+        }
+        store.configure(viewer: viewer)
+        #expect(store.localURL(episode.id) != nil)
+        #expect(store.episodes[episode.id]?.isPrivate == true)
+        #expect(store.storageBytes == 3)
+        #expect(store.exportFilename(for: episode) == "Private-Show- Episode.m4a")
+        store.configure(viewer: otherViewer)
+        #expect(store.localURL(episode.id) == nil)
+        #expect(store.episodes.isEmpty)
+    }
+
     @Test("Private listener state keeps intentional rewinds")
     func rewindsPersist() throws {
         var state = PodcastListenerState()

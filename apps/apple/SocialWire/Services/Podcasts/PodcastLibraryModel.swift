@@ -4,10 +4,15 @@ import Observation
 @MainActor
 @Observable
 final class PodcastLibraryModel {
+    private(set) var resolvedShows: [PodcastShow] = []
+    private(set) var showEpisodes: [String: [PodcastEpisode]] = [:]
+    private(set) var queueEpisodes: [PodcastEpisode] = []
     private(set) var resolvedShow: PodcastShow?
     @ObservationIgnored private var selectedShowId: String?
     private(set) var available = false
     private(set) var shows: [PodcastShow] = []
+    private(set) var recentEpisodes: [PodcastEpisode] = []
+    private(set) var preparingEpisodeID: String?
     private(set) var episodes: [PodcastEpisode] = []
     private(set) var clips: [PodcastClip] = []
     private(set) var transcript: [PodcastTranscript] = []
@@ -34,6 +39,15 @@ final class PodcastLibraryModel {
     init(gateway: SocialWireGatewayClient, xrpc: XRPCClient) {
         self.gateway = gateway
         self.xrpc = xrpc
+        downloads.onCompletion = { [weak self] episode in
+            guard let self, self.preparingEpisodeID == episode.id else { return }
+            self.preparingEpisodeID = nil
+            Task { await self.play(episode) }
+        }
+        downloads.onAuthenticationChallenge = { [weak self] episode, response in
+            guard let self, let viewer = self.viewer else { throw SocialWireError.invalidURL }
+            return try await self.gateway.podcastDownloadRequest(media: episode.audioURL, expectedViewer: viewer, challenge: response)
+        }
         player.onProgress = { [weak self] id, position, completed in
             self?.reportProgress(id: id, position: position, completed: completed)
             if completed { Task { [weak self] in await self?.advanceQueue(after: id) } }
@@ -58,11 +72,16 @@ final class PodcastLibraryModel {
                 pendingProgress = (try? JSONDecoder().decode([String: PodcastProgress].self, from: data)) ?? [:]
             }
             resolvedShow = nil
+            resolvedShows = []
+            showEpisodes = [:]
+            queueEpisodes = []
             selectedShowId = nil
             clipStatus = nil
             preparingClip = false
             processingSilence = false
             shows = []
+            recentEpisodes = []
+            preparingEpisodeID = nil
             episodes = []
             clips = []
             transcript = []
@@ -78,13 +97,19 @@ final class PodcastLibraryModel {
             let result: ShowsResponse = try await request(path: "/v1/podcasts/shows", viewer: viewer)
             guard self.viewer == viewer else { return }
             available = true
+            UserDefaults.standard.set(true, forKey: "podcast-available.\(PodcastDownloadStore.key(viewer))")
             shows = result.shows
             try await refreshState(viewer: viewer)
             if let (id, value) = pendingProgress.first { reportProgress(id: id, position: value.positionSeconds, completed: value.completed) }
         } catch {
             guard self.viewer == viewer else { return }
-            available = false
-            if (error as? PodcastGatewayFailure)?.status != 404 { self.error = error.localizedDescription }
+            if (error as? PodcastGatewayFailure)?.status == 404 {
+                available = false
+                UserDefaults.standard.set(false, forKey: "podcast-available.\(PodcastDownloadStore.key(viewer))")
+            } else {
+                available = UserDefaults.standard.bool(forKey: "podcast-available.\(PodcastDownloadStore.key(viewer))")
+                self.error = error.localizedDescription
+            }
         }
     }
 
@@ -101,24 +126,28 @@ final class PodcastLibraryModel {
             let clipResult: ClipsResponse = try await request(path: "/v1/podcasts/clips", viewer: viewer)
             guard self.viewer == viewer else { return }
             clips = clipResult.clips
+            await loadRecentEpisodes()
         } catch { self.error = error.localizedDescription }
     }
 
-    func resolve(_ url: String) async {
+    func resolve(_ url: String, privateFeed: Bool = false) async {
         guard let viewer else { return }
         loading = true
         error = nil
         defer { loading = false }
         do {
-            let response: ResolveResponse = try await request(method: "POST", path: "/v1/podcasts/resolve", body: ["url": url], viewer: viewer)
+            let response: ResolveResponse = try await request(method: "POST", path: privateFeed ? "/v1/podcasts/private/resolve" : "/v1/podcasts/resolve", body: ["url": url], viewer: viewer)
             guard self.viewer == viewer else { return }
             resolvedShow = response.show
+            resolvedShows = response.shows ?? [response.show]
+            showEpisodes[response.show.id] = response.episodes
             selectedShowId = response.show.id
             shows.removeAll { $0.id == response.show.id }
             shows.append(response.show)
             for show in response.shows ?? [] where !shows.contains(where: { $0.id == show.id }) { shows.append(show) }
             episodes = response.episodes
-            await refreshBridgeStatus(showId: response.show.id)
+            if privateFeed { try await refreshState(viewer: viewer) }
+            else { await refreshBridgeStatus(showId: response.show.id) }
         } catch { self.error = error.localizedDescription }
     }
 
@@ -131,13 +160,21 @@ final class PodcastLibraryModel {
         do {
             let response: EpisodesResponse = try await request(path: "/v1/podcasts/episodes", query: ["showId": show.id, "limit": "100"], viewer: viewer)
             guard self.viewer == viewer else { return }
+            showEpisodes[show.id] = response.episodes
             guard selectedShowId == show.id else { return }
             episodes = response.episodes
-            await refreshBridgeStatus(showId: show.id)
+            if !show.isPrivate { await refreshBridgeStatus(showId: show.id) }
         } catch { self.error = error.localizedDescription }
     }
 
     func play(_ episode: PodcastEpisode) async {
+        if episode.isPrivate, downloads.localURL(episode.id) == nil {
+            player.pause()
+            preparingEpisodeID = episode.id
+            await download(episode)
+            return
+        }
+        preparingEpisodeID = nil
         player.load(episode, localURL: downloads.localURL(episode.id), resume: state.progress[episode.id]?.positionSeconds ?? 0, showTitle: shows.first(where: { $0.id == episode.showId })?.title)
         transcript = []
         guard let viewer else { return }
@@ -146,7 +183,69 @@ final class PodcastLibraryModel {
             guard self.viewer == viewer, player.episode?.id == episode.id else { return }
             transcript = result.transcripts
         } catch { self.error = error.localizedDescription }
-        if player.removesSilence { await requestSilence() }
+        if player.removesSilence, episode.permitsPublicProcessing { await requestSilence() }
+    }
+
+    var knownEpisodes: [String: PodcastEpisode] {
+        var result = downloads.episodes
+        for episode in recentEpisodes + episodes + queueEpisodes + showEpisodes.values.flatMap({ $0 }) { result[episode.id] = episode }
+        return result
+    }
+
+    var downloadedEpisodes: [PodcastEpisode] {
+        downloads.downloadedIDs.compactMap { knownEpisodes[$0] }.sorted { $0.publishedAt > $1.publishedAt }
+    }
+
+    var queuedEpisodes: [PodcastEpisode] { state.queue.compactMap { knownEpisodes[$0] } }
+
+    func loadRecentEpisodes() async {
+        guard let viewer else { return }
+        do {
+            let response: EpisodesResponse = try await request(path: "/v1/podcasts/episodes", query: ["limit": "50"], viewer: viewer)
+            guard self.viewer == viewer else { return }
+            recentEpisodes = response.episodes
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func loadQueueEpisodes() async {
+        guard let viewer else { return }
+        do {
+            let response: EpisodesResponse = try await request(path: "/v1/podcasts/episodes", query: ["queue": "true", "limit": "100"], viewer: viewer)
+            guard self.viewer == viewer else { return }
+            queueEpisodes = response.episodes
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func download(_ episode: PodcastEpisode) async {
+        guard let viewer else { return }
+        do {
+            if episode.isPrivate {
+                let request = try await gateway.podcastDownloadRequest(media: episode.audioURL, expectedViewer: viewer)
+                guard self.viewer == viewer else { return }
+                downloads.download(episode, request: request)
+            } else { downloads.download(episode) }
+        } catch {
+            preparingEpisodeID = nil
+            self.error = "Could Not Prepare Download. Sign In Again or Retry."
+        }
+    }
+
+    func cancelDownload(_ id: String) {
+        if preparingEpisodeID == id { preparingEpisodeID = nil }
+        downloads.cancel(id)
+    }
+
+    func refreshPrivateShow(_ show: PodcastShow) async {
+        guard show.isPrivate, let viewer else { return }
+        do {
+            let response: ResolveResponse = try await request(method: "POST", path: "/v1/podcasts/private/refresh", body: ["showId": show.id], viewer: viewer)
+            guard self.viewer == viewer else { return }
+            shows.removeAll { $0.id == show.id }
+            shows.append(response.show)
+            episodes = response.episodes
+            showEpisodes[show.id] = response.episodes
+            await loadRecentEpisodes()
+        } catch { self.error = "Could Not Refresh Private Feed. Retry Later." }
     }
 
     func enqueue(_ episode: PodcastEpisode) async {
@@ -172,6 +271,11 @@ final class PodcastLibraryModel {
 
     func requestSilence() async {
         guard let episode = player.episode, let viewer else { return }
+        guard episode.permitsPublicProcessing else {
+            processingSilence = false
+            error = "Silence Analysis Is Unavailable for Private Episodes."
+            return
+        }
         analysisTask?.cancel()
         processingSilence = true
         analysisTask = Task { [weak self] in
@@ -200,6 +304,17 @@ final class PodcastLibraryModel {
 
     func toggleSubscription(_ show: PodcastShow) async {
         guard let viewer else { return }
+        if show.isPrivate {
+            do {
+                let _: JSONValue = try await request(method: "DELETE", path: "/v1/podcasts/private/subscriptions", query: ["showId": show.id], viewer: viewer)
+                await refresh()
+            } catch { self.error = "Could Not Remove Private Subscription. Try Again." }
+            return
+        }
+        if let feed = show.feedUrl, !PodcastPrivacy.permitsPublicURL(feed) {
+            error = "Add This Feed as Private RSS to Keep Its Credentials Private."
+            return
+        }
         do {
             let collection = "app.skyreader.feed.subscription"
             var cursor: String?
@@ -262,19 +377,6 @@ final class PodcastLibraryModel {
         } catch { self.error = error.localizedDescription }
     }
 
-    func linkShows(rss: PodcastShow, protocolShow: PodcastShow) async {
-        await mutateState { state in
-            state.manualLinks.removeAll { $0["rssShowId"] == rss.id || $0["protocolShowId"] == protocolShow.id }
-            state.manualLinks.append(["rssShowId": rss.id, "protocolShowId": protocolShow.id])
-        }
-        await refresh()
-    }
-
-    func unlinkShows(rss: PodcastShow) async {
-        await mutateState { $0.manualLinks.removeAll { $0["rssShowId"] == rss.id } }
-        await refresh()
-    }
-
     private func advanceQueue(after id: String) async {
         await removeFromQueue(id)
         if let next = state.queue.first { await playQueued(next) }
@@ -282,7 +384,7 @@ final class PodcastLibraryModel {
 
     func playQueued(_ id: String) async {
         guard let viewer else { return }
-        if let episode = episodes.first(where: { $0.id == id }) { await play(episode); return }
+        if let episode = knownEpisodes[id] { await play(episode); return }
         do {
             let result: EpisodesResponse = try await request(path: "/v1/podcasts/episodes", query: ["episodeId": id], viewer: viewer)
             guard self.viewer == viewer else { return }
@@ -298,6 +400,7 @@ final class PodcastLibraryModel {
 
     func prepareClip(start: Double, end: Double, title: String, includeCaptions: Bool = true) async {
         guard !preparingClip, let episode = player.episode, let viewer else { return }
+        guard episode.permitsPublicProcessing else { error = "Clips Are Unavailable for Private Episodes."; return }
         preparingClip = true
         error = nil
         defer { if self.viewer == viewer { preparingClip = false } }
@@ -330,13 +433,18 @@ final class PodcastLibraryModel {
                 let _: JSONValue = try await request(method: "DELETE", path: "/v1/podcasts/clips", query: ["clipId": clip.id], viewer: viewer)
             } else {
                 guard let audio = clip.publicAudioUrl, let video = clip.publicVideoUrl else { throw SocialWireError.badResponse("Wait for the Clip to Finish Processing") }
-                let episode = episodes.first(where: { $0.id == clip.episodeId }) ?? (player.episode?.id == clip.episodeId ? player.episode : nil)
+                var episode = knownEpisodes[clip.episodeId] ?? (player.episode?.id == clip.episodeId ? player.episode : nil)
+                if episode == nil {
+                    let result: EpisodesResponse = try await request(path: "/v1/podcasts/episodes", query: ["episodeId": clip.episodeId], viewer: viewer)
+                    episode = result.episodes.first
+                }
+                guard let episode, episode.permitsPublicProcessing else { throw SocialWireError.badResponse("Private Episodes Cannot Be Published") }
                 var record: [String: JSONValue] = ["$type": .string(collection), "episodeId": .string(clip.episodeId),
                     "startMillis": .number((clip.startSeconds * 1000).rounded()), "endMillis": .number((clip.endSeconds * 1000).rounded()),
                     "title": .string(clip.title), "audioUrl": .string(audio), "videoUrl": .string(video),
                     "createdAt": .string(clip.createdAt)]
-                if let uri = clip.sourceUri ?? episode?.sourceUri { record["sourceUri"] = .string(uri) }
-                if let artwork = episode?.artworkUrl { record["artworkUrl"] = .string(artwork) }
+                if let uri = clip.sourceUri ?? episode.sourceUri { record["sourceUri"] = .string(uri) }
+                if let artwork = episode.artworkUrl { record["artworkUrl"] = .string(artwork) }
                 let key = PodcastDownloadStore.key(clip.id)
                 try await xrpc.putRecord(collection: collection, rkey: key, record: record, expectedViewer: viewer)
                 let uri = "at://\(viewer)/\(collection)/\(key)"

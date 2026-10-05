@@ -18,7 +18,7 @@ struct PodcastClipEditorView: View {
                 Button("Preview Clip", systemImage: "play") { library.previewClip(start: start, end: end) }
                     .disabled(!validRange)
                 Button("Prepare Clip", systemImage: "scissors") { Task { await library.prepareClip(start: start, end: end, title: title, includeCaptions: includeCaptions) } }
-                    .disabled(!validRange || library.preparingClip)
+                    .disabled(!validRange || library.preparingClip || library.player.episode?.permitsPublicProcessing != true)
                 Text("Clips Must Be Between 1 and 600 Seconds").font(.caption).foregroundStyle(.secondary)
             }
             if let status = library.clipStatus { Text(status) }
