@@ -27,8 +27,10 @@ beforeEach(() => {
   const mobile = spyOn(Mobile, "useIsMobile").mockReturnValue(false);
   restores.push(() => mobile.mockRestore());
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // FloatingFocusManager restores focus in a microtask after unmount. Keep DOM globals alive until it completes.
+  await act(async () => {});
   restores
     .splice(0)
     .reverse()

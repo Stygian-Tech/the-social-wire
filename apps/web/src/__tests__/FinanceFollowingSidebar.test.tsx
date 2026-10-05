@@ -48,3 +48,8 @@ describe("Followed Finance interests",()=>{
    expect(changed).toEqual(["industry:tech"]);
  });
 });
+
+it("reserves persistent player occupancy in its independent scrolling rail", () => {
+ render(<FinanceFollowingSidebar definitions={definitions} selections={selections} feedID="finance" />);
+ expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px)-3rem)]");
+});

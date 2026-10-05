@@ -1,6 +1,10 @@
 "use client";
 
 import { Suspense, useEffect } from "react";
+import {
+  appMobileNavigationPaddingClasses,
+  appViewportHeightClasses,
+} from "@/components/shared/appViewportStyles";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
@@ -44,13 +48,13 @@ export default function ArchiveLayout({ children }: { children: React.ReactNode 
   }
 
   return (
-    <SidebarProvider className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[70rem] overflow-hidden overscroll-none">
+    <SidebarProvider className={`mx-auto ${appViewportHeightClasses} max-w-[70rem] overflow-hidden overscroll-none`}>
       <PublicationSidebarProvider>
       <ReadRouteProvider>
         <Suspense fallback={null}>
           <AppSidebar selectedPubId={null} onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)} />
         </Suspense>
-        <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 lg:mr-64">
+        <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses} lg:mr-64`}>
           <FeedHeader title="Archive" />
           <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
         </SidebarInset>
