@@ -75,6 +75,11 @@ function detect(
 }
 
 describe("CI path detection", () => {
+  it("checks podcast and infrastructure contracts when the Development graph changes", () => {
+    const result = detect(repositoryWithChange(".railway/podcasts.ts"), "pull_request");
+    expect(result.get("podcast_worker")).toBe("true");
+    expect(result.get("spec")).toBe("true");
+  });
   it("tests portable read-state changes in native and server consumers", () => {
     const result = detect(repositoryWithChange("packages/swift/ReadStateCore/Sources/ReadStateCore/State.swift"), "pull_request");
     for (const job of ["apple", "gateway", "appview", "charybdis", "operations", "indexing_worker"]) {
@@ -118,6 +123,7 @@ describe("CI path detection", () => {
     expect(result.get("indexing_worker")).toBe("true");
     expect(result.get("wire_corpus_edge")).toBe("true");
     expect(result.get("database_migrator")).toBe("true");
+    expect(result.get("podcast_worker")).toBe("true");
     expect(result.get("spec")).toBe("true");
   });
 
@@ -126,7 +132,7 @@ describe("CI path detection", () => {
       repositoryWithChange("services/jetstream-ingest/internal/schemaready/gate.go"),
       "pull_request",
     );
-    for (const job of ["gateway", "appview", "operations", "charybdis", "jetstream_ingest", "wire_ingest", "wire_worker", "indexing_worker"]) {
+    for (const job of ["gateway", "appview", "operations", "charybdis", "jetstream_ingest", "wire_ingest", "wire_worker", "indexing_worker", "podcast_worker"]) {
       expect(result.get(job)).toBe("true");
     }
     expect(result.get("wire_corpus_edge")).toBe("false");

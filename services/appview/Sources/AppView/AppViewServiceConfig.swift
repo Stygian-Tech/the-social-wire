@@ -10,6 +10,7 @@ struct AppViewServiceConfig: Sendable {
   let circle: CircleDiscoveryConfig
   var finance: FinanceDiscoveryConfig = FinanceDiscoveryConfig.disabled
   var sports: SportsDiscoveryConfig = .disabled
+  var podcastsEnabled: Bool = false
   let semble: SembleProjectionConfig
 
   enum StoreBackend: Sendable {
@@ -51,6 +52,7 @@ struct AppViewServiceConfig: Sendable {
       circle: circle,
       finance: finance,
       sports: sports,
+      podcastsEnabled: env["PODCASTS_ENABLED"]?.lowercased() == "true",
       semble: semble
     )
   }

@@ -1,0 +1,26 @@
+meta {
+  name: POST Podcast clips
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/podcasts/clips
+  body: json
+  auth: none
+}
+
+body:json {
+{
+  "episodeId": "{{podcastEpisodeId}}",
+  "startSeconds": 0,
+  "endSeconds": 30,
+  "title": "Clip",
+  "includeCaptions": true
+}
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: GET Podcast state
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/podcasts/state
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

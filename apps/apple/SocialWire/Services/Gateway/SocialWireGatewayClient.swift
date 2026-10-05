@@ -880,6 +880,31 @@ final class SocialWireGatewayClient {
         return .badResponse("\(fallback) (\(result.statusCode)).\(requestId)")
     }
 
+    func podcastAsset(url: URL, expectedViewer: String) async throws -> Data {
+        guard url.scheme == baseURL.scheme, url.host == baseURL.host,
+              url.path.hasPrefix("/v1/podcasts/") else { throw SocialWireError.invalidURL }
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let response = try await authorizedRequest(method: "GET", path: url.path,
+            query: Dictionary(query.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last }),
+            body: nil, contentType: nil, expectedViewer: expectedViewer)
+        guard (200..<300).contains(response.statusCode), !response.body.isEmpty else {
+            throw PodcastGatewayFailure(status: response.statusCode)
+        }
+        return response.body
+    }
+
+    /// Podcast calls share the exact OAuth and nonce-retry path used by other Gateway surfaces.
+    func podcastRequest<Value: Decodable>(method: String = "GET", path: String,
+                                          query: [String: String] = [:], body: Data? = nil,
+                                          expectedViewer: String) async throws -> Value {
+        let response = try await authorizedRequest(method: method, path: path, query: query,
+            body: body, contentType: body == nil ? nil : "application/json", expectedViewer: expectedViewer)
+        guard (200..<300).contains(response.statusCode) else {
+            throw PodcastGatewayFailure(status: response.statusCode)
+        }
+        return try JSONDecoder().decode(Value.self, from: response.body)
+    }
+
     private func authorizedRequest(
         method: String,
         path: String,

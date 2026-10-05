@@ -1,0 +1,11 @@
+meta {
+  name: GET Podcast public/clips
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/podcasts/public/clips?clipId={{podcastClipId}}
+  body: none
+  auth: none
+}

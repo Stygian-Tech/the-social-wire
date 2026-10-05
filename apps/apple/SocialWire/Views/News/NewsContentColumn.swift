@@ -11,6 +11,8 @@ struct NewsContentColumn: View {
                 WireNewsView(sceneModel: sceneModel)
             case .finance:
                 FinanceNewsView(sceneModel: sceneModel)
+            case .podcasts:
+                PodcastsView()
             case .sports:
                 SportsNewsView()
             case .circle:

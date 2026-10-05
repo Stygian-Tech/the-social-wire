@@ -1,0 +1,16 @@
+meta {
+  name: GET Podcast assets
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/podcasts/assets?clipId={{podcastClipId}}&format=audio
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

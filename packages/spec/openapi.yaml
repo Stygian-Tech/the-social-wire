@@ -54,6 +54,20 @@ components:
         apps should not rely on Social Wire production API hosts without an explicit arrangement.
 
   schemas:
+    PodcastStateSnapshot: {"type": "object", "required": ["revision", "state"], "properties": {"revision": {"type": "integer", "minimum": 0}, "state": {"$ref": "#/components/schemas/PodcastListenerState"}}}
+    PodcastResolveResponse: {"type": "object", "required": ["show", "episodes"], "properties": {"show": {"$ref": "#/components/schemas/PodcastShow"}, "episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}}}
+    PodcastShowsResponse: {"type": "object", "required": ["shows"], "properties": {"shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}}}
+    PodcastEpisodesResponse: {"type": "object", "required": ["episodes"], "properties": {"episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "cursor": {"type": "string"}}}
+    PodcastTranscriptsResponse: {"type": "object", "required": ["episodeId", "transcripts"], "properties": {"episodeId": {"type": "string"}, "transcripts": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastTranscript"}}}}
+    PodcastClip: {"type": "object", "required": ["id", "episodeId", "startSeconds", "endSeconds", "title", "status", "createdAt"], "properties": {"id": {"type": "string"}, "episodeId": {"type": "string"}, "sourceUri": {"type": "string"}, "jobId": {"type": "string"}, "title": {"type": "string"}, "status": {"type": "string"}, "createdAt": {"type": "string"}, "audioUrl": {"type": "string"}, "videoUrl": {"type": "string"}, "publicAudioUrl": {"type": "string"}, "publicVideoUrl": {"type": "string"}, "publishedUri": {"type": "string"}, "startSeconds": {"type": "number"}, "endSeconds": {"type": "number"}}}
+    PodcastClipsResponse: {"type": "object", "required": ["clips"], "properties": {"clips": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastClip"}}}}
+    PodcastJob: {"type": "object", "required": ["id", "kind", "status"], "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": ["bridge", "silence", "clip", "transcript", "cleanup"]}, "status": {"type": "string", "enum": ["queued", "running", "complete", "failed"]}, "result": {"type": "object", "nullable": true}, "error": {"type": "string", "nullable": true}}}
+    PodcastAnalysisResponse: {"type": "object", "required": ["status", "intervals"], "properties": {"status": {"type": "string"}, "intervals": {"type": "array", "items": {"type": "object", "required": ["start", "end"], "properties": {"start": {"type": "number"}, "end": {"type": "number"}}}}}}
+    PodcastClipPreparationResponse: {"type": "object", "required": ["clipId", "jobId", "status"], "properties": {"clipId": {"type": "string"}, "jobId": {"type": "string"}, "status": {"type": "string"}}}
+    PodcastShow: {"type": "object", "required": ["id", "title", "sourceKind"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "artworkUrl": {"type": "string"}, "feedUrl": {"type": "string"}, "sourceKind": {"type": "string"}, "sourceUri": {"type": "string"}, "guid": {"type": "string"}, "episodeCollection": {"type": "string"}}}
+    PodcastEpisode: {"type": "object", "required": ["id", "showId", "title", "publishedAt", "audioUrl", "transcripts"], "properties": {"id": {"type": "string"}, "showId": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "publishedAt": {"type": "string"}, "audioUrl": {"type": "string"}, "audioMimeType": {"type": "string"}, "artworkUrl": {"type": "string"}, "guid": {"type": "string"}, "sourceUri": {"type": "string"}, "durationSeconds": {"type": "number"}, "transcripts": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastTranscript"}}}}
+    PodcastTranscript: {"type": "object", "required": ["url", "type"], "properties": {"url": {"type": "string"}, "type": {"type": "string"}, "language": {"type": "string"}, "text": {"type": "string"}, "cues": {"type": "array", "items": {"type": "object", "required": ["startSeconds", "text"], "properties": {"startSeconds": {"type": "number"}, "endSeconds": {"type": "number"}, "text": {"type": "string"}}}}}}
+    PodcastListenerState: {"type": "object", "required": ["subscriptions", "queue", "progress", "playbackSpeed", "removeSilences", "manualLinks"], "properties": {"subscriptions": {"type": "array", "items": {"type": "string"}}, "queue": {"type": "array", "items": {"type": "string"}}, "progress": {"type": "object", "additionalProperties": {"type": "object", "required": ["positionSeconds", "updatedAt", "completed"], "properties": {"positionSeconds": {"type": "number", "minimum": 0}, "updatedAt": {"type": "string"}, "completed": {"type": "boolean"}}}}, "playbackSpeed": {"type": "number", "minimum": 0.5, "maximum": 3}, "removeSilences": {"type": "boolean"}, "manualLinks": {"type": "array", "items": {"type": "object", "required": ["rssShowId", "protocolShowId"], "properties": {"rssShowId": {"type": "string"}, "protocolShowId": {"type": "string"}}}}}}
     StandardReaderListPublication:
       type: object
       required: [publicationId, title, authorDid]
@@ -4403,6 +4417,280 @@ paths:
                   minimum: 0
                   maximum: 9007199254740991
 
+  /v1/podcasts/resolve:
+    post:
+      summary: Create or Request Podcast Resolve
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"type": "object"}
+            example: {"url": "https://example.com/podcast.xml"}
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastResolveResponse" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/shows:
+    get:
+      summary: Read Podcast Shows
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastShowsResponse" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/episodes:
+    get:
+      summary: Read Podcast Episodes
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "showId", "schema": {"type": "string"}}, {"in": "query", "name": "episodeId", "schema": {"type": "string"}}, {"in": "query", "name": "cursor", "schema": {"type": "string"}}, {"in": "query", "name": "limit", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastEpisodesResponse" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/transcript:
+    get:
+      summary: Read Podcast Transcript
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "episodeId", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastTranscriptsResponse" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/state:
+    get:
+      summary: Read Podcast State
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastStateSnapshot" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+    put:
+      summary: Replace Podcast State
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"type": "object", "required": ["expectedRevision", "state"], "properties": {"expectedRevision": {"type": "integer", "minimum": 0}, "state": {"$ref": "#/components/schemas/PodcastListenerState"}}}
+            example: {"expectedRevision": 0, "state": {"subscriptions": [], "queue": [], "progress": {}, "playbackSpeed": 1, "removeSilences": false, "manualLinks": []}}
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastStateSnapshot" }
+        "409":
+          description: Revision Conflict - Reload and Reapply the Current Intent
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/analysis:
+    get:
+      summary: Read Podcast Analysis
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "episodeId", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastAnalysisResponse" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+    post:
+      summary: Create or Request Podcast Analysis
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "episodeId", "schema": {"type": "string"}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"type": "object"}
+            example: {"episodeId": "{{podcastEpisodeId}}"}
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastJob" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/clips:
+    get:
+      summary: Read Podcast Clips
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastClipsResponse" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+    post:
+      summary: Create or Request Podcast Clips
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"type": "object"}
+            example: {"episodeId": "{{podcastEpisodeId}}", "startSeconds": 0, "endSeconds": 30, "title": "Clip", "includeCaptions": true}
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastClipPreparationResponse" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+    delete:
+      summary: Remove Podcast Clips
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "clipId", "required": true, "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/clips/publish:
+    post:
+      summary: Create or Request Podcast Clips Publish
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"type": "object"}
+            example: {"clipId": "{{podcastClipId}}", "uri": "{{podcastClipUri}}"}
+      responses:
+        "200":
+          description: Podcast Result
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/jobs:
+    get:
+      summary: Read Podcast Jobs
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "jobId", "schema": {"type": "string"}}, {"in": "query", "name": "showId", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastJob" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+    post:
+      summary: Create or Request Podcast Jobs
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "jobId", "schema": {"type": "string"}}, {"in": "query", "name": "showId", "schema": {"type": "string"}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"type": "object"}
+            example: {"jobId": "{{podcastJobId}}"}
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastJob" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/assets:
+    get:
+      summary: Read Podcast Assets
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "clipId", "schema": {"type": "string"}}, {"in": "query", "name": "format", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+        "206":
+          description: Partial Audio or Video Content
+        "416":
+          description: Range Not Satisfiable
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/media:
+    get:
+      summary: Read Podcast Media
+      tags: [Podcasts]
+      security: [{ BearerAuth: [] }]
+      parameters: [{"in": "query", "name": "episodeId", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+        "206":
+          description: Partial Audio or Video Content
+        "416":
+          description: Range Not Satisfiable
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/public/clips:
+    get:
+      summary: Read Podcast Public Clips
+      tags: [Podcasts]
+      parameters: [{"in": "query", "name": "clipId", "schema": {"type": "string"}}, {"in": "query", "name": "uri", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PodcastClip" }
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+  /v1/podcasts/public/assets:
+    get:
+      summary: Read Podcast Public Assets
+      tags: [Podcasts]
+      parameters: [{"in": "query", "name": "clipId", "schema": {"type": "string"}}, {"in": "query", "name": "format", "schema": {"type": "string"}}]
+      responses:
+        "200":
+          description: Podcast Result
+        "206":
+          description: Partial Audio or Video Content
+        "416":
+          description: Range Not Satisfiable
+        "404":
+          description: Podcasts Disabled or Resource Unavailable
+
 tags:
   - name: Health
     description: Service health
@@ -4553,3 +4841,6 @@ tags:
         homeScore: { type: string }
         awayScore: { type: string }
         updatedAt: { type: string, format: date-time }
+
+  - name: Podcasts
+    description: Audio Podcast Listener and Explicitly Published Clips

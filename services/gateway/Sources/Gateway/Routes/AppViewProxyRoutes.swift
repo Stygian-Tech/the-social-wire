@@ -16,6 +16,7 @@ extension HTTPResponse.Status {
     case 400: .badRequest
     case 401: .unauthorized
     case 403: .forbidden
+    case 409: .conflict
     case 404: .notFound
     case 500: .internalServerError
     case 502: .badGateway
@@ -34,6 +35,22 @@ struct AppViewProxyRoutes {
   let logger: Logger
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
+    for path in ["/v1/podcasts/shows", "/v1/podcasts/episodes", "/v1/podcasts/transcript", "/v1/podcasts/state", "/v1/podcasts/analysis", "/v1/podcasts/clips", "/v1/podcasts/jobs"] {
+      group.get(RouterPath(path)) { request, context async throws -> Response in
+        try await forward(request: request, context: context, path: path, method: "GET")
+      }
+    }
+    for path in ["/v1/podcasts/resolve", "/v1/podcasts/analysis", "/v1/podcasts/clips", "/v1/podcasts/clips/publish", "/v1/podcasts/jobs"] {
+      group.post(RouterPath(path)) { request, context async throws -> Response in
+        try await forward(request: request, context: context, path: path, method: "POST")
+      }
+    }
+    group.put("/v1/podcasts/state") { request, context async throws -> Response in
+      try await forward(request: request, context: context, path: "/v1/podcasts/state", method: "PUT")
+    }
+    group.delete("/v1/podcasts/clips") { request, context async throws -> Response in
+      try await forward(request: request, context: context, path: "/v1/podcasts/clips", method: "DELETE")
+    }
     group.get("/v1/lists") { request, context async throws -> Response in
       try await forward(request: request, context: context, path: "/v1/lists", method: "GET")
     }

@@ -331,7 +331,7 @@ describe("CI workflow configuration", () => {
     expect(productionProfile).not.toContain("wire-global-v5-dev-publication-west-20260919");
     expect(productionProfile).not.toContain("wire-global-v4-dev-live-20260830");
     expect(productionProfile).not.toContain("24790001258");
-    expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(3);
+    expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(4);
   });
 
   it("uses the same service names in path detection", () => {

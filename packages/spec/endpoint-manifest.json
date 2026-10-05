@@ -693,6 +693,114 @@
       "path": "/xrpc/app.thesocialwire.discovery.getSportsEvents",
       "classification": "xrpc-migration",
       "xrpcNsid": "app.thesocialwire.discovery.getSportsEvents"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/podcasts/resolve",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/shows",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/episodes",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/transcript",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/state",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "PUT",
+      "path": "/v1/podcasts/state",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/analysis",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/podcasts/analysis",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/clips",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/podcasts/clips",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "DELETE",
+      "path": "/v1/podcasts/clips",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/podcasts/clips/publish",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/jobs",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/podcasts/jobs",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/assets",
+      "classification": "media-proxy"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/media",
+      "classification": "media-proxy"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/public/clips",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/public/assets",
+      "classification": "media-proxy"
     }
   ]
 }

@@ -220,6 +220,7 @@ const oauthSessionInvalidationListeners =
 export function clearStoredOAuthSessionHint(): void {
   try {
     localStorage.removeItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY);
+    if (typeof window !== "undefined") window.dispatchEvent(new window.Event("the-social-wire.oauth-viewer-changed"));
   } catch {
     //
   }

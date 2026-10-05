@@ -323,6 +323,7 @@ struct Serve: AsyncParsableCommand {
           wireModerationService: wireModerationService,
           financeFeedStore: financeFeedStore,
           sportsFeedStore: sportsFeedStore,
+          podcastStore: config.podcastsEnabled ? PostgresPodcastStore(pool: pgPool, logger: logger) : nil,
           circleDiscoveryService: circleDiscoveryService,
           circlePrivateState: circlePrivateState,
           projectionCache: projectionCache,

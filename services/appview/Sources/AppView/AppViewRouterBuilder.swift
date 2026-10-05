@@ -16,6 +16,7 @@ enum AppViewRouterBuilder {
     wireModerationService: WireViewerModerationService? = nil,
     financeFeedStore: PostgresFinanceFeedStore? = nil,
     sportsFeedStore: PostgresSportsFeedStore? = nil,
+    podcastStore: PostgresPodcastStore? = nil,
     circleDiscoveryService: CircleDiscoveryService? = nil,
     circlePrivateState: (any CirclePrivateStateStoring)? = nil,
     projectionCache: (any AppViewProjectionCacheStore)?,
@@ -63,6 +64,19 @@ enum AppViewRouterBuilder {
       .add(middleware: internalTrustMiddleware)
       .add(middleware: authMiddleware)
       .add(middleware: PDSReadStateReadinessMiddleware(store: thinAppViewStore as? any PDSReadStateLifecycleStoring, recovery: readStateRecovery))
+
+    if config.podcastsEnabled, let podcastStore {
+      let podcastService = PodcastService(store: podcastStore, http: httpClient,
+        repo: ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: config.core.atprotoPLCURL, logger: logger))
+      let routes = PodcastRoutes(service: podcastService)
+      routes.register(on: protected)
+      routes.registerPublic(on: router)
+      PodcastAssetRoutes(service: podcastService, workerURL: "", secret: "").registerMedia(on: protected)
+      let env = ProcessInfo.processInfo.environment
+      if let url = env["PODCAST_MEDIA_WORKER_URL"], let secret = env["PODCAST_MEDIA_INTERNAL_SECRET"], !secret.isEmpty {
+        PodcastAssetRoutes(service: podcastService, workerURL: url, secret: secret).register(on: protected, router: router)
+      }
+    }
 
     if let wireFeedStore, let wireModerationService, (config.wire.mode.servesAPI || config.finance.mode.canServeAPI || config.sports.mode.canServeAPI) {
       let wireInternalTrustMiddleware = GatewayInternalTrustAuthMiddleware(

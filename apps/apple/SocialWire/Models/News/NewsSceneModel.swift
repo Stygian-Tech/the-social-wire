@@ -15,6 +15,7 @@ final class NewsSceneModel {
 
     private var wirePath: [NewsRoute] = []
     private var financePath: [NewsRoute] = []
+    private var podcastsPath: [NewsRoute] = []
     private var sportsPath: [NewsRoute] = []
     private var circlePath: [NewsRoute] = []
     private var libraryPath: [NewsRoute] = []
@@ -90,6 +91,7 @@ final class NewsSceneModel {
         switch tab {
         case .wire: wirePath
         case .finance: financePath
+        case .podcasts: podcastsPath
         case .sports: sportsPath
         case .circle: circlePath
         case .library: libraryPath
@@ -106,6 +108,7 @@ final class NewsSceneModel {
         switch tab {
         case .wire: wirePath = path
         case .finance: financePath = path
+        case .podcasts: podcastsPath = path
         case .sports: sportsPath = path
         case .circle: circlePath = path
         case .library: libraryPath = path
@@ -150,6 +153,7 @@ final class NewsSceneModel {
     private func clearPaths() {
         wirePath = []
         financePath = []
+        podcastsPath = []
         sportsPath = []
         circlePath = []
         libraryPath = []
@@ -196,6 +200,7 @@ final class NewsSceneModel {
             switch tab {
             case .wire: wirePath = path
             case .finance: financePath = path
+        case .podcasts: podcastsPath = path
         case .sports: sportsPath = path
             case .circle: circlePath = path
             case .library: libraryPath = path

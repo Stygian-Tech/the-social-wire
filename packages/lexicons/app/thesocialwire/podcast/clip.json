@@ -1,0 +1,71 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.podcast.clip",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "An explicitly published podcast clip; timestamps are milliseconds in the original episode source timeline, unaffected by speed or silence skipping.",
+      "record": {
+        "type": "object",
+        "required": [
+          "episodeId",
+          "title",
+          "startMillis",
+          "endMillis",
+          "audioUrl",
+          "videoUrl",
+          "createdAt"
+        ],
+        "properties": {
+          "episodeId": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "episodeUri": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "at-uri"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "startMillis": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endMillis": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "audioUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "videoUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "artworkUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "createdAt": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

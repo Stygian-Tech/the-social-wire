@@ -7,7 +7,7 @@ import Testing
 struct NewsSceneModelTests {
     @Test("Tabs keep their editorial order while gated destinations are omitted")
     func availableTabOrder() {
-        #expect(NewsTab.available(wire: true, circle: true, finance: true, sports: true) == NewsTab.allCases)
+        #expect(NewsTab.available(wire: true, circle: true, finance: true, sports: true, podcasts: true) == NewsTab.allCases)
         #expect(
             NewsTab.available(wire: false, circle: false)
                 == [.library, .saved, .search]

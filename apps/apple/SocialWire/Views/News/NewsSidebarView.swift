@@ -71,6 +71,7 @@ struct NewsSidebarView: View {
             if availableTabs.contains(.wire) {
                 destinationRow(.wire)
             }
+            if availableTabs.contains(.podcasts) { destinationRow(.podcasts) }
             if availableTabs.contains(.circle) {
                 destinationRow(.circle)
             }

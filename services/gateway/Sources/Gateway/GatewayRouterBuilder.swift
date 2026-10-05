@@ -90,6 +90,8 @@ enum GatewayRouterBuilder {
     ).register(on: protected)
 
     if let appViewBase = config.appViewBaseURL {
+      PodcastMediaProxyRoutes(baseURL: appViewBase, internalSecret: config.core.gatewayAppViewInternalSecret,
+        httpClient: httpClient).register(on: protected, router: router)
       AppViewProxyRoutes(
         baseURL: appViewBase,
         internalSecret: config.core.gatewayAppViewInternalSecret,

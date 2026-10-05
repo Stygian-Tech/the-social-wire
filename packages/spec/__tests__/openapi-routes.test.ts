@@ -154,6 +154,9 @@ describe("OpenAPI route drift", () => {
       "/v1/operations/traces/{traceId}": ['"/v1/operations/traces/:traceId"'],
     };
 
+    for (const path of paths.filter((path) => path.startsWith("/v1/podcasts/"))) {
+      routePatterns[path] = [JSON.stringify(path)];
+    }
     for (const path of paths) {
       const patterns = routePatterns[path];
       expect(patterns).toBeDefined();

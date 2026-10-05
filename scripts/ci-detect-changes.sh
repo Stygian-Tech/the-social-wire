@@ -293,3 +293,14 @@ filter_changed docs \
 filter_changed benchmark_tools \
   'scripts/benchmarks/**' \
   '.github/workflows/ci.yml'
+
+filter_changed podcast_worker \
+  'services/podcast-worker/**' \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/jetstream-ingest/go.mod' \
+  'services/jetstream-ingest/go.sum' \
+  'database/migrations/**' \
+  '.railway/**' \
+  'package.json' \
+  'bun.lock'
