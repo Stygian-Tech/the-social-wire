@@ -178,6 +178,10 @@ struct SettingsView: View {
                     get: { appModel.feedPreferences.hideFinancePerformance },
                     set: { value in Task { await appModel.setFinancePerformanceHidden(value) } }))
 
+                Toggle("Hide Crypto", isOn: Binding(
+                    get: { appModel.feedPreferences.hideFinanceCrypto },
+                    set: { value in Task { await appModel.setFinanceCryptoHidden(value) } }))
+
                 if let error = appModel.discoveryFeedSaveError {
                     Text(error)
                         .font(.footnote)

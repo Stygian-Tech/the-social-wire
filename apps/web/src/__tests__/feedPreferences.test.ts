@@ -21,6 +21,7 @@ describe("feed display preferences", () => {
           showSports: true,
           hideSportsScores: false,
           hideFinancePerformance: false,
+          hideFinanceCrypto: false,
         });
         expect(preferences).toEqual({
           visibleFeeds: ["following"],
@@ -32,6 +33,7 @@ describe("feed display preferences", () => {
           showSports: true,
           hideSportsScores: false,
           hideFinancePerformance: false,
+          hideFinanceCrypto: false,
         });
         const cache = new Map<string, string>();
         const storage = {
@@ -66,6 +68,7 @@ describe("feed display preferences", () => {
           showSports: true,
           hideSportsScores: false,
       hideFinancePerformance: false,
+          hideFinanceCrypto: false,
       rssArticleOpenMode: "original",
     });
   });
@@ -85,6 +88,7 @@ describe("feed display preferences", () => {
           showSports: true,
           hideSportsScores: false,
       hideFinancePerformance: false,
+          hideFinanceCrypto: false,
       rssArticleOpenMode: "original",
     });
   });
@@ -142,3 +146,13 @@ test("drops counts for every explicitly hidden feed", () => {
   expect(feedDisplaysUnreadCount(preferences, "following")).toBe(false);
   expect(feedDisplaysUnreadCount(preferences, "archive")).toBe(false);
 });
+
+ test("crypto hiding is explicit and cached independently per viewer", () => {
+   expect(normalizeFeedDisplayPreferences(undefined).hideFinanceCrypto).toBe(false);
+   const preferences = normalizeFeedDisplayPreferences({ hideFinanceCrypto: true });
+   const cache = new Map<string, string>();
+   const storage = { getItem: (key: string) => cache.get(key) ?? null, setItem: (key: string, value: string) => { cache.set(key, value); } };
+   saveCachedFeedDisplayPreferences(storage, "did:plc:viewer", preferences);
+   expect(loadCachedFeedDisplayPreferences(storage, "did:plc:viewer")?.hideFinanceCrypto).toBe(true);
+   expect(loadCachedFeedDisplayPreferences(storage, "did:plc:other")).toBeNull();
+ });

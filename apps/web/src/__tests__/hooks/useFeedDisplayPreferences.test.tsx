@@ -86,6 +86,20 @@ describe("feed display preference persistence", () => {
     window.localStorage.removeItem(storageKey);
   });
 
+  it("persists crypto hiding and rolls back an unsuccessful optimistic save", async () => {
+    const request = deferred<RepoRecord<PreferencesRecord>>();
+    upsertPreferences.mockReturnValue(request.promise);
+    const { result } = renderHook(useSettingsAndSidebar, { wrapper });
+    act(() => result.current.settings.setHideFinanceCrypto(true));
+    await waitFor(() => expect(result.current.sidebar.preferences.hideFinanceCrypto).toBe(true));
+    expect(upsertPreferences.mock.calls[0]![0]).toMatchObject({ hideFinanceCrypto: true, showFinance: true });
+    expect(loadCachedFeedDisplayPreferences(window.localStorage, did)?.hideFinanceCrypto).toBe(true);
+    await act(async () => request.reject(new Error("Failed Save")));
+    await waitFor(() => expect(result.current.settings.isPending).toBe(false));
+    expect(result.current.sidebar.preferences.hideFinanceCrypto).toBe(false);
+    expect(loadCachedFeedDisplayPreferences(window.localStorage, did)?.hideFinanceCrypto).toBe(false);
+  });
+
   for (const feed of ["subscribed", "following"] as const) {
     it(`ignores unread-count changes for explicitly hidden ${feed}`, async () => {
       const hidden = { ...initial, value: { ...initial.value, visibleFeeds: ["readLater"] as const, feedsWithUnreadCounts: [] } };

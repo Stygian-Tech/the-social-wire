@@ -353,3 +353,47 @@ Imported AppView source generations are physically purged after expiry in bounde
 Maintenance uses short timeouts and skips locked rows. A maintenance failure does
 not prevent article serving. This complements the existing Worker retention and
 keeps separate Development import storage bounded.
+
+### Asset Classes And Hide Crypto — 2026-10-04
+
+Named definitions carry optional `assetKind` (`stock`, `etf`, `crypto`, `index`,
+`commodity`). `asset:etf`, `asset:crypto`, and `asset:index` group supported active
+canonical instruments and return only validated matching stories; unrelated
+finance stories never backfill sparse groups. Older definitions without this field
+remain decodable. Individual instrument feeds expose the same classification.
+
+The optional public preference `hideFinanceCrypto` defaults to false. Clients send
+`hideCrypto=true|false` on `getFinance`; the server binds this setting into the
+preference revision and immutable snapshot/cursor context. A cursor from the other
+setting is rejected. Hidden stories include any current high-confidence validated
+crypto association, including mixed stories, and substantive cryptocurrency,
+Bitcoin, Ethereum, or stablecoin evidence in the headline/opening summary. This
+also works during crypto-provider outages. Current articles are rechecked after
+snapshot reads; headlines and images are never rewritten. A hidden Crypto feed
+returns no matching stories. Clients hide crypto picker entries and reset a hidden
+selected Crypto feed to Finance.
+
+OpenFIGI v3 US TICKER mapping verified four additional ETF identities on this date:
+SPY `BBG000BDTBL9`, QQQ `BBG000BSWKH7`, VOO `BBG0015VYNT4`, and IVV
+`BBG000BVZ4F5`. Provider ETP/Mutual Fund wrappers receive identity-specific reviewed
+ETF classification, rather than classifying every fund as an ETF. The default
+reviewed FIGI seed now contains 111 securities. Environments with an explicit
+`FINANCE_OPENFIGI_IDS` override must add these four verified FIGIs in a separately
+reviewed rollout; code changes alone do not replace that override. The existing
+OpenFIGI coverage/rights activation gate remains required.
+
+Reviewed reference definitions add the [Nasdaq-100](https://www.nasdaq.com/market-activity/index/ndx)
+and [Dow Jones Industrial Average](https://www.spglobal.com/spdji/en/indices/equity/dow-jones-industrial-average/),
+alongside S&P 500. Bitcoin and Ethereum use independently reviewed project references,
+`reviewed:bitcoin-asset` and `reviewed:ethereum-ether-asset`, sourced from
+[Bitcoin.org](https://bitcoin.org/en/bitcoin-for-individuals) and
+[Ethereum.org](https://ethereum.org/what-is-ether/).
+`FINANCE_REVIEWED_CRYPTO_CATALOG_ENABLED=true` permits only these exact reviewed
+identities and requires the existing catalog-rights gate. It defaults to false and
+is independent of `FINANCE_CRYPTO_CATALOG_ENABLED`, which continues to control
+CoinGecko API import. Keep that provider flag false until its separate entitlement
+and product requirements are established. Reviewed activation performs no crypto
+API requests, purchases access, or imports prices. Any future provider mapping to
+these local identities requires explicit identity review rather than automatic merging. No price data or TradingView mappings were
+added. Resolver version `finance-resolver-v3.4` rebuilds obsolete topic analysis
+through the existing bounded projector.

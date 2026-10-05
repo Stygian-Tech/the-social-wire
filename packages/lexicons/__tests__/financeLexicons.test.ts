@@ -54,3 +54,9 @@ describe("Finance public contracts",()=>{
   expect(read("preferences").defs.main.record.required).not.toContain("hideFinancePerformance");
  });
 });
+
+test("Finance crypto exclusion and asset groups remain additive", () => {
+  expect(read("preferences").defs.main.record.properties.hideFinanceCrypto.type).toBe("boolean");
+  expect(read("discovery/getFinance").defs.main.parameters.properties.hideCrypto.type).toBe("boolean");
+  expect(read("discovery/defs").defs.financeFeedDefinition.properties.assetKind.knownValues).toEqual(["stock", "etf", "crypto", "index", "commodity"]);
+});

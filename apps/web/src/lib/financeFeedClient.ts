@@ -55,6 +55,7 @@ export async function getFinance(args: {
     language?: string;
     region?: string;
     refreshSelections?: boolean;
+    hideCrypto?: boolean;
     oauthSession?: OAuthSession;
     signal?: AbortSignal;
 }): Promise<FinancePage> {
@@ -67,6 +68,7 @@ export async function getFinance(args: {
         params.set("region", args.region);
     if (args.refreshSelections)
         params.set("refreshSelections", "true");
+    if (args.hideCrypto) params.set("hideCrypto", "true");
     const page = await query<FinancePage>("getFinance", params, args.oauthSession, args.signal);
     if (page.feedId !== (args.feed ?? "finance"))
         throw new Error("Finance returned a different feed. Try Refresh.");
@@ -75,9 +77,10 @@ export async function getFinance(args: {
 export type FinanceFeedDefinition = {
     id: string;
     title: string;
-    kind: "all" | "instrument" | "industry" | "group";
+    kind: "all" | "instrument" | "industry" | "group" | "asset";
     instrumentIDs: string[];
     sectorIDs: string[];
+    assetKind?: "stock" | "etf" | "crypto" | "index" | "commodity";
     description: string;
 };
 export type FinanceCatalog = {

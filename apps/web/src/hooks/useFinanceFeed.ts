@@ -8,7 +8,7 @@ import { isExpiredFeedCursor } from "@/lib/feedResponseError";
 import { selectWireLanguage, selectWireViewerRegion } from "@/lib/wireFeedClient";
 import { financePreferenceFingerprint, getFinance, listFinanceSelections, reorderFinanceItems, writeFinanceSelection, type FinancePage, type FinanceSelection } from "@/lib/financeFeedClient";
 import { useFinanceCatalog } from "@/hooks/useFinanceCatalog";
-export function useFinanceFeed(feedID = "finance") {
+export function useFinanceFeed(feedID = "finance", hideCrypto = false) {
     const { session, isLoading, getOAuthSession, oauthSessionReloadSeq } = useAuth();
     const oauth = getOAuthSession();
     const client = useQueryClient();
@@ -19,7 +19,8 @@ export function useFinanceFeed(feedID = "finance") {
     const selectionKey = useMemo(() => ["financeSelections", viewer, oauthSessionReloadSeq], [viewer, oauthSessionReloadSeq]);
     const selections = useQuery({ queryKey: selectionKey, queryFn: () => listFinanceSelections(oauth!, session!.did), enabled: !!oauth && !!session, staleTime: 60000 });
     const moderation = useQuery({ queryKey: ["financeModeration", session?.did ?? "public", oauthSessionReloadSeq], queryFn: async () => hasWireModerationScopes((await oauth!.getTokenInfo("auto")).scope), enabled: !!oauth && !!session, staleTime: Infinity });
-    const fingerprint = financePreferenceFingerprint(selections.data ?? []);
+    const preferenceFingerprint = useCallback((items: FinanceSelection[]) => financePreferenceFingerprint(items) + (hideCrypto ? "|hideCrypto" : ""), [hideCrypto]);
+    const fingerprint = preferenceFingerprint(selections.data ?? []);
     const mode = session ? moderation.data === true ? "viewer" : "blocked" : "baseline";
     const key = useMemo(() => ["financeEntries", feedID, viewer, language, region, mode, fingerprint, oauthSessionReloadSeq], [feedID, viewer, language, region, mode, fingerprint, oauthSessionReloadSeq]);
     const context = JSON.stringify(key);
@@ -33,7 +34,7 @@ export function useFinanceFeed(feedID = "finance") {
         items: FinancePage["items"];
     } | null>(null);
     const enabled = !isLoading && (!session || (!!oauth && moderation.data === true && selections.isSuccess));
-    const feed = useInfiniteQuery({ queryKey: key, queryFn: ({ pageParam, signal }) => getFinance({ feed: feedID, cursor: pageParam, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal }), initialPageParam: undefined as string | undefined, getNextPageParam: page => page.cursor, enabled: enabled && optimisticItems?.context !== context, staleTime: 60000, gcTime: 60 * 60000, maxPages: 20, refetchOnWindowFocus: false, refetchOnMount: false, retry: (count, error) => !isExpiredFeedCursor(error) && count < 1 });
+    const feed = useInfiniteQuery({ queryKey: key, queryFn: ({ pageParam, signal }) => getFinance({ feed: feedID, hideCrypto, cursor: pageParam, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal }), initialPageParam: undefined as string | undefined, getNextPageParam: page => page.cursor, enabled: enabled && optimisticItems?.context !== context, staleTime: 60000, gcTime: 60 * 60000, maxPages: 20, refetchOnWindowFocus: false, refetchOnMount: false, retry: (count, error) => !isExpiredFeedCursor(error) && count < 1 });
     const refresh = useCallback(async () => {
         const captured = context;
         let targetKey = key;
@@ -43,11 +44,11 @@ export function useFinanceFeed(feedID = "finance") {
             if (oauth && viewer !== "public") {
                 const latest = await listFinanceSelections(oauth, viewer);
                 if (currentContext.current !== captured || getOAuthSession() !== oauth) return;
-                targetKey = ["financeEntries", feedID, viewer, language, region, mode, financePreferenceFingerprint(latest), oauthSessionReloadSeq];
+                targetKey = ["financeEntries", feedID, viewer, language, region, mode, preferenceFingerprint(latest), oauthSessionReloadSeq];
                 targetContext = JSON.stringify(targetKey);
                 client.setQueryData(selectionKey, latest);
             }
-            const page = await getFinance({ feed: feedID, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, refreshSelections: !!oauth });
+            const page = await getFinance({ feed: feedID, hideCrypto, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, refreshSelections: !!oauth });
             if ((currentContext.current !== captured && currentContext.current !== targetContext) || getOAuthSession() !== oauth)
                 return;
             await client.cancelQueries({ queryKey: targetKey, exact: true });
@@ -64,7 +65,7 @@ export function useFinanceFeed(feedID = "finance") {
             if (currentContext.current === captured || currentContext.current === targetContext)
                 setRefreshState(previous => previous.context === captured || previous.context === targetContext ? {...previous, pending: false} : previous);
         }
-    }, [context, feedID, language, region, mode, viewer, oauthSessionReloadSeq, selectionKey, oauth, getOAuthSession, client, key]);
+    }, [context, feedID, hideCrypto, language, region, mode, viewer, oauthSessionReloadSeq, selectionKey, oauth, getOAuthSession, client, key, preferenceFingerprint]);
     useExpiredFeedCursorRecovery(feed.error, refresh, enabled);
     const refreshedContext = useRef<string | null>(null);
     useEffect(() => {
@@ -86,7 +87,7 @@ export function useFinanceFeed(feedID = "finance") {
             const items = optimisticItems?.context === context ? optimisticItems.items : feed.data?.pages.flatMap(p => p.items) ?? [];
             await client.cancelQueries({ queryKey: selectionKey, exact: true });
             client.setQueryData(selectionKey, next);
-            const nextKey = ["financeEntries", feedID, session?.did ?? "public", language, region, mode, financePreferenceFingerprint(next), oauthSessionReloadSeq];
+            const nextKey = ["financeEntries", feedID, session?.did ?? "public", language, region, mode, preferenceFingerprint(next), oauthSessionReloadSeq];
             setOptimisticItems({ context: JSON.stringify(nextKey), items: feedID === "finance" ? reorderFinanceItems(items, next) : items });
             return { previous, captured };
         }, onError: (_error, _variables, rollback) => { if (rollback && getOAuthSession() === oauth) {

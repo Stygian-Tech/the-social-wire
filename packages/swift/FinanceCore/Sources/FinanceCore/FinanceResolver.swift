@@ -1,7 +1,7 @@
 import Foundation
 
 public enum FinanceResolver {
-  public static let version = "finance-resolver-v3.3"
+  public static let version = "finance-resolver-v3.4"
   private static func contains(_ needle: String, in text: String) -> Bool {
     FinanceTopicEvidence.contains(needle, in: text)
   }

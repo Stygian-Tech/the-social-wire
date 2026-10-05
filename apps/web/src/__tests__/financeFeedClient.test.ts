@@ -16,11 +16,12 @@ describe("Finance client invariants", () => {
             return Response.json({feedId:"instrument:apple",items:[]});
         });
         try {
-            await getFinance({feed:"instrument:apple",cursor:"apple-cursor",language:"en"});
+            await getFinance({feed:"instrument:apple",cursor:"apple-cursor",language:"en",hideCrypto:true});
             const request = new URL(paths[0]!, "https://example.com");
             expect(request.searchParams.get("feed")).toBe("instrument:apple");
             expect(request.searchParams.get("cursor")).toBe("apple-cursor");
             expect(request.searchParams.get("lang")).toBe("en");
+            expect(request.searchParams.get("hideCrypto")).toBe("true");
             await expect(getFinance({feed:"industry:pharma"})).rejects.toThrow("different feed");
         } finally { fetch.mockRestore(); }
     });

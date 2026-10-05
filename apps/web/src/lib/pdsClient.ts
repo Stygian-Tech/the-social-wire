@@ -207,6 +207,7 @@ export interface PreferencesRecord {
   showSports?: boolean;
   hideSportsScores?: boolean;
   hideFinancePerformance?: boolean;
+  hideFinanceCrypto?: boolean;
   showTopLevelFeedUnreadCounts?: boolean;
   feedsWithUnreadCounts?: Array<
     "readLater" | "archive" | "subscribed" | "following"
@@ -228,6 +229,7 @@ export type PreferencesUpdates = Partial<
     | "showSports"
     | "hideSportsScores"
     | "hideFinancePerformance"
+    | "hideFinanceCrypto"
     | "showTopLevelFeedUnreadCounts"
     | "feedsWithUnreadCounts"
     | "rssArticleOpenMode"
@@ -256,6 +258,7 @@ export function mergePreferencesRecord(
     ...(previous?.hideSportsScores !== undefined ? { hideSportsScores: previous.hideSportsScores } : {}),
     ...(previous?.showFinance !== undefined ? { showFinance: previous.showFinance } : {}),
     ...(previous?.hideFinancePerformance !== undefined ? { hideFinancePerformance: previous.hideFinancePerformance } : {}),
+    ...(previous?.hideFinanceCrypto !== undefined ? { hideFinanceCrypto: previous.hideFinanceCrypto } : {}),
     ...(previous?.showTopLevelFeedUnreadCounts !== undefined
       ? {
           showTopLevelFeedUnreadCounts:

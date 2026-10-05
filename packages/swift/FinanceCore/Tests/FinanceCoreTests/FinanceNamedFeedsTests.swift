@@ -22,8 +22,8 @@ struct FinanceNamedFeedsTests {
     #expect(FinanceNamedFeeds.revision(instruments: instruments) == FinanceNamedFeeds.revision(instruments: instruments.reversed()))
   }
   @Test func pickerContainsOnlySupportedStockAndFundKinds() {
-    let allowed = ["Common Stock", "Depositary Receipt", "REIT", "ETF", "Mutual Fund", "equity"]
-    let denied = ["Municipal Bond", "Corporate Bond", "Bond", "security", "unknown", "Option", "Future", "crypto", "index", "commodity"]
+    let allowed = ["Common Stock", "Depositary Receipt", "REIT", "ETF", "Mutual Fund", "equity", "crypto", "index"]
+    let denied = ["Municipal Bond", "Corporate Bond", "Bond", "security", "unknown", "Option", "Future", "commodity"]
     func instrument(_ kind: String) -> FinanceInstrument {
       .init(id: "kind:" + kind, name: "Identity Fixture", symbol: "FIX", kind: kind, providerID: "provider:" + kind)
     }
@@ -31,7 +31,7 @@ struct FinanceNamedFeedsTests {
     let selectable = FinanceNamedFeeds.catalog(instruments: all).filter { $0.kind == "instrument" }
     #expect(Set(selectable.flatMap(\.instrumentIDs)) == Set(allowed.map { instrument($0).id }))
     #expect(all.count == allowed.count + denied.count)
-    #expect(FinanceNamedFeeds.catalog(instruments: instruments).filter { $0.kind == "instrument" }.count == 107)
+    #expect(FinanceNamedFeeds.catalog(instruments: instruments).filter { $0.kind == "instrument" }.count == 111)
   }
   @Test func applePersonAndFruitNamesNeverBecomeCompanyAssociations() throws {
     let apple = try #require(instruments.first { $0.symbol == "AAPL" })

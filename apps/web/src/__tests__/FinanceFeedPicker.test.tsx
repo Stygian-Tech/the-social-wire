@@ -184,3 +184,17 @@ describe("Finance feed icon picker", () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+it("groups ETFs, crypto, and indices separately from company listings", async () => {
+  const assets: FinanceFeedDefinition[] = [
+    { id: "instrument:spy", title: "SPY · S&P 500 ETF", kind: "instrument", assetKind: "etf", instrumentIDs: ["spy"], sectorIDs: [], description: "ETF reporting" },
+    { id: "instrument:btc", title: "BTC · Bitcoin", kind: "instrument", assetKind: "crypto", instrumentIDs: ["btc"], sectorIDs: [], description: "Crypto reporting" },
+    { id: "instrument:spx", title: "SPX · S&P 500", kind: "instrument", assetKind: "index", instrumentIDs: ["spx"], sectorIDs: [], description: "Index reporting" },
+  ];
+  render(<FinanceFeedPicker definitions={[...definitions, ...assets]} feedID="finance" companySearch="" />);
+  await userEvent.click(screen.getByRole("combobox", { name: "Finance Feed" }));
+  for (const [group, title] of [["ETFs", assets[0]!.title], ["Crypto", assets[1]!.title], ["Indices", assets[2]!.title]]) {
+    expect(screen.getByRole("group", { name: group! }).textContent).toContain(title!);
+    expect(screen.getAllByRole("option", { name: title! })).toHaveLength(1);
+  }
+});

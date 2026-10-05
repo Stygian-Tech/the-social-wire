@@ -33,7 +33,7 @@ struct FinanceTopicEvidence {
       "consumer prices", "economic growth", "economic outlook", "employment report", "jobs report",
       "trade deficit", "trade surplus", "government budget", "fiscal policy", "housing market", "real estate market"]
     let strongTerms = ["earnings", "revenue", "nasdaq", "bitcoin", "cryptocurrency", "dividend", "dividends",
-      "gdp", "recession", "merger", "acquisition", "10-k", "10-q"]
+      "ethereum", "cryptocurrencies", "stablecoin", "stablecoins", "gdp", "recession", "merger", "acquisition", "10-k", "10-q"]
     var sectors = Set<String>()
     var financialSegments: [String] = []
     let sportingHeadline = has(["hit tons", "wins toss", "win toss", "innings", "wickets", "batting", "bowling figures"], headline)
