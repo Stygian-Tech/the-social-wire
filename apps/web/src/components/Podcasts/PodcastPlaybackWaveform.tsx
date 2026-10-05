@@ -46,16 +46,27 @@ export function PodcastPlaybackWaveform({ player }: { player: PlayerContext }) {
         context = new AudioContext();
         source = context.createMediaStreamSource(stream);
         const analyser = context.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 4096;
         source.connect(analyser);
         void context.resume().catch(() => {});
         const frequencies = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+        const sampleRate = context.sampleRate;
+        const highestFrequency = Math.min(20_000, sampleRate / 2);
+        // Equal distances on a logarithmic scale represent equal musical ranges.
+        // Restrict each band to captured FFT bins, including lower-rate media.
+        const bands = restingLevels.map((_, band) => {
+          const lower = 20 * (highestFrequency / 20) ** (band / restingLevels.length);
+          const upper = 20 * (highestFrequency / 20) ** ((band + 1) / restingLevels.length);
+          return {
+            start: Math.min(frequencies.length, Math.max(1, Math.ceil(lower * analyser.fftSize / sampleRate))),
+            end: Math.min(frequencies.length, Math.ceil(upper * analyser.fftSize / sampleRate)),
+          };
+        });
         timer = setInterval(() => {
           analyser.getByteFrequencyData(frequencies);
-          const next = restingLevels.map((_, band) => {
-            const start = band * 8 + 1;
+          const next = bands.map(({ start, end }) => {
             let peak = 0;
-            for (let i = start; i < start + 8; i++) peak = Math.max(peak, frequencies[i] ?? 0);
+            for (let i = start; i < end; i++) peak = Math.max(peak, frequencies[i] ?? 0);
             return Math.max(0.08, peak / 255);
           });
           setAnalyzing(context?.state === "running");

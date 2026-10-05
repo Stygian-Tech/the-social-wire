@@ -10,7 +10,7 @@ function player(audio: HTMLAudioElement, playing = true): PlayerContext {
   return { episode: null, playing, position: 0, duration: 100, state: initialPodcastState(), error: null, silence: null,
     play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {}, getAudioElement: () => audio };
 }
-function analyserFixture(fail = false, empty = false, suspended = false) {
+function analyserFixture(fail = false, empty = false, suspended = false, sampleRate = 48_000) {
   let tick = () => {};
   const timer = spyOn(globalThis, "setInterval").mockImplementation(((callback: () => void) => { tick = callback; return 123; }) as typeof setInterval);
   const clear = spyOn(globalThis, "clearInterval").mockImplementation(() => {});
@@ -24,7 +24,7 @@ function analyserFixture(fail = false, empty = false, suspended = false) {
   Object.assign(audio, { captureStream: capture });
   const disconnect = mock(() => {});
   const connect = mock(() => {});
-  const analyser = { fftSize: 0, frequencyBinCount: 128, getByteFrequencyData: mock((data: Uint8Array) => { data.fill(0); data[1] = 255; data[9] = 128; }) };
+  const analyser = { fftSize: 0, frequencyBinCount: 2048, getByteFrequencyData: mock((data: Uint8Array) => { data.fill(0); data[3] = 255; data[9] = 128; }) };
   const close = mock(async () => {});
   let contextState = suspended ? "suspended" : "running";
   const resume = mock(async () => {});
@@ -33,6 +33,7 @@ function analyserFixture(fail = false, empty = false, suspended = false) {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
   Object.defineProperty(globalThis, "AudioContext", { configurable: true, value: class {
     get state() { return contextState; }
+    sampleRate = sampleRate;
     close = close; resume = resume; createMediaElementSource = createMediaElementSource;
     createMediaStreamSource = createMediaStreamSource;
     createAnalyser() { return analyser; }
@@ -54,7 +55,7 @@ describe("Podcast reactive waveform", () => {
     expect((bars[1] as HTMLElement).style.height).toBe("8px");
     expect((bars[2] as HTMLElement).style.height).toBe("1px");
     expect(bars[0]?.className).not.toContain("podcast-waveform-indicator");
-    fixture.analyser.getByteFrequencyData.mockImplementation(data => { data.fill(0); data[1] = 64; data[17] = 255; });
+    fixture.analyser.getByteFrequencyData.mockImplementation(data => { data.fill(0); data[3] = 64; data[85] = 255; });
     fixture.tick();
     expect((bars[0] as HTMLElement).style.height).toBe("4px");
     expect((bars[2] as HTMLElement).style.height).toBe("16px");
@@ -67,6 +68,28 @@ describe("Podcast reactive waveform", () => {
     expect(fixture.createMediaElementSource).not.toHaveBeenCalled();
     expect(fixture.audio.muted).toBe(false);
     expect(fixture.audio.src).toBe("https://publisher.example/episode.mp3");
+  });
+
+  it.each([[100, 1], [4000, 3], [10000, 4]])("places %s Hz in logarithmic band %s", (frequency, band) => {
+    const fixture = analyserFixture();
+    fixture.analyser.getByteFrequencyData.mockImplementation(data => { data.fill(0); data[Math.round(frequency * 4096 / 48000)] = 255; });
+    const view = render(<PodcastPlaybackWaveform player={player(fixture.audio)} />);
+    fixture.tick();
+    const bars = view.container.querySelectorAll("span > span");
+    expect(fixture.analyser.fftSize).toBe(4096);
+    for (let index = 0; index < bars.length; index++) {
+      expect((bars[index] as HTMLElement).style.height).toBe(index === band ? "16px" : "1px");
+    }
+  });
+
+  it("uses Nyquist as the upper frequency limit at lower sample rates", () => {
+    const fixture = analyserFixture(false, false, false, 24_000);
+    fixture.analyser.getByteFrequencyData.mockImplementation(data => { data.fill(0); data[2047] = 255; });
+    const view = render(<PodcastPlaybackWaveform player={player(fixture.audio)} />);
+    fixture.tick();
+    const bars = view.container.querySelectorAll("span > span");
+    expect((bars[4] as HTMLElement).style.height).toBe("16px");
+    expect((bars[3] as HTMLElement).style.height).toBe("1px");
   });
 
   it("releases analysis on unmount", () => {
