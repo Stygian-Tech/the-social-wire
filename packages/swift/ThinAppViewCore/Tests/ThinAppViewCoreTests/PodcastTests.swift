@@ -32,10 +32,30 @@ struct PodcastTests {
     #expect(a.episodes.count == 1)
     #expect(a.episodes[0].id == b.episodes[0].id)
   }
-  @Test func malformedRSSFailsInsteadOfPartialCatalog() {
+  @Test(arguments: [
+    "", "<rss><channel>",
+    "<rss><channel><title>Incomplete Show</title></channel>",
+    "<rss><channel><item><guid>original-guid</guid><enclosure url='https://example.com/a.mp3' type='audio/mpeg'/></item></channel>",
+    "<rss><channel></rss>",
+    "<rss><channel/></rss><rss/>",
+  ])
+  func malformedRSSFailsInsteadOfPartialCatalog(xml: String) {
     #expect(throws: PodcastParseError.self) {
-      try PodcastRSSParser(feedURL: "https://example.com/rss").parse(Data("<rss><channel>".utf8))
+      try PodcastRSSParser(feedURL: "https://example.com/rss").parse(Data(xml.utf8))
     }
+  }
+  @Test func failedParseCannotReusePreviousCompleteDocument() throws {
+    let parser = PodcastRSSParser(feedURL: "https://example.com/rss")
+    let valid =
+      "<rss xmlns:podcast='urn:podcast'><channel><title>Show</title><podcast:guid>original-show-guid</podcast:guid><item><guid>original-item-guid</guid><enclosure url='https://example.com/a.mp3' type='audio/mpeg'/></item></channel></rss>"
+    let first = try parser.parse(Data(valid.utf8))
+    #expect(first.show.guid == "original-show-guid")
+    #expect(first.episodes.first?.guid == "original-item-guid")
+    #expect(throws: PodcastParseError.self) { try parser.parse(Data("<rss><channel>".utf8)) }
+    let repeated = try parser.parse(Data(valid.utf8))
+    #expect(repeated.show.id == first.show.id)
+    #expect(repeated.episodes.count == 1)
+    #expect(repeated.episodes.first?.id == first.episodes.first?.id)
   }
   @Test func vttAndSRTNormalizeSourceTimes() {
     let vtt =

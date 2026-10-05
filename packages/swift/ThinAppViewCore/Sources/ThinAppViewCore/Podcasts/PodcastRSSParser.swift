@@ -15,15 +15,33 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
   private var transcripts: [PodcastTranscript] = []
   private var episodeTranscripts: [[PodcastTranscript]] = []
   private var inItem = false
+  private var sawRoot = false
+  private var closedRoot = false
+  private var invalidDocument = false
   private let feedURL: String
   public init(feedURL: String) { self.feedURL = feedURL }
   public static func identity(_ value: String) -> String {
     SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
   }
   public func parse(_ data: Data) throws -> (show: PodcastShow, episodes: [PodcastEpisode]) {
+    stack = []
+    texts = []
+    showFields = [:]
+    fields = [:]
+    episodes = []
+    transcripts = []
+    episodeTranscripts = []
+    inItem = false
+    sawRoot = false
+    closedRoot = false
+    invalidDocument = false
     let parser = XMLParser(data: data)
     parser.delegate = self
-    guard parser.parse() else { throw PodcastParseError.invalidXML }
+    // FoundationXML on Linux can report success for a truncated document.
+    // Require an observed root and its matching close, independently of parse().
+    guard parser.parse(), parser.parserError == nil, !invalidDocument,
+      sawRoot, closedRoot, stack.isEmpty, texts.isEmpty, !inItem
+    else { throw PodcastParseError.invalidXML }
     let showID = "podcast:" + Self.identity(showFields["podcast:guid"] ?? feedURL)
     let show = PodcastShow(
       id: showID, title: showFields["title"] ?? "Untitled Podcast",
@@ -49,6 +67,10 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
     qualifiedName: String?, attributes a: [String: String]
   ) {
     let key = (qualifiedName ?? name).lowercased()
+    if stack.isEmpty {
+      if sawRoot { invalidDocument = true }
+      sawRoot = true
+    }
     stack.append(key)
     texts.append("")
     if key == "item" || key == "entry" {
@@ -80,7 +102,13 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
   public func parser(
     _ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?
   ) {
-    guard let key = stack.popLast(), let text = texts.popLast() else { return }
+    guard let key = stack.popLast(), let text = texts.popLast(),
+      key == (qualifiedName ?? name).lowercased()
+    else {
+      invalidDocument = true
+      return
+    }
+    if stack.isEmpty { closedRoot = true }
     let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
     if !texts.isEmpty { texts[texts.count - 1] += text }
     if key == "item" || key == "entry" {
@@ -98,6 +126,9 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
     } else if key == "url" && stack.last == "image" {
       showFields["artwork"] = clean
     }
+  }
+  public func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
+    invalidDocument = true
   }
   public static func isAudio(url: String, type: String?) -> Bool {
     if let type { return type.lowercased().hasPrefix("audio/") }
