@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Podcast clips
+  type: http
+  seq: 1
+}
+
+delete {
+  url: {{baseUrl}}/v1/podcasts/clips?clipId={{podcastClipId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

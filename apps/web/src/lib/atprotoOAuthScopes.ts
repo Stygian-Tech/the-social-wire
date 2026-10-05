@@ -94,4 +94,5 @@ export const AT_PROTO_OAUTH_SCOPES = [
   STANDARD_READER_LIST_WRITE_SCOPE,
   USER_INPUT_OAUTH_SCOPE,
   USER_INPUT_BLOB_OAUTH_SCOPE,
+  "repo:app.thesocialwire.podcast.clip?action=create&action=update&action=delete",
 ].join(" ");

@@ -12,6 +12,7 @@ export function currentAppSidebarFeed({
   folderParam: string | null;
   publicationTab: PublicationTab;
 }): ReaderNavigationFeed | null {
+  if (pathname.startsWith("/podcasts")) return "podcasts";
   if (pathname.startsWith("/saved")) return "readLater";
   if (pathname.startsWith("/archive")) return "archive";
   if (!pathname.startsWith("/read")) return null;

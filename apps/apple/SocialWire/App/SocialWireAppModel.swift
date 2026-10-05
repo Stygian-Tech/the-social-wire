@@ -16,6 +16,7 @@ final class SocialWireAppModel {
     let userInputFeedbackService: UserInputFeedbackService
     private let rss = RSSService()
     private let gateway: SocialWireGatewayClient
+    let podcasts: PodcastLibraryModel
     let sportsTopic: SportsTopicModel
     let readStateSync: PDSReadStateSyncService
     private let latrGateway: LatrGatewayClient
@@ -188,6 +189,7 @@ final class SocialWireAppModel {
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService)
+        podcasts = PodcastLibraryModel(gateway: gateway, xrpc: xrpc)
         sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
@@ -1461,6 +1463,8 @@ final class SocialWireAppModel {
                 feedPreferences.showWire && wireCatalog?.isAvailable != false
             case .finance:
                 feedPreferences.showFinance && wireCatalog?.financeAvailable == true
+            case .podcasts:
+                podcasts.available
             case .sports:
                 feedPreferences.showSports && wireCatalog?.sportsAvailable == true
             case .circle:

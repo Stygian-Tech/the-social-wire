@@ -62,6 +62,7 @@ apps/apple/*.xcodeproj/project.xcworkspace/xcuserdata/*/UserInterfaceState.xcuse
 .railway/*
 !.railway/README.md
 !.railway/railway.ts
+!.railway/podcasts.ts
 
 # Local secret files
 /.secrets

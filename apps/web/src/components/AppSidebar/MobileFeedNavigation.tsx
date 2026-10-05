@@ -1,6 +1,6 @@
 "use client";
 
-import { Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
+import { Headphones, Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 const FEED_ITEMS = [
+  { feed: "podcasts", label: "Podcasts", icon: Headphones },
   { feed: "wire", label: "The Wire", icon: Rss },
   { feed: "circle", label: "Your Circle", icon: Network },
   { feed: "sports", label: "Sports", icon: Trophy },

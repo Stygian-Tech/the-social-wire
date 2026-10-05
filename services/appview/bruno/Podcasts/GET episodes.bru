@@ -1,0 +1,16 @@
+meta {
+  name: GET Podcast episodes
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/podcasts/episodes?showId={{podcastShowId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

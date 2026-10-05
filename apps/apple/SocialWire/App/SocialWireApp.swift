@@ -3,6 +3,9 @@ import SwiftData
 
 @main
 struct SocialWireApp: App {
+#if os(iOS)
+    @UIApplicationDelegateAdaptor(PodcastBackgroundEvents.self) private var podcastBackgroundEvents
+#endif
     @State private var appModel = SocialWireAppModel()
 
     private static let readerModelContainer: ModelContainer = {

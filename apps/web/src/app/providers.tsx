@@ -1,5 +1,6 @@
 "use client";
 
+import { PodcastPlayerProvider } from "@/components/Podcasts/PodcastPlayerProvider";
 import { useState } from "react";
 import {
   QueryClient,
@@ -149,7 +150,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AuthProvider>
           <CircleViewerCacheCleanup />
           <LexiconMigrationRunner />
-          {children}
+          <PodcastPlayerProvider>{children}</PodcastPlayerProvider>
         </AuthProvider>
       </PersistQueryClientProvider>
     </AppearanceProvider>

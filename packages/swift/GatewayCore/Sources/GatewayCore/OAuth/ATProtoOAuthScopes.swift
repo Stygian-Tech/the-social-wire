@@ -46,6 +46,10 @@ public enum ATProtoOAuthScopes {
     "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
   ]
 
+  private static let podcastScopes = [
+    "repo:app.thesocialwire.podcast.clip?action=create&action=update&action=delete",
+  ]
+
   private static let webListScopes = [
     "repo:app.standard-reader.listSave?action=create&action=update&action=delete",
     "repo:app.standard-reader.list?action=create&action=delete",
@@ -77,6 +81,7 @@ public enum ATProtoOAuthScopes {
     scopes.append(contentsOf: readerActionScopes)
     scopes.append(contentsOf: webListScopes)
     scopes.append(contentsOf: userInputScopes)
+    scopes.append(contentsOf: podcastScopes)
     return scopes.joined(separator: " ")
   }()
 
@@ -95,6 +100,7 @@ public enum ATProtoOAuthScopes {
     scopes.append(contentsOf: sharedWithoutTopics)
     scopes.append(contentsOf: topicSelectionScopes)
     scopes.append(contentsOf: readerActionScopes)
+    scopes.append(contentsOf: podcastScopes)
     scopes.append(contentsOf: userInputScopes)
     scopes.append(contentsOf: iosOnlyScopes)
     return scopes.joined(separator: " ")
