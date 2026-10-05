@@ -631,7 +631,7 @@ export function AppSidebar({
         {showPublicationsRail && (selectedListUri || (
         currentFeed !== "wire" &&
         currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "podcasts")) ? (
-        <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-var(--reader-shell-width,70rem))/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
+        <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-[var(--podcast-player-height,0px)] lg:right-[max(0px,calc((100vw-var(--reader-shell-width,70rem))/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
           <div className="hidden min-h-12 shrink-0 items-end px-4 pb-1 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">
               Publications
