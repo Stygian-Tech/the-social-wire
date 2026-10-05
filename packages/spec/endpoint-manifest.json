@@ -697,6 +697,12 @@
     {
       "surface": "openapi",
       "method": "POST",
+      "path": "/v1/podcasts/search",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
       "path": "/v1/podcasts/resolve",
       "classification": "first-party-rest"
     },

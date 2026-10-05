@@ -65,6 +65,7 @@ struct PostgresPrivatePodcastIntegrationTests {
     scoped.episodes[0].chapterSourceUrl = "https://media.example.com/chapters?token=owner-secret"
     try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: scoped.episodes)
     try await store.savePrivateCatalog(viewer: other, feedURL: feed, show: scopedOther.show, episodes: scopedOther.episodes)
+    try await searchIsolation(pool: pool, store: store, logger: logger, owner: owner, other: other, suffix: suffix, privateShowID: scoped.show.id)
     scoped.episodes[0].chapters = [PodcastChapter(startSeconds: 0, title: "Private Intro", artworkUrl: "https://media.example.com/intro.png?token=owner-secret")]
     try await store.updateMetadata(episode: scoped.episodes[0], viewer: owner)
     var refreshedEpisode = scoped.episodes[0]

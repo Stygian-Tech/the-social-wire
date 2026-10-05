@@ -6,6 +6,18 @@ import ThinAppViewCore
 struct PodcastRoutes {
   let service: PodcastService
   func register(on group: RouterGroup<GatewayRequestContext>) {
+    group.post("/v1/podcasts/search") { request, context async throws -> Response in
+      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+      let input = try await request.decode(as: PodcastSearchRequest.self, context: context)
+      do {
+        let result = try await service.store.search(viewer: auth.did, request: input)
+        var response = PodcastJSON.response(try PodcastJSON.encode(result))
+        response.headers[.cacheControl] = "private, no-store"
+        return response
+      } catch PodcastStoreError.invalidRequest {
+        throw HTTPError(.badRequest, message: "Invalid Podcast Search")
+      }
+    }
     group.post("/v1/podcasts/resolve") { request, context async throws -> PodcastResolveResponse in
       guard context.authContext != nil else { throw HTTPError(.unauthorized) }
       return try await service.resolve(

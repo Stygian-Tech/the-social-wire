@@ -52,3 +52,15 @@ test('publisher chapter and host metadata use shared arrays and private artwork 
  expect(read('services/appview/Sources/AppView/Podcasts/PodcastRoutes.swift')).toContain('silence:v2:');
  expect(read('services/podcast-worker/.env.example')).toContain('PODCAST_BRIDGE_ENABLED=false');
 });
+
+test('library search protects viewer queries and uses bounded continuation pages',()=>{
+ const search=spec.paths['/v1/podcasts/search'].post;
+ expect(search.security).toEqual([{ATProtoOAuthDPoP:[]}]);
+ expect(spec.paths['/v1/podcasts/search'].get).toBeUndefined();
+ expect(spec.components.schemas.PodcastSearchRequest.properties.scope.enum).toEqual(['library']);
+ expect(spec.components.schemas.PodcastSearchResponse.required).toEqual(['shows','episodes','hasMore']);
+ for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/POST search.bru`)).toContain('/v1/podcasts/search');
+ const store=read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore+Search.swift');
+ expect(store).toContain('LIMIT 501');expect(store).toContain('scanned >= 500');
+ expect(store).not.toContain('INSERT');expect(store).not.toContain('UPDATE');
+});
