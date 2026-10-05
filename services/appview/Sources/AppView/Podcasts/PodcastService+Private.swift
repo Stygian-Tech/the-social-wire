@@ -15,7 +15,8 @@ extension PodcastService {
         maximumBytes: 32 * 1024 * 1024, validateURL: PodcastPrivateCatalog.isAllowedURL)
       let parsed = try PodcastRSSParser(feedURL: url).parse(body)
       guard !parsed.episodes.isEmpty else { throw PodcastParseError.invalidMedia }
-      let scoped = PodcastPrivateCatalog.scope(viewer: viewer, feedURL: url, show: parsed.show, episodes: parsed.episodes)
+      var scoped = PodcastPrivateCatalog.scope(viewer: viewer, feedURL: url, show: parsed.show, episodes: parsed.episodes)
+      scoped.episodes = await enrich(Array(scoped.episodes.prefix(50)), viewer: viewer, persist: false) + Array(scoped.episodes.dropFirst(50))
       try await store.savePrivateCatalog(viewer: viewer, feedURL: url, show: scoped.show, episodes: scoped.episodes, existingOnly: existingOnly)
       return PodcastResolveResponse(show: PodcastPrivateCatalog.visible(scoped.show), episodes: scoped.episodes.map(PodcastPrivateCatalog.visible))
     } catch PodcastStoreError.notFound {
@@ -49,6 +50,8 @@ extension PodcastService {
   }
 
   func visibleEpisode(_ episode: PodcastEpisode) -> PodcastEpisode {
-    episode.visibility == "private" ? PodcastPrivateCatalog.visible(episode) : episode
+    var visible = episode.visibility == "private" ? PodcastPrivateCatalog.visible(episode) : episode
+    visible.chapterSourceUrl = nil
+    return visible
   }
 }

@@ -24,7 +24,8 @@ public enum PodcastProtocolAdapter {
         }.first, feedUrl: (record["feedUrl"] ?? record["rssFeedUrl"]) as? String,
       sourceKind: "atproto", sourceUri: uri,
       guid: (record["podcastGuid"] ?? record["guid"]) as? String,
-      episodeCollection: collections[parsed.collection])
+      episodeCollection: collections[parsed.collection],
+      hosts: PodcastChapterParser.people((record["hosts"] ?? record["persons"] ?? record["people"]) as? [[String: Any]] ?? []))
   }
   public static func episode(
     uri: String, record: [String: Any], show: PodcastShow, blobBase: String? = nil
@@ -77,6 +78,9 @@ public enum PodcastProtocolAdapter {
       durationSeconds: (record["durationSeconds"] ?? record["duration"]) as? Double,
       artworkUrl: (record["imageUrl"] as? String) ?? show.artworkUrl,
       guid: (record["feedItemGuid"] ?? record["guid"] ?? record["importedGuid"]) as? String,
-      sourceUri: uri, transcripts: transcripts)
+      sourceUri: uri, transcripts: transcripts,
+      chapters: PodcastChapterParser.chapters(record["chapters"] as? [[String: Any]] ?? [], duration: (record["durationSeconds"] ?? record["duration"]) as? Double),
+      chapterSourceUrl: PodcastChapterParser.safeURL((record["chaptersUrl"] ?? (record["chapters"] as? [String: Any])?["url"]) as? String),
+      showArtworkUrl: show.artworkUrl)
   }
 }

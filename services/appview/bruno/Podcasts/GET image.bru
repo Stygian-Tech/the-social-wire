@@ -1,0 +1,16 @@
+meta {
+  name: GET Podcast Image
+  type: http
+  seq: 22
+}
+
+get {
+  url: {{baseUrl}}/v1/podcasts/image?episodeId={{podcastEpisodeId}}&kind=chapter&index=0
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

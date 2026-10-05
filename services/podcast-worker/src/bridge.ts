@@ -1,3 +1,4 @@
+import { bridgeEnabled } from "./metadata";
 import { SQL } from "bun";
 import { createHash } from "node:crypto";
 import { podcastGuid, uuidV5 } from "./identity";
@@ -62,6 +63,7 @@ export class PodcastBridge {
   }
 
   async mirror(show: PodcastShow, episodes: PodcastEpisode[]): Promise<{showUri:string;episodes:number}> {
+    if(!bridgeEnabled())throw new Error("Podcast bridge is disabled");
     if(!show.feedUrl)throw new Error("Cannot bridge a show without RSS source");
     publicFeedUrl(show.feedUrl);
     const guid = podcastGuid(show.feedUrl, show.guid);

@@ -1,5 +1,6 @@
 import { SQL, S3Client } from "bun";
 import { timingSafeEqual } from "node:crypto";
+import { bridgeEnabled } from "./metadata";
 import { PodcastBridge } from "./bridge";
 import { PodcastWorker } from "./worker";
 
@@ -7,7 +8,7 @@ function required(name:string):string {const value=process.env[name];if(!value)t
 const database=new SQL(required("DATABASE_URL"));
 const storage=new S3Client({endpoint:required("PODCAST_S3_ENDPOINT"),bucket:required("PODCAST_S3_BUCKET"),accessKeyId:required("PODCAST_S3_ACCESS_KEY_ID"),secretAccessKey:required("PODCAST_S3_SECRET_ACCESS_KEY"),region:process.env.PODCAST_S3_REGION??"auto"});
 const secret=required("PODCAST_MEDIA_INTERNAL_SECRET");
-const bridge=process.env.PODCAST_BRIDGE_DID ? new PodcastBridge({did:required("PODCAST_BRIDGE_DID"),pds:required("PODCAST_BRIDGE_PDS_URL").replace(/\/$/,""),identifier:required("PODCAST_BRIDGE_IDENTIFIER"),password:required("PODCAST_BRIDGE_APP_PASSWORD")},database):undefined;
+const bridge=bridgeEnabled()&&process.env.PODCAST_BRIDGE_DID ? new PodcastBridge({did:required("PODCAST_BRIDGE_DID"),pds:required("PODCAST_BRIDGE_PDS_URL").replace(/\/$/,""),identifier:required("PODCAST_BRIDGE_IDENTIFIER"),password:required("PODCAST_BRIDGE_APP_PASSWORD")},database):undefined;
 const worker=new PodcastWorker(database,storage,bridge);
 let stopping=false;let ready=false;let lastTick=Date.now();
 const internal=(request:Request)=>{const given=Buffer.from(request.headers.get("X-Podcast-Media-Secret")??"");const expected=Buffer.from(secret);return given.length===expected.length&&timingSafeEqual(given,expected);};

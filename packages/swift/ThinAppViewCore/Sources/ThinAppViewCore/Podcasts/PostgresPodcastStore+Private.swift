@@ -57,8 +57,17 @@ extension PostgresPodcastStore {
     let feedHash = PodcastRSSParser.identity(feedURL)
     let feedData = try storage.seal(feedURL, viewer: viewer, entity: "feed", id: show.id)
     let showData = try storage.seal(json(show), viewer: viewer, entity: "show", id: show.id)
-    let entries = try episodes.map { episode in
-      (episode.id, try storage.seal(json(episode), viewer: viewer, entity: "episode", id: episode.id), ISO8601DateFormatter().date(from: episode.publishedAt) ?? Date(timeIntervalSince1970: 0))
+    let previousRows = try await pool.query("SELECT id,episode_data FROM podcast_private_episodes WHERE viewer_did=\(viewer) AND id=ANY(\(episodes.map(\.id)))", logger: logger)
+    var previous: [String: PodcastEpisode] = [:]
+    for try await row in previousRows {
+      let value = try row.decode((String, String).self)
+      previous[value.0] = try privateEpisode(value.1, viewer: viewer, id: value.0)
+    }
+    let entries = try episodes.map { original in
+      var episode = original
+      if let existing = previous[episode.id], episode.chapters.isEmpty,
+        episode.chapterSourceUrl == existing.chapterSourceUrl { episode.chapters = existing.chapters }
+      return (episode.id, try storage.seal(json(episode), viewer: viewer, entity: "episode", id: episode.id), ISO8601DateFormatter().date(from: episode.publishedAt) ?? Date(timeIntervalSince1970: 0))
     }
     let logger = logger
     do {

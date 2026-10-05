@@ -33,10 +33,19 @@ struct PostgresPrivatePodcastIntegrationTests {
     let feed = "https://feeds.example.com/private/" + suffix + "?token=owner-secret"
     let show = PodcastShow(id: "parsed-show", title: "Private", feedUrl: feed, sourceKind: "rss", guid: "shared-guid")
     let episode = PodcastEpisode(id: "parsed-episode", showId: show.id, title: "Private Episode", publishedAt: "2026-10-05T00:00:00Z", audioUrl: "https://media.example.com/a.mp3?token=owner-secret", guid: "shared-item-guid", transcripts: [])
-    let scoped = PodcastPrivateCatalog.scope(viewer: owner, feedURL: feed, show: show, episodes: [episode])
+    var scoped = PodcastPrivateCatalog.scope(viewer: owner, feedURL: feed, show: show, episodes: [episode])
     let scopedOther = PodcastPrivateCatalog.scope(viewer: other, feedURL: feed, show: show, episodes: [episode])
     try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: scoped.episodes)
     try await store.savePrivateCatalog(viewer: other, feedURL: feed, show: scopedOther.show, episodes: scopedOther.episodes)
+    scoped.episodes[0].chapterSourceUrl = "https://media.example.com/chapters?token=owner-secret"
+    scoped.episodes[0].chapters = [PodcastChapter(startSeconds: 0, title: "Private Intro", artworkUrl: "https://media.example.com/intro.png?token=owner-secret")]
+    try await store.updateMetadata(episode: scoped.episodes[0], viewer: owner)
+    var refreshedEpisode = scoped.episodes[0]
+    refreshedEpisode.chapters = []
+    try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: [refreshedEpisode], existingOnly: true)
+    #expect(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id)?.chapters.count == 1)
+    try await store.updateMetadata(episode: scoped.episodes[0], viewer: other)
+    #expect(try await store.privateEpisode(viewer: other, id: scoped.episodes[0].id) == nil)
     let stored = try await pool.query("SELECT row_to_json(s)::text FROM podcast_private_shows s WHERE viewer_did=\(owner)", logger: logger)
     for try await row in stored {
       let raw = try row.decode(String.self)

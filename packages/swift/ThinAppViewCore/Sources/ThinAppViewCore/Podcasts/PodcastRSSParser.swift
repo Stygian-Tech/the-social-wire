@@ -14,6 +14,10 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
   private var episodes: [[String: String]] = []
   private var transcripts: [PodcastTranscript] = []
   private var episodeTranscripts: [[PodcastTranscript]] = []
+  private var hosts: [PodcastPerson] = []
+  private var personAttributes: [String: String] = [:]
+  private var chapters: [PodcastChapter] = []
+  private var episodeChapters: [[PodcastChapter]] = []
   private var inItem = false
   private var sawRoot = false
   private var closedRoot = false
@@ -31,6 +35,10 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
     episodes = []
     transcripts = []
     episodeTranscripts = []
+    hosts = []
+    personAttributes = [:]
+    chapters = []
+    episodeChapters = []
     inItem = false
     sawRoot = false
     closedRoot = false
@@ -46,7 +54,7 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
     let show = PodcastShow(
       id: showID, title: showFields["title"] ?? "Untitled Podcast",
       description: showFields["description"], artworkUrl: showFields["artwork"], feedUrl: feedURL,
-      sourceKind: "rss", sourceUri: nil, guid: showFields["podcast:guid"], episodeCollection: nil)
+      sourceKind: "rss", sourceUri: nil, guid: showFields["podcast:guid"], episodeCollection: nil, hosts: hosts)
     let items = episodes.enumerated().compactMap { index, f -> PodcastEpisode? in
       guard let audio = f["audio"], Self.isAudio(url: audio, type: f["audioType"]),
         let url = URL(string: audio), ["https", "http"].contains(url.scheme?.lowercased() ?? "")
@@ -58,7 +66,8 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
         publishedAt: Self.date(f["pubdate"] ?? f["published"]), audioUrl: audio,
         audioMimeType: f["audioType"], durationSeconds: Self.duration(f["itunes:duration"]),
         artworkUrl: f["artwork"] ?? show.artworkUrl, guid: guid, sourceUri: nil,
-        transcripts: episodeTranscripts[index])
+        transcripts: episodeTranscripts[index], chapters: episodeChapters[index],
+        chapterSourceUrl: f["chapterSourceUrl"], showArtworkUrl: show.artworkUrl)
     }
     return (show, items)
   }
@@ -77,6 +86,7 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
       inItem = true
       fields = [:]
       transcripts = []
+      chapters = []
     }
     if key == "enclosure" || (key == "link" && a["rel"] == "enclosure") {
       let url = a["url"] ?? a["href"]
@@ -84,6 +94,17 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
         fields["audio"] = url
         fields["audioType"] = a["type"]
       }
+    }
+    if key == "podcast:person", !inItem, stack.dropLast().last == "channel" {
+      personAttributes = a
+    }
+    if key == "podcast:chapters", inItem, let url = PodcastChapterParser.safeURL(a["url"]) {
+      fields["chapterSourceUrl"] = url
+    }
+    if key == "psc:chapter", inItem, chapters.count < 1000,
+      let start = Self.duration(a["start"]), let title = a["title"] {
+      chapters.append(PodcastChapter(startSeconds: start, title: String(title.prefix(512)),
+        artworkUrl: PodcastChapterParser.safeURL(a["image"]), url: PodcastChapterParser.safeURL(a["href"])))
     }
     if key == "itunes:image", let href = a["href"] {
       if inItem { fields["artwork"] = href } else { showFields["artwork"] = href }
@@ -114,8 +135,14 @@ public final class PodcastRSSParser: NSObject, XMLParserDelegate {
     if key == "item" || key == "entry" {
       episodes.append(fields)
       episodeTranscripts.append(transcripts)
+      episodeChapters.append(chapters.sorted { $0.startSeconds < $1.startSeconds })
       inItem = false
       return
+    }
+    if key == "podcast:person", !inItem, stack.last == "channel", hosts.count < 100 {
+      hosts += PodcastChapterParser.people([["name": clean, "role": personAttributes["role"] ?? "host",
+        "img": personAttributes["img"] ?? "", "href": personAttributes["href"] ?? ""]])
+      personAttributes = [:]
     }
     if inItem {
       if !clean.isEmpty { fields[key] = clean }
