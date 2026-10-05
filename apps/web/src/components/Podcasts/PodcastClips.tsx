@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { usePodcastViewer } from "@/hooks/usePodcastViewer";
 import { useAuth } from "@/hooks/useAuth";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 import {
@@ -13,6 +14,10 @@ import { validateClipBounds, formatPodcastTime } from "@/lib/podcasts/playback";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
 const button = "min-h-11 rounded border px-3 text-sm hover:bg-accent";
 export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
+  const viewer = usePodcastViewer();
+  return <PodcastViewerClips key={`${viewer ?? "signed-out"}:${episode.id}`} episode={episode} viewer={viewer} />;
+}
+function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; viewer: string | null }) {
   const { session, getOAuthSession } = useAuth();
   const player = usePodcastPlayer();
   const [start, setStart] = useState(0);
@@ -20,6 +25,7 @@ export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
   const [title, setTitle] = useState(episode.title);
   const [includeCaptions, setIncludeCaptions] = useState(true);
   const [clips, setClips] = useState<PodcastClip[]>([]);
+  const [pollError, setPollError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -30,40 +36,50 @@ export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
     }
   }, [preview, player, end]);
   useEffect(() => {
-    const oauth = getOAuthSession();
-    if (!oauth) return;
-    let cancelled = false;
-    const refresh = () =>
-      podcastRequest<{ clips: PodcastClip[] }>(oauth, "clips")
-        .then((page) => {
-          if (!cancelled)
-            setClips(
-              page.clips.filter((clip) => clip.episodeId === episode.id),
-            );
-        })
-        .catch((reason) => {
-          if (!cancelled) setError(String(reason));
-        });
+    const controller = new AbortController();
+    let pending = false;
+    const refresh = async () => {
+      const oauth = getOAuthSession();
+      if (pending || !viewer || oauth?.did !== viewer) return;
+      pending = true;
+      try {
+        const page = await podcastRequest<{ clips: PodcastClip[] }>(oauth, "clips", "GET", undefined, controller.signal);
+        if (!controller.signal.aborted && getOAuthSession()?.did === viewer) {
+          setClips(page.clips.filter(clip => clip.episodeId === episode.id));
+          setPollError(null);
+        }
+      } catch {
+        if (!controller.signal.aborted && getOAuthSession()?.did === viewer)
+          setPollError("Clips Could Not Load. Retrying…");
+      } finally {
+        pending = false;
+      }
+    };
     void refresh();
     const timer = setInterval(() => void refresh(), 5000);
     return () => {
-      cancelled = true;
+      controller.abort();
       clearInterval(timer);
     };
-  }, [getOAuthSession, episode.id]);
+  }, [getOAuthSession, episode.id, viewer]);
+  function clipSession() {
+    const oauth = getOAuthSession();
+    if (!viewer || oauth?.did !== viewer) throw new Error("Account Is Loading");
+    return oauth;
+  }
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
     try {
       await action();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reason instanceof Error && reason.message === "Account Is Loading" ? "Account Is Loading. Please Retry." : "Clip Action Failed. Please Retry.");
     } finally {
       setBusy(false);
     }
   }
   async function exportAsset(clip: PodcastClip, format: "audio" | "video") {
-    const oauth = getOAuthSession();
+    const oauth = clipSession();
     if (!oauth) throw new Error("Sign in to export a draft");
     const response = await gatewayFetch(
       oauth,
@@ -154,7 +170,7 @@ export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
           disabled={!valid || busy}
           onClick={() =>
             void run(async () => {
-              const oauth = getOAuthSession();
+              const oauth = clipSession();
               if (!oauth) throw new Error("Sign in to create clips");
               await podcastRequest(oauth, "clips", "POST", {
                 episodeId: episode.id,
@@ -181,9 +197,9 @@ export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
           Choose a valid range within the episode, up to 10 minutes.
         </p>
       ) : null}
-      {error ? (
+      {error || pollError ? (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {error ?? pollError}
         </p>
       ) : null}
       <ul className="space-y-3">
@@ -204,7 +220,7 @@ export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      const oauth = getOAuthSession();
+                      const oauth = clipSession();
                       if (!oauth) throw new Error("Sign In to Retry Exports");
                       const job = clip.jobId
                         ? { id: clip.jobId }
@@ -250,7 +266,7 @@ export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
                   disabled={busy || !clip.audioUrl || !clip.videoUrl}
                   onClick={() =>
                     void run(async () => {
-                      const oauth = getOAuthSession();
+                      const oauth = clipSession();
                       if (!oauth || !session) return;
                       const uri = await publishPodcastClip(
                         oauth,
@@ -315,7 +331,7 @@ export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
                     )
                   )
                     void run(async () => {
-                      const oauth = getOAuthSession();
+                      const oauth = clipSession();
                       if (!oauth || !session) return;
                       await unpublishPodcastClip(oauth, session.did, clip);
                       setClips((items) =>
