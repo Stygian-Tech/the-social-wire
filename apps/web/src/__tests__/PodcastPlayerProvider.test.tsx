@@ -12,6 +12,8 @@ import * as auth from "@/hooks/useAuth";
 import * as gateway from "@/lib/socialWireGatewayClient";
 import * as offline from "@/lib/podcasts/offline";
 import * as client from "@/lib/podcasts/client";
+import { notifyPodcastSubscriptionsChanged } from "@/lib/podcasts/subscriptionsChanged";
+import { PodcastLibrarySidebar } from "@/components/Podcasts/PodcastLibrarySidebar";
 import { PodcastPlayerView } from "@/components/Podcasts/PodcastPlayerView";
 import {
   initialPodcastState,
@@ -73,7 +75,7 @@ function environment() {
     else process.env.NEXT_PUBLIC_PODCASTS_ENABLED = flag;
   });
   let viewer: string | null = "did:plc:viewer-a";
-  const oauth = {} as OAuthSession;
+  const oauth = { get did() { return viewer; } } as unknown as OAuthSession;
   const getOAuthSession = () => oauth;
   const hook = spyOn(auth, "useAuth").mockImplementation(
     () =>
@@ -416,4 +418,61 @@ describe("Persistent podcast player", () => {
     expect(env.element.src.startsWith("blob:")).toBe(true);
     expect(env.requests).toHaveLength(0);
   });
+});
+
+function SubscriptionProbe() {
+  const player = usePodcastPlayer();
+  return <><output data-testid="subscription-state">{JSON.stringify(player.state)}</output><PodcastLibrarySidebar feed="recent" showId={null} shows={[{id:"imported",title:"Imported Podcast",sourceKind:"rss"}]} subscriptions={player.state.subscriptions} downloadCount={0} queueCount={0} onSelect={() => {}} /></>;
+}
+
+it("refreshes imported subscription IDs without replacing playback preferences, queue, or progress", async () => {
+  environment();
+  const local = { ...initialPodcastState(), queue: ["episode"], progress: { episode: { positionSeconds: 42, updatedAt: "2026-10-05", completed: false } }, playbackSpeed: 1.75, removeSilences: true };
+  let calls = 0;
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(): Promise<T> => ({revision:1,state:++calls === 1 ? local : {...initialPodcastState(),subscriptions:["imported"]}} as T));
+  restores.push(() => request.mockRestore());
+  render(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  await waitFor(() => expect(JSON.parse(screen.getByTestId("subscription-state").textContent!).queue).toEqual(["episode"]));
+  act(() => notifyPodcastSubscriptionsChanged("did:plc:viewer-a"));
+  await screen.findByRole("button", {name:"Imported Podcast"});
+  expect(JSON.parse(screen.getByTestId("subscription-state").textContent!)).toEqual({...local,subscriptions:["imported"]});
+  expect(request.mock.calls).toHaveLength(2);
+});
+
+it("preserves a pending local subscription change during import refresh", async () => {
+  environment();
+  Object.defineProperty(navigator,"onLine",{configurable:true,value:false});
+  window.localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a",JSON.stringify({state:{...initialPodcastState(),subscriptions:["intentional-local"]},pending:{subscriptions:["intentional-local"]}}));
+  const request = spyOn(client,"podcastRequest").mockResolvedValue({revision:1,state:{...initialPodcastState(),subscriptions:["imported"]}});
+  restores.push(() => request.mockRestore());
+  render(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  await waitFor(() => expect(JSON.parse(screen.getByTestId("subscription-state").textContent!).subscriptions).toEqual(["intentional-local"]));
+  Object.defineProperty(navigator,"onLine",{configurable:true,value:true});
+  await act(async () => notifyPodcastSubscriptionsChanged("did:plc:viewer-a"));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(screen.getByTestId("subscription-state").textContent!).subscriptions).toEqual(["intentional-local"]);
+  expect(JSON.parse(window.localStorage.getItem("the-social-wire.podcast-state.v1:did:plc:viewer-a")!).pending.subscriptions).toEqual(["intentional-local"]);
+});
+
+it("aborts an old viewer's subscription refresh and rejects unrelated viewer events", async () => {
+  const env = environment();
+  let resolve: (value:unknown) => void = () => {};
+  let signal:AbortSignal|undefined;
+  let calls=0;
+  const request=spyOn(client,"podcastRequest").mockImplementation(<T,>(_oauth:OAuthSession,_path:string,_method?:string,_body?:unknown,nextSignal?:AbortSignal):Promise<T> => {
+    if(++calls===2){signal=nextSignal;return new Promise(done=>{resolve=value=>done(value as T);});}
+    return Promise.resolve({revision:1,state:initialPodcastState()} as T);
+  });
+  restores.push(()=>request.mockRestore());
+  const view=render(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  await waitFor(()=>expect(request).toHaveBeenCalledTimes(1));
+  act(()=>notifyPodcastSubscriptionsChanged("did:plc:other"));
+  expect(request).toHaveBeenCalledTimes(1);
+  act(()=>notifyPodcastSubscriptionsChanged("did:plc:viewer-a"));
+  await waitFor(()=>expect(request).toHaveBeenCalledTimes(2));
+  env.setViewer("did:plc:viewer-b");
+  view.rerender(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  expect(signal?.aborted).toBe(true);
+  await act(async()=>resolve({revision:2,state:{...initialPodcastState(),subscriptions:["imported"]}}));
+  expect(screen.queryByRole("button",{name:"Imported Podcast"})).toBeNull();
 });

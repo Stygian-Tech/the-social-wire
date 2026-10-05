@@ -36,12 +36,12 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
   const chapter = activePodcastChapter(episode.chapters ?? [], player.position);
   const artwork = chapter?.artworkUrl ?? episode.artworkUrl ?? episode.showArtworkUrl;
   const artworkLabel = chapter?.artworkUrl ? `Chapter Artwork: ${chapter.title}` : `Episode Artwork: ${episode.title}`;
-  const transport = <div aria-label="Playback Controls" className="flex items-center justify-center gap-2">
-    <button type="button" aria-label="Back 15 Seconds" onClick={() => player.seek(player.position - 15)} className="min-h-11 min-w-11 rounded px-2 hover:bg-accent">−15</button>
-    <button type="button" aria-label={player.playing ? "Pause" : "Play"} onClick={player.toggle} className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-primary px-4 text-primary-foreground">
-      {player.playing ? <Pause aria-hidden="true" className="size-5" /> : <Play aria-hidden="true" className="size-5" />}
+  const transport = <div aria-label="Playback Controls" className="flex items-center justify-center gap-1">
+    <button type="button" aria-label="Back 15 Seconds" onClick={() => player.seek(player.position - 15)} className="min-h-11 min-w-11 rounded px-2 text-xs hover:bg-accent">−15</button>
+    <button type="button" aria-label={player.playing ? "Pause" : "Play"} onClick={player.toggle} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-primary-foreground">
+      <span className="flex size-8 items-center justify-center rounded-full bg-primary">{player.playing ? <Pause aria-hidden="true" className="size-4" /> : <Play aria-hidden="true" className="size-4" />}</span>
     </button>
-    <button type="button" aria-label="Forward 30 Seconds" onClick={() => player.seek(player.position + 30)} className="min-h-11 min-w-11 rounded px-2 hover:bg-accent">+30</button>
+    <button type="button" aria-label="Forward 30 Seconds" onClick={() => player.seek(player.position + 30)} className="min-h-11 min-w-11 rounded px-2 text-xs hover:bg-accent">+30</button>
   </div>;
   const title = <div className="min-w-0"><Link href="/podcasts" className="block truncate text-sm font-semibold">{episode.title}</Link>
     {chapter ? <p className="truncate text-xs text-muted-foreground">{chapter.title}</p> : null}</div>;
