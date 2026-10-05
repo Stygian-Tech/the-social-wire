@@ -187,11 +187,19 @@ final class PodcastLibraryModel {
 
     func searchPage(_ identity: PodcastSearchIdentity, cursor: String?) async throws -> PodcastSearchPage {
         guard identity.isValid, let viewer = identity.viewer, self.viewer == viewer else { throw CancellationError() }
-        var body: [String: JSONValue] = ["query": .string(identity.normalizedQuery), "scope": .string("library"), "kind": .string(identity.kind), "limit": .number(20)]
-        if let cursor { body["cursor"] = .string(cursor) }
-        if let showId = identity.showId { body["showId"] = .string(showId) }
+        let body = identity.requestBody(cursor: cursor)
         let result: PodcastSearchPage = try await request(method: "POST", path: "/v1/podcasts/search", body: body, viewer: viewer)
         guard !Task.isCancelled, self.viewer == viewer else { throw CancellationError() }
+        return result
+    }
+
+    func previewPublicFeed(_ feedURL: String) async throws -> PodcastResolvedSource {
+        guard let viewer else { throw CancellationError() }
+        let result: PodcastResolvedSource = try await request(method: "POST", path: "/v1/podcasts/resolve", body: ["url": feedURL], viewer: viewer)
+        guard !Task.isCancelled, self.viewer == viewer else { throw CancellationError() }
+        shows.removeAll { $0.id == result.show.id }
+        shows.append(result.show)
+        showEpisodes[result.show.id] = result.episodes
         return result
     }
 
@@ -358,23 +366,83 @@ final class PodcastLibraryModel {
             if state.subscriptions.contains(show.id) {
                 for record in existing { try await xrpc.deleteRecord(collection: collection, rkey: rkey(from: record.uri), expectedViewer: viewer) }
             } else if existing.isEmpty {
-                var record: [String: JSONValue] = ["$type": .string(collection), "title": .string(show.title),
-                    "source": .string("the-social-wire"), "createdAt": .string(DateFormatters.string())]
-                if let feed = show.feedUrl {
-                    record["feedUrl"] = .string(feed)
-                    record["sourceType"] = .string("rss")
-                    if let uri = show.sourceUri { record["externalRef"] = .string(uri) }
-                } else if let uri = show.sourceUri, let at = ATURI(uri),
-                          let episodeCollection = show.episodeCollection {
-                    record["sourceType"] = .string("atproto.collection")
-                    record["subjectDid"] = .string(at.repo)
-                    record["collectionNsid"] = .string(episodeCollection)
-                    record["externalRef"] = .string(uri)
-                } else { throw SocialWireError.badResponse("This Podcast Does Not Have a Supported Subscription Source") }
-                try await xrpc.putRecord(collection: collection, rkey: PodcastDownloadStore.key(show.id), record: record, expectedViewer: viewer)
+                try await createSubscription(show, viewer: viewer)
             }
             await refresh()
         } catch { self.error = error.localizedDescription }
+    }
+
+    private func createSubscription(_ show: PodcastShow, viewer: String) async throws {
+        guard self.viewer == viewer, !show.isPrivate else { throw CancellationError() }
+        if let feed = show.feedUrl, !PodcastPrivacy.permitsPublicURL(feed) {
+            throw SocialWireError.badResponse("Use Private Feeds for Subscriber Feeds.")
+        }
+        let collection = "app.skyreader.feed.subscription"
+        var record: [String: JSONValue] = ["$type": .string(collection), "title": .string(show.title),
+            "source": .string("the-social-wire"), "createdAt": .string(DateFormatters.string())]
+        if let feed = show.feedUrl {
+            record["feedUrl"] = .string(feed)
+            record["sourceType"] = .string("rss")
+            if let uri = show.sourceUri { record["externalRef"] = .string(uri) }
+        } else if let uri = show.sourceUri, let at = ATURI(uri),
+                  let episodeCollection = show.episodeCollection {
+            record["sourceType"] = .string("atproto.collection")
+            record["subjectDid"] = .string(at.repo)
+            record["collectionNsid"] = .string(episodeCollection)
+            record["externalRef"] = .string(uri)
+        } else { throw SocialWireError.badResponse("This Podcast Does Not Have a Supported Subscription Source") }
+        try await xrpc.putRecord(collection: collection, rkey: PodcastDownloadStore.key(show.id), record: record, expectedViewer: viewer)
+    }
+
+    func existingOPMLFeedURLs(privateFeeds: Bool) async throws -> Set<String> {
+        guard let viewer else { throw CancellationError() }
+        let response: ShowsResponse = try await request(path: "/v1/podcasts/shows", viewer: viewer)
+        guard self.viewer == viewer else { throw CancellationError() }
+        shows = response.shows
+        try await refreshState(viewer: viewer)
+        if privateFeeds { return [] }
+        let records = try await podcastSubscriptionRecords(viewer: viewer)
+        return Set(records.compactMap { $0.value.object?["feedUrl"]?.string.flatMap(OPMLParser.normalizeFeedURL) })
+    }
+
+    private func podcastSubscriptionRecords(viewer: String) async throws -> [GenericRepoRecord] {
+        var cursor: String?
+        var records: [GenericRepoRecord] = []
+        repeat {
+            guard self.viewer == viewer else { throw CancellationError() }
+            let page = try await xrpc.listAuthorizedGenericRecords(collection: "app.skyreader.feed.subscription", cursor: cursor)
+            guard self.viewer == viewer else { throw CancellationError() }
+            records += page.records
+            cursor = page.cursor
+        } while cursor != nil
+        return records
+    }
+
+    func importOPMLFeeds(_ feeds: [OPMLFeed], privateFeeds: Bool,
+                         currentViewer: @escaping @MainActor () -> String?,
+                         progress: @escaping @MainActor (Int, Int) -> Void) async -> [OPMLImportFailure] {
+        guard let viewer, currentViewer() == viewer else { return feeds.map { OPMLImportFailure(feed: $0, message: "Sign In to Import Podcasts.") } }
+        do {
+            let existingURLs = try await existingOPMLFeedURLs(privateFeeds: privateFeeds)
+            guard self.viewer == viewer, currentViewer() == viewer else { throw CancellationError() }
+            let existingIDs = Set(state.subscriptions)
+            let failures = await PodcastOPMLImportBatch.run(feeds, privateFeeds: privateFeeds, viewer: viewer,
+                existingFeedURLs: existingURLs, existingIDs: existingIDs, currentViewer: { self.viewer == currentViewer() ? self.viewer : nil },
+                resolve: { feed, isPrivate in
+                    if !isPrivate, !PodcastPrivacy.permitsPublicURL(feed.feedURL) { throw SocialWireError.badResponse("Use Private Feeds.") }
+                    let result: PodcastResolvedSource = try await self.request(method: "POST",
+                        path: isPrivate ? "/v1/podcasts/private/resolve" : "/v1/podcasts/resolve", body: ["url": feed.feedURL], viewer: viewer)
+                    guard self.viewer == viewer, currentViewer() == viewer else { throw CancellationError() }
+                    return result.show
+                }, subscribe: { show in
+                    guard currentViewer() == viewer else { throw CancellationError() }
+                    try await self.createSubscription(show, viewer: viewer)
+                }, progress: progress)
+            if self.viewer == viewer, currentViewer() == viewer { await refresh() }
+            return failures
+        } catch {
+            return feeds.map { OPMLImportFailure(feed: $0, message: "Could Not Prepare Podcast Import. Sign In and Retry.") }
+        }
     }
 
     func refreshBridgeStatus(showId: String) async {
