@@ -21,7 +21,7 @@ struct PodcastListenerTests {
         #expect(episode.transcripts.first?.type == "text/vtt")
     }
 
-    @Test("Private feeds and credential-bearing audio cannot enter public processing")
+    @Test("Server privacy controls public processing while signed public CDN media remains supported")
     func privateMediaBoundaries() throws {
         func episode(_ audio: String, visibility: String? = nil) throws -> PodcastEpisode {
             var object: [String: Any] = ["id": "private-episode", "showId": "private-show", "title": "Private Episode", "publishedAt": "2026-10-04T00:00:00Z", "audioUrl": audio, "transcripts": []]
@@ -31,7 +31,10 @@ struct PodcastListenerTests {
         #expect(try episode("https://example.com/audio.mp3").permitsPublicProcessing)
         #expect(try !episode("https://example.com/audio.mp3", visibility: "private").permitsPublicProcessing)
         #expect(try episode("/v1/podcasts/media?episodeId=private-episode").isPrivate)
-        #expect(try !episode("https://example.com/audio.mp3?access_token=secret").permitsPublicProcessing)
+        #expect(try episode("https://example.com/audio.mp3?access_token=cdn-token&signature=cdn-signature").permitsPublicProcessing)
+        #expect(try !episode("https://example.com/audio.mp3?signature=cdn-signature", visibility: "private").permitsPublicProcessing)
+        #expect(try !episode("https://api.example.com/v1/podcasts/media?episodeId=private-episode").permitsPublicProcessing)
+        #expect(!PodcastPrivacy.permitsPublicURL("https://example.com/feed.xml?access_token=subscriber-token"))
         #expect(try !episode("https://user:secret@example.com/audio.mp3").permitsPublicProcessing)
         let show = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"private-show","title":"Private Show","sourceKind":"private-rss","visibility":"private"}"#.utf8))
         #expect(show.isPrivate)

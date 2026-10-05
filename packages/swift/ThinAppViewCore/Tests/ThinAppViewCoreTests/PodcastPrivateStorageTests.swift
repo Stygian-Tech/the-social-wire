@@ -4,6 +4,24 @@ import Testing
 @testable import ThinAppViewCore
 
 struct PodcastPrivateStorageTests {
+  @Test func sharedCodecSupportsConcurrentEncryptionWithUniqueNonces() async throws {
+    let storage = try PodcastPrivateStorage(base64Key: Data(repeating: 7, count: 32).base64EncodedString())
+    let payloads = try await withThrowingTaskGroup(of: String.self) { group in
+      for _ in 0..<16 {
+        group.addTask {
+          try storage.seal("private content", viewer: "did:plc:owner", entity: "feed", id: "one")
+        }
+      }
+      var values: [String] = []
+      for try await value in group { values.append(value) }
+      return values
+    }
+    #expect(Set(payloads).count == 16)
+    for payload in payloads {
+      #expect(try storage.open(payload, viewer: "did:plc:owner", entity: "feed", id: "one") == "private content")
+    }
+  }
+
   @Test func encryptsAndAuthenticatesViewerEntityAndIdentity() throws {
     let storage = try PodcastPrivateStorage(base64Key: Data(repeating: 7, count: 32).base64EncodedString())
     let plaintext = "https://feeds.example.com/private?token=private-secret"

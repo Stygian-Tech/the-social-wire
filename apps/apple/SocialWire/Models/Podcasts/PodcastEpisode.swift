@@ -17,6 +17,10 @@ struct PodcastEpisode: Codable, Identifiable, Hashable, Sendable {
     var isPrivate: Bool {
         visibility == "private" || URLComponents(string: audioUrl)?.path == "/v1/podcasts/media"
     }
-    var permitsPublicProcessing: Bool { !isPrivate && PodcastPrivacy.permitsPublicURL(audioUrl) }
+    var permitsPublicProcessing: Bool {
+        guard !isPrivate, let components = URLComponents(string: audioUrl) else { return false }
+        return components.scheme == "https" && components.host != nil
+            && components.user == nil && components.password == nil
+    }
     var audioURL: String { audioUrl }
 }
