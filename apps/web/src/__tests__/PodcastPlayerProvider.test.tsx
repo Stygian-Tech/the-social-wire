@@ -213,6 +213,9 @@ describe("Persistent podcast player", () => {
     expect(disconnected).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Restore Player" }));
     expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("514px");
+    view.rerender(<PodcastPlayerView player={empty} />);
+    expect(screen.queryByRole("complementary", { name: "Podcast Player" })).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
     view.unmount();
     resize?.();
     expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
