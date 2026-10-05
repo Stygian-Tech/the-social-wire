@@ -2239,6 +2239,7 @@ paths:
         - ATProtoOAuthDPoP: []
       description: Article-first Finance. Selections come from public viewer PDS records; current moderation applies to every page. Named feeds contain only matching stories. Cursors bind feed, generation, viewer, language, and preference/catalog revision and expire after 48 hours.
       parameters:
+        - { name: hideCrypto, in: query, schema: { type: boolean, default: false } }
         - { name: feed, in: query, schema: { type: string, maxLength: 256, default: finance } }
         - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 30 } }
@@ -2254,7 +2255,6 @@ paths:
                 $ref: "#/components/schemas/FinancePage"
         "400": { description: Invalid parameters or event. }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        - { name: hideCrypto, in: query, schema: { type: boolean, default: false } }
         "429": { description: Request budget exhausted. }
         "503": { description: Finance unavailable or rollout disabled. }
         "410": { description: CursorExpired; restart at page one. }

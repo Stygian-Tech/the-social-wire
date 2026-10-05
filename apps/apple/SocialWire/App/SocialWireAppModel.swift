@@ -1533,13 +1533,13 @@ final class SocialWireAppModel {
         await loadFinance()
     }
 
-
-    func financeSuggestions(for entryID: String) -> [FinanceInstrument] {
-        financeItems.first { $0.id == entryID }?.suggestions ?? []
-    }
     func recordFinanceComposition(event: String, count: Int) async {
         guard count > 0 else { return }
         await gateway.recordFinanceComposition(event: event, suggestionCount: count)
+    }
+
+    func financeSuggestions(for entryID: String) -> [FinanceInstrument] {
+        financeItems.first { $0.id == entryID }?.suggestions ?? []
     }
 
     func selectFinanceFeed(_ id: String) async {
@@ -1754,11 +1754,11 @@ final class SocialWireAppModel {
             showCircle: feedPreferences.showCircle,
             showFinance: feedPreferences.showFinance,
             hideFinancePerformance: feedPreferences.hideFinancePerformance,
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
             showSports: feedPreferences.showSports,
             hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
-            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
@@ -1818,11 +1818,11 @@ final class SocialWireAppModel {
             showCircle: feedPreferences.showCircle,
             showFinance: feedPreferences.showFinance,
             hideFinancePerformance: feedPreferences.hideFinancePerformance,
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
             showSports: feedPreferences.showSports,
             hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
-            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
@@ -1848,11 +1848,11 @@ final class SocialWireAppModel {
             showCircle: feedPreferences.showCircle,
             showFinance: feedPreferences.showFinance,
             hideFinancePerformance: feedPreferences.hideFinancePerformance,
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
             showSports: feedPreferences.showSports,
             hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
-            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
@@ -3686,11 +3686,11 @@ final class SocialWireAppModel {
                 showCircle: previous?.showCircle,
             showFinance: previous?.showFinance,
             hideFinancePerformance: previous?.hideFinancePerformance,
+            hideFinanceCrypto: previous?.hideFinanceCrypto,
             showSports: previous?.showSports,
             hideSportsScores: previous?.hideSportsScores,
                 showTopLevelFeedUnreadCounts: previous?.showTopLevelFeedUnreadCounts,
                 feedsWithUnreadCounts: previous?.feedsWithUnreadCounts,
-            hideFinanceCrypto: previous?.hideFinanceCrypto,
                 rssArticleOpenMode: previous?.rssArticleOpenMode,
                 createdAt: previous?.createdAt ?? now,
                 updatedAt: now
