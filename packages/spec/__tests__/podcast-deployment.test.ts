@@ -32,6 +32,7 @@ describe("Development podcast deployment graph", () => {
     }
     expect(worker.variables?.APP_ENV).toEqual({ type: "literal", value: "dev" });
     expect(worker.variables?.PODCASTS_ENABLED).toEqual({ type: "literal", value: "true" });
+    expect(worker.variables?.PODCAST_BRIDGE_ENABLED).toEqual({ type: "literal", value: "false" });
     expect(worker.variables?.PODCAST_PUBLIC_GATEWAY_URL).toEqual({ type: "literal", value: "https://api.testing.thesocialwire.app" });
     for (const variable of ["DATABASE_URL", "DATABASE_MIGRATOR_SERVICE_ID", "PODCAST_MEDIA_INTERNAL_SECRET", "PODCAST_BRIDGE_DID", "PODCAST_BRIDGE_PDS_URL", "PODCAST_BRIDGE_IDENTIFIER", "PODCAST_BRIDGE_APP_PASSWORD"]) {
       expect(worker.variables?.[variable]).toEqual({ type: "preserve" });

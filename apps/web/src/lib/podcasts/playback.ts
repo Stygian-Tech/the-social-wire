@@ -1,6 +1,6 @@
 export const PODCAST_SPEEDS = Array.from(
-  { length: 11 },
-  (_, index) => 0.5 + index * 0.25,
+  { length: 6 },
+  (_, index) => 0.75 + index * 0.25,
 );
 export const podcastsEnabled = () =>
   process.env.NEXT_PUBLIC_PODCASTS_ENABLED === "true";
@@ -54,4 +54,32 @@ export function validateClipBounds(
     end <= duration &&
     end - start <= 600
   );
+}
+
+/** Normalize persisted legacy preferences to the current supported quarter-speed steps. */
+export function normalizePodcastSpeed(speed: number): number {
+  if (!Number.isFinite(speed)) return 1;
+  return Math.min(2, Math.max(0.75, Math.round(speed * 4) / 4));
+}
+export function activePodcastChapter<T extends { startSeconds: number }>(
+  chapters: readonly T[] | undefined, position: number,
+): T | undefined {
+  if (!Number.isFinite(position)) return undefined;
+  return (chapters ?? []).reduce<T | undefined>((active, chapter) =>
+    Number.isFinite(chapter.startSeconds) && chapter.startSeconds >= 0 &&
+    chapter.startSeconds <= position && (!active || chapter.startSeconds > active.startSeconds)
+      ? chapter : active, undefined);
+}
+
+export function orderedPodcastChapters<T extends { startSeconds: number }>(
+  chapters: readonly T[] | undefined, duration = Number.POSITIVE_INFINITY,
+): T[] {
+  return (chapters ?? []).filter((chapter) => Number.isFinite(chapter.startSeconds) &&
+    chapter.startSeconds >= 0 && chapter.startSeconds <= duration)
+    .sort((a, b) => a.startSeconds - b.startSeconds);
+}
+
+export const PODCAST_SILENCE_ANALYSIS_VERSION = "v2";
+export function isCurrentSilenceAnalysis(analysis: { analysisVersion?: string } | null | undefined): boolean {
+  return analysis?.analysisVersion === PODCAST_SILENCE_ANALYSIS_VERSION;
 }

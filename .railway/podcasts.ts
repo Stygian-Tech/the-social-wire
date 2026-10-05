@@ -32,6 +32,7 @@ export function developmentPodcasts() {
       DATABASE_URL: preserve(),
       DATABASE_MIGRATOR_SERVICE_ID: preserve(),
       PODCASTS_ENABLED: "true",
+      PODCAST_BRIDGE_ENABLED: "false",
       PODCAST_PUBLIC_GATEWAY_URL: "https://api.testing.thesocialwire.app",
       PODCAST_S3_ENDPOINT: ref(media, "ENDPOINT"),
       PODCAST_S3_BUCKET: ref(media, "BUCKET"),

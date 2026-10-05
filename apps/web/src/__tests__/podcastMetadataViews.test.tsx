@@ -1,0 +1,53 @@
+import { afterEach, expect, it, spyOn } from "bun:test";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { PodcastChapters } from "@/components/Podcasts/PodcastChapters";
+import { PodcastShowDetails } from "@/components/Podcasts/PodcastShowDetails";
+import { PodcastArtwork } from "@/components/Podcasts/PodcastArtwork";
+import * as auth from "@/hooks/useAuth";
+import * as gateway from "@/lib/socialWireGatewayClient";
+import type { OAuthSession } from "@atproto/oauth-client-browser";
+const restores: (() => void)[] = [];
+afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
+it("shows publisher artwork and available host photos without inventing missing hosts", () => {
+  const view = render(<PodcastShowDetails show={{ id:"show",title:"Test Show",sourceKind:"rss",artworkUrl:"https://example.com/show.jpg",hosts:[{name:"Sam",imageUrl:"https://example.com/sam.jpg"},{name:"Jo"}] }} />);
+  expect(screen.getByRole("img",{name:"Test Show Artwork"}).getAttribute("src")).toBe("https://example.com/show.jpg");
+  expect(screen.getByRole("img",{name:"Sam Photo"})).toBeTruthy();
+  expect(screen.getByText("Jo")).toBeTruthy();
+  view.rerender(<PodcastShowDetails show={{ id:"show",title:"Test Show",sourceKind:"rss" }} />);
+  expect(screen.queryByLabelText("Podcast Hosts")).toBeNull();
+});
+it("chapter selection keeps original timestamps and follows chapter boundaries", () => {
+  const seeks: number[] = [];
+  const chapters = [{startSeconds:90,title:"Second"},{startSeconds:0,title:"Opening"},{startSeconds:-1,title:"Invalid"}];
+  const view = render(<PodcastChapters chapters={chapters} position={89.9} onSeek={time => seeks.push(time)} />);
+  expect(screen.queryByText("Invalid")).toBeNull();
+  expect(screen.getByRole("button",{name:/Opening/}).getAttribute("aria-current")).toBe("true");
+  fireEvent.click(screen.getByRole("button",{name:/Second/}));
+  expect(seeks).toEqual([90]);
+  view.rerender(<PodcastChapters chapters={chapters} position={90} onSeek={time => seeks.push(time)} />);
+  expect(screen.getByRole("button",{name:/Second/}).getAttribute("aria-current")).toBe("true");
+});
+it("private artwork uses viewer-authenticated bytes and revokes them on account changes", async () => {
+  let did = "did:plc:viewer-a";
+  const oauth = {} as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const session = spyOn(auth,"useAuth").mockImplementation(() => ({session:{did},getOAuthSession}) as ReturnType<typeof auth.useAuth>);
+  const fetch = spyOn(gateway,"gatewayFetch").mockResolvedValue(new Response(new Blob(["image"],{type:"image/png"})));
+  const createDescriptor = Object.getOwnPropertyDescriptor(URL,"createObjectURL");
+  const revokeDescriptor = Object.getOwnPropertyDescriptor(URL,"revokeObjectURL");
+  const revoked: string[] = [];
+  Object.defineProperty(URL,"createObjectURL",{configurable:true,value:()=>`blob:${did}`});
+  Object.defineProperty(URL,"revokeObjectURL",{configurable:true,value:(url:string)=>revoked.push(url)});
+  restores.push(()=>session.mockRestore(),()=>fetch.mockRestore(),()=> {
+    if(createDescriptor) Object.defineProperty(URL,"createObjectURL",createDescriptor); else Reflect.deleteProperty(URL,"createObjectURL");
+    if(revokeDescriptor) Object.defineProperty(URL,"revokeObjectURL",revokeDescriptor); else Reflect.deleteProperty(URL,"revokeObjectURL");
+  });
+  const view = render(<PodcastArtwork src="/v1/podcasts/image?showId=private&kind=artwork" alt="Private Artwork" size={64} />);
+  await waitFor(()=>expect(screen.getByRole("img",{name:"Private Artwork"}).getAttribute("src")).toBe("blob:did:plc:viewer-a"));
+  expect(fetch.mock.calls[0]?.[0]).toBe(oauth);
+  did="did:plc:viewer-b";
+  fetch.mockImplementation(()=>new Promise(()=>{}));
+  view.rerender(<PodcastArtwork src="/v1/podcasts/image?showId=private&kind=artwork" alt="Private Artwork" size={64} />);
+  expect(screen.getByRole("img",{name:"Private Artwork"}).getAttribute("src")).toBeNull();
+  expect(revoked).toContain("blob:did:plc:viewer-a");
+});

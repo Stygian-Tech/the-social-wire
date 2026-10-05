@@ -1,7 +1,7 @@
 "use client";
 
-import { Clock, Download, Headphones, ListMusic } from "lucide-react";
-import Image from "next/image";
+import { Clock, Download, ListMusic } from "lucide-react";
+import { PodcastArtwork } from "./PodcastArtwork";
 import type { PodcastShow } from "@/lib/podcasts/client";
 import type { PodcastFeed } from "@/lib/podcasts/library";
 
@@ -39,7 +39,7 @@ export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, down
             <button type="button" aria-current={feed === "show" && showId === show.id ? "page" : undefined}
               onClick={() => onSelect("show", show.id)}
               className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${feed === "show" && showId === show.id ? "bg-accent" : "hover:bg-accent/60"}`}>
-              {show.artworkUrl ? <Image src={show.artworkUrl} unoptimized alt="" width={32} height={32} className="size-8 shrink-0 rounded object-cover" /> : <Headphones className="size-5 shrink-0" aria-hidden="true" />}
+              <PodcastArtwork src={show.artworkUrl} alt="" size={32} className="size-8 rounded" />
               <span className="min-w-0 break-words">{show.title}{show.visibility === "private" ? <span className="block text-xs text-muted-foreground">Private Feed</span> : null}</span>
             </button>
           </li>

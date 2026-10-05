@@ -40,6 +40,7 @@ import { rkeyFromURI } from "@/lib/pdsClient";
 import { type DiscoveredPublication } from "@/lib/atprotoClient";
 import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { PublicationTabs } from "./PublicationTabs";
+import { SidebarAudioSection } from "./SidebarAudioSection";
 import { podcastsEnabled } from "@/lib/podcasts/playback";
 import { SidebarTopicsSection } from "./SidebarTopicsSection";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
@@ -566,10 +567,8 @@ export function AppSidebar({
             </SidebarMenu>
           </SidebarGroup>
           ) : null}
+          <SidebarAudioSection enabled={podcastsEnabled()} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} />
           <PublicationTabs
-            podcastsEnabled={podcastsEnabled()}
-            podcastsActive={currentFeed === "podcasts"}
-            onPodcastsSelect={() => selectTopLevelFeed("podcasts")}
             visibleFeeds={visible}
             activeTab={
               currentFeed === "subscribed" || currentFeed === "following"
