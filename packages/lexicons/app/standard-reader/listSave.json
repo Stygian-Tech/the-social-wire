@@ -1,0 +1,30 @@
+{
+  "lexicon": 1,
+  "id": "app.standard-reader.listSave",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Saves another reader's app.standard-reader.list into this reader's app (like adding a Bluesky list). Presence of the record means saved; deleting it removes the list again.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": [
+          "list",
+          "createdAt"
+        ],
+        "properties": {
+          "list": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the app.standard-reader.list record being saved."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When the list was saved."
+          }
+        }
+      }
+    }
+  }
+}

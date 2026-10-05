@@ -9,12 +9,14 @@ export function WireHorizontalRail({
   title,
   eyebrow,
   onNearEnd,
+  behindSidebar = false,
   children,
 }: {
   id: string;
   title: string;
   eyebrow?: string;
   onNearEnd?: () => void;
+  behindSidebar?: boolean;
   children: ReactNode;
 }) {
   const headingId = `wire-rail-${id}`;
@@ -67,8 +69,10 @@ export function WireHorizontalRail({
     const reduceMotion = window.matchMedia?.(
       "(prefers-reduced-motion: reduce)",
     ).matches;
+    // A rail can extend beneath a sidebar; advance by the visible story column.
+    const visibleWidth = Math.min(rail.clientWidth, rail.parentElement?.clientWidth || rail.clientWidth);
     rail.scrollBy({
-      left: direction * Math.max(240, rail.clientWidth * 0.85),
+      left: direction * Math.max(240, visibleWidth * 0.85),
       behavior: reduceMotion ? "auto" : "smooth",
     });
   }, []);
@@ -115,7 +119,7 @@ export function WireHorizontalRail({
         role="group"
         aria-label={`${title} carousel`}
         tabIndex={0}
-        className="flex snap-x snap-mandatory scroll-pl-5 scroll-pr-4 gap-3 overflow-x-auto pb-2 pl-5 pr-4 pt-2 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:scroll-pl-6 sm:scroll-pr-5 sm:pl-6 sm:pr-5 [&::-webkit-scrollbar]:hidden"
+        className={`${behindSidebar ? "xl:w-[calc(100%+18.25rem)] xl:scroll-pr-[19.25rem] xl:pr-[19.25rem] " : ""}flex snap-x snap-mandatory scroll-pl-5 scroll-pr-4 gap-3 overflow-x-auto pb-2 pl-5 pr-4 pt-2 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:scroll-pl-6 sm:scroll-pr-5 sm:pl-6 sm:pr-5 [&::-webkit-scrollbar]:hidden`}
       >
         {children}
       </div>

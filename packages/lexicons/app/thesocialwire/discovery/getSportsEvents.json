@@ -1,0 +1,55 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.getSportsEvents",
+  "defs": {
+    "main": {
+      "type": "query",
+      "parameters": {
+        "type": "params",
+        "properties": {
+          "feed": {
+            "type": "string",
+            "maxLength": 256,
+            "default": "sports"
+          },
+          "teamIDs": {
+            "type": "string",
+            "maxLength": 12899,
+            "description": "Optional comma-separated active canonical team IDs (maximum 100). Intersects the selected feed before event limits. An explicit empty string returns no events."
+          },
+          "preferredIDs": {
+            "type": "string",
+            "maxLength": 12899,
+            "description": "Optional comma-separated active canonical followed entity IDs (maximum 100), nonempty limits schedules, standings, and bracket references to matching followed entities and orders teams and individuals before competitions before sports. Intersects the selected feed; empty remains generic."
+          },
+          "timeZone": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "IANA viewer timezone for same-calendar-day finished results. Defaults to UTC."
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#sportsEvents"
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "FeedUnavailable"
+        }
+      ]
+    }
+  }
+}

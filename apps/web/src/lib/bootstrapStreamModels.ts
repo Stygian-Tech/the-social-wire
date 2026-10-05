@@ -1,3 +1,4 @@
+import type { StandardReaderListsPage } from "@/lib/standardReaderListsClient";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import type {
   PublicationSidebarProjection,
@@ -5,6 +6,7 @@ import type {
 } from "@/lib/publicationProjectionClient";
 
 export type BootstrapStreamEventKind =
+  | "lists"
   | "sidebarPriority"
   | "sidebarSection"
   | "unreadCounts"
@@ -22,6 +24,7 @@ export type BootstrapEvidenceSource =
 
 export type BootstrapStreamEvent = {
   kind: BootstrapStreamEventKind;
+  lists?: StandardReaderListsPage & {complete:boolean};
   sidebarPriority?: PublicationSidebarProjection;
   sidebarSection?: {
     sectionKey: string;
@@ -59,6 +62,7 @@ export type BootstrapStreamEvent = {
 };
 
 export type ParsedBootstrapStreamEvent =
+  | {kind:"lists";payload:StandardReaderListsPage & {complete:boolean}}
   | { kind: "sidebarPriority"; payload: PublicationSidebarProjection }
   | {
       kind: "sidebarSection";
@@ -132,6 +136,9 @@ export function parseBootstrapStreamEvent(
   raw: BootstrapStreamEvent
 ): ParsedBootstrapStreamEvent | null {
   switch (raw.kind) {
+    case "lists":
+      if (!raw.lists || !Array.isArray(raw.lists.lists) || typeof raw.lists.refreshedAt !== "string" || typeof raw.lists.complete !== "boolean") return null;
+      return {kind:"lists",payload:raw.lists};
     case "sidebarPriority":
       if (!raw.sidebarPriority) return null;
       return { kind: "sidebarPriority", payload: raw.sidebarPriority };

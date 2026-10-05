@@ -1,0 +1,72 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.getFinance",
+  "defs": {
+    "main": {
+      "type": "query",
+      "parameters": {
+        "type": "params",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 30
+          },
+          "lang": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 32,
+            "enum": [
+              "outside-us"
+            ]
+          },
+          "refreshSelections": {
+            "type": "boolean",
+            "default": false
+          },
+          "feed": {
+            "type": "string",
+            "maxLength": 256,
+            "default": "finance",
+            "description": "Server catalog feed ID. Named feeds contain only validated matching stories."
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#financePage"
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "FeedUnavailable"
+        },
+        {
+          "name": "CursorExpired"
+        },
+        {
+          "name": "ModerationUnavailable"
+        }
+      ]
+    }
+  }
+}

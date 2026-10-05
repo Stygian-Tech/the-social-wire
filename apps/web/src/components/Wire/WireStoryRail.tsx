@@ -8,6 +8,7 @@ export function WireStoryRail({
   stories,
   eyebrow,
   onNearEnd,
+  behindSidebar = false,
   onSelect,
 }: {
   id: string;
@@ -15,11 +16,12 @@ export function WireStoryRail({
   stories: EntryListItem[];
   eyebrow?: string;
   onNearEnd?: () => void;
+  behindSidebar?: boolean;
   onSelect: (entryId: string, entry?: EntryListItem) => void;
 }) {
   if (stories.length === 0) return null;
   return (
-    <WireHorizontalRail id={id} title={title} eyebrow={eyebrow} onNearEnd={onNearEnd}>
+    <WireHorizontalRail id={id} title={title} eyebrow={eyebrow} onNearEnd={onNearEnd} behindSidebar={behindSidebar}>
       {stories.map((story) => (
         <div
           key={story.entryId}

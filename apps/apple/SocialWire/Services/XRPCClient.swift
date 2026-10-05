@@ -243,8 +243,9 @@ final class XRPCClient {
         throw SocialWireError.notAuthenticated
     }
 
-    func putRecord<Record: Encodable>(collection: String, rkey: String, record: Record) async throws {
+    func putRecord<Record: Encodable>(collection: String, rkey: String, record: Record, expectedViewer: String? = nil) async throws {
         let session = try await auth.validSession()
+        if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
         let body = PutRecordRequest(repo: session.did, collection: collection, rkey: rkey, record: AnyEncodable(record))
         let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.putRecord", body: body)
     }
@@ -278,8 +279,9 @@ final class XRPCClient {
         return response.blob
     }
 
-    func deleteRecord(collection: String, rkey: String) async throws {
+    func deleteRecord(collection: String, rkey: String, expectedViewer: String? = nil) async throws {
         let session = try await auth.validSession()
+        if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
         let body = DeleteRecordRequest(repo: session.did, collection: collection, rkey: rkey)
         let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.deleteRecord", body: body)
     }

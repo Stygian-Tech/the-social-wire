@@ -1,0 +1,322 @@
+{
+  "reviewedAt": "2026-10-04",
+  "environment": "Development",
+  "source": "https://www.thesportsdb.com/documentation",
+  "tables": [
+    {
+      "providerLeagueID": "4391",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4387",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4516",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4424",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4380",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4346",
+      "season": "2026",
+      "rowCount": 30,
+      "descriptions": [
+        "",
+        "Promotion - MLS (Play Offs: 1/16-finals)",
+        "Promotion - MLS (Play Offs: 1/8-finals)"
+      ],
+      "leagueNames": [
+        "American Major League Soccer"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4479",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4607",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4328",
+      "season": "2026-2027",
+      "rowCount": 20,
+      "descriptions": [
+        "",
+        "Promotion - Champions League (League phase)",
+        "Promotion - Europa League (League phase)",
+        "Relegation - Championship"
+      ],
+      "leagueNames": [
+        "English Premier League"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4849",
+      "season": "2026-2027",
+      "rowCount": 14,
+      "descriptions": [
+        "",
+        "Relegation - WSL 2",
+        "WSL (Relegation)"
+      ],
+      "leagueNames": [
+        "English Womens Super League"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4480",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4889",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4335",
+      "season": "2026-2027",
+      "rowCount": 20,
+      "descriptions": [
+        "",
+        "Champions League league stage",
+        "ECL Playoffs",
+        "Europa League league stage",
+        "Relegation"
+      ],
+      "leagueNames": [
+        "Spanish La Liga"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4331",
+      "season": "2026-2027",
+      "rowCount": 18,
+      "descriptions": [
+        "",
+        "Champions League league stage",
+        "Europa League league stage",
+        "Qualifying",
+        "Relegation",
+        "Relegation Playoffs"
+      ],
+      "leagueNames": [
+        "German Bundesliga"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4332",
+      "season": "2026-2027",
+      "rowCount": 20,
+      "descriptions": [
+        "",
+        "Champions League league stage",
+        "Europa League league stage",
+        "Play-offs",
+        "Relegation"
+      ],
+      "leagueNames": [
+        "Italian Serie A"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4334",
+      "season": "2026-2027",
+      "rowCount": 18,
+      "descriptions": [
+        "",
+        " Qualifying",
+        "Champions League league stage",
+        "Europa League league stage",
+        "Play-offs",
+        "Relegation",
+        "Relegation Playoffs"
+      ],
+      "leagueNames": [
+        "French Ligue 1"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4350",
+      "season": "2026-2027",
+      "rowCount": 18,
+      "descriptions": [
+        "",
+        "Promotion - Liga MX (Apertura - Play Offs: Quarter-finals)"
+      ],
+      "leagueNames": [
+        "Mexican Liga MX"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4351",
+      "season": "2026",
+      "rowCount": 20,
+      "descriptions": [
+        "",
+        "Promotion - Copa Libertadores (Group Stage)",
+        "Promotion - Copa Libertadores (Qualification)",
+        "Promotion - Copa Sudamericana (Group Stage)",
+        "Relegation - Serie B"
+      ],
+      "leagueNames": [
+        "Brazilian Serie A"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4501",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4446",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4430",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4414",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4416",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4415",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4370",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4371",
+      "season": "2026-2027",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4407",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4464",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4517",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4425",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4553",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4443",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4456",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "5311",
+      "season": "2026",
+      "status": "failed"
+    },
+    {
+      "providerLeagueID": "4521",
+      "season": "2026",
+      "rowCount": 16,
+      "descriptions": [
+        "",
+        "Promotion - NWSL Women (Play Offs: Quarter-finals)"
+      ],
+      "leagueNames": [
+        "American NWSL"
+      ],
+      "status": "available"
+    },
+    {
+      "providerLeagueID": "4329",
+      "season": "2026-2027",
+      "rowCount": 24,
+      "status": "available",
+      "descriptions": [
+        "",
+        "Promotion - Championship (Play Offs: Quarter-finals)",
+        "Promotion - Championship (Play Offs: Semi-finals)",
+        "Promotion - Premier League",
+        "Relegation - League One"
+      ]
+    },
+    {
+      "providerLeagueID": "4396",
+      "season": "2026-2027",
+      "rowCount": 24,
+      "status": "available",
+      "descriptions": [
+        "",
+        "Promotion - Championship",
+        "Promotion - League One (Play Offs)",
+        "Relegation - League Two"
+      ]
+    },
+    {
+      "providerLeagueID": "4397",
+      "season": "2026-2027",
+      "rowCount": 24,
+      "status": "available",
+      "descriptions": [
+        "",
+        "Promotion - League One",
+        "Promotion - League Two (Play Offs: Semi-finals)",
+        "Relegation - National League"
+      ]
+    }
+  ],
+  "supportedTableCount": 13
+}

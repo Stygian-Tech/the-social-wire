@@ -10,49 +10,57 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import type { PublicationTab } from "./appSidebarConstants";
-import { SidebarMenuBadge } from "@/components/ui/sidebar";
+import { SidebarSectionUnreadBadge } from "./SidebarSectionUnreadBadge";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 export function PublicationTabs({
+  visibleFeeds,
   activeTab,
   onTabChange,
   subscribedUnread = 0,
   followingUnread = 0,
   showSubscribedUnreadCount = true,
   showFollowingUnreadCount = true,
-  visibleTabs = ["subscribed", "following"],
   subscribedPublications = [],
   followingPublications = [],
-  wireEnabled = false,
   wireActive = false,
   onWireSelect,
-  circleEnabled = false,
   circleActive = false,
   onCircleSelect,
 }: {
+  visibleFeeds?: ReadonlySet<ReaderNavigationFeed>;
   activeTab: PublicationTab | null;
   onTabChange: (tab: PublicationTab) => void;
   subscribedUnread?: number;
   followingUnread?: number;
   showSubscribedUnreadCount?: boolean;
   showFollowingUnreadCount?: boolean;
-  visibleTabs?: PublicationTab[];
   subscribedPublications?: DiscoveredPublication[];
   followingPublications?: DiscoveredPublication[];
-  wireEnabled?: boolean;
   wireActive?: boolean;
   onWireSelect?: () => void;
-  circleEnabled?: boolean;
   circleActive?: boolean;
   onCircleSelect?: () => void;
 }) {
+  if (
+    visibleFeeds &&
+    !["wire", "circle", "subscribed", "following"].some((feed) =>
+      visibleFeeds.has(feed as ReaderNavigationFeed),
+    )
+  )
+    return null;
   return (
     <SidebarGroup className="pb-1 pt-1">
       <SidebarGroupLabel>Feeds</SidebarGroupLabel>
-      <SidebarMenu className="gap-0.5" role="tablist" aria-label="Publication Source">
-        {wireEnabled ? (
+      <SidebarMenu
+        className="gap-0.5"
+        role="tablist"
+        aria-label="Publication Source"
+      >
+        {visibleFeeds?.has("wire") !== false ? (
           <SidebarMenuItem>
             <SidebarMenuButton
               type="button"
@@ -68,7 +76,7 @@ export function PublicationTabs({
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
-        {circleEnabled ? (
+        {visibleFeeds?.has("circle") !== false ? (
           <SidebarMenuItem>
             <SidebarMenuButton
               type="button"
@@ -84,7 +92,7 @@ export function PublicationTabs({
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
-        {visibleTabs.includes("subscribed") ? (
+        {visibleFeeds?.has("subscribed") !== false ? (
           <SidebarMenuItem>
             <SidebarReadBulkMenuWrap
               publications={subscribedPublications}
@@ -102,13 +110,13 @@ export function PublicationTabs({
                 <Newspaper />
                 <span>Subscribed</span>
                 {showSubscribedUnreadCount && subscribedUnread > 0 ? (
-                  <SidebarMenuBadge>{subscribedUnread}</SidebarMenuBadge>
+                  <SidebarSectionUnreadBadge count={subscribedUnread} />
                 ) : null}
               </SidebarMenuButton>
             </SidebarReadBulkMenuWrap>
           </SidebarMenuItem>
         ) : null}
-        {visibleTabs.includes("following") ? (
+        {visibleFeeds?.has("following") !== false ? (
           <SidebarMenuItem>
             <SidebarReadBulkMenuWrap
               publications={followingPublications}
@@ -126,7 +134,7 @@ export function PublicationTabs({
                 <Users />
                 <span>Following</span>
                 {showFollowingUnreadCount && followingUnread > 0 ? (
-                  <SidebarMenuBadge>{followingUnread}</SidebarMenuBadge>
+                  <SidebarSectionUnreadBadge count={followingUnread} />
                 ) : null}
               </SidebarMenuButton>
             </SidebarReadBulkMenuWrap>

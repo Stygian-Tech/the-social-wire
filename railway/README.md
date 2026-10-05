@@ -80,12 +80,25 @@ weakening their operational readiness probes. Compatibility worker configs
 remain checked in through the rollback window. Snapshot jobs are temporary
 operator services with restart policy `NEVER`, not persistent IaC resources.
 
-The Wire Corpus Edge exists only in Production and connects to Production
+The Wire Corpus Edge instance connects to Production
 Postgres over the private network. Its narrowly exposed HTTPS domain accepts
 only dedicated nonce-protected service signatures from Development App View;
 it never accepts viewer or Gateway/AppView trust credentials. Development
 App View receives only the edge URL and its edge-client secret, never a
 Production database credential.
+
+Finance has a separate Development **Finance Corpus Edge** instance connected to
+Development Postgres with a view-only login. App View uses
+`FINANCE_CORPUS_EDGE_BASE_URL`, `FINANCE_CORPUS_EDGE_SERVICE_ID`, and
+`FINANCE_CORPUS_EDGE_HMAC_SECRET` for Finance generation, fallback, and item checks;
+existing Wire routing is preserved. Development permits authenticated HTTP only
+to Railway private `.railway.internal` origins. The Finance edge has no public
+domain and runs beside its Postgres volume in `sfo`.
+
+Development Finance Corpus Edge sets `WIRE_CORPUS_EDGE_POSTGRES_MAX_CONNECTIONS=1`.
+Its view-only role has a two-connection limit, so the old and new containers each
+retain one connection during rolling deployments. This service remains outside
+the consolidated indexing IaC partial; preserve its dedicated connection setting.
 
 The Wire Fresh Inbox Drain is a separately scoped Production drain. Configure
 it with `APP_ENV=prod`, `WIRE_FEED_MODE=api`, `WIRE_WORKER_ROLE=drain`,

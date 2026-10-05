@@ -410,12 +410,18 @@ struct HTTPRouteContractTests {
         router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { client in
         let routes = [
+          "/v1/lists",
+          "/v1/lists/search?creator=viewer.test",
           "/v1/semble/collections?limit=50&cursor=opaque",
           "/v1/semble/collection?collectionUri=at%3A%2F%2Fdid%3Aplc%3Aviewer%2Fnetwork.cosmik.collection%2Fread-later&limit=50",
           "/v1/semble/connections?url=https%3A%2F%2Fexample.com&limit=50",
         ]
         for uri in routes {
           let response = try await client.execute(uri: uri, method: .get)
+          #expect(response.status.code == 401)
+        }
+        for uri in ["/v1/lists/resolve", "/v1/lists/refresh"] {
+          let response = try await client.execute(uri: uri, method: .post)
           #expect(response.status.code == 401)
         }
       }

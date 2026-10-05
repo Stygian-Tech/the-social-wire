@@ -37,6 +37,24 @@ struct WireCorpusRemoteConfigTests {
     }
   }
 
+  @Test("private HTTP is restricted to authenticated Development Railway origins")
+  func developmentPrivateOrigin() throws {
+    var privateEnvironment = remote
+    privateEnvironment["WIRE_CORPUS_EDGE_BASE_URL"] = "http://finance-corpus-edge.railway.internal:8080"
+    #expect(try WireCorpusRemoteConfig.fromEnvironment(privateEnvironment)?.baseURL == "http://finance-corpus-edge.railway.internal:8080")
+    for host in ["railway.internal", "finance.railway.internal.example.com", "finance-corpus-edge.example.com"] {
+      privateEnvironment["WIRE_CORPUS_EDGE_BASE_URL"] = "http://\(host):8080"
+      #expect(throws: WireDiscoveryConfigError.invalidCorpusEdgeBaseURL) {
+        try WireCorpusRemoteConfig.fromEnvironment(privateEnvironment)
+      }
+    }
+    privateEnvironment["WIRE_CORPUS_EDGE_BASE_URL"] = "http://finance-corpus-edge.railway.internal:8080"
+    privateEnvironment["APP_ENV"] = "prod"
+    #expect(throws: WireDiscoveryConfigError.invalidCorpusEdgeBaseURL) {
+      try WireCorpusRemoteConfig.fromEnvironment(privateEnvironment)
+    }
+  }
+
   @Test("Production AppView keeps the canonical local PostgreSQL store")
   func productionRejectsRemoteCorpusConfiguration() {
     var production = remote

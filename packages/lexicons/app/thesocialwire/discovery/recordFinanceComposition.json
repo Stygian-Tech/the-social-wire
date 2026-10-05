@@ -1,0 +1,65 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.recordFinanceComposition",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Aggregate suggestion counts only. No draft text, instruments, or viewer identifiers are retained.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "event",
+            "suggestionCount"
+          ],
+          "properties": {
+            "event": {
+              "type": "string",
+              "maxLength": 32,
+              "enum": [
+                "impression",
+                "selection",
+                "removal",
+                "published"
+              ]
+            },
+            "suggestionCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "accepted"
+          ],
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "FeedUnavailable"
+        }
+      ]
+    }
+  }
+}

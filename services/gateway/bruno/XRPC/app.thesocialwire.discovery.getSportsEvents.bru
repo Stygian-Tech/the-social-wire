@@ -1,0 +1,33 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getSportsEvents
+  type: http
+  seq: 63
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getSportsEvents
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  preferredIDs optionally limits matching-only followed schedules (maximum 100); empty remains generic. timeZone is the viewer IANA timezone. Response echoes scope. Activity groups precede team/person, competition, and sport interest tiers.
+  Use ?teamIDs=<canonical team ID>,<canonical team ID> to restrict schedules to selected teams.
+  The filter intersects feed scope before limits; teamIDs= yields no events.
+  Up to 500 scoped cached events, with in-progress games and recent results prioritized.
+  Bracket sources are reviewed external official links; no graphs or artwork are rehosted.
+  Results remain bounded by provider coverage and are not a complete schedule guarantee.
+  Optional shared Sports schedules and standings, independent from article ranking.
+  Use ?feed=entity:<canonical entity ID> for scoped fixtures and competition tables.
+  schedulesStatus distinguishes unsupported/unavailable from successful empty data.
+  Each standings table includes its season, source, status, timestamp, and degradation.
+  Provider polling requires reviewed coverage, rights confirmation, and credentials.
+  Optional row.zone carries provider-reported or reviewed season-specific places,
+  with a type, exact label, and source URL. Places do not imply a secured outcome.
+  Hide Scores suppresses standings, result indicators, and scores in the clients.
+}

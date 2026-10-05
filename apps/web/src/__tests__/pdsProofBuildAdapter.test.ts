@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import adapt from "../../scripts/pds-proof-browser-dependencies.cjs";
-const installed = (packageName: string, file: string) => path.join(path.dirname(new URL(import.meta.resolve(packageName)).pathname), file);
+const installed = (packageName: string, file: string) => path.join(path.dirname(fileURLToPath(import.meta.resolve(packageName))), file);
 
 test("browser adapter verifies the exact installed upstream patterns and preserves verifier logic", async () => {
   const files = [installed("@atproto/common", "index.js"), installed("@atproto/common", "logger.js"), installed("@atproto/repo", "car.js")];

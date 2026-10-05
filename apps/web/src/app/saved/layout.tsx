@@ -43,7 +43,7 @@ export default function SavedLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <SidebarProvider defaultWidthPx={208} className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[70rem] overflow-hidden overscroll-none">
+    <SidebarProvider className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[70rem] overflow-hidden overscroll-none">
       <PublicationSidebarProvider>
       <ReadRouteProvider>
         <Suspense fallback={null}>

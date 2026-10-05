@@ -382,7 +382,7 @@ describe("WireNewsEditionLayout", () => {
       value: () => ({ matches: false }),
     });
     render(
-      <WireHorizontalRail id="test" title="Test Stories">
+      <WireHorizontalRail id="test" title="Test Stories" behindSidebar>
         <span>One</span>
         <span>Two</span>
       </WireHorizontalRail>,

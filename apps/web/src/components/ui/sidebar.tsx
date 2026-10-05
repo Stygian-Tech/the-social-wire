@@ -5,6 +5,12 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 
+import { usePersistentSidebarWidth } from "@/hooks/usePersistentSidebarWidth"
+import {
+  SIDEBAR_WIDTH_DEFAULT_PX,
+  SIDEBAR_WIDTH_MIN_PX,
+  SIDEBAR_WIDTH_MAX_PX,
+} from "@/lib/sidebarWidthStorage"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -27,9 +33,6 @@ import { PanelLeftIcon } from "lucide-react"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const SIDEBAR_WIDTH_DEFAULT_PX = 260
-const SIDEBAR_WIDTH_MIN_PX = 200
-const SIDEBAR_WIDTH_MAX_PX = 480
 const SIDEBAR_WIDTH_MOBILE = "20rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
@@ -88,10 +91,8 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
-  const [sidebarWidthPx, setSidebarWidthPx] = React.useState(
-    defaultWidthPx
-  )
   const [sidebarResizing, setSidebarResizing] = React.useState(false)
+  const [sidebarWidthPx, setSidebarWidthPx] = usePersistentSidebarWidth(defaultWidthPx, sidebarResizing)
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -160,6 +161,7 @@ function SidebarProvider({
       setOpenMobile,
       toggleSidebar,
       sidebarWidthPx,
+      setSidebarWidthPx,
       sidebarResizing,
     ]
   )

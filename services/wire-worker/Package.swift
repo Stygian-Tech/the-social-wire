@@ -10,6 +10,8 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "../../packages/swift/WireCore"),
+    .package(path: "../../packages/swift/FinanceCore"),
+    .package(path: "../../packages/swift/SportsCore"),
     .package(path: "../../packages/swift/SocialWireRedis"),
     .package(path: "../../packages/swift/OperationsCore"),
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
@@ -25,6 +27,8 @@ let package = Package(
       name: "WireWorkerCore",
       dependencies: [
         "WireCore",
+        "FinanceCore",
+        "SportsCore",
         "SocialWireRedis",
         "OperationsCore",
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
@@ -58,7 +62,7 @@ let package = Package(
     .testTarget(
       name: "WireWorkerTests",
       dependencies: [
-        "WireWorkerCore", "WireCore", "OperationsCore", "SocialWireRedis",
+        "WireWorkerCore", "WireCore", "OperationsCore", "SocialWireRedis", "SportsCore",
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "Logging", package: "swift-log"),
       ],

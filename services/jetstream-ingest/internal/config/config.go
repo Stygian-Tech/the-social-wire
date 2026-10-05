@@ -32,6 +32,8 @@ const (
 )
 
 var DefaultCollections = []string{
+	"app.thesocialwire.finance.selection",
+	"app.thesocialwire.sports.selection",
 	"site.standard.document",
 	"site.standard.entry",
 	"com.standard.document",

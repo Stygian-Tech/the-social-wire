@@ -1,0 +1,22 @@
+meta {
+  name: Search Creator Lists
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v1/lists/search?creator={{creator}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+docs {
+  The response includes creatorDid after handle/DID resolution, even when the
+  creator has no public lists. This supports adding a creator account to a list.
+}

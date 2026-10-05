@@ -1,10 +1,12 @@
 import Foundation
 import HTTPTypes
 import Hummingbird
+import Logging
 import NIOCore
 
 struct WireCorpusEdgeErrorMiddleware: RouterMiddleware {
   typealias Context = WireCorpusEdgeRequestContext
+  var logger: Logger = Logger(label: "com.thesocialwire.wire-corpus-edge.errors")
 
   func handle(
     _ request: Request,
@@ -15,6 +17,9 @@ struct WireCorpusEdgeErrorMiddleware: RouterMiddleware {
       return try await next(request, context)
     } catch {
       let status = (error as? any HTTPResponseError)?.status ?? .internalServerError
+      if status.code >= 500 {
+        logger.warning("Corpus request failed", metadata: WireCorpusErrorDiagnostics.metadata(error))
+      }
       let errorName: String
       switch status.code {
       case 400: errorName = "invalid_request"

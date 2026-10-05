@@ -25,6 +25,31 @@ final class ReaderCacheCoordinator {
         self.modelContext = modelContext
     }
 
+    /// Finance snapshots are retained for bounded persistence. Serving always
+    /// refreshes through AppView to recheck moderation and retractions.
+    func upsertFinancePage(_ page: FinancePage, contextKey: String, viewerDID: String) throws {
+        var descriptor = FetchDescriptor<PersistedFinancePage>()
+        descriptor.predicate = #Predicate<PersistedFinancePage> { $0.contextKey == contextKey }
+        let payload = try ReaderCacheCoding.encoder.encode(page)
+        if let row = try modelContext.fetch(descriptor).first {
+            row.pagePayload = payload
+            row.cachedAt = Date()
+        } else {
+            modelContext.insert(PersistedFinancePage(contextKey: contextKey, viewerDID: viewerDID,
+                                                    generationID: page.generationId, pagePayload: payload))
+        }
+        let rows = try modelContext.fetch(FetchDescriptor<PersistedFinancePage>(sortBy: [SortDescriptor(\.cachedAt, order: .reverse)]))
+        for row in rows.dropFirst(24) { modelContext.delete(row) }
+        try modelContext.save()
+    }
+
+    func clearFinanceCache(viewerDID: String) throws {
+        var descriptor = FetchDescriptor<PersistedFinancePage>()
+        descriptor.predicate = #Predicate<PersistedFinancePage> { $0.viewerDID == viewerDID }
+        for row in try modelContext.fetch(descriptor) { modelContext.delete(row) }
+        try modelContext.save()
+    }
+
     // MARK: - Gateway blobs
 
     func gatewayCachedBody(for cacheKey: String) -> Data? {

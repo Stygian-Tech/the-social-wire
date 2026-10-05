@@ -34,7 +34,7 @@ describe("reader feed selection storage", () => {
   });
 
   it("rejects unknown stored values", () => {
-    const storage = { getItem: () => "finance" };
+    const storage = { getItem: () => "unknown" };
     expect(loadReaderFeedSelection(storage)).toBeNull();
   });
 

@@ -12,6 +12,7 @@ struct NewsSidebarView: View {
         List {
             savedSection
             feedsSection
+            topicsSection
         }
         .listStyle(.sidebar)
         .listItemTint(.indigo)
@@ -104,6 +105,13 @@ struct NewsSidebarView: View {
         }
     }
 
+    private var topicsSection: some View {
+        Section("Topics") {
+            if availableTabs.contains(.finance) { destinationRow(.finance) }
+            if availableTabs.contains(.sports) { destinationRow(.sports) }
+        }
+    }
+
     private var savedSection: some View {
         Section("Saved") {
             DisclosureGroup(isExpanded: $isReadLaterExpanded) {
@@ -169,11 +177,21 @@ struct NewsSidebarView: View {
         Button {
             select(tab)
         } label: {
-            FeedSidebarRowLabel(
-                title: tab.title,
-                systemImage: tab.systemImage,
-                unreadCount: nil
-            )
+            HStack {
+                FeedSidebarRowLabel(
+                    title: tab.title,
+                    systemImage: tab.systemImage,
+                    unreadCount: nil
+                )
+                if tab == .finance || tab == .sports {
+                    Text("Beta")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
+                }
+            }
         }
         .buttonStyle(.plain)
         .readerSidebarListRow()

@@ -34,6 +34,9 @@ COPY packages/swift/OperationsCore/Package.swift packages/swift/OperationsCore/P
 COPY packages/swift/OperationsCore/Sources packages/swift/OperationsCore/Sources
 COPY packages/swift/OperationsCore/Tests packages/swift/OperationsCore/Tests
 
+COPY packages/swift/FinanceCore packages/swift/FinanceCore
+COPY packages/swift/SportsCore packages/swift/SportsCore
+
 COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resolved* packages/swift/WireCore/
 COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
 COPY packages/swift/WireCore/Tests packages/swift/WireCore/Tests

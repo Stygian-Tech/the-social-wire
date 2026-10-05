@@ -4,6 +4,10 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     var visibleFeeds: [ReaderListSource]
     var feedsWithUnreadCounts: [ReaderListSource]
     var showWire: Bool
+    var showFinance: Bool
+    var showSports: Bool
+    var hideSportsScores: Bool
+    var hideFinancePerformance: Bool
     var showCircle: Bool
     var articleOpenMode: ArticleOpenMode
 
@@ -18,23 +22,28 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         feedsWithUnreadCounts: [ReaderListSource],
         showWire: Bool = true,
         showCircle: Bool = true,
+        showFinance: Bool = true,
+        hideFinancePerformance: Bool = false,
+        showSports: Bool = true,
+        hideSportsScores: Bool = false,
         articleOpenMode: ArticleOpenMode = .original
     ) {
         let unique = visibleFeeds.reduce(into: [ReaderListSource]()) { result, source in
             if !result.contains(source) { result.append(source) }
         }
         let normalizedVisibleFeeds = unique.filter { ReaderListSource.preferenceCases.contains($0) }
-        let effectiveVisibleFeeds = normalizedVisibleFeeds.isEmpty
-            ? ReaderListSource.preferenceCases
-            : normalizedVisibleFeeds
-        self.visibleFeeds = effectiveVisibleFeeds
+        self.visibleFeeds = normalizedVisibleFeeds
         self.feedsWithUnreadCounts = ReaderListSource.preferenceCases.filter { source in
-            effectiveVisibleFeeds.contains(source)
+            normalizedVisibleFeeds.contains(source)
                 && feedsWithUnreadCounts.contains(source)
         }
         self.articleOpenMode = articleOpenMode
         self.showWire = showWire
         self.showCircle = showCircle
+        self.showFinance = showFinance
+        self.hideFinancePerformance = hideFinancePerformance
+        self.showSports = showSports
+        self.hideSportsScores = hideSportsScores
     }
 
     init(record: PreferencesRecord?) {
@@ -53,6 +62,10 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
             feedsWithUnreadCounts: feedsWithUnreadCounts,
             showWire: record?.showWire ?? true,
             showCircle: record?.showCircle ?? true,
+            showFinance: record?.showFinance ?? true,
+            hideFinancePerformance: record?.hideFinancePerformance ?? false,
+            showSports: record?.showSports ?? true,
+            hideSportsScores: record?.hideSportsScores ?? false,
             articleOpenMode: record?.rssArticleOpenMode.flatMap(ArticleOpenMode.init(rawValue:))
                 ?? .original
         )
@@ -67,6 +80,10 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         case feedsWithUnreadCounts
         case showWire
         case showCircle
+        case showFinance
+        case hideFinancePerformance
+        case showSports
+        case hideSportsScores
         case showTopLevelFeedUnreadCounts
         case articleOpenMode
         case rssArticleOpenMode
@@ -102,6 +119,10 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
             feedsWithUnreadCounts: feedsWithUnreadCounts,
             showWire: try container.decodeIfPresent(Bool.self, forKey: .showWire) ?? true,
             showCircle: try container.decodeIfPresent(Bool.self, forKey: .showCircle) ?? true,
+            showFinance: try container.decodeIfPresent(Bool.self, forKey: .showFinance) ?? true,
+            hideFinancePerformance: try container.decodeIfPresent(Bool.self, forKey: .hideFinancePerformance) ?? false,
+            showSports: try container.decodeIfPresent(Bool.self, forKey: .showSports) ?? true,
+            hideSportsScores: try container.decodeIfPresent(Bool.self, forKey: .hideSportsScores) ?? false,
             articleOpenMode: cachedArticleOpenMode ?? legacyArticleOpenMode ?? .original
         )
     }
@@ -112,6 +133,10 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         try container.encode(feedsWithUnreadCounts, forKey: .feedsWithUnreadCounts)
         try container.encode(showWire, forKey: .showWire)
         try container.encode(showCircle, forKey: .showCircle)
+        try container.encode(showFinance, forKey: .showFinance)
+        try container.encode(hideFinancePerformance, forKey: .hideFinancePerformance)
+        try container.encode(showSports, forKey: .showSports)
+        try container.encode(hideSportsScores, forKey: .hideSportsScores)
         try container.encode(!feedsWithUnreadCounts.isEmpty, forKey: .showTopLevelFeedUnreadCounts)
         try container.encode(articleOpenMode, forKey: .articleOpenMode)
     }

@@ -488,6 +488,12 @@ jobs:
       - name: Test The Wire algorithm
         working-directory: packages/swift/WireCore
         run: swift test
+      - name: Test Finance domain
+        working-directory: packages/swift/FinanceCore
+        run: swift test
+      - name: Test Sports domain
+        working-directory: packages/swift/SportsCore
+        run: swift test
       - name: Test The Wire worker
         working-directory: services/wire-worker
         env:
@@ -562,6 +568,22 @@ jobs:
             the-social-wire-wire-corpus-migrator:test \
             postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
             -X -v ON_ERROR_STOP=1 -f /tmp/verify-wire-corpus-serving.sql
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Verify Corpus serving boundary rejects unreviewed payloads and scores
+        env:
+          CORPUS_SERVING_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/tsw_release_corpus_boundary
+          PSQL_BIN: /tmp/corpus-boundary-test-psql
+        run: |
+          cat > "$PSQL_BIN" <<'SH'
+          #!/bin/sh
+          exec docker run --rm -i --network host --entrypoint psql the-social-wire-wire-corpus-migrator:test "$@"
+          SH
+          chmod +x "$PSQL_BIN"
+          "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
+            -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw_release_corpus_boundary TEMPLATE socialwire_wire_corpus_test'
+          bun test packages/spec/__tests__/wire-corpus-serving-verifier-postgres.test.ts
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -627,7 +649,7 @@ jobs:
           chmod +x "$PSQL_BIN"
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw92_telemetry_test'
-          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/operations-change-retention-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts
+          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/operations-change-retention-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts packages/spec/__tests__/wire-ordered-signal-migration-postgres.test.ts
       - name: Verify Jetstream V2 drain indexes and query plans
         run: |
           docker run --rm --network host \

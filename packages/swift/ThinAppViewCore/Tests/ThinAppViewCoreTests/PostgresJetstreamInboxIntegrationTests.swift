@@ -1272,7 +1272,7 @@ final class PostgresInboxFixture: @unchecked Sendable {
       )
       """,
     ]
-    for statement in statements { try await execute(statement) }
+    for statement in statements + PostgresTopicSelectionTestSchema.statements { try await execute(statement) }
     let installed = try await connection.query("SELECT to_regclass('appview_pds_read_state_authority') IS NOT NULL", logger: logger)
     var needsPDSMigration = true
     for try await row in installed { needsPDSMigration = !(try row.decode(Bool.self)) }

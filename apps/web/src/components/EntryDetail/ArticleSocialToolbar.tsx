@@ -42,6 +42,8 @@ import type { EntryDetail } from "@/lib/atprotoClient";
 import { canonicalArticleHttpsUrl } from "@/lib/articleCanonicalUrl";
 import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { financeCashtags, insertFinanceCashtag, recordFinanceComposition } from "@/lib/financeFeedClient";
 
 function shareArticleUrl(entry: EntryDetail): string {
   const canon = canonicalArticleHttpsUrl(entry);
@@ -77,6 +79,7 @@ export function ArticleSocialToolbar({
     toggleRepostMutation,
     postMutation,
     replyMutation,
+    quoteMutation,
     hasLinkedPost,
   } = useEntrySocial(entry);
 
@@ -94,9 +97,13 @@ export function ArticleSocialToolbar({
   const [repostOpen, setRepostOpen] = useState(false);
   const [postOpen, setPostOpen] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [quotePost, setQuotePost] = useState(false);
   const [postText, setPostText] = useState("");
   const [replyText, setReplyText] = useState("");
   const mountedRef = useRef(false);
+  const selectedTagsRef = useRef(new Set<string>());
+  const { getOAuthSession } = useAuth();
+  const recordComposition = (event: "impression"|"selection"|"removal"|"published") => { const oauth = getOAuthSession(); const count = financeCashtags(entry?.financeItem).length; if (oauth && count) void recordFinanceComposition(oauth, event, count).catch(() => undefined); };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -127,7 +134,7 @@ export function ArticleSocialToolbar({
     ? undefined
     : "Like, Reply, and Repost need a Bluesky post linked to this article.";
   const replyError = mutationErrorMessage(replyMutation.error);
-  const postError = mutationErrorMessage(postMutation.error);
+  const postError = mutationErrorMessage(quotePost ? quoteMutation?.error : postMutation.error);
   const repostError = mutationErrorMessage(toggleRepostMutation.error);
 
   const handleReplyOpenChange = (open: boolean) => {
@@ -143,6 +150,9 @@ export function ArticleSocialToolbar({
     if (!mountedRef.current) return;
     setPostOpen(open);
     if (open) {
+      setQuotePost(false);
+      selectedTagsRef.current.clear();
+      recordComposition("impression");
       postMutation.reset();
       setPostText("");
     }
@@ -156,10 +166,12 @@ export function ArticleSocialToolbar({
 
   const submitPost = () => {
     const text = postText.trim();
-    if (!text) return;
-    postMutation.mutate(text, {
+    if (!text || [...text].length > 300) return;
+    const mutation = quotePost ? quoteMutation : postMutation;
+    mutation.mutate(text, {
       onSuccess: () => {
         if (!mountedRef.current) return;
+        recordComposition("published");
         setPostOpen(false);
         setPostText("");
       },
@@ -512,6 +524,7 @@ export function ArticleSocialToolbar({
         </div>
       )}
 
+      {entry.financeItem && hasLinkedPost && quoteMutation ? <Button type="button" size="sm" variant="outline" onClick={() => { handlePostOpenChange(true); setQuotePost(true); quoteMutation.reset(); }}>Quote</Button> : null}
       <Dialog open={repostOpen} onOpenChange={handleRepostOpenChange}>
         <DialogContent showCloseButton className="sm:max-w-md">
           <DialogHeader>
@@ -595,11 +608,11 @@ export function ArticleSocialToolbar({
       <Dialog open={postOpen} onOpenChange={handlePostOpenChange}>
         <DialogContent showCloseButton className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Post</DialogTitle>
+            <DialogTitle>{quotePost ? "Quote" : "Post"}</DialogTitle>
             <DialogDescription>
               Shares your comment with a full link card for the original
               article.
-              {hasLinkedPost ? " Posting also likes the source post." : ""}
+              {hasLinkedPost && !quotePost ? " Posting also likes the source post." : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 py-2">
@@ -607,11 +620,13 @@ export function ArticleSocialToolbar({
             <textarea
               id="post-text"
               value={postText}
-              onChange={(e) => setPostText(e.target.value)}
+              onChange={(e) => { const next = e.target.value; for (const tag of selectedTagsRef.current) { if (insertFinanceCashtag(next, tag) !== next) { selectedTagsRef.current.delete(tag); recordComposition("removal"); } } setPostText(next); }}
               placeholder="Add your thoughts..."
               rows={4}
               className="flex min-h-[100px] w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             />
+            {financeCashtags(entry.financeItem).length ? <div className="flex flex-wrap gap-2" aria-label="Suggested Cashtags">{financeCashtags(entry.financeItem).map(tag => <Button key={tag} type="button" size="sm" variant="outline" onClick={() => { if (insertFinanceCashtag(postText, tag) !== postText) { selectedTagsRef.current.add(tag); recordComposition("selection"); setPostText(current => insertFinanceCashtag(current, tag)); } }}>{tag}</Button>)}</div> : null}
+            <p className="text-xs text-muted-foreground">{[...postText].length}/300</p>
             {postError ? (
               <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {postError}
@@ -630,7 +645,7 @@ export function ArticleSocialToolbar({
             <Button
               size="sm"
               className="min-w-28"
-              disabled={!postText.trim() || postMutation.isPending}
+              disabled={!postText.trim() || [...postText].length > 300 || postMutation.isPending || quoteMutation?.isPending}
               onClick={submitPost}
             >
               Post

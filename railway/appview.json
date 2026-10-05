@@ -11,6 +11,8 @@
       "/packages/swift/OperationsCore/**",
       "/packages/swift/SocialWireRedis/**",
       "/packages/swift/WireCore/**",
+      "/packages/swift/FinanceCore/**",
+      "/packages/swift/SportsCore/**",
       "/database/migrations/**",
       "/services/jetstream-ingest/cmd/schema-ready/**",
       "/services/jetstream-ingest/internal/schemaready/**",

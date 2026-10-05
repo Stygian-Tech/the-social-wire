@@ -55,9 +55,13 @@ func (p *Postgres) stageInboxEvents(ctx context.Context, tx *sql.Tx, events []in
 		OR (incoming.collection IN ('site.standard.document', 'site.standard.entry',
 		  'com.standard.document', 'com.standard.entry')
 		  AND EXISTS (SELECT 1 FROM appview_publication_scopes scope WHERE scope.author_did = incoming.repo_did))
-		OR (incoming.collection IN ('app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState')
+		OR (incoming.collection IN ('app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState', 'app.thesocialwire.finance.selection', 'app.thesocialwire.sports.selection')
 		  AND (EXISTS (SELECT 1 FROM appview_viewer_feeds feed WHERE feed.viewer_did = incoming.repo_did)
-		    OR EXISTS (SELECT 1 FROM appview_publication_scopes scope WHERE scope.viewer_did = incoming.repo_did)))`
+		    OR EXISTS (SELECT 1 FROM appview_publication_scopes scope WHERE scope.viewer_did = incoming.repo_did)
+            OR (incoming.collection = 'app.thesocialwire.finance.selection'
+              AND EXISTS (SELECT 1 FROM finance_selection_sync sync WHERE sync.viewer_did = incoming.repo_did))
+            OR (incoming.collection = 'app.thesocialwire.sports.selection'
+              AND EXISTS (SELECT 1 FROM sports_selection_sync sync WHERE sync.viewer_did = incoming.repo_did))))`
 	if p.source.IsWire() {
 		table = "wire_ingestion_inbox"
 		extraColumns = ", updated_at, expires_at"

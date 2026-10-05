@@ -4,6 +4,7 @@ import Hummingbird
 import Logging
 import NIOCore
 import WireCore
+import SportsCore
 
 enum WireCorpusEdgeRouterBuilder {
   static func router(
@@ -36,6 +37,46 @@ enum WireCorpusEdgeRouterBuilder {
       try validateQuery(request.uri.query, allowed: [])
       try await store.ping()
       return try response(["contractVersion": 3])
+    }
+    protected.get("/internal/wire/v1/finance") { request, _ async throws -> Response in
+      try validateQuery(request.uri.query, allowed: ["language"])
+      let now = Date()
+      try await store.requireFreshBaseline(now: now)
+      return try response(await store.finance(language: primaryLanguage(request.uri.queryParameters.get("language")), now: now))
+    }
+    protected.get("/internal/wire/v1/sports/schedules") { request, _ async throws -> Response in
+      try validateQuery(request.uri.query, allowed: [])
+      return try response(await store.sportsSchedules(now: Date()))
+    }
+    protected.get("/internal/wire/v1/sports/standings") { request, _ async throws -> Response in
+      try validateQuery(request.uri.query, allowed: ["preferredIDs"])
+      let raw = request.uri.queryParameters.get("preferredIDs") ?? ""
+      let ids = raw.isEmpty ? [] : raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+      guard ids.count <= 100, ids.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 && $0.range(of: "^[a-zA-Z0-9:_-]+$", options: .regularExpression) != nil }) else { throw HTTPError(.badRequest) }
+      return try response(await store.sportsStandings(now: Date(), preferredIDs: ids))
+    }
+    protected.get("/internal/wire/v1/sports/events") { request, _ async throws -> Response in
+      try validateQuery(request.uri.query, allowed: ["competitionIDs", "entityIDs", "global", "teamIDs", "preferredIDs", "timeZone"])
+      func identifiers(_ key: String) throws -> [String] {
+        guard let raw = request.uri.queryParameters.get(key) else { return [] }
+        if ["teamIDs", "preferredIDs"].contains(key), raw.isEmpty { return [] }
+        let values = raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        guard values.count <= (["teamIDs", "preferredIDs"].contains(key) ? 100 : 200), values.allSatisfy({ !$0.isEmpty && $0.utf8.count <= (["teamIDs", "preferredIDs"].contains(key) ? 128 : 256) && $0.range(of: "^[a-zA-Z0-9:_-]+$", options: .regularExpression) != nil }) else { throw HTTPError(.badRequest) }
+        return values
+      }
+      let timeZoneName = request.uri.queryParameters.get("timeZone") ?? "Etc/UTC"
+      guard timeZoneName.utf8.count <= 128, (TimeZone.knownTimeZoneIdentifiers.contains(timeZoneName) || ["UTC", "GMT", "Etc/UTC", "Etc/GMT"].contains(timeZoneName)), let timeZone = TimeZone(identifier: timeZoneName) else { throw HTTPError(.badRequest) }
+      let global = request.uri.queryParameters.get("global")
+      guard global == nil || ["true", "false"].contains(global!) else { throw HTTPError(.badRequest) }
+      return try response(await store.sportsEvents(now: Date(), competitionIDs: identifiers("competitionIDs"), entityIDs: identifiers("entityIDs"), global: global != "false", teamIDs: request.uri.queryParameters.get("teamIDs") == nil ? nil : identifiers("teamIDs"), preferredIDs: identifiers("preferredIDs"), timeZone: timeZone))
+    }
+    protected.get("/internal/wire/v1/sports") { request, _ async throws -> Response in
+      try validateQuery(request.uri.query, allowed: ["language"])
+      let now = Date()
+      try await store.requireFreshBaseline(now: now)
+      let source = try await store.sports(language: primaryLanguage(request.uri.queryParameters.get("language")), now: now)
+      guard SportsCandidateVersionPolicy.isCurrent(source.candidates) else { throw WireCorpusEdgeStoreError.unavailable }
+      return try response(source)
     }
     protected.get("/internal/wire/v1/feed") { request, _ async throws -> Response in
       try validateQuery(

@@ -215,6 +215,17 @@ export function useEntrySocial(entry: EntryDetail | null) {
     onSettled: invalidateViewer,
   });
 
+  const quoteMutation = useMutation({
+    mutationFn: async (text: string) => {
+      const oauth = getOAuthSession();
+      if (!oauth || !uri || !cid) throw new Error("Missing post or session");
+      if (!text.trim() || [...text].length > 300) throw new Error("Post must contain between 1 and 300 characters.");
+      await requireBskyRepoScope(oauth, "app.bsky.feed.post", "create");
+      await createOAuthAgent(oauth).post({ text, embed: { $type: "app.bsky.embed.record", record: { uri, cid } } });
+    },
+    onSuccess: invalidateViewer,
+  });
+
   const replyMutation = useMutation({
     mutationFn: async (text: string) => {
       const oauth = getOAuthSession();
@@ -238,6 +249,7 @@ export function useEntrySocial(entry: EntryDetail | null) {
     toggleRepostMutation,
     postMutation,
     replyMutation,
+    quoteMutation,
     hasLinkedPost: !!(uri && cid),
   };
 }

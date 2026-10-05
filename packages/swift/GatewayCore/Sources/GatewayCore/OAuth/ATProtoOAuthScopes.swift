@@ -11,6 +11,8 @@ public enum ATProtoOAuthScopes {
     "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
     "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
     "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
+    "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete",
+    "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
     "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
     "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
     "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
@@ -42,6 +44,14 @@ public enum ATProtoOAuthScopes {
     "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
     "include:site.standard.authSocial",
     "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
+  ]
+
+  private static let webListScopes = [
+    "repo:app.standard-reader.listSave?action=create&action=update&action=delete",
+    "repo:app.standard-reader.list?action=create&action=delete",
+  ]
+
+  private static let userInputScopes = [
     "include:app.userinput.authFull",
     "blob:*/*",
   ]
@@ -61,10 +71,32 @@ public enum ATProtoOAuthScopes {
     "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
   ]
 
-  static let webScope = (webReadStateScopes + sharedScopes + readerActionScopes).joined(separator: " ")
+  static let webScope: String = {
+    var scopes: [String] = webReadStateScopes
+    scopes.append(contentsOf: sharedScopes)
+    scopes.append(contentsOf: readerActionScopes)
+    scopes.append(contentsOf: webListScopes)
+    scopes.append(contentsOf: userInputScopes)
+    return scopes.joined(separator: " ")
+  }()
 
   /// Kept as `iosScope` because `/ios-client-metadata.json` is a stable public client ID used by
   /// the universal iPhone, iPad, and Mac app.
-  static let iosScope = (["atproto"] + iosReadStateScopes + sharedScopes.dropFirst()
-    + readerActionScopes + iosOnlyScopes).joined(separator: " ")
+  // Preserve the published native scope order, which groups topics with reader actions.
+  private static let topicSelectionScopes = [
+    "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete",
+    "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
+  ]
+
+  static let iosScope: String = {
+    var scopes = ["atproto"]
+    scopes.append(contentsOf: iosReadStateScopes)
+    let sharedWithoutTopics = sharedScopes.dropFirst().filter { !topicSelectionScopes.contains($0) }
+    scopes.append(contentsOf: sharedWithoutTopics)
+    scopes.append(contentsOf: topicSelectionScopes)
+    scopes.append(contentsOf: readerActionScopes)
+    scopes.append(contentsOf: userInputScopes)
+    scopes.append(contentsOf: iosOnlyScopes)
+    return scopes.joined(separator: " ")
+  }()
 }

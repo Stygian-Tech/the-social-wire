@@ -24,6 +24,13 @@ BEGIN
       'community_key_hash', 'speaker_key_hash', 'story_count', 'speaker_count',
       'best_story_rank', 'latest_mention_at', 'payload'
     )
+    -- These exact HMAC-private topic views carry typed candidate/event envelopes.
+    -- Public responses are constructed from validated DTOs; arbitrary payload
+    -- columns elsewhere still fail this boundary check.
+    AND NOT (column_name = 'payload' AND table_name IN (
+      'finance_generations', 'sports_generations', 'sports_events',
+      'sports_standings', 'sports_schedule_status'
+    ))
     AND NOT (
       table_name = 'circle_signal_facts'
       AND column_name = 'actor_key_hash'
@@ -89,8 +96,16 @@ SELECT generation_id, position, subject_did, handle
 FROM wire_serving.edition_talked_accounts LIMIT 1;
 SELECT canonical_key, actor_key_hash, signal_kind, source_uri, occurred_at
 FROM wire_serving.circle_signal_facts LIMIT 1;
+SELECT generation_id, payload FROM wire_serving.finance_generations LIMIT 1;
+SELECT generation_id, payload FROM wire_serving.sports_generations LIMIT 1;
+SELECT event_id, payload FROM wire_serving.sports_events LIMIT 1;
+SELECT competition_id, season, payload FROM wire_serving.sports_standings LIMIT 1;
+SELECT competition_id, payload FROM wire_serving.sports_schedule_status LIMIT 1;
+SELECT version, entities FROM wire_serving.sports_catalog LIMIT 1;
 
 DO $$
+DECLARE
+  private_table TEXT;
 BEGIN
   BEGIN
     PERFORM canonical_key FROM public.wire_items LIMIT 1;
@@ -98,6 +113,18 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN
     NULL;
   END;
+  FOREACH private_table IN ARRAY ARRAY[
+    'finance_selections', 'finance_personalized_snapshots',
+    'sports_selections', 'sports_personalized_snapshots',
+    'sports_events', 'sports_standings', 'sports_provider_refresh'
+  ] LOOP
+    BEGIN
+      EXECUTE format('SELECT 1 FROM public.%I LIMIT 1', private_table);
+      RAISE EXCEPTION 'read-only corpus role unexpectedly read public.%', private_table;
+    EXCEPTION WHEN insufficient_privilege THEN
+      NULL;
+    END;
+  END LOOP;
   BEGIN
     EXECUTE 'DELETE FROM wire_serving.items WHERE FALSE';
     RAISE EXCEPTION 'read-only corpus role unexpectedly mutated a serving view';

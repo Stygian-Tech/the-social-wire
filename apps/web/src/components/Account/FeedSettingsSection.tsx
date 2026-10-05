@@ -23,9 +23,7 @@ export function FeedSettingsSection() {
     isPending,
     error,
   } = useFeedDisplayPreferences();
-  const displayedFeeds = TOP_LEVEL_FEEDS.filter(
-    (feed) => configuredReadLater.serviceId !== "semble" || feed !== "archive",
-  );
+  const displayedFeeds = TOP_LEVEL_FEEDS;
   const feedLabel = (feed: (typeof TOP_LEVEL_FEEDS)[number]) =>
     feed === "readLater" && configuredReadLater.serviceId === "semble"
       ? configuredReadLater.sembleConnection?.collectionName || "Semble Collection"
@@ -46,7 +44,7 @@ export function FeedSettingsSection() {
             Settings
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Customize the app&apos;s appearance and choose which top-level feeds appear.
+            Customize appearance, feed visibility, and unread counts.
           </p>
         </header>
         <AppearanceSettingsSection />
@@ -83,15 +81,13 @@ export function FeedSettingsSection() {
           <div className="mt-3 divide-y">
             <DiscoveryFeedDisplaySettings
               preferences={preferences}
-              disabled={isPending}
+              isPending={isPending}
               onVisibilityChange={setDiscoveryFeedVisible}
             />
             {displayedFeeds.map((feed) => {
               const feedVisible = preferences.visibleFeeds.includes(feed);
               const countVisible =
                 preferences.feedsWithUnreadCounts.includes(feed);
-              const finalVisible =
-                feedVisible && preferences.visibleFeeds.length === 1;
               return (
                 <div
                   key={feed}
@@ -101,7 +97,7 @@ export function FeedSettingsSection() {
                   <Switch
                     className="justify-self-center"
                     checked={feedVisible}
-                    disabled={isPending || finalVisible}
+                    disabled={isPending}
                     onCheckedChange={(value) =>
                       setFeedVisible(feed, value)
                     }

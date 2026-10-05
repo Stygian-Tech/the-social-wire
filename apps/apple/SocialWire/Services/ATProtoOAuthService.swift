@@ -48,6 +48,8 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
         "repo:network.cosmik.collectionLink?action=create&action=update&action=delete",
         "repo:network.cosmik.collectionLinkRemoval?action=create&action=update&action=delete",
         "repo:network.cosmik.connection?action=create&action=update&action=delete",
+        "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete",
+        "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
         "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
         "include:site.standard.authSocial",
         "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
@@ -75,6 +77,8 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     ]
 
     static let requiredFeatureScopes: Set<String> = [
+        "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete",
+        "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
         "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
         "include:site.standard.authSocial",
         "include:app.userinput.authFull",

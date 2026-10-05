@@ -13,6 +13,7 @@ import { LexiconMigrationRunner } from "@/hooks/useLexiconMigration";
 import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
+import { shouldPersistFinanceQuery } from "@/lib/financeQueryPersist";
 import { CircleViewerCacheCleanup } from "@/components/Circle/CircleViewerCacheCleanup";
 
 /** IndexedDB key for dehydrated React Query cache (sidebar + bounded entry lists). */
@@ -99,8 +100,10 @@ function shouldPersistCircleEditionQuery(query: Query): boolean {
   return data.pages.length <= 3 && totalStories <= 150;
 }
 
+
 function shouldDehydrateQuery(query: Query): boolean {
   return (
+    shouldPersistFinanceQuery(query) ||
     shouldPersistEntriesQuery(query) ||
     shouldPersistWireEditionQuery(query) ||
     shouldPersistCircleEditionQuery(query) ||

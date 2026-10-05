@@ -1,4 +1,6 @@
 import AsyncHTTPClient
+import FinanceCore
+import SportsCore
 import Foundation
 import Logging
 import OperationsCore
@@ -25,7 +27,10 @@ public enum WireWorkerHost {
     let runtimePlan = WireWorkerRuntimePlan(
       mode: config.mode,
       role: config.role,
-      cleanupEnabled: config.inboxCleanupEnabled
+      cleanupEnabled: config.inboxCleanupEnabled,
+      financeMode: FinanceFeedMode(environmentValue: environment["FINANCE_FEED_MODE"]),
+      financeRightsConfirmed: environment["FINANCE_CATALOG_RIGHTS_CONFIRMED"] == "true",
+      sportsMode: SportsFeedMode(environmentValue: environment["SPORTS_FEED_MODE"])
     )
     if runtimePlan.runsGeneration {
       for plan in config.externalSignalMode.generationPlans(baseline: config.ranking) {
@@ -108,6 +113,11 @@ public enum WireWorkerHost {
     } else {
       cycle = nil
     }
+    let financeMaterializer = runtimePlan.runsGeneration
+      ? PostgresFinanceMaterializer(pool: pool, logger: logger, authority: roleLeaseAuthority, environment: environment)
+      : nil
+    let sportsMaterializer = runtimePlan.runsGeneration
+      ? PostgresSportsMaterializer(pool: pool, logger: logger, authority: roleLeaseAuthority, environment: environment) : nil
     let state = WireWorkerHealthState()
 
     logger.info(
@@ -179,11 +189,23 @@ public enum WireWorkerHost {
           )
         }
       }
+      if runtimePlan.runsFinanceProjection {
+        let projector = PostgresFinanceArticleProjector(pool: pool, logger: logger, environment: environment)
+        group.addTask { try await FinanceArticleProjectionRuntime.run(projector: projector, logger: logger) }
+      }
+      if runtimePlan.runsGeneration, SportsFeedMode(environmentValue: environment["SPORTS_FEED_MODE"]) != .off {
+        let refresh = PostgresSportsProviderRefresh(pool: pool, logger: logger, authority: roleLeaseAuthority, environment: environment)
+        group.addTask { try await SportsProviderRuntime.run(refresh: refresh, logger: logger) }
+      }
+      if runtimePlan.runsSportsProjection {
+        let projector = PostgresSportsArticleProjector(pool: pool, logger: logger, environment: environment)
+        group.addTask { try await SportsArticleProjectionRuntime.run(projector: projector, logger: logger) }
+      }
       if let cycle {
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "generation"]) }
           try await WireWorkerRuntime.runForever(
-            cycle: cycle, state: state, scheduler: rankingScheduler, logger: logger)
+            cycle: cycle, state: state, scheduler: rankingScheduler, logger: logger, financeMaterializer: financeMaterializer, sportsMaterializer: sportsMaterializer)
         }
       }
       if runtimePlan.runsDrain, let inboxProcessor {
