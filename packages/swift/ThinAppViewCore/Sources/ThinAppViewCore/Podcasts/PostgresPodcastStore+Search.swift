@@ -5,6 +5,7 @@ extension PostgresPodcastStore {
   /// Bound decrypted work and advance over nonmatches without a plaintext private search index.
   public func search(viewer: String, request: PodcastSearchRequest) async throws -> PodcastSearchResponse {
     try request.validate()
+    guard request.scope == nil || request.scope == "library" else { throw PodcastStoreError.invalidRequest }
     let binding = try PodcastSearch.binding(viewer: viewer, request: request)
     let cursor = try PodcastSearchCursor.decode(request.cursor, binding: binding)
     let entity = cursor?.entity ?? -1

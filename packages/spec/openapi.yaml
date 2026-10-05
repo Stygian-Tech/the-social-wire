@@ -55,8 +55,9 @@ components:
 
   schemas:
     PodcastStateSnapshot: {"type": "object", "required": ["revision", "state"], "properties": {"revision": {"type": "integer", "minimum": 0}, "state": {"$ref": "#/components/schemas/PodcastListenerState"}}}
-    PodcastSearchRequest: {"type": "object", "required": ["query"], "properties": {"query": {"type": "string", "minLength": 2, "maxLength": 200}, "scope": {"type": "string", "enum": ["library"], "default": "library"}, "kind": {"type": "string", "enum": ["all", "shows", "episodes"], "default": "all"}, "showId": {"type": "string", "maxLength": 2048}, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}, "cursor": {"type": "string", "maxLength": 4096}}}
-    PodcastSearchResponse: {"type": "object", "required": ["shows", "episodes", "hasMore"], "properties": {"shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}, "episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "cursor": {"type": "string"}, "hasMore": {"type": "boolean"}}}
+    PodcastDirectoryCandidate: {"type": "object", "required": ["provider", "id", "title", "feedUrl"], "properties": {"provider": {"type": "string", "enum": ["podcastindex"]}, "id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "artworkUrl": {"type": "string"}, "feedUrl": {"type": "string", "description": "Public HTTPS RSS candidate; resolve before subscribing."}}}
+    PodcastSearchRequest: {"type": "object", "required": ["query"], "properties": {"query": {"type": "string", "minLength": 2, "maxLength": 200}, "scope": {"type": "string", "enum": ["library", "directory"], "default": "library"}, "kind": {"type": "string", "enum": ["all", "shows", "episodes"], "default": "all"}, "showId": {"type": "string", "maxLength": 2048}, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}, "cursor": {"type": "string", "maxLength": 4096}}}
+    PodcastSearchResponse: {"type": "object", "required": ["shows", "episodes", "hasMore"], "properties": {"shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}, "episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "cursor": {"type": "string"}, "hasMore": {"type": "boolean"}, "candidates": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastDirectoryCandidate"}}, "directoryLimit": {"type": "integer", "enum": [50]}}}
     PodcastResolveResponse: {"type": "object", "required": ["show", "episodes"], "properties": {"show": {"$ref": "#/components/schemas/PodcastShow"}, "episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}}}
     PodcastShowsResponse: {"type": "object", "required": ["shows"], "properties": {"shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}}}
     PodcastEpisodesResponse: {"type": "object", "required": ["episodes"], "properties": {"episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "cursor": {"type": "string"}}}
@@ -4424,8 +4425,8 @@ paths:
   /v1/podcasts/search:
     post:
       tags: [Podcasts]
-      summary: Search The Podcast Library
-      description: Searches stored titles, descriptions and show host names in subscribed public and viewer-owned private podcasts. No directory requests, PDS hydration or feed fetches. Matching ignores case and diacritics and requires every whitespace-separated term. Results order shows before episodes then stable ID. At most 500 stored rows are scanned per page; a page may be empty with hasMore true. Continue with the opaque cursor until hasMore false. Cursors are bound to viewer, normalized query, kind and showId. Responses are private, no-store.
+      summary: Search Podcasts
+      description: Searches stored titles, descriptions and show host names in subscribed public and viewer-owned private podcasts. No directory requests, PDS hydration or feed fetches. Matching ignores case and diacritics and requires every whitespace-separated term. Results order shows before episodes then stable ID. At most 500 stored rows are scanned per page; a page may be empty with hasMore true. Continue with the opaque cursor until hasMore false. Cursors are bound to viewer, normalized query, kind and showId. Responses are private, no-store. Explicit scope directory searches Podcast Index public names/topics only, never library text or feed URLs. Directory returns candidates (not catalog records), empty shows/episodes, directoryLimit 50, hasMore false and no cursor; at most min(limit,50) public HTTPS podcast candidates from one provider response. No provider pagination or auto subscription. Directory rejects showId/cursor, episode kind, URL or credential-shaped input. Provider fetches have an eight-second deadline, two MiB body cap, exact URL redirect allowlist, public DNS pinning, descriptive User-Agent, no auth headers, five-minute result cache (128 entries), coalescing, two concurrent calls and a self-imposed 20 cache misses/minute per AppView process.
       security: [{ATProtoOAuthDPoP: []}]
       requestBody:
         required: true
@@ -4441,9 +4442,10 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/PodcastSearchResponse'}
-        '400': {description: Invalid Search Or Cursor}
+        '400': {description: Invalid Search Or Cursor, Or Directory URL/Credential Input}
         '401': {description: Authentication Required}
-        '503': {description: Private Storage Authentication Failed}
+        '502': {description: Podcast Index Unavailable Or Invalid Provider Response}
+        '503': {description: Private Storage Authentication Failed Or Directory Request Budget Busy}
   /v1/podcasts/private/resolve:
     post:
       tags: [Podcasts]

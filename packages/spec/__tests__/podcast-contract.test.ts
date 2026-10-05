@@ -57,10 +57,22 @@ test('library search protects viewer queries and uses bounded continuation pages
  const search=spec.paths['/v1/podcasts/search'].post;
  expect(search.security).toEqual([{ATProtoOAuthDPoP:[]}]);
  expect(spec.paths['/v1/podcasts/search'].get).toBeUndefined();
- expect(spec.components.schemas.PodcastSearchRequest.properties.scope.enum).toEqual(['library']);
+ expect(spec.components.schemas.PodcastSearchRequest.properties.scope.enum).toEqual(['library','directory']);
  expect(spec.components.schemas.PodcastSearchResponse.required).toEqual(['shows','episodes','hasMore']);
  for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/POST search.bru`)).toContain('/v1/podcasts/search');
  const store=read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore+Search.swift');
  expect(store).toContain('LIMIT 501');expect(store).toContain('scanned >= 500');
  expect(store).not.toContain('INSERT');expect(store).not.toContain('UPDATE');
+});
+
+test('Podcast Index discovery is explicit and returns bounded public candidates',()=>{
+ expect(spec.components.schemas.PodcastDirectoryCandidate.required).toEqual(['provider','id','title','feedUrl']);
+ expect(spec.components.schemas.PodcastDirectoryCandidate.properties.provider.enum).toEqual(['podcastindex']);
+ expect(spec.components.schemas.PodcastSearchResponse.properties.directoryLimit.enum).toEqual([50]);
+ expect(spec.paths['/v1/podcasts/search'].post.responses['502']).toBeDefined();
+ for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/POST discover.bru`)).toContain('"scope": "directory"');
+ const source=read('services/appview/Sources/AppView/Podcasts/PodcastDirectoryFetcher.swift');
+ expect(source).toContain('https://api.podcastindex.org/search');expect(source).toContain('User-Agent');
+ expect(source).toContain('validateURL: { $0 == url }');expect(source).toContain('timeout: .seconds(8)');
+ expect(source).not.toContain('Authorization');
 });

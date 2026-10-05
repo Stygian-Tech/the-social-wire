@@ -19,7 +19,7 @@ public struct PodcastSearchRequest: Codable, Sendable {
 
   public func validate() throws {
     let count = query.trimmingCharacters(in: .whitespacesAndNewlines).count
-    guard (2...200).contains(count), scope == nil || scope == "library",
+    guard (2...200).contains(count), ["library", "directory"].contains(scope ?? "library"),
       ["all", "shows", "episodes"].contains(kind ?? "all"),
       (1...100).contains(limit ?? 20), (showId?.count ?? 0) <= 2048,
       (cursor?.count ?? 0) <= 4096
