@@ -37,6 +37,8 @@ import {
   PODCAST_SILENCE_ANALYSIS_VERSION,
 } from "@/lib/podcasts/playback";
 
+import { PODCAST_SUBSCRIPTIONS_CHANGED_EVENT } from "@/lib/podcasts/subscriptionsChanged";
+
 type StatePatch = Partial<PodcastState>;
 export type PlayerContext = {
   episode: PodcastEpisode | null;
@@ -137,6 +139,36 @@ export function PodcastPlayerProvider({
       }
     }
   }, [getOAuthSession, persist]);
+  useEffect(() => {
+    let controller: AbortController | null = null;
+    const onSubscriptionsChanged = (event: Event) => {
+      const did = (event as CustomEvent<{ viewerDid?: string }>).detail?.viewerDid;
+      if (!did || viewer !== did || viewerRef.current !== did || !podcastsEnabled() || !navigator.onLine) return;
+      controller?.abort();
+      const requestController = new AbortController();
+      controller = requestController;
+      synchronization.current = synchronization.current.catch(() => {}).then(async () => {
+        const oauth = getOAuthSession();
+        if (requestController.signal.aborted || viewerRef.current !== did || oauth?.did !== did) return;
+        try {
+          const envelope = await podcastRequest<PodcastStateEnvelope>(oauth, "state", "GET", undefined, requestController.signal);
+          if (requestController.signal.aborted || viewerRef.current !== did || getOAuthSession()?.did !== did) return;
+          // Refresh only membership; edits still waiting to sync take precedence over a server snapshot.
+          stateRef.current = { ...stateRef.current, subscriptions: pending.current.subscriptions ?? envelope.state.subscriptions };
+          setState(stateRef.current);
+          persist();
+        } catch {
+          if (!requestController.signal.aborted && viewerRef.current === did)
+            setError("Podcast Subscriptions Could Not Refresh. Reload the Page to Retry.");
+        }
+      });
+    };
+    window.addEventListener(PODCAST_SUBSCRIPTIONS_CHANGED_EVENT, onSubscriptionsChanged);
+    return () => {
+      controller?.abort();
+      window.removeEventListener(PODCAST_SUBSCRIPTIONS_CHANGED_EVENT, onSubscriptionsChanged);
+    };
+  }, [viewer, getOAuthSession, persist]);
   const changeState = useCallback(
     async (patch: StatePatch) => {
       if (patch.playbackSpeed !== undefined) patch = { ...patch, playbackSpeed: normalizePodcastSpeed(patch.playbackSpeed) };

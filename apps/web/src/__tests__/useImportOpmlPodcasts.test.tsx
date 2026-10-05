@@ -5,6 +5,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ReactNode } from "react";
 import * as auth from "@/hooks/useAuth";
 import * as client from "@/lib/podcasts/client";
+import { PODCAST_SUBSCRIPTIONS_CHANGED_EVENT } from "@/lib/podcasts/subscriptionsChanged";
 import { useImportOpmlPodcasts } from "@/hooks/useImportOpmlPodcasts";
 
 const restores: (() => void)[] = [];
@@ -17,7 +18,11 @@ function setup() {
   const authSpy = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
   restores.push(() => authSpy.mockRestore());
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={cache}>{children}</QueryClientProvider>;
-  return { cache, oauth, authSpy, wrapper };
+  const events: unknown[] = [];
+  const listen = (event: Event) => events.push((event as CustomEvent).detail);
+  window.addEventListener(PODCAST_SUBSCRIPTIONS_CHANGED_EVENT, listen);
+  restores.push(() => window.removeEventListener(PODCAST_SUBSCRIPTIONS_CHANGED_EVENT, listen));
+  return { cache, oauth, authSpy, wrapper, events };
 }
 
 it("uses private resolution exclusively and never creates a public PDS record", async () => {
@@ -30,6 +35,7 @@ it("uses private resolution exclusively and never creates a public PDS record", 
   expect(request).toHaveBeenCalledWith(fixture.oauth, "private/resolve", "POST", { url: feed.feedUrl });
   expect(write).not.toHaveBeenCalled();
   await waitFor(() => expect(result.current.importer.data?.imported).toHaveLength(1));
+  expect(fixture.events).toEqual([{ viewerDid: fixture.oauth.did }]);
 });
 
 it("stops an account-switched import after resolution and before subscription writes", async () => {
@@ -46,6 +52,7 @@ it("stops an account-switched import after resolution and before subscription wr
   await act(async () => resolved({ show: { id: "public", title: "Public Show", sourceKind: "rss" } }));
   expect((await pending as Error).message).toContain("Account Changed");
   expect(write).not.toHaveBeenCalled();
+  expect(fixture.events).toEqual([]);
 });
 
 it("rejects a stale OAuth session before sending any import requests", async () => {
@@ -56,4 +63,20 @@ it("rejects a stale OAuth session before sending any import requests", async () 
   const { result } = renderHook(() => useImportOpmlPodcasts(false), { wrapper: fixture.wrapper });
   await expect(result.current.importer.mutateAsync({ feeds: [feed], privateFeeds: true, onProgress() {} })).rejects.toThrow("Account Changed");
   expect(request).not.toHaveBeenCalled();
+});
+
+it("notifies the current viewer after a partially successful public import", async () => {
+  const fixture = setup();
+  const write = spyOn(client,"writePodcastSubscription").mockResolvedValue();
+  const request = spyOn(client,"podcastRequest").mockImplementation(async <T,>(_oauth:OAuthSession,path:string,_method?:string,body?:unknown):Promise<T> => {
+    if(path==="shows")return {shows:[]} as T;
+    if((body as {url?:string})?.url?.includes("failed"))throw new Error("Resolve Failed");
+    return {show:{id:"imported",title:"Imported",sourceKind:"rss"}} as T;
+  });
+  restores.push(()=>write.mockRestore(),()=>request.mockRestore());
+  const {result}=renderHook(()=>useImportOpmlPodcasts(false),{wrapper:fixture.wrapper});
+  await act(async()=>{await result.current.importer.mutateAsync({feeds:[{...feed,feedUrl:"https://example.org/feed"},{...feed,feedUrl:"https://failed.example.org/feed"}],privateFeeds:false,onProgress(){}});});
+  expect(write).toHaveBeenCalledTimes(1);
+  expect(fixture.events).toEqual([{viewerDid:fixture.oauth.did}]);
+  await waitFor(()=>expect(result.current.importer.data?.failed).toHaveLength(1));
 });

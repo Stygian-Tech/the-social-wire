@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./useAuth";
+import { notifyPodcastSubscriptionsChanged } from "@/lib/podcasts/subscriptionsChanged";
 import { importOpmlPodcasts } from "@/lib/podcasts/opmlImport";
 import { podcastRequest, writePodcastSubscription, type PodcastShow } from "@/lib/podcasts/client";
 import type { ParsedOpmlFeed, OpmlImportProgress } from "@/lib/opmlImport";
@@ -36,22 +37,27 @@ export function useImportOpmlPodcasts(enabled: boolean) {
       assertViewer();
       const current = await podcastRequest<{ shows: PodcastShow[] }>(oauth!, "shows");
       assertViewer();
-      return importOpmlPodcasts({
-        ...input,
-        existingShows: current.shows,
-        assertViewer,
-        resolve: async (url, privateFeed) => {
-          assertViewer();
-          const response = await podcastRequest<{ show?: PodcastShow; shows?: PodcastShow[] }>(oauth!, privateFeed ? "private/resolve" : "resolve", "POST", { url });
-          const show = response.show ?? response.shows?.[0];
-          if (!show) throw new Error("No Audio Podcast Found");
-          return show;
-        },
-        subscribe: async (show) => {
-          assertViewer();
-          await writePodcastSubscription(oauth!, viewer!, show);
-        },
-      });
+      try {
+        return await importOpmlPodcasts({
+          ...input,
+          existingShows: current.shows,
+          assertViewer,
+          resolve: async (url, privateFeed) => {
+            assertViewer();
+            const response = await podcastRequest<{ show?: PodcastShow; shows?: PodcastShow[] }>(oauth!, privateFeed ? "private/resolve" : "resolve", "POST", { url });
+            const show = response.show ?? response.shows?.[0];
+            if (!show) throw new Error("No Audio Podcast Found");
+            return show;
+          },
+          subscribe: async (show) => {
+            assertViewer();
+            await writePodcastSubscription(oauth!, viewer!, show);
+          },
+        });
+      } finally {
+        if (viewer && activeViewer.current === viewer && getOAuthSession()?.did === viewer)
+          notifyPodcastSubscriptionsChanged(viewer);
+      }
     },
     onSettled: () => {
       void cache.invalidateQueries({ queryKey });
