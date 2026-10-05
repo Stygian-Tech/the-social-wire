@@ -98,6 +98,9 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
   render(<PodcastLibrary />);
   await screen.findByText("Recent Episode");
+  expect(screen.queryByRole("group", { name: "Podcast Search Scope" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Library" })).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Discover" })).toHaveLength(1);
   const input = screen.getByRole("searchbox", { name: "Search Your Library" });
   fireEvent.change(input, { target: { value: "science" } });
   await screen.findByText("Matched Science Episode");
@@ -150,4 +153,16 @@ it("clears private library terms before directory search and previews before exp
   fireEvent.click(screen.getByRole("button", { name: "Subscribe" }));
   await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, false));
   expect(changes).toEqual([{ subscriptions: [show.id] }]);
+  const sidebar = within(screen.getByRole("complementary", { name: "Podcast Library" }));
+  fireEvent.click(sidebar.getByRole("button", { name: "Discover" }));
+  fireEvent.change(screen.getByRole("searchbox", { name: "Discover Podcasts" }), { target: { value: "another discovery query" } });
+  expect(sidebar.getByRole("button", { name: "Discover" }).getAttribute("aria-current")).toBe("page");
+  expect(sidebar.getByRole("button", { name: "Recently Added" }).getAttribute("aria-current")).toBeNull();
+  fireEvent.click(sidebar.getByRole("button", { name: "Recently Added" }));
+  const libraryInput = screen.getByRole("searchbox", { name: "Search Your Library" }) as HTMLInputElement;
+  expect(libraryInput.value).toBe("");
+  expect(sidebar.getByRole("button", { name: "Recently Added" }).getAttribute("aria-current")).toBe("page");
+  expect(sidebar.getByRole("button", { name: "Discover" }).getAttribute("aria-current")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Podcast Index" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Podcast Search Scope" })).toBeNull();
 });

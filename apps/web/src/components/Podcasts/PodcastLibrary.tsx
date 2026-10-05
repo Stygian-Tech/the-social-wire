@@ -291,7 +291,6 @@ function PodcastViewerLibrary() {
         </header>
         <PodcastLibrarySearch
           scope={searchScope}
-          onScope={scope => { setSearchQuery(""); setSearchScope(scope); setError(null); }}
           query={searchQuery}
           label={searchScope === "discover" ? "Discover Podcasts" : feed === "downloads" ? "Search Downloaded Episodes" : feed === "show" ? "Search This Show" : "Search Your Library"}
           valid={search.valid}

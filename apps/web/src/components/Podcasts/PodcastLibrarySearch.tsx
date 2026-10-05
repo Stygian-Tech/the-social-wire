@@ -5,9 +5,8 @@ import type { PodcastShow } from "@/lib/podcasts/client";
 
 const button = "min-h-11 rounded border px-3 text-sm hover:bg-accent disabled:opacity-50";
 
-export function PodcastLibrarySearch({ scope, onScope, query, label, valid, loading, error, shows, onQuery, onRetry, onShow }: {
+export function PodcastLibrarySearch({ scope, query, label, valid, loading, error, shows, onQuery, onRetry, onShow }: {
   scope: "library" | "discover";
-  onScope: (scope: "library" | "discover") => void;
   query: string;
   label: string;
   valid: boolean;
@@ -21,10 +20,6 @@ export function PodcastLibrarySearch({ scope, onScope, query, label, valid, load
   const searching = !!query.trim();
   return (
     <div className="space-y-2">
-      <div role="group" aria-label="Podcast Search Scope" className="flex gap-2">
-        <button type="button" className={button} aria-pressed={scope === "library"} onClick={() => onScope("library")}>Library</button>
-        <button type="button" className={button} aria-pressed={scope === "discover"} onClick={() => onScope("discover")}>Discover</button>
-      </div>
       {scope === "discover" ? <p className="text-xs text-muted-foreground">Discover Public Podcasts with <a className="underline" href="https://podcastindex.org" target="_blank" rel="noreferrer">Podcast Index</a>. Only searches entered here are sent to the directory.</p> : null}
       <label htmlFor="podcast-library-search" className="block text-sm font-medium">{label}</label>
       <div className="flex min-w-0 gap-2">
