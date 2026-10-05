@@ -34,6 +34,25 @@ afterAll(() => {
 });
 
 describe("MobileFeedNavigation", () => {
+  it("shows the Podcasts Beta badge in a primary mobile slot", () => {
+    const onSelect = mock(() => undefined);
+    render(<MobileFeedNavigation currentFeed="podcasts" visibleFeeds={new Set(["podcasts"])} onSelect={onSelect} />);
+    const podcasts = screen.getByRole("button", { name: "Podcasts, Beta" });
+    expect(podcasts.textContent).toContain("Beta");
+    expect(podcasts.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(podcasts);
+    expect(onSelect).toHaveBeenCalledWith("podcasts");
+  });
+  it("labels Podcasts as Beta in mobile overflow without changing selection", () => {
+    const onSelect = mock(() => undefined);
+    render(<MobileFeedNavigation currentFeed="podcasts" visibleFeeds={new Set(["podcasts", "wire", "circle", "subscribed", "following"])} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: "More Feeds" }));
+    const podcasts = screen.getByRole("menuitem", { name: "Podcasts, Beta" });
+    expect(podcasts.textContent).toContain("Beta");
+    expect(podcasts.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(podcasts);
+    expect(onSelect).toHaveBeenCalledWith("podcasts");
+  });
   it("shows Finance with its feed icon and Beta badge when available", () => {
     const onSelect = mock(() => undefined);
     render(<MobileFeedNavigation currentFeed="finance" visibleFeeds={new Set(["finance", "subscribed"])} onSelect={onSelect} />);

@@ -16,10 +16,11 @@ describe("Podcast library feed selection", () => {
     const calls: string[] = [];
     const { container } = render(<SidebarProvider><SidebarAudioSection enabled active onSelect={() => calls.push("podcasts")} /><PublicationTabs visibleFeeds={new Set()} activeTab={null} onTabChange={() => {}} /><SidebarTopicsSection visibleFeeds={new Set()} /></SidebarProvider>);
     expect(screen.getByText("Audio")).toBeTruthy();
+    expect(screen.getByText("Beta")).toBeTruthy();
     expect(screen.queryByText("Feeds")).toBeNull();
     expect(screen.queryByText("Topics")).toBeNull();
-    expect(container.querySelector('[aria-label="Audio"]')?.contains(screen.getByRole("tab", { name: "Podcasts" }))).toBe(true);
-    fireEvent.click(screen.getByRole("tab", { name: "Podcasts" }));
+    expect(container.querySelector('[aria-label="Audio"]')?.contains(screen.getByRole("tab", { name: "Podcasts, Beta" }))).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "Podcasts, Beta" }));
     expect(calls).toEqual(["podcasts"]);
     cleanup();
     if (media) Object.defineProperty(window, "matchMedia", media);

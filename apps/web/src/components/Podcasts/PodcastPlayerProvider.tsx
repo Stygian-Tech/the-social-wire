@@ -1,5 +1,4 @@
 "use client";
-import { PodcastPlayerView } from "./PodcastPlayerView";
 import {
   createContext,
   useCallback,
@@ -54,6 +53,7 @@ export type PlayerContext = {
   changeState: (patch: StatePatch) => Promise<void>;
   setRemoveSilences: (enabled: boolean) => Promise<void>;
   clearError: () => void;
+  getAudioElement?: () => HTMLAudioElement | null;
 };
 const currentSilence = (analysis: PodcastSilence): PodcastSilence => isCurrentSilenceAnalysis(analysis)
   ? analysis : { status: "pending", intervals: [], analysisVersion: PODCAST_SILENCE_ANALYSIS_VERSION };
@@ -67,6 +67,7 @@ export function PodcastPlayerProvider({
   const { getOAuthSession } = useAuth();
   const viewer = usePodcastViewer() ?? undefined;
   const audio = useRef<HTMLAudioElement | null>(null);
+  const getAudioElement = useCallback(() => audio.current, []);
   const active = useRef<PodcastEpisode | null>(null);
   const playbackGeneration = useRef(0);
   const objectUrl = useRef<string | null>(null);
@@ -620,12 +621,10 @@ export function PodcastPlayerProvider({
         changeState,
         setRemoveSilences,
         clearError: () => setError(null),
+        getAudioElement,
       }}
     >
       {children}
-      {podcastsEnabled() && viewer && episode ? (
-        <PodcastPlayerView player={{ episode, playing, position, duration, state, error, silence, play, toggle, seek, changeState, setRemoveSilences, clearError: () => setError(null) }} />
-      ) : null}
     </Context.Provider>
   );
 }
@@ -633,4 +632,8 @@ export function usePodcastPlayer(): PlayerContext {
   const context = useContext(Context);
   if (!context) throw new Error("Podcast player provider is missing");
   return context;
+}
+
+export function useOptionalPodcastPlayer(): PlayerContext | null {
+  return useContext(Context);
 }

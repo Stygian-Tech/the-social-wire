@@ -14,6 +14,7 @@ import * as offline from "@/lib/podcasts/offline";
 import * as client from "@/lib/podcasts/client";
 import { notifyPodcastSubscriptionsChanged } from "@/lib/podcasts/subscriptionsChanged";
 import { PodcastLibrarySidebar } from "@/components/Podcasts/PodcastLibrarySidebar";
+import { PodcastRoutePlayer } from "@/components/Podcasts/PodcastRoutePlayer";
 import { PodcastPlayerView } from "@/components/Podcasts/PodcastPlayerView";
 import {
   initialPodcastState,
@@ -38,6 +39,7 @@ function Controls({ route, item = episode }: { route: string; item?: PodcastEpis
   return (
     <div>
       <h1>{route}</h1>
+      {route === "Podcasts" ? <PodcastRoutePlayer /> : null}
       <button onClick={() => void player.play(item)}>Play Fixture</button>
       {player.error ? <p role="alert">{player.error}</p> : null}
       <span data-testid="progress">
@@ -161,7 +163,7 @@ describe("Persistent podcast player", () => {
     expect(env.element.getAttribute("src")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
-  it("seeks chapter markers, previews artwork, and restores a minimized player without interrupting audio", async () => {
+  it("seeks chapter markers and previews artwork without interrupting audio", async () => {
     const env = environment();
     const chaptered = { ...episode, artworkUrl: "https://publisher.test/episode.jpg", showArtworkUrl: "https://publisher.test/show.jpg", chapters: [{ startSeconds: 0, title: "Introduction" }, { startSeconds: 60, title: "Main Topic", artworkUrl: "https://publisher.test/chapter.jpg" }] };
     render(<PodcastPlayerProvider><Controls route="Podcasts" item={chaptered} /></PodcastPlayerProvider>);
@@ -172,52 +174,20 @@ describe("Persistent podcast player", () => {
     fireEvent.click(marker);
     await waitFor(() => expect(env.element.currentTime).toBe(60));
     expect(screen.getAllByRole("img", { name: "Chapter Artwork: Main Topic" }).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Minimize Player" }));
-    expect(screen.queryByRole("slider", { name: "Seek Podcast" })).toBeNull();
     expect(env.element.paused).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Show Podcast Controls" }));
-    expect(screen.getByRole("button", { name: "Pause" })).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Restore Player" }));
     expect(screen.getByRole("slider", { name: "Seek Podcast" })).toBeDefined();
-    expect(env.element.currentTime).toBe(60);
   });
-  it("reserves measured player space from an empty state through expanded and minimized layouts", async () => {
+  it("renders route-owned player in normal flow without global reservations or floating controls", () => {
     environment();
-    let height = 300;
-    let resize: (() => void) | undefined;
-    let disconnected = false;
-    const observer = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
-    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: class {
-      constructor(callback: () => void) { resize = callback; }
-      observe() {}
-      disconnect() { disconnected = true; }
-    } });
-    restores.push(() => { if (observer) Object.defineProperty(globalThis, "ResizeObserver", observer); else Reflect.deleteProperty(globalThis, "ResizeObserver"); });
-    const rect = spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      const measured = this.getAttribute("aria-label") === "Podcast Player" ? (this.classList.contains("group") ? 80 : height) : 0;
-      const gap = this.classList.contains("group") ? 76 : 64;
-      return { x: 0, y: window.innerHeight - measured - gap, width: 384, height: measured, top: window.innerHeight - measured - gap, bottom: window.innerHeight - gap, left: 0, right: 384, toJSON() {} };
-    });
-    restores.push(() => rect.mockRestore());
     const empty: PlayerContext = { episode: null, playing: false, position: 0, duration: 0, state: initialPodcastState(), error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {} };
     const view = render(<PodcastPlayerView player={empty} />);
-    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
-    view.rerender(<PodcastPlayerView player={{ ...empty, episode }} />);
-    await screen.findByRole("complementary", { name: "Podcast Player" });
-    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("364px");
-    height = 450;
-    await act(async () => resize?.());
-    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("514px");
-    fireEvent.click(screen.getByRole("button", { name: "Minimize Player" }));
-    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("156px");
-    expect(disconnected).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Restore Player" }));
-    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("514px");
-    view.rerender(<PodcastPlayerView player={empty} />);
     expect(screen.queryByRole("complementary", { name: "Podcast Player" })).toBeNull();
-    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
-    view.unmount();
-    resize?.();
+    view.rerender(<PodcastPlayerView player={{ ...empty, episode }} />);
+    const panel = screen.getByRole("complementary", { name: "Podcast Player" });
+    expect(panel.classList.contains("relative")).toBe(true);
+    expect(panel.classList.contains("shrink-0")).toBe(true);
+    expect(panel.classList.contains("fixed")).toBe(false);
+    expect(screen.queryByRole("button", { name: "Minimize Player" })).toBeNull();
     expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
   });
   it("keeps arbitrary scrubbing available when chapter marks are dense", async () => {
@@ -328,6 +298,7 @@ describe("Persistent podcast player", () => {
     );
     expect(env.element.src).toBe(episode.audioUrl);
     expect(env.element.paused).toBe(false);
+    expect(screen.queryByRole("complementary", { name: "Podcast Player" })).toBeNull();
     await waitFor(() =>
       expect(
         env.requests.some(
@@ -337,6 +308,10 @@ describe("Persistent podcast player", () => {
         ),
       ).toBe(true),
     );
+    view.rerender(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    expect(screen.getByRole("complementary", { name: "Podcast Player" })).toBeDefined();
+    expect(env.element.currentTime).toBe(42);
+    expect(env.element.paused).toBe(false);
   });
   it("stops audio on viewer switch and does not write the old episode into the new viewer cache", async () => {
     const env = environment();

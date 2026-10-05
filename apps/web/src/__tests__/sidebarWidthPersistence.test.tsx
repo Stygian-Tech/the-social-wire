@@ -210,12 +210,12 @@ describe("browser-wide sidebar width", () => {
 });
 
 
-it("reserves player height above the desktop sidebar footer while retaining the banner offset and zero fallback", () => {
+it("keeps the desktop sidebar footer in the full-height sidebar below the banner", () => {
   const view = render(<SidebarProvider><Sidebar><SidebarFooter><button>Profile and Log Out</button></SidebarFooter></Sidebar></SidebarProvider>);
   const sidebar = view.container.querySelector('[data-slot="sidebar-container"]')!;
-  expect(sidebar.classList.contains("bottom-[var(--podcast-player-height,0px)]")).toBe(true);
+  expect(sidebar.classList.contains("bottom-0")).toBe(true);
   expect(sidebar.classList.contains("top-[var(--environment-banner-height,0px)]")).toBe(true);
-  expect(sidebar.classList.contains("h-[calc(100svh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px))]")).toBe(true);
+  expect(sidebar.classList.contains("h-[calc(100svh-var(--environment-banner-height,0px))]")).toBe(true);
   expect(sidebar.contains(screen.getByRole("button", { name: "Profile and Log Out" }))).toBe(true);
 });
 
@@ -224,7 +224,7 @@ function OpenMobileSidebar() {
   return <button onClick={() => setOpenMobile(true)}>Open Sidebar Fixture</button>;
 }
 
-it("reserves mobile sheet space with inline geometry that overrides side-specific full-height defaults", async () => {
+it("keeps the mobile sheet full height without podcast player offsets", async () => {
   const mobile = spyOn(Mobile,"useIsMobile").mockReturnValue(true);
   restores.push(() => mobile.mockRestore());
   for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "getComputedStyle"] as const) {
@@ -244,7 +244,7 @@ it("reserves mobile sheet space with inline geometry that overrides side-specifi
   render(<SidebarProvider><OpenMobileSidebar /><Sidebar><SidebarFooter><button>Profile and Log Out</button></SidebarFooter></Sidebar></SidebarProvider>);
   fireEvent.click(screen.getByRole("button", {name:"Open Sidebar Fixture"}));
   const dialog = await screen.findByRole("dialog",{name:"Sidebar"});
-  expect(dialog.style.bottom).toBe("var(--podcast-player-height,0px)");
-  expect(dialog.style.height).toBe("calc(100% - var(--podcast-player-height,0px))");
+  expect(dialog.style.bottom).toBe("");
+  expect(dialog.style.height).toBe("");
   expect(dialog.contains(screen.getByRole("button",{name:"Profile and Log Out"}))).toBe(true);
 });
