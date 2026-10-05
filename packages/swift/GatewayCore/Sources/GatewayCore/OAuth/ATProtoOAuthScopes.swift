@@ -71,7 +71,14 @@ public enum ATProtoOAuthScopes {
     "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
   ]
 
-  static let webScope = (webReadStateScopes + sharedScopes + readerActionScopes + webListScopes + userInputScopes).joined(separator: " ")
+  static let webScope: String = {
+    var scopes: [String] = webReadStateScopes
+    scopes.append(contentsOf: sharedScopes)
+    scopes.append(contentsOf: readerActionScopes)
+    scopes.append(contentsOf: webListScopes)
+    scopes.append(contentsOf: userInputScopes)
+    return scopes.joined(separator: " ")
+  }()
 
   /// Kept as `iosScope` because `/ios-client-metadata.json` is a stable public client ID used by
   /// the universal iPhone, iPad, and Mac app.
@@ -81,7 +88,15 @@ public enum ATProtoOAuthScopes {
     "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
   ]
 
-  static let iosScope = (["atproto"] + iosReadStateScopes
-    + sharedScopes.dropFirst().filter { !topicSelectionScopes.contains($0) } + topicSelectionScopes
-    + readerActionScopes + userInputScopes + iosOnlyScopes).joined(separator: " ")
+  static let iosScope: String = {
+    var scopes = ["atproto"]
+    scopes.append(contentsOf: iosReadStateScopes)
+    let sharedWithoutTopics = sharedScopes.dropFirst().filter { !topicSelectionScopes.contains($0) }
+    scopes.append(contentsOf: sharedWithoutTopics)
+    scopes.append(contentsOf: topicSelectionScopes)
+    scopes.append(contentsOf: readerActionScopes)
+    scopes.append(contentsOf: userInputScopes)
+    scopes.append(contentsOf: iosOnlyScopes)
+    return scopes.joined(separator: " ")
+  }()
 }

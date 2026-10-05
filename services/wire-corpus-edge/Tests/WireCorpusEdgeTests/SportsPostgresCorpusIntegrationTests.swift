@@ -102,8 +102,15 @@ struct SportsPostgresCorpusIntegrationTests {
     let now = Date()
     let competition = SportsReviewedCatalog.id("competition:efl-championship")
     let providerZone = SportsStandingZone(kind: "qualification", label: "Provider Qualification", sourceURL: "https://www.thesportsdb.com/")
+    var rows: [SportsStandingRow] = []
+    for rank in 1...24 {
+      let ordinal = String(rank)
+      let zone: SportsStandingZone? = rank == 3 ? providerZone : nil
+      rows.append(SportsStandingRow(id: "zone-fixture-" + ordinal,
+        name: "Fixture " + ordinal, rank: rank, zone: zone))
+    }
     let table = SportsStandingSnapshot(competitionID: competition, season: "2026-2027", status: "available", updatedAt: now,
-      rows: (1...24).map { rank in SportsStandingRow(id: "zone-fixture-" + String(rank), name: "Fixture " + String(rank), rank: rank, zone: rank == 3 ? providerZone : nil) })
+      rows: rows)
     let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
     let payload = String(decoding: try encoder.encode(table), as: UTF8.self)
     try await pool.query("INSERT INTO sports_standings(competition_id,season,payload,updated_at,expires_at) VALUES (\(competition),'2026-2027',\(payload)::jsonb,\(now),\(now.addingTimeInterval(86400)))", logger: logger)
