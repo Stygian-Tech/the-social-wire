@@ -163,7 +163,7 @@ it("tracks animated sticky topbar height for sidebar margin and available viewpo
  } finally {rect.mockRestore();if(original)Object.defineProperty(globalThis,"ResizeObserver",original);else Reflect.deleteProperty(globalThis,"ResizeObserver");}
 });
 
-it("reserves persistent player occupancy in its independent scrolling rail", () => {
+it("uses the full viewport for its independent scrolling rail", () => {
  render(<SportsFollowingSidebar {...props} />);
- expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px)-3rem)]");
+ expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-3rem)]");
 });

@@ -283,7 +283,7 @@ function PodcastViewerLibrary() {
     } catch { setError("Audio Could Not Be Saved. Please Retry."); }
   }
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6" style={{ paddingBottom: "calc(var(--podcast-player-height, 0px) + 1.5rem)" }}>
+    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6">
       <section className="min-w-0 space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Podcasts</h1>
@@ -519,7 +519,7 @@ function PodcastViewerLibrary() {
         ) : null}
         {feed === "downloads" ? <p className="text-xs text-muted-foreground">Offline Audio: {(downloads.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)} MB. Save Audio exports a file to your device.</p> : null}
       </section>
-      <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px)-2rem)] lg:overflow-y-auto">
+      <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto">
         <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} discoverActive={searchScope === "discover"} onDiscover={() => { setSearchQuery(""); setSearchScope("discover"); setError(null); }} />
       </div>
     </div>

@@ -3,6 +3,8 @@ import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
 import { useAuth } from "@/hooks/useAuth";
+import { PodcastContentPane } from "@/components/Podcasts/PodcastContentPane";
+import { appViewportHeightClasses, appMobileNavigationPaddingClasses } from "@/components/shared/appViewportStyles";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
 import { PublicationSidebarProvider } from "@/contexts/PublicationSidebarContext";
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
@@ -26,7 +28,7 @@ export default function PodcastsLayout({
     );
   if (!viewer) return null;
   return (
-    <SidebarProvider className="mx-auto min-h-screen max-w-[80rem] [--reader-shell-width:80rem]">
+    <SidebarProvider className={`mx-auto ${appViewportHeightClasses} max-w-[80rem] overflow-hidden [--reader-shell-width:80rem]`}>
       <PublicationSidebarProvider>
         <ReadRouteProvider>
           <Suspense fallback={null}>
@@ -38,8 +40,8 @@ export default function PodcastsLayout({
               }
             />
           </Suspense>
-          <SidebarInset>
-            <main className="min-w-0 flex-1">{children}</main>
+          <SidebarInset className={`min-h-0 overflow-hidden ${appMobileNavigationPaddingClasses}`}>
+            <PodcastContentPane>{children}</PodcastContentPane>
           </SidebarInset>
         </ReadRouteProvider>
       </PublicationSidebarProvider>

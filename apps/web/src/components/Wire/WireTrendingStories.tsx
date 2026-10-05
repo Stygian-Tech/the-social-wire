@@ -13,7 +13,7 @@ export function WireTrendingStories({
     <aside
       aria-labelledby="wire-trending-stories"
       tabIndex={0}
-      className="mx-4 mt-5 self-start rounded-2xl border border-border/70 bg-muted/20 p-3.5 outline-none sm:mx-5 xl:sticky xl:top-4 xl:mx-0 xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px)-5rem)] xl:overflow-y-auto xl:overscroll-contain xl:[scrollbar-gutter:stable] xl:focus-visible:ring-2 xl:focus-visible:ring-ring dark:border-border/55"
+      className="mx-4 mt-5 self-start rounded-2xl border border-border/70 bg-muted/20 p-3.5 outline-none sm:mx-5 xl:sticky xl:top-4 xl:mx-0 xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-5rem)] xl:overflow-y-auto xl:overscroll-contain xl:[scrollbar-gutter:stable] xl:focus-visible:ring-2 xl:focus-visible:ring-ring dark:border-border/55"
     >
       <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--purple-foreground)]">
         What Matters Now

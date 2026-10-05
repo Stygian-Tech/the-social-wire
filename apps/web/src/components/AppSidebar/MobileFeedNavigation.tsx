@@ -11,6 +11,8 @@ import {
 import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import { cn } from "@/lib/utils";
 import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
+import { useOptionalPodcastPlayer } from "@/components/Podcasts/PodcastPlayerProvider";
+import { PodcastPlaybackWaveform } from "@/components/Podcasts/PodcastPlaybackWaveform";
 
 const FEED_ITEMS = [
   { feed: "podcasts", label: "Podcasts", icon: Headphones },
@@ -43,6 +45,7 @@ export function MobileFeedNavigation({
   onOpenLists?: () => void;
   listsActive?: boolean;
 }) {
+  const player = useOptionalPodcastPlayer();
   const items = FEED_ITEMS.filter(({ feed }) => visibleFeeds.has(feed));
   if (items.length === 0 && !onOpenLists) return null;
   const orderedItems = [
@@ -76,7 +79,7 @@ export function MobileFeedNavigation({
             )}
             onClick={() => onSelect(feed)}
           >
-            <Icon className="size-5" aria-hidden="true" />
+            {feed === "podcasts" && player?.playing ? <PodcastPlaybackWaveform player={player} /> : <Icon className="size-5" aria-hidden="true" />}
             <span className="w-full truncate text-center">{label}</span>
             <span className="flex h-2.5 items-center">
               {feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? (
@@ -109,7 +112,7 @@ export function MobileFeedNavigation({
                   className={cn("min-h-11", currentFeed === feed && "text-[var(--purple-foreground)]")}
                   onClick={() => onSelect(feed)}
                 >
-                  <Icon className="size-4" aria-hidden="true" />
+                  {feed === "podcasts" && player?.playing ? <PodcastPlaybackWaveform player={player} /> : <Icon className="size-4" aria-hidden="true" />}
                   <span className="flex-1 truncate">{label}</span>
                   {feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? <WireBetaBadge /> : null}
                 </DropdownMenuItem>
