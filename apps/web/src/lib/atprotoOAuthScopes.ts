@@ -1,3 +1,4 @@
+import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 import { LATR_REPO_OAUTH_SCOPES } from "@/lib/latrCollections";
 import {
   USER_INPUT_BLOB_OAUTH_SCOPE,
@@ -26,6 +27,8 @@ export const SOCIAL_WIRE_REPO_SCOPES = [
   "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
+  "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete",
+  "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
   "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
@@ -87,6 +90,8 @@ export const AT_PROTO_OAUTH_SCOPES = [
   WIRE_FEEDBACK_REPO_SCOPE,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
   ...SKYREADER_REPO_SCOPES,
+  STANDARD_READER_LIST_SAVE_SCOPE,
+  STANDARD_READER_LIST_WRITE_SCOPE,
   USER_INPUT_OAUTH_SCOPE,
   USER_INPUT_BLOB_OAUTH_SCOPE,
 ].join(" ");

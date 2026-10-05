@@ -1,0 +1,2259 @@
+{
+  "version": "thesportsdb-coverage-2026-10-04",
+  "provider": "TheSportsDB",
+  "tier": "Small Business",
+  "monthlyUSD": 20,
+  "reviewedAt": "2026-10-04",
+  "documentation": "https://www.thesportsdb.com/documentation",
+  "terms": "https://www.thesportsdb.com/docs_terms_of_use.php",
+  "coverage": [
+    {
+      "catalogKey": "competition:nfl",
+      "providerLeagueID": "4391",
+      "providerName": "NFL",
+      "providerSport": "American Football",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4391-nfl",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4391",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4391",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4391",
+      "sampleEventIDs": [
+        "2475432",
+        "2475433",
+        "2475434"
+      ],
+      "sampleDates": [
+        "2026-10-04",
+        "2026-10-04",
+        "2026-10-04"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_64c4c6be3ce7466096a38dfa5cc802c6",
+      "seasonNormalization": {
+        "catalogKey": "competition:nfl",
+        "normalizedCount": 324,
+        "sampleCount": 324,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:nfl",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:nba",
+      "providerLeagueID": "4387",
+      "providerName": "NBA",
+      "providerSport": "Basketball",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4387-nba",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4387",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 1,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4387",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4387",
+      "sampleEventIDs": [
+        "2601617",
+        "2601618",
+        "2548849"
+      ],
+      "sampleDates": [
+        "2026-10-04",
+        "2026-10-04",
+        "2026-10-05"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_9b4719e1e116a9f5d34bfbeb66a1d674",
+      "seasonNormalization": {
+        "catalogKey": "competition:nba",
+        "normalizedCount": 1208,
+        "sampleCount": 1208,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:nba",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:wnba",
+      "providerLeagueID": "4516",
+      "providerName": "WNBA",
+      "providerSport": "Basketball",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4516-wnba",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4516",
+      "upcomingSampleCount": 5,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 5,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4516",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4516",
+      "sampleEventIDs": [
+        "2612956",
+        "2611764",
+        "2612957"
+      ],
+      "sampleDates": [
+        "2026-10-04",
+        "2026-10-07",
+        "2026-10-08"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_84b02d753082ebd8af144aee532f0483",
+      "seasonNormalization": {
+        "catalogKey": "competition:wnba",
+        "normalizedCount": 360,
+        "sampleCount": 360,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:wnba",
+        "normalizedCount": 5,
+        "sampleCount": 5,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:mlb",
+      "providerLeagueID": "4424",
+      "providerName": "MLB",
+      "providerSport": "Baseball",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4424-mlb",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4424",
+      "upcomingSampleCount": 8,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 8,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4424",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4424",
+      "sampleEventIDs": [
+        "2611750",
+        "2612217",
+        "2611751"
+      ],
+      "sampleDates": [
+        "2026-10-04",
+        "2026-10-05",
+        "2026-10-05"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_af344f5ef7d4b605b42de5ebc3d7d552",
+      "seasonNormalization": {
+        "catalogKey": "competition:mlb",
+        "normalizedCount": 2451,
+        "sampleCount": 2451,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:mlb",
+        "normalizedCount": 8,
+        "sampleCount": 8,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:nhl",
+      "providerLeagueID": "4380",
+      "providerName": "NHL",
+      "providerSport": "Ice Hockey",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4380-nhl",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4380",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4380",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4380",
+      "sampleEventIDs": [
+        "2591520",
+        "2591521",
+        "2591522"
+      ],
+      "sampleDates": [
+        "2026-10-04",
+        "2026-10-05",
+        "2026-10-05"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_3d17d9da8c5f0aabbbff83e0add3f91e",
+      "seasonNormalization": {
+        "catalogKey": "competition:nhl",
+        "normalizedCount": 1409,
+        "sampleCount": 1409,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:nhl",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:mls",
+      "providerLeagueID": "4346",
+      "providerName": "American Major League Soccer",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4346-american-major-league-soccer",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4346",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4346",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4346",
+      "sampleEventIDs": [
+        "2406928",
+        "2407114",
+        "2407113"
+      ],
+      "sampleDates": [
+        "2026-10-07",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": true,
+      "standingRowCount": 30,
+      "standingSource": "https://www.thesportsdb.com/api/v1/json/{API_KEY}/lookuptable.php?l=4346&s=2026",
+      "entityID": "sp_d8e01476eb67e6667099efb0f27784a1",
+      "seasonNormalization": {
+        "catalogKey": "competition:mls",
+        "normalizedCount": 510,
+        "sampleCount": 510,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:mls",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "current-table-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:ncaa-football",
+      "providerLeagueID": "4479",
+      "providerName": "NCAA Division 1 Football",
+      "providerSport": "American Football",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4479-ncaa-division-1-football",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4479",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4479",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4479",
+      "sampleEventIDs": [
+        "2498949",
+        "2498950",
+        "2498951"
+      ],
+      "sampleDates": [
+        "2026-10-07",
+        "2026-10-07",
+        "2026-10-07"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_2a29d95b2516cf2e381529455db0a348",
+      "seasonNormalization": {
+        "catalogKey": "competition:ncaa-football",
+        "normalizedCount": 1602,
+        "sampleCount": 1602,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:ncaa-football",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:ncaa-mens-basketball",
+      "providerLeagueID": "4607",
+      "providerName": "NCAA Division I Basketball Mens",
+      "providerSport": "Basketball",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4607-ncaa-division-i-basketball-mens",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4607",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4607",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4607",
+      "sampleEventIDs": [
+        "2555659",
+        "2595686",
+        "2595687"
+      ],
+      "sampleDates": [
+        "2026-11-04",
+        "2026-11-05",
+        "2026-11-05"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_14a817ec3f614f4e3bb65f643ada3f69",
+      "seasonNormalization": {
+        "catalogKey": "competition:ncaa-mens-basketball",
+        "normalizedCount": 1255,
+        "sampleCount": 1255,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:ncaa-mens-basketball",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:ncaa-womens-basketball",
+      "providerLeagueID": "5789",
+      "providerName": "NCAA Division I Basketball Women",
+      "providerSport": "Basketball",
+      "providerCurrentSeason": "2024-2025",
+      "directorySource": "https://www.thesportsdb.com/league/5789-ncaa-division-i-basketball-women",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5789",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 0,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/5789",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/5789",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "entityID": "sp_8c706523aea631d3e996e5b017944106",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:ncaa-hockey",
+      "providerLeagueID": "5346",
+      "providerName": "NCAA Division 1 Ice Hockey",
+      "providerSport": "Ice Hockey",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/5346-ncaa-division-1-ice-hockey",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5346",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/5346",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/5346",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "entityID": "sp_32769dc8314cc5a0e474574660d3d860",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:premier-league",
+      "providerLeagueID": "4328",
+      "providerName": "English Premier League",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4328-english-premier-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4328",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4328",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4328",
+      "sampleEventIDs": [
+        "2494052",
+        "2494053",
+        "2494055"
+      ],
+      "sampleDates": [
+        "2026-10-10",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": true,
+      "standingRowCount": 20,
+      "standingSource": "https://www.thesportsdb.com/api/v1/json/{API_KEY}/lookuptable.php?l=4328&s=2026-2027",
+      "entityID": "sp_3c3166b191b64615d728dd8e08525d13",
+      "seasonNormalization": {
+        "catalogKey": "competition:premier-league",
+        "normalizedCount": 380,
+        "sampleCount": 380,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:premier-league",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "current-table-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:wsl",
+      "providerLeagueID": "4849",
+      "providerName": "English Womens Super League",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4849-english-womens-super-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4849",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4849",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4849",
+      "sampleEventIDs": [
+        "2554361",
+        "2554362",
+        "2554366"
+      ],
+      "sampleDates": [
+        "2026-10-17",
+        "2026-10-18",
+        "2026-10-18"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_9ce1d550f66c2a1082f71061d7cdbd42",
+      "seasonNormalization": {
+        "catalogKey": "competition:wsl",
+        "normalizedCount": 182,
+        "sampleCount": 182,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:wsl",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:champions-league",
+      "providerLeagueID": "4480",
+      "providerName": "UEFA Champions League",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4480-uefa-champions-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4480",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 18,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4480",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4480",
+      "sampleEventIDs": [
+        "2594564",
+        "2594678",
+        "2594543"
+      ],
+      "sampleDates": [
+        "2026-10-13",
+        "2026-10-13",
+        "2026-10-13"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_2a9b7c90198b6815114c9e82eb3bb37a",
+      "seasonNormalization": {
+        "catalogKey": "competition:champions-league",
+        "normalizedCount": 234,
+        "sampleCount": 234,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:champions-league",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:womens-champions-league",
+      "providerLeagueID": "4889",
+      "providerName": "UEFA Womens Champions League",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4889-uefa-womens-champions-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4889",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4889",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4889",
+      "sampleEventIDs": [
+        "2599899",
+        "2599906",
+        "2599930"
+      ],
+      "sampleDates": [
+        "2026-10-28",
+        "2026-10-28",
+        "2026-10-28"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_540bf36583e238a8a63b3744f55c2f00",
+      "seasonNormalization": {
+        "catalogKey": "competition:womens-champions-league",
+        "normalizedCount": 134,
+        "sampleCount": 134,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:womens-champions-league",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:la-liga",
+      "providerLeagueID": "4335",
+      "providerName": "Spanish La Liga",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4335-spanish-la-liga",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4335",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4335",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4335",
+      "sampleEventIDs": [
+        "2506240",
+        "2506246",
+        "2506243"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": true,
+      "standingRowCount": 20,
+      "standingSource": "https://www.thesportsdb.com/api/v1/json/{API_KEY}/lookuptable.php?l=4335&s=2026-2027",
+      "entityID": "sp_e04d22b60ccee6870b5cd211d40a2c1c",
+      "seasonNormalization": {
+        "catalogKey": "competition:la-liga",
+        "normalizedCount": 380,
+        "sampleCount": 380,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:la-liga",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "current-table-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:bundesliga",
+      "providerLeagueID": "4331",
+      "providerName": "German Bundesliga",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4331-german-bundesliga",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4331",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4331",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4331",
+      "sampleEventIDs": [
+        "2508371",
+        "2508370",
+        "2508372"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": true,
+      "standingRowCount": 18,
+      "standingSource": "https://www.thesportsdb.com/api/v1/json/{API_KEY}/lookuptable.php?l=4331&s=2026-2027",
+      "entityID": "sp_c4fe9eb63ed3ef37bab5ca4a13491778",
+      "seasonNormalization": {
+        "catalogKey": "competition:bundesliga",
+        "normalizedCount": 306,
+        "sampleCount": 306,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:bundesliga",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "current-table-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:serie-a",
+      "providerLeagueID": "4332",
+      "providerName": "Italian Serie A",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4332-italian-serie-a",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4332",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4332",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4332",
+      "sampleEventIDs": [
+        "2482192",
+        "2482195",
+        "2482191"
+      ],
+      "sampleDates": [
+        "2026-10-10",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": true,
+      "standingRowCount": 20,
+      "standingSource": "https://www.thesportsdb.com/api/v1/json/{API_KEY}/lookuptable.php?l=4332&s=2026-2027",
+      "entityID": "sp_6a9ed47ec0d91ce93777b53a9237808f",
+      "seasonNormalization": {
+        "catalogKey": "competition:serie-a",
+        "normalizedCount": 380,
+        "sampleCount": 380,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:serie-a",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "current-table-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:ligue-1",
+      "providerLeagueID": "4334",
+      "providerName": "French Ligue 1",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4334-french-ligue-1",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4334",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4334",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4334",
+      "sampleEventIDs": [
+        "2489515",
+        "2489507",
+        "2489509"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": true,
+      "standingRowCount": 18,
+      "standingSource": "https://www.thesportsdb.com/api/v1/json/{API_KEY}/lookuptable.php?l=4334&s=2026-2027",
+      "entityID": "sp_5141ee75f1f3220dcd4b4b9074eb7593",
+      "seasonNormalization": {
+        "catalogKey": "competition:ligue-1",
+        "normalizedCount": 306,
+        "sampleCount": 306,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:ligue-1",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "current-table-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:liga-mx",
+      "providerLeagueID": "4350",
+      "providerName": "Mexican Liga MX",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4350-mexican-liga-mx",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4350",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4350",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4350",
+      "sampleEventIDs": [
+        "2487542",
+        "2487543",
+        "2487544"
+      ],
+      "sampleDates": [
+        "2026-10-10",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_81517a0733c7258b2f4abd7308c3eaa2",
+      "seasonNormalization": {
+        "catalogKey": "competition:liga-mx",
+        "normalizedCount": 153,
+        "sampleCount": 153,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:liga-mx",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:brasileirao",
+      "providerLeagueID": "4351",
+      "providerName": "Brazilian Serie A",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4351-brazilian-serie-a",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4351",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4351",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4351",
+      "sampleEventIDs": [
+        "2398473",
+        "2398476",
+        "2398478"
+      ],
+      "sampleDates": [
+        "2026-10-07",
+        "2026-10-07",
+        "2026-10-07"
+      ],
+      "standingsAvailable": true,
+      "standingRowCount": 20,
+      "standingSource": "https://www.thesportsdb.com/api/v1/json/{API_KEY}/lookuptable.php?l=4351&s=2026",
+      "entityID": "sp_c19e416958b100ee60ded6a470484392",
+      "seasonNormalization": {
+        "catalogKey": "competition:brasileirao",
+        "normalizedCount": 380,
+        "sampleCount": 380,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:brasileirao",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "current-table-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:libertadores",
+      "providerLeagueID": "4501",
+      "providerName": "Copa Libertadores",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4501-copa-libertadores",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4501",
+      "upcomingSampleCount": 4,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 4,
+      "verifiedRecentCount": 8,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4501",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4501",
+      "sampleEventIDs": [
+        "2606267",
+        "2607182",
+        "2606268"
+      ],
+      "sampleDates": [
+        "2026-10-13",
+        "2026-10-13",
+        "2026-10-20"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_9e432c9e0f00c8607d8cd91c504a9bcd",
+      "seasonNormalization": {
+        "catalogKey": "competition:libertadores",
+        "normalizedCount": 154,
+        "sampleCount": 154,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:libertadores",
+        "normalizedCount": 4,
+        "sampleCount": 4,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:world-cup",
+      "providerLeagueID": "4429",
+      "providerName": "FIFA World Cup",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4429-fifa-world-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4429",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4429",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4429",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "entityID": "sp_43b4b6522962f67fe6b3cd3ef0bbd995",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:womens-world-cup",
+      "providerLeagueID": "4565",
+      "providerName": "FIFA Womens World Cup",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2023",
+      "directorySource": "https://www.thesportsdb.com/league/4565-fifa-womens-world-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4565",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4565",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4565",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "entityID": "sp_24f05e18032bccfd3288c28073a19633",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:euros",
+      "providerLeagueID": "4502",
+      "providerName": "UEFA European Championships",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2024",
+      "directorySource": "https://www.thesportsdb.com/league/4502-uefa-european-championships",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4502",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4502",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4502",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "entityID": "sp_9f72579883fd9708a03ff4afbd123e8d",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:afcon",
+      "providerLeagueID": "4496",
+      "providerName": "African Cup of Nations",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/4496-african-cup-of-nations",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4496",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4496",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4496",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "entityID": "sp_be9348e66ef4c551c30291f31c96c160",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:asian-cup",
+      "providerLeagueID": "4866",
+      "providerName": "AFC Asian Cup",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": "2027",
+      "directorySource": "https://www.thesportsdb.com/league/4866-afc-asian-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4866",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4866",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4866",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "entityID": "sp_85aaa348f4658d5fc0ea7a32dd28ab85",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:ipl",
+      "providerLeagueID": "4460",
+      "providerName": "Indian Premier League",
+      "providerSport": "Cricket",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4460-indian-premier-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4460",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4460",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4460",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "fullSeasonSampleCount": 74,
+      "fullSeasonCurrentCount": 0,
+      "fullSeasonSource": "https://www.thesportsdb.com/api/v2/json/schedule/league/4460/2026",
+      "entityID": "sp_a350cf33433970f5226ce8388367f041",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:bbl",
+      "providerLeagueID": "4461",
+      "providerName": "Australian Big Bash League",
+      "providerSport": "Cricket",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4461-australian-big-bash-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4461",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4461",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4461",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "fullSeasonSampleCount": 0,
+      "fullSeasonCurrentCount": 0,
+      "fullSeasonSource": "https://www.thesportsdb.com/api/v2/json/schedule/league/4461/2026-2027",
+      "entityID": "sp_7d38643e8d376b7697e20b45c8f69fe3",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:psl",
+      "providerLeagueID": "5067",
+      "providerName": "Pakistan Super League",
+      "providerSport": "Cricket",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/5067-pakistan-super-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5067",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": null,
+      "scheduleAvailable": false,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/5067",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/5067",
+      "sampleEventIDs": [],
+      "sampleDates": [],
+      "standingsAvailable": false,
+      "fullSeasonSampleCount": 44,
+      "fullSeasonCurrentCount": 0,
+      "fullSeasonSource": "https://www.thesportsdb.com/api/v2/json/schedule/league/5067/2026",
+      "entityID": "sp_b739de633f2b6e4fe74101fb22e51a3c",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "no-current-sample",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:cricket-world-cup",
+      "providerLeagueID": "4575",
+      "providerName": "Cricket World Cup",
+      "providerSport": "Cricket",
+      "providerCurrentSeason": "2023",
+      "directorySource": "https://www.thesportsdb.com/league/4575-cricket-world-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4575",
+      "entityID": "sp_4863a6d8c95a8b87a1560063c5278c39",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:t20-world-cup",
+      "providerLeagueID": "5103",
+      "providerName": "ICC Mens T20 World Cup",
+      "providerSport": "Cricket",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/5103-icc-mens-t20-world-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5103",
+      "entityID": "sp_d193e9e4b3cda3c4f922c777d217993b",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:womens-cricket-world-cup",
+      "providerLeagueID": "5102",
+      "providerName": "Womens Cricket World Cup",
+      "providerSport": "Cricket",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/5102-womens-cricket-world-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5102",
+      "entityID": "sp_f25ff4a9bc5fa066910df53314005e13",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:world-test",
+      "providerLeagueID": "5100",
+      "providerName": "ICC World Test Championship",
+      "providerSport": "Cricket",
+      "providerCurrentSeason": "2025-2028",
+      "directorySource": "https://www.thesportsdb.com/league/5100-icc-world-test-championship",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5100",
+      "entityID": "sp_995c4d9a0600f74cf3e3855f090dbf93",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:six-nations",
+      "providerLeagueID": "4714",
+      "providerName": "Six Nations Championship",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2027",
+      "directorySource": "https://www.thesportsdb.com/league/4714-six-nations-championship",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4714",
+      "entityID": "sp_8fdd792e8be4c9b2d10a098ebbc3976b",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:womens-six-nations",
+      "providerLeagueID": "5563",
+      "providerName": "Six Nations Women",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/5563-six-nations-women",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5563",
+      "entityID": "sp_e40acc8227f75b1707d094184d3ae321",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:rugby-world-cup",
+      "providerLeagueID": "4574",
+      "providerName": "Rugby World Cup",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2027",
+      "directorySource": "https://www.thesportsdb.com/league/4574-rugby-world-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4574",
+      "entityID": "sp_9bd0c492d68a3fc75883c261a1e9206a",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:womens-rugby-world-cup",
+      "providerLeagueID": "5682",
+      "providerName": "Womens Rugby World Cup",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/5682-womens-rugby-world-cup",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5682",
+      "entityID": "sp_97017e93b630641ebf1022f3ebf38ea8",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:urc",
+      "providerLeagueID": "4446",
+      "providerName": "United Rugby Championship",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4446-united-rugby-championship",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4446",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 16,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4446",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4446",
+      "sampleEventIDs": [
+        "2550110",
+        "2550111",
+        "2550112"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-09",
+        "2026-10-10"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_a2378fb34d580f92bedf8c8e5cab4882",
+      "seasonNormalization": {
+        "catalogKey": "competition:urc",
+        "normalizedCount": 144,
+        "sampleCount": 144,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:urc",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:top14",
+      "providerLeagueID": "4430",
+      "providerName": "French Top 14",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4430-french-top-14",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4430",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4430",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4430",
+      "sampleEventIDs": [
+        "2550406",
+        "2550403",
+        "2550404"
+      ],
+      "sampleDates": [
+        "2026-10-10",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_25e26beeb66a2672c261fea2a3c77be3",
+      "seasonNormalization": {
+        "catalogKey": "competition:top14",
+        "normalizedCount": 182,
+        "sampleCount": 182,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:top14",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:super-rugby",
+      "providerLeagueID": "4551",
+      "providerName": "Super Rugby",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4551-super-rugby",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4551",
+      "entityID": "sp_2fcc0c3fb0ed7d49dc413ff4915ee211",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:premiership-rugby",
+      "providerLeagueID": "4414",
+      "providerName": "English Prem Rugby",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2026-2027",
+      "directorySource": "https://www.thesportsdb.com/league/4414-english-prem-rugby",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4414",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 10,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4414",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4414",
+      "sampleEventIDs": [
+        "2553392",
+        "2553393",
+        "2553394"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_0c5b5f555d9d2d56acbdd1ef4fdb9d77",
+      "seasonNormalization": {
+        "catalogKey": "competition:premiership-rugby",
+        "normalizedCount": 90,
+        "sampleCount": 90,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:premiership-rugby",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:nrl",
+      "providerLeagueID": "4416",
+      "providerName": "Australian National Rugby League",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4416-australian-national-rugby-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4416",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 17,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4416",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4416",
+      "sampleEventIDs": [
+        "2611336",
+        "2608134",
+        "2608056"
+      ],
+      "sampleDates": [
+        "2026-10-04",
+        "2026-09-27",
+        "2026-09-25"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_3e92b23572ee3a237abe9a3094813fe0",
+      "seasonNormalization": {
+        "catalogKey": "competition:nrl",
+        "normalizedCount": 229,
+        "sampleCount": 229,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:nrl",
+        "normalizedCount": 17,
+        "sampleCount": 17,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:super-league",
+      "providerLeagueID": "4415",
+      "providerName": "English Rugby League Super League",
+      "providerSport": "Rugby",
+      "providerCurrentSeason": "2027",
+      "directorySource": "https://www.thesportsdb.com/league/4415-english-rugby-league-super-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4415",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 19,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4415",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4415",
+      "sampleEventIDs": [
+        "2610824",
+        "2608170",
+        "2608169"
+      ],
+      "sampleDates": [
+        "2026-10-03",
+        "2026-09-26",
+        "2026-09-25"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_0a1d7b8f805cbca6d787d5b3b95962cf",
+      "seasonNormalization": {
+        "catalogKey": "competition:super-league",
+        "normalizedCount": 194,
+        "sampleCount": 194,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:super-league",
+        "normalizedCount": 19,
+        "sampleCount": 19,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:f1",
+      "providerLeagueID": "4370",
+      "providerName": "Formula 1",
+      "providerSport": "Motorsport",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4370-formula-1",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4370",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4370",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4370",
+      "sampleEventIDs": [
+        "2408192",
+        "2408193",
+        "2408194"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-09",
+        "2026-10-10"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_810ca64a4e79a2c754a90ed15a9755ac",
+      "seasonNormalization": {
+        "catalogKey": "competition:f1",
+        "normalizedCount": 122,
+        "sampleCount": 122,
+        "withoutHomeAwayCount": 122
+      },
+      "normalization": {
+        "catalogKey": "competition:f1",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 20
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:formula-e",
+      "providerLeagueID": "4371",
+      "providerName": "Formula E",
+      "providerSport": "Motorsport",
+      "providerCurrentSeason": "2025-2026",
+      "directorySource": "https://www.thesportsdb.com/league/4371-formula-e",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4371",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 0,
+      "verifiedSeason": "2026-2027",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4371",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4371",
+      "sampleEventIDs": [
+        "2606581",
+        "2605974",
+        "2606582"
+      ],
+      "sampleDates": [
+        "2026-12-17",
+        "2026-12-18",
+        "2026-12-18"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_2dc0ea0ced201e1c59fbe5622bfd1936",
+      "seasonNormalization": {
+        "catalogKey": "competition:formula-e",
+        "normalizedCount": 68,
+        "sampleCount": 68,
+        "withoutHomeAwayCount": 68
+      },
+      "normalization": {
+        "catalogKey": "competition:formula-e",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 20
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:motogp",
+      "providerLeagueID": "4407",
+      "providerName": "MotoGP",
+      "providerSport": "Motorsport",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/4407-motogp",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4407",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4407",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4407",
+      "sampleEventIDs": [
+        "2568481",
+        "2568482",
+        "2568421"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-09",
+        "2026-10-10"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_283741fea32498ad6e979d33de7b758e",
+      "seasonNormalization": {
+        "catalogKey": "competition:motogp",
+        "normalizedCount": 163,
+        "sampleCount": 163,
+        "withoutHomeAwayCount": 163
+      },
+      "normalization": {
+        "catalogKey": "competition:motogp",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 20
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:nascar",
+      "providerLeagueID": "4393",
+      "providerName": "NASCAR Cup Series",
+      "providerSport": "Motorsport",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4393-nascar-cup-series",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4393",
+      "entityID": "sp_76a6f598d330792c56383dd7034b2ce9",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:indycar",
+      "providerLeagueID": "4373",
+      "providerName": "IndyCar Series",
+      "providerSport": "Motorsport",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4373-indycar-series",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4373",
+      "entityID": "sp_58c1e30e6aff9b23aa68925df4b1f076",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:atp",
+      "providerLeagueID": "4464",
+      "providerName": "ATP World Tour",
+      "providerSport": "Tennis",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4464-atp-world-tour",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4464",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4464",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4464",
+      "sampleEventIDs": [
+        "2605355",
+        "2605354",
+        "2605353"
+      ],
+      "sampleDates": [
+        "2026-09-13",
+        "2026-09-12",
+        "2026-09-11"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_590e83ac9875e14c7a5e0aaeb4a30606",
+      "seasonNormalization": {
+        "catalogKey": "competition:atp",
+        "normalizedCount": 2332,
+        "sampleCount": 2332,
+        "withoutHomeAwayCount": 2332
+      },
+      "normalization": {
+        "catalogKey": "competition:atp",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 20
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:wta",
+      "providerLeagueID": "4517",
+      "providerName": "WTA Tour",
+      "providerSport": "Tennis",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4517-wta-tour",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4517",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4517",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4517",
+      "sampleEventIDs": [
+        "2610932",
+        "2610905",
+        "2610931"
+      ],
+      "sampleDates": [
+        "2026-09-27",
+        "2026-09-27",
+        "2026-09-26"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_8898460ef8c914f514ead9bfd7f4929b",
+      "seasonNormalization": {
+        "catalogKey": "competition:wta",
+        "normalizedCount": 2869,
+        "sampleCount": 2869,
+        "withoutHomeAwayCount": 2869
+      },
+      "normalization": {
+        "catalogKey": "competition:wta",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 20
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:pga",
+      "providerLeagueID": "4425",
+      "providerName": "PGA Tour",
+      "providerSport": "Golf",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4425-pga-tour",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4425",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 6,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4425",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4425",
+      "sampleEventIDs": [
+        "2590074",
+        "2590075",
+        "2590076"
+      ],
+      "sampleDates": [
+        "2026-10-08",
+        "2026-10-22",
+        "2026-10-29"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_f961cd24ac80f23440694dd2dba46477",
+      "seasonNormalization": {
+        "catalogKey": "competition:pga",
+        "normalizedCount": 163,
+        "sampleCount": 163,
+        "withoutHomeAwayCount": 163
+      },
+      "normalization": {
+        "catalogKey": "competition:pga",
+        "normalizedCount": 9,
+        "sampleCount": 9,
+        "withoutHomeAwayCount": 9
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:lpga",
+      "providerLeagueID": "4553",
+      "providerName": "LPGA Tour",
+      "providerSport": "Golf",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/4553-lpga-tour",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4553",
+      "upcomingSampleCount": 7,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 7,
+      "verifiedRecentCount": 3,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4553",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4553",
+      "sampleEventIDs": [
+        "2391994",
+        "2391995",
+        "2391996"
+      ],
+      "sampleDates": [
+        "2026-10-15",
+        "2026-10-22",
+        "2026-10-29"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_54dac22d9b24ffd91ecd0ab7f08461e4",
+      "seasonNormalization": {
+        "catalogKey": "competition:lpga",
+        "normalizedCount": 57,
+        "sampleCount": 57,
+        "withoutHomeAwayCount": 57
+      },
+      "normalization": {
+        "catalogKey": "competition:lpga",
+        "normalizedCount": 7,
+        "sampleCount": 7,
+        "withoutHomeAwayCount": 7
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:ufc",
+      "providerLeagueID": "4443",
+      "providerName": "UFC",
+      "providerSport": "Fighting",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4443-ufc",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4443",
+      "upcomingSampleCount": 9,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 9,
+      "verifiedRecentCount": 10,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4443",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4443",
+      "sampleEventIDs": [
+        "2558806",
+        "2558808",
+        "2541772"
+      ],
+      "sampleDates": [
+        "2026-10-07",
+        "2026-10-10",
+        "2026-10-17"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_a99bf17e597c575d26dbb404e38d119d",
+      "seasonNormalization": {
+        "catalogKey": "competition:ufc",
+        "normalizedCount": 56,
+        "sampleCount": 56,
+        "withoutHomeAwayCount": 56
+      },
+      "normalization": {
+        "catalogKey": "competition:ufc",
+        "normalizedCount": 9,
+        "sampleCount": 9,
+        "withoutHomeAwayCount": 9
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:diamond-league",
+      "providerLeagueID": "5282",
+      "providerName": "Diamond League",
+      "providerSport": "Athletics",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/5282-diamond-league",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5282",
+      "entityID": "sp_8418d15171e431fe6fa1a14f90944011",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:world-athletics",
+      "providerLeagueID": "5007",
+      "providerName": "World Athletics Championships",
+      "providerSport": "Athletics",
+      "providerCurrentSeason": "2025",
+      "directorySource": "https://www.thesportsdb.com/league/5007-world-athletics-championships",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5007",
+      "entityID": "sp_72684a76d02b936d71c7b725c45c8a30",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:afl",
+      "providerLeagueID": "4456",
+      "providerName": "Australian AFL",
+      "providerSport": "Australian Football",
+      "providerCurrentSeason": "2027",
+      "directorySource": "https://www.thesportsdb.com/league/4456-australian-afl",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4456",
+      "upcomingSampleCount": 0,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 0,
+      "verifiedRecentCount": 9,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4456",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4456",
+      "sampleEventIDs": [
+        "2607760",
+        "2605000",
+        "2604999"
+      ],
+      "sampleDates": [
+        "2026-09-26",
+        "2026-09-19",
+        "2026-09-18"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_d630b2726dd1e069830a1b5c3a26e9ef",
+      "seasonNormalization": {
+        "catalogKey": "competition:afl",
+        "normalizedCount": 227,
+        "sampleCount": 227,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:afl",
+        "normalizedCount": 9,
+        "sampleCount": 9,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:aflw",
+      "providerLeagueID": "5311",
+      "providerName": "AFL Womens",
+      "providerSport": "Australian Football",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/5311-afl-womens",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5311",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/5311",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/5311",
+      "sampleEventIDs": [
+        "2549034",
+        "2549035",
+        "2549036"
+      ],
+      "sampleDates": [
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-10"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_f947dd1a0d685ac2e6b784f8945f73a3",
+      "seasonNormalization": {
+        "catalogKey": "competition:aflw",
+        "normalizedCount": 108,
+        "sampleCount": 108,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:aflw",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:olympics",
+      "providerLeagueID": "4975",
+      "providerName": "Olympic Games",
+      "providerSport": "Olympics",
+      "providerCurrentSeason": "2026",
+      "directorySource": "https://www.thesportsdb.com/league/4975-olympic-games",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=4975",
+      "entityID": "sp_5cb5f81d553c5c5875d5f38644809715",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:world-swimming",
+      "providerLeagueID": "5308",
+      "providerName": "World Swimming Championships",
+      "providerSport": "Watersports",
+      "providerCurrentSeason": "2024",
+      "directorySource": "https://www.thesportsdb.com/league/5308-world-swimming-championships",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5308",
+      "entityID": "sp_15fd6cda464208a6f36cd032fb55c4ac",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:world-swimming-25m",
+      "providerLeagueID": "5352",
+      "providerName": "World Swimming Championships SC",
+      "providerSport": "Watersports",
+      "providerCurrentSeason": "2023",
+      "directorySource": "https://www.thesportsdb.com/league/5352-world-swimming-championships-sc",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5352",
+      "entityID": "sp_7f1f88732d528cd5dbc7702ddc7fcac2",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:olympic-swimming",
+      "providerLeagueID": "5051",
+      "providerName": "Olympics Swimming",
+      "providerSport": "Watersports",
+      "providerCurrentSeason": "2024",
+      "directorySource": "https://www.thesportsdb.com/league/5051-olympics-swimming",
+      "metadataSource": "https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=5051",
+      "entityID": "sp_2ff027219a495a5ccd1878e4ee8adf4a",
+      "seasonNormalization": {
+        "status": "not-tested"
+      },
+      "normalization": {
+        "status": "not-tested"
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "not-probed",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    },
+    {
+      "catalogKey": "competition:nwsl",
+      "providerLeagueID": "4521",
+      "providerName": "American NWSL",
+      "providerSport": "Soccer",
+      "providerCurrentSeason": null,
+      "directorySource": "https://www.thesportsdb.com/league/4521",
+      "metadataSource": "https://www.thesportsdb.com/api/v2/json/all/leagues",
+      "upcomingSampleCount": 20,
+      "recentSampleCount": 20,
+      "verifiedUpcomingCount": 20,
+      "verifiedRecentCount": 20,
+      "verifiedSeason": "2026",
+      "scheduleAvailable": true,
+      "scheduleSource": "https://www.thesportsdb.com/api/v2/json/schedule/next/league/4521",
+      "recentSource": "https://www.thesportsdb.com/api/v2/json/schedule/previous/league/4521",
+      "sampleEventIDs": [
+        "2419943",
+        "2419944",
+        "2419945"
+      ],
+      "sampleDates": [
+        "2026-10-04",
+        "2026-10-04",
+        "2026-10-17"
+      ],
+      "standingsAvailable": false,
+      "entityID": "sp_82f54c0c5c60bc9755d2fba136f793e8",
+      "seasonNormalization": {
+        "catalogKey": "competition:nwsl",
+        "normalizedCount": 240,
+        "sampleCount": 240,
+        "withoutHomeAwayCount": 0
+      },
+      "normalization": {
+        "catalogKey": "competition:nwsl",
+        "normalizedCount": 20,
+        "sampleCount": 20,
+        "withoutHomeAwayCount": 0
+      },
+      "reviewedAt": "2026-10-04",
+      "scheduleReview": "current-sample-verified",
+      "standingsReview": "not-supported-or-not-verified",
+      "liveScoreClaim": false
+    }
+  ]
+}

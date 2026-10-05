@@ -161,6 +161,27 @@ struct SettingsView: View {
                 )
                 .disabled(appModel.isSavingDiscoveryFeedVisibility)
 
+                FeedDisplayPicker(title: "Finance", supportsCount: false, canHide: true,
+                    selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showFinance, showsCount: false) },
+                        set: { option in Task { await appModel.setFinanceVisible(option != .hideFeed) } }))
+                    .disabled(appModel.isSavingDiscoveryFeedVisibility)
+                FeedDisplayPicker(title: "Sports", supportsCount: false, canHide: true,
+                    selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showSports, showsCount: false) },
+                        set: { option in Task { await appModel.setSportsVisible(option != .hideFeed) } }))
+                Toggle("Hide Sports Scores", isOn: Binding(
+                    get: { appModel.feedPreferences.hideSportsScores },
+                    set: { value in Task { await appModel.setSportsScoresHidden(value) } }))
+                Text("Hides event scores and results. Article headlines and images may reveal results.")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Toggle("Hide Finance Performance Data", isOn: Binding(
+                    get: { appModel.feedPreferences.hideFinancePerformance },
+                    set: { value in Task { await appModel.setFinancePerformanceHidden(value) } }))
+
+                Toggle("Hide Crypto", isOn: Binding(
+                    get: { appModel.feedPreferences.hideFinanceCrypto },
+                    set: { value in Task { await appModel.setFinanceCryptoHidden(value) } }))
+
                 if let error = appModel.discoveryFeedSaveError {
                     Text(error)
                         .font(.footnote)
@@ -171,8 +192,7 @@ struct SettingsView: View {
                     FeedDisplayPicker(
                         title: source.rawValue,
                         supportsCount: true,
-                        canHide: appModel.feedPreferences.visibleFeeds.count > 1
-                            || !appModel.visibleReaderListSources.contains(source),
+                        canHide: true,
                         selection: Binding(
                             get: {
                                 .current(

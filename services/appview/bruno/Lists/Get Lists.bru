@@ -1,0 +1,17 @@
+meta {
+  name: Get Lists
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/lists
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}

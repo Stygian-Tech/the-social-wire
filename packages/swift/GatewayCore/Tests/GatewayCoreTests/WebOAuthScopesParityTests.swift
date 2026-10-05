@@ -75,6 +75,18 @@ struct WebOAuthScopesParityTests {
     #expect(!ATProtoOAuthScopes.webScope.contains("repo:app.bsky.feed.post?action=create"))
   }
 
+  @Test("Topic grants cover both clients while list authoring remains web-only")
+  func topicAndListPermissions() {
+    for topic in ["finance", "sports"] {
+      let scope = "repo:app.thesocialwire.\(topic).selection?action=create&action=update&action=delete"
+      #expect(ATProtoOAuthScopes.webScope.contains(scope))
+      #expect(ATProtoOAuthScopes.iosScope.contains(scope))
+    }
+    #expect(ATProtoOAuthScopes.webScope.contains("repo:app.standard-reader.listSave?action=create&action=update&action=delete"))
+    #expect(ATProtoOAuthScopes.webScope.contains("repo:app.standard-reader.list?action=create&action=delete"))
+    #expect(!ATProtoOAuthScopes.iosScope.contains("repo:app.standard-reader.list"))
+  }
+
   @Test("Semble provider grants every user-owned record collection")
   func sembleProviderScopes() {
     for collection in [

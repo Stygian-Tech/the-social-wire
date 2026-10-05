@@ -6,6 +6,7 @@ describe("editorialFeedForReadRoute", () => {
   it("recognizes The Wire and Your Circle as editorial feeds", () => {
     expect(editorialFeedForReadRoute("/read", "wire")).toBe("wire");
     expect(editorialFeedForReadRoute("/read", "circle")).toBe("circle");
+    expect(editorialFeedForReadRoute("/read", "finance")).toBe("finance");
   });
 
   it("keeps publication feeds on the read-state shell", () => {

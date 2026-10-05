@@ -2,6 +2,7 @@ import HTTPTypes
 import Hummingbird
 
 enum WireCorpusEdgeStoreError: Error, Equatable, HTTPResponseError, Sendable {
+  case unavailable
   case contractMismatch
   case moderationUnavailable
   case cursorExpired
@@ -9,7 +10,7 @@ enum WireCorpusEdgeStoreError: Error, Equatable, HTTPResponseError, Sendable {
   var status: HTTPResponse.Status {
     switch self {
     case .cursorExpired: .gone
-    case .contractMismatch, .moderationUnavailable: .serviceUnavailable
+    case .unavailable, .contractMismatch, .moderationUnavailable: .serviceUnavailable
     }
   }
 

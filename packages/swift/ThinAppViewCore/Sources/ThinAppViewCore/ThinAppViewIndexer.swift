@@ -137,6 +137,23 @@ public actor ThinAppViewIndexer {
     }
     let record = (try JSONSerialization.jsonObject(with: recordJSON) as? [String: Any]) ?? [:]
 
+    if collection == "app.thesocialwire.finance.selection" {
+      guard let financeStore = store as? any FinanceSelectionStoring,
+        let mutation = FinanceSelectionMutation.parse(viewerDID: repoDid, recordKey: rkey,
+          operation: operation, record: record, eventAt: eventTime ?? Date(), repoRev: repoRev)
+      else { return .skipped }
+      try await financeStore.applyFinanceSelection(mutation)
+      return .projectionMutation
+    }
+    if collection == "app.thesocialwire.sports.selection" {
+      guard let sportsStore = store as? any SportsSelectionStoring,
+        let mutation = SportsSelectionMutation.parse(viewerDID: repoDid, recordKey: rkey,
+          operation: operation, record: record, eventAt: eventTime ?? Date(), repoRev: repoRev)
+      else { return .skipped }
+      try await sportsStore.applySportsSelection(mutation)
+      return .projectionMutation
+    }
+
     if collection == RssFeedLexicons.skyreaderFeedSubscription {
       return try await handleSkyreaderSubscriptionCommit(
         repoDid: repoDid,

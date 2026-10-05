@@ -4,36 +4,102 @@
   "defs": {
     "sourceAttribution": {
       "type": "object",
-      "required": ["name", "domain"],
+      "required": [
+        "name",
+        "domain"
+      ],
       "properties": {
-        "name": { "type": "string", "maxLength": 300 },
-        "domain": { "type": "string", "maxLength": 253 },
-        "publication": { "type": "string", "maxLength": 2048 },
-        "author": { "type": "string", "maxLength": 300 },
-        "publicationKey": { "type": "string", "maxLength": 2048 },
-        "homepageUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
-        "iconUrl": { "type": "string", "format": "uri", "maxLength": 8192 }
+        "name": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 253
+        },
+        "publication": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "publicationKey": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "homepageUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        },
+        "iconUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        }
       }
     },
     "wireItem": {
       "type": "object",
-      "required": ["itemId", "canonicalUrl", "title", "source", "reasons", "provenance"],
+      "required": [
+        "itemId",
+        "canonicalUrl",
+        "title",
+        "source",
+        "reasons",
+        "provenance"
+      ],
       "properties": {
-        "itemId": { "type": "string", "maxLength": 128 },
-        "canonicalUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
-        "representativeUri": { "type": "string", "format": "at-uri", "maxLength": 2048 },
-        "title": { "type": "string", "maxLength": 1000 },
-        "summary": { "type": "string", "maxLength": 10000 },
-        "publishedAt": { "type": "string", "format": "datetime" },
-        "thumbnailUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
-        "source": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "itemId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "canonicalUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        },
+        "representativeUri": {
+          "type": "string",
+          "format": "at-uri",
+          "maxLength": 2048
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "thumbnailUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        },
+        "source": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#sourceAttribution"
+        },
         "reasons": {
           "type": "array",
           "maxLength": 2,
           "items": {
             "type": "string",
             "maxLength": 64,
-            "knownValues": ["breaking_story", "widely_discussed", "shared_across_communities", "fresh_publication", "resurfacing"]
+            "knownValues": [
+              "breaking_story",
+              "widely_discussed",
+              "shared_across_communities",
+              "fresh_publication",
+              "resurfacing"
+            ]
           }
         },
         "provenance": {
@@ -42,216 +108,1537 @@
           "items": {
             "type": "string",
             "maxLength": 64,
-            "knownValues": ["standard_site", "recommendation", "direct_share", "quote", "repost", "like", "rss"]
+            "knownValues": [
+              "standard_site",
+              "recommendation",
+              "direct_share",
+              "quote",
+              "repost",
+              "like",
+              "rss"
+            ]
           }
         }
       }
     },
     "wirePage": {
       "type": "object",
-      "required": ["generationId", "generatedAt", "language", "source", "degraded", "items"],
+      "required": [
+        "generationId",
+        "generatedAt",
+        "language",
+        "source",
+        "degraded",
+        "items"
+      ],
       "properties": {
-        "generationId": { "type": "string", "maxLength": 128 },
-        "generatedAt": { "type": "string", "format": "datetime" },
-        "language": { "type": "string", "maxLength": 35 },
-        "cursor": { "type": "string", "maxLength": 4096 },
-        "source": { "type": "string", "knownValues": ["ranked", "stale_generation", "simplified_fallback"] },
-        "degraded": { "type": "boolean" },
-        "items": { "type": "array", "maxLength": 50, "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireItem" } }
+        "generationId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "source": {
+          "type": "string",
+          "knownValues": [
+            "ranked",
+            "stale_generation",
+            "simplified_fallback"
+          ]
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "maxLength": 50,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#wireItem"
+          }
+        }
       }
     },
     "wirePublicationSpotlight": {
       "type": "object",
-      "required": ["id", "publication", "storyIds"],
+      "required": [
+        "id",
+        "publication",
+        "storyIds"
+      ],
       "properties": {
-        "id": { "type": "string", "maxLength": 2048 },
-        "publication": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "id": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "publication": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#sourceAttribution"
+        },
         "storyIds": {
           "type": "array",
           "minLength": 2,
           "maxLength": 3,
-          "items": { "type": "string", "maxLength": 128 }
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         }
       }
     },
     "wireStoryRail": {
       "type": "object",
-      "required": ["id", "title", "storyIds"],
+      "required": [
+        "id",
+        "title",
+        "storyIds"
+      ],
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "title": { "type": "string", "maxLength": 160 },
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
         "storyIds": {
           "type": "array",
           "minLength": 1,
           "maxLength": 50,
-          "items": { "type": "string", "maxLength": 128 }
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         }
       }
     },
     "wireTalkedAboutPerson": {
       "type": "object",
-      "required": ["did", "handle", "displayName"],
+      "required": [
+        "did",
+        "handle",
+        "displayName"
+      ],
       "properties": {
-        "did": { "type": "string", "format": "did", "maxLength": 2048 },
-        "handle": { "type": "string", "maxLength": 253 },
-        "displayName": { "type": "string", "maxLength": 640 },
-        "avatarUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
-        "description": { "type": "string", "maxLength": 10000 }
+        "did": {
+          "type": "string",
+          "format": "did",
+          "maxLength": 2048
+        },
+        "handle": {
+          "type": "string",
+          "maxLength": 253
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 640
+        },
+        "avatarUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 10000
+        }
       }
     },
     "wireEdition": {
       "type": "object",
       "required": [
-        "editionVersion", "generationId", "generatedAt", "language", "source", "degraded",
-        "stories", "topStoryIds", "publicationSpotlights", "storyRails", "people", "trendingStoryIds"
+        "editionVersion",
+        "generationId",
+        "generatedAt",
+        "language",
+        "source",
+        "degraded",
+        "stories",
+        "topStoryIds",
+        "publicationSpotlights",
+        "storyRails",
+        "people",
+        "trendingStoryIds"
       ],
       "properties": {
-        "editionVersion": { "type": "string", "maxLength": 128 },
-        "generationId": { "type": "string", "maxLength": 128 },
-        "generatedAt": { "type": "string", "format": "datetime" },
-        "language": { "type": "string", "maxLength": 35 },
-        "source": { "type": "string", "knownValues": ["ranked", "stale_generation", "simplified_fallback"] },
-        "degraded": { "type": "boolean" },
+        "editionVersion": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generationId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "source": {
+          "type": "string",
+          "knownValues": [
+            "ranked",
+            "stale_generation",
+            "simplified_fallback"
+          ]
+        },
+        "degraded": {
+          "type": "boolean"
+        },
         "stories": {
-          "type": "array", "maxLength": 50,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireItem" }
+          "type": "array",
+          "maxLength": 50,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#wireItem"
+          }
         },
         "topStoryIds": {
-          "type": "array", "maxLength": 4,
-          "items": { "type": "string", "maxLength": 128 }
+          "type": "array",
+          "maxLength": 4,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         },
         "publicationSpotlights": {
-          "type": "array", "maxLength": 6,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wirePublicationSpotlight" }
+          "type": "array",
+          "maxLength": 6,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#wirePublicationSpotlight"
+          }
         },
         "storyRails": {
-          "type": "array", "maxLength": 6,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireStoryRail" }
+          "type": "array",
+          "maxLength": 6,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#wireStoryRail"
+          }
         },
         "people": {
-          "type": "array", "maxLength": 10,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireTalkedAboutPerson" }
+          "type": "array",
+          "maxLength": 10,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#wireTalkedAboutPerson"
+          }
         },
         "trendingStoryIds": {
-          "type": "array", "maxLength": 10,
-          "items": { "type": "string", "maxLength": 128 }
+          "type": "array",
+          "maxLength": 10,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         },
-        "moreCursor": { "type": "string", "maxLength": 4096 }
+        "moreCursor": {
+          "type": "string",
+          "maxLength": 4096
+        }
       }
     },
     "circlePublicIdentity": {
       "type": "object",
-      "required": ["did", "handle"],
+      "required": [
+        "did",
+        "handle"
+      ],
       "properties": {
-        "did": { "type": "string", "format": "did", "maxLength": 2048 },
-        "handle": { "type": "string", "maxLength": 253 },
-        "displayName": { "type": "string", "maxLength": 640 },
-        "avatarUrl": { "type": "string", "format": "uri", "maxLength": 8192 }
+        "did": {
+          "type": "string",
+          "format": "did",
+          "maxLength": 2048
+        },
+        "handle": {
+          "type": "string",
+          "maxLength": 253
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 640
+        },
+        "avatarUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        }
       }
     },
     "circleSharer": {
       "type": "object",
-      "required": ["identity", "relationship", "action", "sourceUri", "timestamp"],
+      "required": [
+        "identity",
+        "relationship",
+        "action",
+        "sourceUri",
+        "timestamp"
+      ],
       "properties": {
-        "identity": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circlePublicIdentity" },
-        "relationship": { "type": "string", "knownValues": ["direct", "one_hop"] },
-        "action": { "type": "string", "knownValues": ["recommended", "shared", "discussed"] },
-        "sourceUri": { "type": "string", "format": "at-uri", "maxLength": 2048 },
-        "timestamp": { "type": "string", "format": "datetime" }
+        "identity": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#circlePublicIdentity"
+        },
+        "relationship": {
+          "type": "string",
+          "knownValues": [
+            "direct",
+            "one_hop"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "knownValues": [
+            "recommended",
+            "shared",
+            "discussed"
+          ]
+        },
+        "sourceUri": {
+          "type": "string",
+          "format": "at-uri",
+          "maxLength": 2048
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "datetime"
+        }
       }
     },
     "circleStory": {
       "type": "object",
-      "required": ["storyId", "canonicalUrl", "title", "source", "reasons", "discussionCount", "sharerCount", "sharers"],
+      "required": [
+        "storyId",
+        "canonicalUrl",
+        "title",
+        "source",
+        "reasons",
+        "discussionCount",
+        "sharerCount",
+        "sharers"
+      ],
       "properties": {
-        "storyId": { "type": "string", "maxLength": 128 },
-        "canonicalUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
-        "representativeUri": { "type": "string", "format": "at-uri", "maxLength": 2048 },
-        "title": { "type": "string", "maxLength": 1000 },
-        "summary": { "type": "string", "maxLength": 10000 },
-        "publishedAt": { "type": "string", "format": "datetime" },
-        "thumbnailUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
-        "source": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "storyId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "canonicalUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        },
+        "representativeUri": {
+          "type": "string",
+          "format": "at-uri",
+          "maxLength": 2048
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "thumbnailUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192
+        },
+        "source": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#sourceAttribution"
+        },
         "reasons": {
           "type": "array",
           "maxLength": 3,
           "items": {
             "type": "string",
             "maxLength": 64,
-            "knownValues": ["shared_by_following", "shared_by_extended_circle", "popular_in_your_circle", "discussed_in_your_circle", "fresh_from_your_circle"]
+            "knownValues": [
+              "shared_by_following",
+              "shared_by_extended_circle",
+              "popular_in_your_circle",
+              "discussed_in_your_circle",
+              "fresh_from_your_circle"
+            ]
           }
         },
-        "discussionCount": { "type": "integer", "minimum": 0 },
-        "sharerCount": { "type": "integer", "minimum": 0 },
+        "discussionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sharerCount": {
+          "type": "integer",
+          "minimum": 0
+        },
         "sharers": {
           "type": "array",
           "maxLength": 5,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleSharer" }
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#circleSharer"
+          }
         }
       }
     },
     "circlePublicationSpotlight": {
       "type": "object",
-      "required": ["id", "publication", "storyIds"],
+      "required": [
+        "id",
+        "publication",
+        "storyIds"
+      ],
       "properties": {
-        "id": { "type": "string", "maxLength": 2048 },
-        "publication": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "id": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "publication": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#sourceAttribution"
+        },
         "storyIds": {
           "type": "array",
           "minLength": 2,
           "maxLength": 3,
-          "items": { "type": "string", "maxLength": 128 }
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         }
       }
     },
     "circleStoryRail": {
       "type": "object",
-      "required": ["id", "title", "storyIds"],
+      "required": [
+        "id",
+        "title",
+        "storyIds"
+      ],
       "properties": {
-        "id": { "type": "string", "maxLength": 128 },
-        "title": { "type": "string", "maxLength": 160 },
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
         "storyIds": {
           "type": "array",
           "minLength": 1,
           "maxLength": 50,
-          "items": { "type": "string", "maxLength": 128 }
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         }
       }
     },
     "circleEdition": {
       "type": "object",
       "required": [
-        "editionVersion", "generationId", "generatedAt", "language", "source", "degraded",
-        "stories", "topStoryIds", "publicationSpotlights", "storyRails", "trendingStoryIds"
+        "editionVersion",
+        "generationId",
+        "generatedAt",
+        "language",
+        "source",
+        "degraded",
+        "stories",
+        "topStoryIds",
+        "publicationSpotlights",
+        "storyRails",
+        "trendingStoryIds"
       ],
       "properties": {
-        "editionVersion": { "type": "string", "maxLength": 128 },
-        "generationId": { "type": "string", "maxLength": 128 },
-        "generatedAt": { "type": "string", "format": "datetime" },
-        "language": { "type": "string", "maxLength": 35 },
-        "source": { "type": "string", "knownValues": ["ranked", "stale_generation", "simplified_fallback"] },
-        "degraded": { "type": "boolean" },
+        "editionVersion": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generationId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "source": {
+          "type": "string",
+          "knownValues": [
+            "ranked",
+            "stale_generation",
+            "simplified_fallback"
+          ]
+        },
+        "degraded": {
+          "type": "boolean"
+        },
         "stories": {
-          "type": "array", "maxLength": 50,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleStory" }
+          "type": "array",
+          "maxLength": 50,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#circleStory"
+          }
         },
         "topStoryIds": {
-          "type": "array", "maxLength": 4,
-          "items": { "type": "string", "maxLength": 128 }
+          "type": "array",
+          "maxLength": 4,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         },
         "publicationSpotlights": {
-          "type": "array", "maxLength": 6,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circlePublicationSpotlight" }
+          "type": "array",
+          "maxLength": 6,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#circlePublicationSpotlight"
+          }
         },
         "storyRails": {
-          "type": "array", "maxLength": 6,
-          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleStoryRail" }
+          "type": "array",
+          "maxLength": 6,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#circleStoryRail"
+          }
         },
         "trendingStoryIds": {
-          "type": "array", "maxLength": 10,
-          "items": { "type": "string", "maxLength": 128 }
+          "type": "array",
+          "maxLength": 10,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
         },
-        "moreCursor": { "type": "string", "maxLength": 4096 }
+        "moreCursor": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "financeInstrument": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "symbol",
+        "kind",
+        "providerID",
+        "aliases",
+        "sectorIDs",
+        "isActive"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "symbol": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "providerID": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "mic": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "shareClassFIGI": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "compositeFIGI": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "exchange": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "exchangeName": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Reviewed exchange or composite market display name; exchange retains the provider code."
+        },
+        "currency": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "aliases": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "sectorIDs": {
+          "type": "array",
+          "maxLength": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "tradingViewSymbol": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "isActive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "financeMatchedInstrument": {
+      "type": "object",
+      "required": [
+        "instrument",
+        "confidenceBps",
+        "prominence",
+        "evidence"
+      ],
+      "properties": {
+        "resolverVersion": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "instrument": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#financeInstrument"
+        },
+        "prominence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence": {
+          "type": "array",
+          "maxLength": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "confidenceBps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "Confidence in integer basis points; 9000 indicates 90 percent confidence."
+        }
+      }
+    },
+    "financeItem": {
+      "type": "object",
+      "required": [
+        "story",
+        "instruments",
+        "sectorIDs",
+        "majorGlobal",
+        "materiality"
+      ],
+      "properties": {
+        "macroTopics": {
+          "type": "array",
+          "maxLength": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "story": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#wireItem"
+        },
+        "instruments": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#financeMatchedInstrument"
+          }
+        },
+        "sectorIDs": {
+          "type": "array",
+          "maxLength": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "majorGlobal": {
+          "type": "boolean"
+        },
+        "materiality": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    },
+    "financePage": {
+      "type": "object",
+      "required": [
+        "generationId",
+        "generatedAt",
+        "expiresAt",
+        "language",
+        "preferenceRevision",
+        "source",
+        "widgetsEnabled",
+        "degraded",
+        "items",
+        "feedId"
+      ],
+      "properties": {
+        "generationId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "preferenceRevision": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 64,
+          "knownValues": [
+            "ranked",
+            "stale_generation",
+            "simplified_fallback"
+          ]
+        },
+        "widgetsEnabled": {
+          "type": "boolean"
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "maxLength": 50,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#financeItem"
+          }
+        },
+        "feedId": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "financeAvailability": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "available",
+        "widgetsEnabled",
+        "feeds"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "widgetsEnabled": {
+          "type": "boolean"
+        },
+        "feeds": {
+          "type": "array",
+          "maxLength": 1000,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#financeFeedDefinition"
+          }
+        }
+      }
+    },
+    "financeSector": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    },
+    "financeFeedDefinition": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "instrumentIDs",
+        "sectorIDs",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "all",
+            "instrument",
+            "industry",
+            "group",
+            "asset"
+          ]
+        },
+        "instrumentIDs": {
+          "type": "array",
+          "maxLength": 1000,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "sectorIDs": {
+          "type": "array",
+          "maxLength": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "assetKind": {
+          "type": "string",
+          "knownValues": [
+            "stock",
+            "etf",
+            "crypto",
+            "index",
+            "commodity"
+          ]
+        }
+      }
+    },
+    "sportsPage": {
+      "type": "object",
+      "required": [
+        "generationId",
+        "generatedAt",
+        "expiresAt",
+        "language",
+        "preferenceRevision",
+        "source",
+        "eventsEnabled",
+        "degraded",
+        "items",
+        "feedId"
+      ],
+      "properties": {
+        "generationId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "preferenceRevision": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 64,
+          "knownValues": [
+            "ranked",
+            "stale_generation",
+            "simplified_fallback"
+          ]
+        },
+        "eventsEnabled": {
+          "type": "boolean"
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "maxLength": 50,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsItem"
+          }
+        },
+        "feedId": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "sportsAvailability": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "available",
+        "eventsEnabled",
+        "feeds",
+        "entities",
+        "version"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "eventsEnabled": {
+          "type": "boolean"
+        },
+        "feeds": {
+          "type": "array",
+          "maxLength": 50001,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsFeedDefinition"
+          }
+        },
+        "entities": {
+          "type": "array",
+          "maxLength": 50000,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsEntity"
+          }
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "sportsEntity": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "competitionIDs",
+        "aliases",
+        "providerIDs",
+        "active"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "sportID": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "competitionIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "providerIDs": {
+          "type": "unknown"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "groupPath": {
+          "type": "array",
+          "maxLength": 8,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "description": "Reviewed display hierarchy; labels are presentation metadata, never identity keys."
+        },
+        "schoolID": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "gender": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "division": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "abbreviation": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 8,
+          "description": "Reviewed or explicit provider short code; omitted when unavailable or ambiguous."
+        }
+      }
+    },
+    "sportsAssociation": {
+      "type": "object",
+      "required": [
+        "entityID",
+        "confidence",
+        "evidence",
+        "prominence",
+        "resolverVersion"
+      ],
+      "properties": {
+        "entityID": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "confidence": {
+          "type": "unknown",
+          "description": "Finite confidence from 0 through 1"
+        },
+        "evidence": {
+          "type": "array",
+          "maxLength": 20,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "prominence": {
+          "type": "integer"
+        },
+        "resolverVersion": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "sportsItem": {
+      "type": "object",
+      "required": [
+        "story",
+        "entities",
+        "associations",
+        "materiality",
+        "majorGlobal",
+        "sportIDs",
+        "competitionIDs"
+      ],
+      "properties": {
+        "story": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#wireItem"
+        },
+        "entities": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsEntity"
+          }
+        },
+        "associations": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsAssociation"
+          }
+        },
+        "materiality": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "majorGlobal": {
+          "type": "boolean"
+        },
+        "sportIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "competitionIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "sportsFeedDefinition": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "entityIDs",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "entityIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "groupPath": {
+          "type": "array",
+          "maxLength": 8,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "description": "Reviewed display hierarchy; labels are presentation metadata, never identity keys."
+        }
+      }
+    },
+    "sportsEntitySearch": {
+      "type": "object",
+      "required": [
+        "entities"
+      ],
+      "properties": {
+        "entities": {
+          "type": "array",
+          "maxLength": 50,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsEntity"
+          }
+        }
+      }
+    },
+    "sportsEvent": {
+      "type": "object",
+      "required": [
+        "id",
+        "competitionID",
+        "entityIDs",
+        "title",
+        "startsAt",
+        "status",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "competitionID": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "entityIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "startsAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "homeName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "awayName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "homeAbbreviation": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "awayAbbreviation": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "homeScore": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "awayScore": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "startTimeKnown": {
+          "type": "boolean",
+          "description": "False when the source supplies a date without a validated start time. Omitted legacy values do not imply an unknown time."
+        }
+      }
+    },
+    "sportsEvents": {
+      "type": "object",
+      "required": [
+        "events",
+        "degraded"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "maxLength": 500,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsEvent"
+          }
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "standings": {
+          "type": "array",
+          "maxLength": 20,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsStandingSnapshot"
+          }
+        },
+        "schedulesStatus": {
+          "type": "string",
+          "knownValues": [
+            "available",
+            "empty",
+            "unavailable"
+          ]
+        },
+        "bracketSources": {
+          "type": "array",
+          "maxLength": 20,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsBracketSource"
+          }
+        },
+        "eventsLimited": {
+          "type": "boolean",
+          "description": "The maximum 500 served events was reached; not a claim of complete provider schedule coverage."
+        },
+        "preferredIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "description": "Normalized followed entity scope applied to events."
+        },
+        "timeZone": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Normalized IANA viewer timezone applied to event ordering."
+        }
+      }
+    },
+    "sportsStandingRow": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "entityID": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "points": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "group": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "played": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "won": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drawn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lost": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "zone": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#sportsStandingZone"
+        }
+      }
+    },
+    "sportsStandingSnapshot": {
+      "type": "object",
+      "required": [
+        "competitionID",
+        "season",
+        "sourceURL",
+        "status",
+        "degraded",
+        "rows"
+      ],
+      "properties": {
+        "competitionID": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "season": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "sourceURL": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "status": {
+          "type": "string",
+          "knownValues": [
+            "available",
+            "empty",
+            "unavailable"
+          ]
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "rows": {
+          "type": "array",
+          "maxLength": 3000,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsStandingRow"
+          }
+        }
+      }
+    },
+    "sportsStandingZone": {
+      "type": "object",
+      "required": [
+        "kind",
+        "label",
+        "sourceURL"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "knownValues": [
+            "champion",
+            "promotion",
+            "playoff",
+            "relegation",
+            "qualification"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "sourceURL": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      }
+    },
+    "sportsBracketSource": {
+      "type": "object",
+      "required": [
+        "id",
+        "competitionID",
+        "season",
+        "title",
+        "url",
+        "reviewedAt",
+        "mode"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "competitionID": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "season": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "mode": {
+          "type": "string",
+          "knownValues": [
+            "external"
+          ]
+        }
       }
     }
   }

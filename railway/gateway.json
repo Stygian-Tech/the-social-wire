@@ -15,7 +15,8 @@
       "/services/jetstream-ingest/go.mod",
       "/services/jetstream-ingest/go.sum",
       "/database/migrations/**",
-      "/railway/gateway.json"
+      "/railway/gateway.json",
+      "/packages/swift/SportsCore/**"
     ]
   },
   "deploy": {

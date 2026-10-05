@@ -9,6 +9,9 @@ struct EntryDetail: Identifiable, Codable, Equatable, Sendable {
     var embedUrl: String?
     var bskyPostUri: String?
     var bskyPostCid: String?
+    var financeInstruments: [FinanceInstrument]? = nil
+    var sportsEntities: [SportsEntity]? = nil
+    var sportsAssociations: [SportsAssociation]? = nil
     /// Present only for stories opened from The Wire, where quality feedback is applicable.
     var wireFeedbackCanonicalUrl: String? = nil
     /// Optional public AT-URI attached to a Wire feedback record.

@@ -38,7 +38,7 @@ describe("Social Wire XRPC lexicons", () => {
     for (const nsid of nsids) {
       const lexicon = JSON.parse(readFileSync(fileForNsid(nsid), "utf8"));
       const method = nsid.split(".").at(-1)!;
-      const expectedType = /^(get|list)/.test(method) ? "query" : "procedure";
+      const expectedType = /^(get|list|search)/.test(method) ? "query" : "procedure";
       expect(lexicon.defs.main.type, nsid).toBe(expectedType);
       if (expectedType === "query") expect(lexicon.defs.main.parameters?.type).toBe("params");
       else expect(lexicon.defs.main.input?.encoding).toBe("application/json");

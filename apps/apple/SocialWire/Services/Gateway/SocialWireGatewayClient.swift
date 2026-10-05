@@ -311,6 +311,113 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(WireFeedCatalog.self, from: result.body)
     }
 
+    func fetchSports(language: String, feed: String = "sports", cursor: String? = nil) async throws -> SportsPage {
+        var query = ["lang": language, "feed": feed, "limit": "50"]
+        if let cursor { query["cursor"] = cursor }
+        else if auth.session != nil { query["refreshSelections"] = "true" }
+        if Locale.current.region?.identifier != "US" { query["region"] = "outside-us" }
+        let result = try await sportsGET(path: "/xrpc/app.thesocialwire.discovery.getSports", query: query, moderated: true)
+        guard (200..<300).contains(result.statusCode) else { throw appViewFeedError(result, fallback: "Sports Is Unavailable") }
+        return try JSONDecoder().decode(SportsPage.self, from: result.body)
+    }
+
+    func fetchSportsCatalog() async throws -> SportsCatalog {
+        let result = try await sportsGET(path: "/xrpc/app.thesocialwire.discovery.getSportsCatalog", query: [:])
+        guard (200..<300).contains(result.statusCode) else { throw appViewFeedError(result, fallback: "Sports Catalog Is Unavailable") }
+        return try JSONDecoder().decode(SportsCatalog.self, from: result.body)
+    }
+
+    func searchSportsEntities(query: String) async throws -> [SportsEntity] {
+        struct Response: Decodable { let entities: [SportsEntity] }
+        let result = try await sportsGET(path: "/xrpc/app.thesocialwire.discovery.searchSportsEntities", query: ["q": query])
+        guard (200..<300).contains(result.statusCode) else { throw appViewFeedError(result, fallback: "Sports Search Failed") }
+        return try JSONDecoder().decode(Response.self, from: result.body).entities
+    }
+
+    func fetchSportsEvents(feed: String, teamIDs: [String]? = nil, preferredIDs: [String] = [], timeZone: String = TimeZone.current.identifier) async throws -> SportsEventsResponse {
+        var query = ["feed": feed]
+        if let teamIDs { query["teamIDs"] = teamIDs.joined(separator: ",") }
+        if !preferredIDs.isEmpty { query["preferredIDs"] = preferredIDs.joined(separator: ",") }
+        query["timeZone"] = timeZone
+        let result = try await sportsGET(path: "/xrpc/app.thesocialwire.discovery.getSportsEvents", query: query)
+        guard (200..<300).contains(result.statusCode) else { throw appViewFeedError(result, fallback: "Event Data Is Unavailable") }
+        return try JSONDecoder().decode(SportsEventsResponse.self, from: result.body)
+    }
+
+    private func sportsGET(path: String, query: [String: String], moderated: Bool = false) async throws -> GatewayHTTPResult {
+        if let viewer = auth.session?.did {
+            return try await authorizedFeedGET(path: path, query: query, includesWireModerationProofs: moderated, expectedViewer: viewer)
+        }
+        guard var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else { throw SocialWireError.invalidURL }
+        components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components.url else { throw SocialWireError.invalidURL }
+        let (data, response) = try await urlSession.data(from: url)
+        guard let http = response as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing Sports Response") }
+        return GatewayHTTPResult(statusCode: http.statusCode, etagHeader: nil, requestIdHeader: nil, body: data)
+    }
+
+    func recordFinanceComposition(event: String, suggestionCount: Int) async {
+        struct Input: Encodable { let event: String; let suggestionCount: Int }
+        guard let payload = try? JSONEncoder().encode(Input(event: event, suggestionCount: min(3, max(0, suggestionCount)))) else { return }
+        _ = try? await authorizedRequest(method: "POST",
+            path: "/xrpc/app.thesocialwire.discovery.recordFinanceComposition", query: [:],
+            body: payload, contentType: "application/json")
+    }
+
+    nonisolated static func financeQuery(language: String, feed: String, cursor: String?, hideCrypto: Bool?) -> [String: String] {
+        var query = ["lang": language, "limit": "50", "feed": feed]
+        if let cursor { query["cursor"] = cursor }
+        if let hideCrypto { query["hideCrypto"] = String(hideCrypto) }
+        return query
+    }
+
+    func fetchFinance(language: String, feed: String = "finance", cursor: String? = nil, hideCrypto: Bool? = nil) async throws -> FinancePage {
+        var query = Self.financeQuery(language: language, feed: feed, cursor: cursor, hideCrypto: hideCrypto)
+        if cursor == nil { query["refreshSelections"] = "true" }
+        if Locale.current.region?.identifier != "US" { query["region"] = "outside-us" }
+        let result = try await authorizedFeedGET(
+            path: "/xrpc/app.thesocialwire.discovery.getFinance", query: query,
+            includesWireModerationProofs: true
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "Finance Is Unavailable")
+        }
+        return try JSONDecoder().decode(FinancePage.self, from: result.body)
+    }
+
+    func fetchFinanceFeeds() async throws -> [FinanceNamedFeed] {
+        struct Response: Decodable { let feeds: [FinanceNamedFeed] }
+        let result = try await authorizedFeedGET(
+            path: "/xrpc/app.thesocialwire.discovery.getFinanceCatalog", query: [:]
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "Finance Feeds Are Unavailable")
+        }
+        return try JSONDecoder().decode(Response.self, from: result.body).feeds
+    }
+
+    func searchFinanceInstruments(query: String) async throws -> [FinanceInstrument] {
+        struct Response: Decodable { let instruments: [FinanceInstrument] }
+        let result = try await authorizedFeedGET(
+            path: "/xrpc/app.thesocialwire.discovery.searchFinanceInstruments", query: ["q": query]
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "Instrument Search Failed")
+        }
+        return try JSONDecoder().decode(Response.self, from: result.body).instruments
+    }
+
+    func fetchFinanceSectors() async throws -> [FinanceSector] {
+        struct Response: Decodable { let sectors: [FinanceSector] }
+        let result = try await authorizedFeedGET(
+            path: "/xrpc/app.thesocialwire.discovery.getFinanceSectors", query: [:]
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "Sector Loading Failed")
+        }
+        return try JSONDecoder().decode(Response.self, from: result.body).sectors
+    }
+
     func fetchWire(
         language: String,
         cursor: String?,
@@ -736,7 +843,8 @@ final class SocialWireGatewayClient {
             body: nil,
             contentType: nil,
             includesWireModerationProofs: includesWireModerationProofs,
-            includesCircleGraphProofs: includesCircleGraphProofs
+            includesCircleGraphProofs: includesCircleGraphProofs,
+            expectedViewer: expectedViewer
         )
         guard !(200 ..< 300).contains(first.statusCode),
               let envelope = try? JSONDecoder().decode(AppViewErrorEnvelopeDTO.self, from: first.body),
@@ -751,7 +859,8 @@ final class SocialWireGatewayClient {
             body: nil,
             contentType: nil,
             includesWireModerationProofs: includesWireModerationProofs,
-            includesCircleGraphProofs: includesCircleGraphProofs
+            includesCircleGraphProofs: includesCircleGraphProofs,
+            expectedViewer: expectedViewer
         )
     }
 

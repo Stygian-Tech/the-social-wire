@@ -19,9 +19,22 @@ struct WireProxyRoutes {
         try await forward(request: request, context: context, path: path)
       }
     }
+    group.post("/xrpc/app.thesocialwire.discovery.recordFinanceComposition") { request, context async throws -> Response in
+      guard context.authContext != nil else { throw HTTPError(.unauthorized) }
+      return try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.discovery.recordFinanceComposition", method: "POST")
+    }
   }
 
   static let paths = [
+    "/xrpc/app.thesocialwire.discovery.getSports",
+    "/xrpc/app.thesocialwire.discovery.getSportsCatalog",
+    "/xrpc/app.thesocialwire.discovery.searchSportsEntities",
+    "/xrpc/app.thesocialwire.discovery.getSportsEvents",
+    "/xrpc/app.thesocialwire.discovery.getFinance",
+    "/xrpc/app.thesocialwire.discovery.getFinanceCatalog",
+    "/xrpc/app.thesocialwire.discovery.searchFinanceInstruments",
+    "/xrpc/app.thesocialwire.discovery.getFinanceSectors",
     "/xrpc/app.thesocialwire.discovery.getWire",
     "/xrpc/app.thesocialwire.discovery.getWireEdition",
     "/xrpc/app.thesocialwire.discovery.getWireItem",
@@ -31,7 +44,8 @@ struct WireProxyRoutes {
   private func forward(
     request: Request,
     context: GatewayRequestContext,
-    path: String
+    path: String,
+    method: String = "GET"
   ) async throws -> Response {
     let authenticated = context.authContext != nil
     let audience: WireRequestLimiter.Audience = authenticated ? .authenticated : .anonymous
@@ -49,12 +63,20 @@ struct WireProxyRoutes {
       )
     }
 
-    let pathWithQuery = GatewayInternalTrust.canonicalPathWithQuery(
-      path: path,
-      query: request.uri.query
-    )
+    let pathWithQuery: String
+    if path == "/xrpc/app.thesocialwire.discovery.searchSportsEntities", let query = request.uri.query, !query.isEmpty {
+      // Sports search uses form query semantics: raw '+' means space, while '%2B' is literal '+'.
+      // Preserve this distinction across the proxy; internal trust already signs only the fixed route path.
+      pathWithQuery = "\(path)?\(query)"
+    } else {
+      pathWithQuery = GatewayInternalTrust.canonicalPathWithQuery(path: path, query: request.uri.query)
+    }
     var forwarded = HTTPClientRequest(url: "\(normalizeBase(baseURL))\(pathWithQuery)")
-    forwarded.method = .GET
+    forwarded.method = method == "POST" ? .POST : .GET
+    if method == "POST" {
+      forwarded.body = .bytes(try await request.body.collect(upTo: 4096))
+      forwarded.headers.add(name: "Content-Type", value: "application/json")
+    }
     forwarded.headers.add(name: "Accept", value: "application/json")
     forwarded.headers.add(name: "X-Request-ID", value: context.requestId)
     forwarded.headers.add(name: "traceparent", value: context.traceContext.traceparent)
@@ -76,7 +98,7 @@ struct WireProxyRoutes {
       for header in try GatewayInternalTrust.signedHeaders(
         secret: internalSecret,
         did: internalDID,
-        method: "GET",
+        method: method,
         pathWithQuery: GatewayInternalTrust.canonicalSignedPath(path)
       ) {
         forwarded.headers.add(name: header.name, value: header.value)
@@ -100,8 +122,8 @@ struct WireProxyRoutes {
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     headers[.vary] = "Authorization, Accept-Language"
-    if authenticated {
-      headers[.cacheControl] = "private, max-age=0"
+    if authenticated || method == "POST" || (path.contains("Finance") || path.contains("Sports")) {
+      headers[.cacheControl] = (path.contains("Finance") || path.contains("Sports")) ? "private, no-store" : "private, max-age=0"
     } else {
       headers[.cacheControl] =
         reply.headers.first(name: "Cache-Control")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 
@@ -21,18 +21,17 @@ export function ReadLaterSettingsSection() {
   const queryClient = useQueryClient();
   const configured = useConfiguredReadLaterService();
   const collectionsQuery = useSembleCollections();
-  const [selectedCollectionOverride, setSelectedCollectionOverride] =
-    useState<string | null>(null);
+  const [providerOverride, setProviderOverride] = useState<
+    "latr-link" | "semble" | null
+  >(null);
+  const selectedProvider = providerOverride ?? configured.serviceId;
+  const [selectedCollectionOverride, setSelectedCollectionOverride] = useState<
+    string | null
+  >(null);
   const selectedCollectionUri =
-    selectedCollectionOverride ?? configured.sembleConnection?.collectionUri ?? "";
-
-  const selectedCollection = useMemo(
-    () =>
-      collectionsQuery.collections.find(
-        (collection) => collection.uri === selectedCollectionUri,
-      ) ?? null,
-    [collectionsQuery.collections, selectedCollectionUri],
-  );
+    selectedCollectionOverride ??
+    configured.sembleConnection?.collectionUri ??
+    "";
 
   const mutation = useMutation({
     mutationFn: async (input: {
@@ -41,7 +40,8 @@ export function ReadLaterSettingsSection() {
     }) => {
       if (!pdsClient) throw new Error("Sign in to change Read Later settings.");
       const oauthSession = getOAuthSession();
-      if (!oauthSession) throw new Error("Sign in to change Read Later settings.");
+      if (!oauthSession)
+        throw new Error("Sign in to change Read Later settings.");
       const current = await pdsClient.getPreferences();
       let committed;
       if (input.serviceId === "latr-link") {
@@ -54,7 +54,8 @@ export function ReadLaterSettingsSection() {
         const collection = collectionsQuery.collections.find(
           (candidate) => candidate.uri === input.collectionUri,
         );
-        if (!collection) throw new Error("Choose one of your Semble collections.");
+        if (!collection)
+          throw new Error("Choose one of your Semble collections.");
         committed = await pdsClient.upsertPreferences(
           {
             readLaterService: "semble",
@@ -74,8 +75,12 @@ export function ReadLaterSettingsSection() {
       }
       try {
         return (
-          (await fetchSyncPreferences(oauthSession, oauthSession.did, undefined, true)) ??
-          committed
+          (await fetchSyncPreferences(
+            oauthSession,
+            oauthSession.did,
+            undefined,
+            true,
+          )) ?? committed
         );
       } catch {
         // The PDS write is authoritative. Keep the committed value visible even if
@@ -85,6 +90,12 @@ export function ReadLaterSettingsSection() {
     },
     onSuccess: (committed) => {
       queryClient.setQueryData(ACCOUNT_PREFERENCES_QUERY_KEY, committed);
+      setProviderOverride(null);
+      setSelectedCollectionOverride(null);
+    },
+    onError: () => {
+      setProviderOverride(null);
+      setSelectedCollectionOverride(null);
     },
   });
 
@@ -92,55 +103,66 @@ export function ReadLaterSettingsSection() {
     <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
       <h2 className="text-sm font-bold">Read Later</h2>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-        Keep using L@tr.link, or use one of your Semble collections as the Read Later list.
-        Switching providers does not delete either provider&apos;s saved data.
+        Keep using L@tr.link, or use one of your Semble collections as the Read
+        Later list. Switching providers does not delete either provider&apos;s
+        saved data.
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <Button
           type="button"
-          variant={configured.serviceId === "latr-link" ? "default" : "outline"}
+          variant={selectedProvider === "latr-link" ? "default" : "outline"}
           disabled={mutation.isPending}
-          onClick={() => mutation.mutate({ serviceId: "latr-link" })}
+          onClick={() => {
+            setProviderOverride("latr-link");
+            if (configured.serviceId !== "latr-link")
+              mutation.mutate({ serviceId: "latr-link" });
+          }}
         >
           Use L@tr.link
         </Button>
         <Button
           type="button"
-          variant={configured.serviceId === "semble" ? "default" : "outline"}
-          disabled={mutation.isPending || !selectedCollection}
-          onClick={() =>
-            mutation.mutate({
-              serviceId: "semble",
-              collectionUri: selectedCollectionUri,
-            })
-          }
+          variant={selectedProvider === "semble" ? "default" : "outline"}
+          disabled={mutation.isPending}
+          onClick={() => {
+            setProviderOverride("semble");
+            if (configured.serviceId !== "semble")
+              setSelectedCollectionOverride("");
+          }}
         >
           Use Semble
         </Button>
       </div>
-      <label className="mt-4 grid gap-1.5 text-sm font-medium">
-        Semble Collection
-        <span className="relative">
-          <select
-            value={selectedCollectionUri}
-            disabled={collectionsQuery.isLoading || mutation.isPending}
-            onChange={(event) => setSelectedCollectionOverride(event.target.value)}
-            className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-10 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="">Choose A Collection</option>
-            {collectionsQuery.collections.map((collection) => (
-              <option key={collection.uri} value={collection.uri}>
-                {collection.name} ({collection.cardCount})
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            aria-hidden="true"
-            className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-        </span>
-      </label>
-      {collectionsQuery.isError ? (
+      {selectedProvider === "semble" ? (
+        <label className="mt-4 grid gap-1.5 text-sm font-medium">
+          Semble Collection
+          <span className="relative">
+            <select
+              value={selectedCollectionUri}
+              disabled={collectionsQuery.isLoading || mutation.isPending}
+              onChange={(event) => {
+                const collectionUri = event.target.value;
+                setSelectedCollectionOverride(collectionUri);
+                if (collectionUri)
+                  mutation.mutate({ serviceId: "semble", collectionUri });
+              }}
+              className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-10 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">Choose A Collection</option>
+              {collectionsQuery.collections.map((collection) => (
+                <option key={collection.uri} value={collection.uri}>
+                  {collection.name} ({collection.cardCount})
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+          </span>
+        </label>
+      ) : null}
+      {selectedProvider === "semble" && collectionsQuery.isError ? (
         <p role="alert" className="mt-2 text-sm text-destructive">
           {collectionsQuery.error.message}
         </p>
@@ -152,7 +174,8 @@ export function ReadLaterSettingsSection() {
       ) : null}
       {configured.serviceId === "semble" && configured.sembleConnection ? (
         <p className="mt-3 text-xs text-muted-foreground">
-          Read Later currently uses {configured.sembleConnection.collectionName}.
+          Read Later currently uses {configured.sembleConnection.collectionName}
+          .
         </p>
       ) : null}
     </section>

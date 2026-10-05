@@ -54,6 +54,40 @@ components:
         apps should not rely on Social Wire production API hosts without an explicit arrangement.
 
   schemas:
+    StandardReaderListPublication:
+      type: object
+      required: [publicationId, title, authorDid]
+      properties:
+        publicationId: { type: string, description: Exact site.standard.publication AT URI from list membership }
+        title: { type: string }
+        authorDid: { type: string }
+        authorHandle: { type: string }
+        iconUrl: { type: string }
+        avatarUrl: { type: string }
+    StandardReaderList:
+      type: object
+      required: [uri, name, creatorDid, publications, users, owned, saved]
+      properties:
+        uri: { type: string }
+        name: { type: string }
+        description: { type: string }
+        creatorDid: { type: string }
+        publications: { type: array, items: { type: string } }
+        users: { type: array, items: { type: string } }
+        owned: { type: boolean }
+        saved: { type: boolean }
+        publicationDetails:
+          type: array
+          description: Cached server-resolved metadata for explicit publication members. Missing rows remain unresolved; membership and order come from publications. Refresh list metadata once the first feed page is ready.
+          items: { $ref: '#/components/schemas/StandardReaderListPublication' }
+    StandardReaderListsResponse:
+      type: object
+      required: [lists, refreshedAt, complete]
+      properties:
+        lists: { type: array, items: { $ref: '#/components/schemas/StandardReaderList' } }
+        refreshedAt: { type: string }
+        complete: { type: boolean }
+        creatorDid: { type: string, description: Resolved creator DID on creator search responses even when no public lists exist }
     Error:
       type: object
       required: [error, message]
@@ -158,6 +192,85 @@ components:
         publicationKey: { type: string, maxLength: 2048 }
         homepageUrl: { type: string, format: uri }
         iconUrl: { type: string, format: uri }
+
+    FinanceInstrument:
+      type: object
+      required: [id, name, symbol, kind, providerID, aliases, sectorIDs, isActive]
+      properties:
+        id: { type: string, maxLength: 128 }
+        name: { type: string, maxLength: 300 }
+        symbol: { type: string, maxLength: 64 }
+        kind: { type: string, maxLength: 64 }
+        providerID: { type: string, maxLength: 300 }
+        mic: { type: string, maxLength: 64 }
+        shareClassFIGI: { type: string, maxLength: 64 }
+        compositeFIGI: { type: string, maxLength: 64 }
+        exchange: { type: string, maxLength: 64 }
+        exchangeName: { type: string, maxLength: 160 }
+        currency: { type: string, maxLength: 16 }
+        aliases: { type: array, maxItems: 100, items: { type: string, maxLength: 300 } }
+        sectorIDs: { type: array, maxItems: 32, items: { type: string, maxLength: 128 } }
+        tradingViewSymbol: { type: string, maxLength: 128, description: Verified mapping only; never synthesized from a MIC. }
+        isActive: { type: boolean }
+    FinanceMatchedInstrument:
+      type: object
+      required: [instrument, confidenceBps, prominence, evidence]
+      properties:
+        instrument: { $ref: "#/components/schemas/FinanceInstrument" }
+        confidenceBps: { type: integer, minimum: 0, maximum: 10000 }
+        resolverVersion: { type: string, maxLength: 128 }
+        prominence: { type: integer, minimum: 0, description: Lower values indicate greater article prominence. }
+        evidence: { type: array, maxItems: 32, items: { type: string, maxLength: 300 } }
+    FinanceItem:
+      type: object
+      required: [story, instruments, sectorIDs, materiality, majorGlobal]
+      properties:
+        story: { $ref: "#/components/schemas/WireItem" }
+        instruments: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/FinanceMatchedInstrument" } }
+        sectorIDs: { type: array, maxItems: 32, items: { type: string, maxLength: 128 } }
+        macroTopics: { type: array, maxItems: 32, items: { type: string, maxLength: 128 } }
+        materiality: { type: string, maxLength: 64 }
+        majorGlobal: { type: boolean }
+    FinancePage:
+      type: object
+      required: [generationId, generatedAt, expiresAt, language, preferenceRevision, source, widgetsEnabled, degraded, items, feedId]
+      properties:
+        feedId: { type: string, maxLength: 256 }
+        generationId: { type: string, maxLength: 128 }
+        generatedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        language: { type: string, maxLength: 35 }
+        preferenceRevision: { type: string, maxLength: 128 }
+        cursor: { type: string, maxLength: 4096 }
+        source: { type: string, enum: [ranked, stale_generation, simplified_fallback] }
+        widgetsEnabled: { type: boolean }
+        degraded: { type: boolean }
+        items: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/FinanceItem" } }
+    FinanceAvailability:
+      type: object
+      required: [enabled, available, widgetsEnabled, feeds]
+      properties:
+        feeds: { type: array, maxItems: 1000, items: { $ref: "#/components/schemas/FinanceFeedDefinition" } }
+        enabled: { type: boolean }
+        available: { type: boolean }
+        widgetsEnabled: { type: boolean }
+    FinanceFeedDefinition:
+      type: object
+      required: [id, title, kind, instrumentIDs, sectorIDs, description]
+      properties:
+        id: { type: string, maxLength: 256 }
+        title: { type: string, maxLength: 300 }
+        kind: { type: string, enum: [all, instrument, industry, group, asset] }
+        assetKind: { type: string, enum: [stock, etf, crypto, index, commodity] }
+        instrumentIDs: { type: array, maxItems: 1000, items: { type: string, maxLength: 128 } }
+        sectorIDs: { type: array, maxItems: 32, items: { type: string, maxLength: 128 } }
+        description: { type: string, maxLength: 1000 }
+    FinanceSector:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, maxLength: 128 }
+        name: { type: string, maxLength: 100 }
 
     WireItem:
       type: object
@@ -283,6 +396,10 @@ components:
       type: object
       required: [enabled, available, title, subtitle, supportedLanguages]
       properties:
+        financeAvailable: { type: boolean }
+        sportsAvailable: { type: boolean }
+        sports: { $ref: "#/components/schemas/SportsAvailability" }
+        finance: { $ref: "#/components/schemas/FinanceAvailability" }
         enabled: { type: boolean }
         available: { type: boolean }
         title: { type: string, maxLength: 100 }
@@ -1565,6 +1682,80 @@ security:
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 paths:
+  /v1/lists:
+    get:
+      summary: Own and saved Standard Reader lists from public PDS records
+      security:
+        - ATProtoOAuthDPoP: []
+      responses:
+        '200':
+          description: Resolved list metadata; no mutation of viewer PDS records
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StandardReaderListsResponse' }
+        '401':
+          description: Authentication required
+
+  /v1/lists/search:
+    get:
+      summary: Public Standard Reader lists by creator handle or DID
+      security:
+        - ATProtoOAuthDPoP: []
+      parameters:
+        - in: query
+          name: creator
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Resolved list metadata; no mutation of viewer PDS records
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StandardReaderListsResponse' }
+        '401':
+          description: Authentication required
+
+  /v1/lists/resolve:
+    post:
+      summary: Resolve a Standard Reader list URL or canonical AT URI
+      security:
+        - ATProtoOAuthDPoP: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input: { type: string, description: 'Canonical app.standard-reader.list AT URI or HTTPS standard-reader.app/l/{did}/{rkey} share URL. Presentation query parameters and fragments do not affect identity.' }
+      responses:
+        '200':
+          description: Resolved list metadata; no mutation of viewer PDS records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [list]
+                properties:
+                  list: { $ref: '#/components/schemas/StandardReaderList' }
+        '401':
+          description: Authentication required
+
+  /v1/lists/refresh:
+    post:
+      summary: Reconcile own and saved lists after direct PDS writes
+      security:
+        - ATProtoOAuthDPoP: []
+      responses:
+        '200':
+          description: Resolved list metadata; no mutation of viewer PDS records
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StandardReaderListsResponse' }
+        '401':
+          description: Authentication required
+
   /health:
     get:
       operationId: healthCheck
@@ -1932,6 +2123,11 @@ paths:
         The `done.source` value is the least-current source emitted by the stream, so a cached or
         unavailable entries page cannot be reported as a wholly live bootstrap.
       tags: [AppView]
+      parameters:
+        - in: query
+          name: includeLists
+          schema: { type: boolean, default: false }
+          description: Opt in to a lists event containing own and saved public Standard Reader records before done. Omitted for older clients.
       responses:
         "200":
           description: NDJSON event stream.
@@ -1965,7 +2161,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [subscribed, following, folder, publication]
+            enum: [subscribed, following, folder, publication, list]
         - name: id
           in: query
           schema:
@@ -2033,6 +2229,247 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
+
+  /xrpc/app.thesocialwire.discovery.getFinance:
+    get:
+      operationId: getFinance
+      summary: getFinance
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      description: Article-first Finance. Selections come from public viewer PDS records; current moderation applies to every page. Named feeds contain only matching stories. Cursors bind feed, generation, viewer, language, and preference/catalog revision and expire after 48 hours.
+      parameters:
+        - { name: hideCrypto, in: query, schema: { type: boolean, default: false } }
+        - { name: feed, in: query, schema: { type: string, maxLength: 256, default: finance } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 30 } }
+        - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
+        - { name: region, in: query, schema: { type: string, enum: [outside-us] } }
+        - { name: refreshSelections, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Successful Finance response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancePage"
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Finance unavailable or rollout disabled. }
+        "410": { description: CursorExpired; restart at page one. }
+
+  /xrpc/app.thesocialwire.discovery.getFinanceCatalog:
+    get:
+      operationId: getFinanceCatalog
+      summary: getFinanceCatalog
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      responses:
+        "200":
+          description: Successful Finance response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinanceAvailability"
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Finance unavailable or rollout disabled. }
+
+  /xrpc/app.thesocialwire.discovery.searchFinanceInstruments:
+    get:
+      operationId: searchFinanceInstruments
+      summary: searchFinanceInstruments
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 200 } }
+      responses:
+        "200":
+          description: Successful Finance response.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [instruments]
+                properties:
+                  instruments: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/FinanceInstrument" } }
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Finance unavailable or rollout disabled. }
+
+  /xrpc/app.thesocialwire.discovery.getFinanceSectors:
+    get:
+      operationId: getFinanceSectors
+      summary: getFinanceSectors
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      responses:
+        "200":
+          description: Successful Finance response.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sectors]
+                properties:
+                  sectors: { type: array, maxItems: 32, items: { $ref: "#/components/schemas/FinanceSector" } }
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Finance unavailable or rollout disabled. }
+
+  /xrpc/app.thesocialwire.discovery.getSports:
+    get:
+      operationId: getSports
+      summary: getSports
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      description: Article-first Sports. Selections come from public viewer PDS records; current moderation applies to every page. Named feeds contain only matching stories. Cursors bind feed, generation, viewer, language, and preference/catalog revision and expire after 48 hours.
+      parameters:
+        - { name: feed, in: query, schema: { type: string, maxLength: 256, default: sports } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 30 } }
+        - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
+        - { name: region, in: query, schema: { type: string, enum: [outside-us] } }
+        - { name: refreshSelections, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Successful Sports response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SportsPage"
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Sports unavailable or rollout disabled. }
+        "410": { description: CursorExpired; restart at page one. }
+
+  /xrpc/app.thesocialwire.discovery.getSportsCatalog:
+    get:
+      operationId: getSportsCatalog
+      summary: getSportsCatalog
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      responses:
+        "200":
+          description: Successful Sports response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SportsAvailability"
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Sports unavailable or rollout disabled. }
+
+  /xrpc/app.thesocialwire.discovery.searchSportsEntities:
+    get:
+      operationId: searchSportsEntities
+      summary: searchSportsEntities
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 200 } }
+      responses:
+        "200":
+          description: Successful Sports response.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entities]
+                properties:
+                  entities: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/SportsEntity" } }
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Sports unavailable or rollout disabled. }
+
+  /xrpc/app.thesocialwire.discovery.getSportsEvents:
+    get:
+      operationId: getSportsEvents
+      summary: getSportsEvents
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      parameters:
+        - { name: feed, in: query, schema: { type: string, maxLength: 256, default: sports } }
+        - { name: teamIDs, in: query, description: "Optional comma-separated active team IDs (maximum 100); intersects feed scope. Empty means no events.", schema: { type: string, maxLength: 12899 } }
+        - { name: preferredIDs, in: query, description: "Optional comma-separated active followed entity IDs (maximum 100) for matching-only schedules, standings, and brackets, ordered teams and individuals, competitions, sports. Empty remains generic.", schema: { type: string, maxLength: 12899 } }
+        - { name: timeZone, in: query, description: "IANA timezone for same-calendar-day results; defaults to UTC.", schema: { type: string, maxLength: 128 } }
+      responses:
+        "200":
+          description: Successful Sports response.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, degraded]
+                properties:
+                  events: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/SportsEvent" } }
+                  degraded: { type: boolean }
+                  updatedAt: { type: string, format: date-time }
+                  eventsLimited: { type: boolean, description: "Serving limit of 500 events reached; coverage remains provider-dependent." }
+                  preferredIDs: { type: array, maxItems: 100, items: { type: string, maxLength: 128 } }
+                  timeZone: { type: string, maxLength: 128 }
+                  bracketSources: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/SportsBracketSource" } }
+                  schedulesStatus: { type: string, enum: [available, empty, unavailable] }
+                  standings: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/SportsStandingSnapshot" } }
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Sports unavailable or rollout disabled. }
+
+  /xrpc/app.thesocialwire.discovery.recordFinanceComposition:
+    post:
+      operationId: recordFinanceComposition
+      summary: recordFinanceComposition
+      tags: [Discovery]
+      security:
+        - ATProtoOAuthDPoP: []
+      description: Counts only; never accepts or retains draft text, selected symbols, or viewer identifiers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event, suggestionCount]
+              properties:
+                event: { type: string, enum: [impression, selection, removal, published] }
+                suggestionCount: { type: integer, minimum: 0, maximum: 3 }
+      responses:
+        "200":
+          description: Successful Finance response.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: { type: boolean }
+        "400": { description: Invalid parameters or event. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Request budget exhausted. }
+        "503": { description: Finance unavailable or rollout disabled. }
 
   /xrpc/app.thesocialwire.discovery.getWire:
     get:
@@ -3985,3 +4422,134 @@ tags:
     description: Authenticated, viewer-owned Semble read-later projections with public-PDS link enrichment
   - name: Operations
     description: Operator-DID-allowlisted observability and recovery control plane
+
+    SportsEntity:
+      type: object
+      required: [id, name, kind, competitionIDs, aliases, providerIDs, active]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        sportID: { type: string }
+        competitionIDs: { type: array, items: { type: string } }
+        aliases: { type: array, items: { type: string } }
+        providerIDs: { type: object, additionalProperties: { type: string } }
+        abbreviation: { type: string, minLength: 2, maxLength: 8, pattern: "^[A-Z0-9]{2,8}$" }
+        active: { type: boolean }
+    SportsFeedDefinition:
+      type: object
+      required: [id, title, kind, entityIDs, description]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        kind: { type: string }
+        entityIDs: { type: array, items: { type: string } }
+        description: { type: string }
+    SportsAvailability:
+      type: object
+      required: [enabled, available, eventsEnabled, feeds, entities, version]
+      properties:
+        enabled: { type: boolean }
+        available: { type: boolean }
+        eventsEnabled: { type: boolean }
+        feeds: { type: array, items: { $ref: "#/components/schemas/SportsFeedDefinition" } }
+        entities: { type: array, items: { $ref: "#/components/schemas/SportsEntity" } }
+        version: { type: string }
+    SportsAssociation:
+      type: object
+      required: [entityID, confidence, evidence, prominence, resolverVersion]
+      properties:
+        entityID: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        evidence: { type: array, items: { type: string } }
+        prominence: { type: integer }
+        resolverVersion: { type: string }
+    SportsItem:
+      type: object
+      required: [story, entities, associations, materiality, majorGlobal, sportIDs, competitionIDs]
+      properties:
+        story: { $ref: "#/components/schemas/WireItem" }
+        entities: { type: array, items: { $ref: "#/components/schemas/SportsEntity" } }
+        associations: { type: array, items: { $ref: "#/components/schemas/SportsAssociation" } }
+        sportIDs: { type: array, items: { type: string } }
+        competitionIDs: { type: array, items: { type: string } }
+        materiality: { type: string }
+        majorGlobal: { type: boolean }
+    SportsPage:
+      type: object
+      required: [feedId, generationId, generatedAt, expiresAt, language, preferenceRevision, source, eventsEnabled, degraded, items]
+      properties:
+        feedId: { type: string }
+        generationId: { type: string }
+        generatedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        language: { type: string }
+        preferenceRevision: { type: string, maxLength: 512 }
+        cursor: { type: string }
+        source: { type: string }
+        eventsEnabled: { type: boolean }
+        degraded: { type: boolean }
+        items: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/SportsItem" } }
+    SportsBracketSource:
+      type: object
+      required: [id, competitionID, season, title, url, reviewedAt, mode]
+      properties:
+        id: { type: string, maxLength: 128 }
+        competitionID: { type: string, maxLength: 128 }
+        season: { type: string, maxLength: 32 }
+        title: { type: string, maxLength: 256 }
+        url: { type: string, format: uri, maxLength: 2048 }
+        reviewedAt: { type: string, format: date-time }
+        mode: { type: string, enum: [external] }
+
+    SportsStandingZone:
+      type: object
+      required: [kind, label, sourceURL]
+      properties:
+        kind: { type: string, enum: [champion, promotion, playoff, relegation, qualification] }
+        label: { type: string, maxLength: 512 }
+        sourceURL: { type: string, maxLength: 2048 }
+    SportsStandingRow:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        entityID: { type: string }
+        name: { type: string, maxLength: 512 }
+        rank: { type: integer, minimum: 0 }
+        played: { type: integer, minimum: 0 }
+        won: { type: integer, minimum: 0 }
+        drawn: { type: integer, minimum: 0 }
+        lost: { type: integer, minimum: 0 }
+        points: { type: string, maxLength: 64 }
+        group: { type: string }
+        zone: { $ref: "#/components/schemas/SportsStandingZone" }
+    SportsStandingSnapshot:
+      type: object
+      required: [competitionID, season, sourceURL, status, degraded, rows]
+      properties:
+        competitionID: { type: string }
+        season: { type: string, maxLength: 32 }
+        sourceURL: { type: string, maxLength: 2048 }
+        status: { type: string, enum: [available, empty, unavailable] }
+        degraded: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+        rows: { type: array, maxItems: 3000, items: { $ref: "#/components/schemas/SportsStandingRow" } }
+    SportsEvent:
+      type: object
+      required: [id, competitionID, entityIDs, title, startsAt, status, updatedAt]
+      properties:
+        id: { type: string }
+        competitionID: { type: string }
+        entityIDs: { type: array, items: { type: string } }
+        title: { type: string }
+        startsAt: { type: string, format: date-time }
+        status: { type: string }
+        homeName: { type: string }
+        awayName: { type: string }
+        startTimeKnown: { type: boolean, description: False when the source supplies a date without a validated start time. }
+        homeAbbreviation: { type: string, maxLength: 16 }
+        awayAbbreviation: { type: string, maxLength: 16 }
+        homeScore: { type: string }
+        awayScore: { type: string }
+        updatedAt: { type: string, format: date-time }

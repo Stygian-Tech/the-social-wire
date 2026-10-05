@@ -164,15 +164,15 @@ struct Serve: AsyncParsableCommand {
         await redisRuntime?.installResolutionCache()
         let circleDiscoveryService: CircleDiscoveryService?
         let circlePrivateState: (any CirclePrivateStateStoring)?
-        let servesDiscovery = config.wire.mode.servesAPI || config.circle.mode.servesAPI
+        let servesDiscovery = config.wire.mode.servesAPI || config.circle.mode.servesAPI || config.finance.mode.canServeAPI || config.sports.mode.canServeAPI
+        let moderationCache = WireViewerModerationCache()
         if servesDiscovery {
-          guard let cursorSecret = config.wire.cursorSecret ?? config.circle.cursorSecret else {
+          guard let cursorSecret = config.wire.cursorSecret ?? config.circle.cursorSecret ?? config.finance.cursorSecret else {
             throw AppViewStartupError.missingWireCursorSecret
           }
-          let moderationCache = WireViewerModerationCache()
           let effectiveMode: WireDiscoveryMode = if config.wire.mode.servesAPI {
             config.wire.mode
-          } else if config.circle.mode.isVisible {
+          } else if config.circle.mode.isVisible || config.finance.mode == .visible || config.sports.mode == .visible {
             .visible
           } else {
             .api
@@ -279,12 +279,50 @@ struct Serve: AsyncParsableCommand {
           telemetry: telemetry,
           logger: logger
         )
+        let financeFeedStore: PostgresFinanceFeedStore?
+        if config.finance.mode.canServeAPI, let wireFeedStore {
+          let financeTransport = (config.finance.corpusEdge ?? config.wire.corpusEdge).map {
+            HTTPWireCorpusTransport(config: $0, httpClient: httpClient)
+          }
+          let financeArticles: any WireFeedStore
+          if config.finance.corpusEdge != nil, let financeTransport,
+            let cursorSecret = config.finance.cursorSecret {
+            // Finance generation, fallback, and current-item checks share the same corpus.
+            // An isolated Development corpus must never recheck its stories against Production.
+            financeArticles = try RemoteWireFeedStore(transport: financeTransport,
+              cursorSecret: cursorSecret, mode: .api, moderationCache: moderationCache)
+          } else { financeArticles = wireFeedStore }
+          financeFeedStore = try PostgresFinanceFeedStore(pool: pgPool, logger: logger, config: config.finance,
+            wire: financeArticles, selections: FinanceSelectionProjection(pool: pgPool,
+              repo: ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: config.core.atprotoPLCURL, logger: logger), logger: logger),
+            transport: financeTransport)
+        } else { financeFeedStore = nil }
+        let sportsFeedStore: PostgresSportsFeedStore?
+        if config.sports.mode.canServeAPI, let wireFeedStore {
+          let sportsTransport = (config.sports.corpusEdge ?? config.wire.corpusEdge).map {
+            HTTPWireCorpusTransport(config: $0, httpClient: httpClient)
+          }
+          let sportsArticles: any WireFeedStore
+          if config.sports.corpusEdge != nil, let sportsTransport,
+            let cursorSecret = config.sports.cursorSecret {
+            // Sports generation, fallback, and current-item checks share the same corpus.
+            // An isolated Development corpus must never recheck its stories against Production.
+            sportsArticles = try RemoteWireFeedStore(transport: sportsTransport,
+              cursorSecret: cursorSecret, mode: .api, moderationCache: moderationCache)
+          } else { sportsArticles = wireFeedStore }
+          sportsFeedStore = try PostgresSportsFeedStore(pool: pgPool, logger: logger, config: config.sports,
+            wire: sportsArticles, selections: SportsSelectionProjection(pool: pgPool,
+              repo: ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: config.core.atprotoPLCURL, logger: logger), logger: logger),
+            transport: sportsTransport)
+        } else { sportsFeedStore = nil }
         let router = AppViewRouterBuilder.router(
           config: config,
           httpClient: httpClient,
           thinAppViewStore: store,
           wireFeedStore: wireFeedStore,
           wireModerationService: wireModerationService,
+          financeFeedStore: financeFeedStore,
+          sportsFeedStore: sportsFeedStore,
           circleDiscoveryService: circleDiscoveryService,
           circlePrivateState: circlePrivateState,
           projectionCache: projectionCache,

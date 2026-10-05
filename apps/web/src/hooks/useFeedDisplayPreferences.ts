@@ -76,6 +76,11 @@ export function useFeedDisplayPreferences() {
           visibleFeeds: next.visibleFeeds,
           showWire: next.showWire,
           showCircle: next.showCircle,
+          showFinance: next.showFinance,
+          showSports: next.showSports,
+          hideSportsScores: next.hideSportsScores,
+          hideFinancePerformance: next.hideFinancePerformance,
+          hideFinanceCrypto: next.hideFinanceCrypto,
           feedsWithUnreadCounts: next.feedsWithUnreadCounts,
           rssArticleOpenMode: next.rssArticleOpenMode,
           showTopLevelFeedUnreadCounts:
@@ -129,6 +134,11 @@ export function useFeedDisplayPreferences() {
             visibleFeeds: normalized.visibleFeeds,
             showWire: normalized.showWire,
             showCircle: normalized.showCircle,
+            showFinance: normalized.showFinance,
+            showSports: normalized.showSports,
+            hideSportsScores: normalized.hideSportsScores,
+            hideFinancePerformance: normalized.hideFinancePerformance,
+            hideFinanceCrypto: normalized.hideFinanceCrypto,
             feedsWithUnreadCounts: normalized.feedsWithUnreadCounts,
             rssArticleOpenMode: normalized.rssArticleOpenMode,
             showTopLevelFeedUnreadCounts:
@@ -174,7 +184,6 @@ export function useFeedDisplayPreferences() {
               candidate === feed || preferences.visibleFeeds.includes(candidate),
           )
         : preferences.visibleFeeds.filter((candidate) => candidate !== feed);
-      if (visibleFeeds.length === 0) return;
       mutation.mutate({
         ...preferences,
         visibleFeeds,
@@ -209,10 +218,10 @@ export function useFeedDisplayPreferences() {
   );
 
   const setDiscoveryFeedVisible = useCallback(
-    (feed: "wire" | "circle", visible: boolean) => {
+    (feed: "wire" | "circle" | "finance" | "sports", visible: boolean) => {
       mutation.mutate({
         ...preferences,
-        [feed === "wire" ? "showWire" : "showCircle"]: visible,
+        [feed === "wire" ? "showWire" : feed === "finance" ? "showFinance" : feed === "sports" ? "showSports" : "showCircle"]: visible,
       });
     },
     [mutation, preferences],
@@ -234,6 +243,10 @@ export function useFeedDisplayPreferences() {
     setDiscoveryFeedVisible,
     setFeedUnreadCountVisible,
     setRssArticleOpenInReader,
+    setHideSportsScores: (hidden: boolean) => mutation.mutate({ ...preferences, hideSportsScores: hidden }),
+    setHideFinanceCrypto: (hidden: boolean) => mutation.mutate({ ...preferences, hideFinanceCrypto: hidden }),
+    setHideFinancePerformance: (hidden: boolean) => mutation.mutate({ ...preferences, hideFinancePerformance: hidden }),
+    isLoading: accountPreferences.isLoading,
     isPending: mutation.isPending,
     error: mutation.error,
   };

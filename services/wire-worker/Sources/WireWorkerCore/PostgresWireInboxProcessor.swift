@@ -2099,35 +2099,17 @@ struct PostgresWireInboxProcessor: Sendable {
     event: InboxEvent, canonicalKey: String, actorHash: String, sourceURI: String,
     kind: String, eventKey: String, transportEventKey: String, on connection: PostgresConnection
   ) async throws {
-    try await connection.query(
-      "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
-      logger: logger
-    )
-    try await connection.query(
-      "SELECT ensure_wire_signal_event_partition((\(event.eventTime) AT TIME ZONE 'UTC')::date)",
-      logger: logger
-    )
-    try await connection.query(
-      "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
-      logger: logger
-    )
-    try await connection.query(
+    // A SELECT may yield its row description before the function finishes.
+    // Consume the result so a server error cannot be lost before acknowledgment.
+    _ = try await connection.query(
       """
-      INSERT INTO wire_signal_events
-        (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
-         source_collection, source_action, occurred_at, expires_at)
-      SELECT
-        \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
-        \(event.collection), \(kind), \(event.eventTime),
-        \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
-      WHERE NOT EXISTS (
-        SELECT 1 FROM wire_signal_events
-        WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
-      )
-      ON CONFLICT DO NOTHING
+      SELECT public.wire_insert_signal(
+        \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash),
+        \(sourceURI), \(event.collection), \(event.eventTime),
+        \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention)))
       """,
       logger: logger
-    )
+    ).collect()
   }
 
   private func replaceSignals(

@@ -1,0 +1,42 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.sports.selection",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Public sports follow or mute interest. Deterministic rkey is lowercase hexadecimal SHA-256(canonical reference), one record per entity. Deletion cannot retract downstream copies.",
+      "record": {
+        "type": "object",
+        "required": [
+          "action",
+          "reference",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "reference": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 16,
+            "enum": [
+              "follow",
+              "mute"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

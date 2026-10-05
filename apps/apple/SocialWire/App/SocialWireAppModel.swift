@@ -16,6 +16,7 @@ final class SocialWireAppModel {
     let userInputFeedbackService: UserInputFeedbackService
     private let rss = RSSService()
     private let gateway: SocialWireGatewayClient
+    let sportsTopic: SportsTopicModel
     let readStateSync: PDSReadStateSyncService
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
@@ -83,6 +84,23 @@ final class SocialWireAppModel {
     private(set) var primaryTabFeeds = NewsPrimaryFeed.defaultFeeds
     private(set) var isSavingDiscoveryFeedVisibility = false
     private(set) var discoveryFeedSaveError: String?
+    private(set) var financeFeeds: [FinanceNamedFeed] = [.all]
+    private(set) var selectedFinanceFeedID = "finance"
+    var selectedFinanceFeed: FinanceNamedFeed { financeFeeds.first { $0.id == selectedFinanceFeedID } ?? .all }
+    var financeItems: [FinanceFeedItem] = []
+    var financePage: FinancePage?
+    var financeSelections: [FinanceSelectionRecord] = []
+    var financeSearchResults: [FinanceInstrument] = []
+    var financeInstrumentMetadata: [String: FinanceInstrument] = [:]
+    var financeSectors: [FinanceSector] = []
+    var financeError: String?
+    var isLoadingFinance = false
+    var isSavingFinanceSelection = false
+    var financeContinuationSuspended = false
+    private var financeRequestEpoch = 0
+    private var financeSearchEpoch = 0
+    private var financeContextEpoch = 0
+    private var financeModerationContext = UUID().uuidString
     var wireEdition: WireEditionPage?
     var circleCatalog: CircleFeedCatalog?
     var circleEdition: CircleEditionPage?
@@ -170,10 +188,12 @@ final class SocialWireAppModel {
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService)
+        sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         authService.setSessionChangeHandler { [weak self] session in
             self?.isSignedIn = session != nil
+            self?.sportsTopic.bind(viewer: session?.did)
         }
         readerFilter = ReaderFilter.loadSaved()
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
@@ -803,6 +823,22 @@ final class SocialWireAppModel {
         wireCatalog = nil
         wireFeedNotice = nil
         wireFeedLoadFailed = false
+        financeRequestEpoch += 1
+        financeSearchEpoch += 1
+        financeContextEpoch += 1
+        financeFeeds = [.all]
+        selectedFinanceFeedID = "finance"
+        financeItems = []
+        financePage = nil
+        financeSelections = []
+        financeSectors = []
+        financeError = nil
+        financeModerationContext = UUID().uuidString
+        isLoadingFinance = false
+        isSavingFinanceSelection = false
+        financeContinuationSuspended = false
+        financeSearchResults = []
+        financeInstrumentMetadata = [:]
         wireEdition = nil
         circleCatalog = nil
         circleEdition = nil
@@ -1423,6 +1459,10 @@ final class SocialWireAppModel {
             switch feed {
             case .wire:
                 feedPreferences.showWire && wireCatalog?.isAvailable != false
+            case .finance:
+                feedPreferences.showFinance && wireCatalog?.financeAvailable == true
+            case .sports:
+                feedPreferences.showSports && wireCatalog?.sportsAvailable == true
             case .circle:
                 feedPreferences.showCircle && circleCatalog?.enabled != false
             case .subscribed:
@@ -1461,6 +1501,218 @@ final class SocialWireAppModel {
         }
     }
 
+    func setSportsVisible(_ visible: Bool) async {
+        await setDiscoveryFeedVisible(visible, keyPath: \.showSports)
+    }
+
+    func setSportsScoresHidden(_ hidden: Bool) async {
+        await setDiscoveryFeedVisible(hidden, keyPath: \.hideSportsScores)
+    }
+
+    func setFinanceVisible(_ visible: Bool) async {
+        await setDiscoveryFeedVisible(visible, keyPath: \.showFinance)
+    }
+
+    func setFinancePerformanceHidden(_ hidden: Bool) async {
+        await setDiscoveryFeedVisible(hidden, keyPath: \.hideFinancePerformance)
+    }
+
+    func setFinanceCryptoHidden(_ hidden: Bool) async {
+        guard !isSavingDiscoveryFeedVisibility, feedPreferences.hideFinanceCrypto != hidden else { return }
+        let viewer = viewerDID
+        financeRequestEpoch += 1
+        financeContinuationSuspended = true
+        await setDiscoveryFeedVisible(hidden, keyPath: \.hideFinanceCrypto)
+        guard viewerDID == viewer else { return }
+        if feedPreferences.hideFinanceCrypto,
+           financeFeeds.first(where: { $0.id == selectedFinanceFeedID })?.assetKind == "crypto" {
+            selectedFinanceFeedID = "finance"
+            financeItems = []
+            financePage = nil
+        }
+        await loadFinance()
+    }
+
+    func recordFinanceComposition(event: String, count: Int) async {
+        guard count > 0 else { return }
+        await gateway.recordFinanceComposition(event: event, suggestionCount: count)
+    }
+
+    func financeSuggestions(for entryID: String) -> [FinanceInstrument] {
+        financeItems.first { $0.id == entryID }?.suggestions ?? []
+    }
+
+    func selectFinanceFeed(_ id: String) async {
+        guard id != selectedFinanceFeedID, financeFeeds.contains(where: { $0.id == id && $0.isVisible(hideCrypto: feedPreferences.hideFinanceCrypto) }) else { return }
+        financeRequestEpoch += 1
+        selectedFinanceFeedID = id
+        financeItems = []
+        financePage = nil
+        financeError = nil
+        financeContinuationSuspended = false
+        await loadFinance()
+    }
+
+    func loadFinanceFeeds() async {
+        guard let viewerDID else { return }
+        let context = financeContextEpoch
+        do {
+            let feeds = try await gateway.fetchFinanceFeeds()
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+            financeFeeds = feeds
+            if !feeds.contains(where: { $0.id == selectedFinanceFeedID && $0.isVisible(hideCrypto: feedPreferences.hideFinanceCrypto) }) {
+                selectedFinanceFeedID = "finance"
+                financeRequestEpoch += 1
+                isLoadingFinance = false
+                financeContinuationSuspended = false
+                financeItems = []
+                financePage = nil
+            }
+        } catch {
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+            financeError = error.localizedDescription
+        }
+    }
+
+    func loadFinance(cursor: String? = nil) async {
+        guard let viewerDID else { return }
+        if let cursor, financeContinuationSuspended || financePage?.cursor != cursor { return }
+        financeRequestEpoch += 1
+        let epoch = financeRequestEpoch
+        let language = preferredWireLanguage
+        let fingerprint = financeSelectionFingerprint
+        let feedID = selectedFinanceFeedID
+        isLoadingFinance = true
+        financeError = nil
+        defer { if epoch == financeRequestEpoch { isLoadingFinance = false } }
+        do {
+            let page = try await gateway.fetchFinance(language: language, feed: feedID, cursor: cursor, hideCrypto: feedPreferences.hideFinanceCrypto)
+            guard self.viewerDID == viewerDID, epoch == financeRequestEpoch,
+                  fingerprint == financeSelectionFingerprint, language == preferredWireLanguage,
+                  selectedFinanceFeedID == feedID, page.feedId == feedID else { return }
+            if cursor != nil, financePage?.generationId != page.generationId { return }
+            if cursor == nil {
+                financeItems = page.items
+                financeContinuationSuspended = false
+            } else {
+                let existing = Set(financeItems.map(\.id))
+                financeItems += page.items.filter { !existing.contains($0.id) }
+            }
+            financePage = page
+            if cursor == nil {
+                let cacheKey = FinanceCacheIdentity.key(viewer: viewerDID, language: language,
+                    region: Locale.current.region?.identifier == "US" ? "us" : "outside-us",
+                    moderation: financeModerationContext, preferences: page.preferenceRevision, generation: page.generationId, feed: feedID, hideCrypto: feedPreferences.hideFinanceCrypto)
+                try? readerCacheCoordinator?.upsertFinancePage(page, contextKey: cacheKey, viewerDID: viewerDID)
+            }
+        } catch {
+            guard self.viewerDID == viewerDID, epoch == financeRequestEpoch,
+                  selectedFinanceFeedID == feedID, fingerprint == financeSelectionFingerprint,
+                  language == preferredWireLanguage else { return }
+            if (error as? SocialWireError)?.shouldRestartFeed(cursor: cursor) == true {
+                await loadFinance()
+            } else {
+                financeError = error.localizedDescription
+            }
+        }
+    }
+
+    private var financeSelectionFingerprint: String {
+        financeSelections.map(\.key).sorted().joined(separator: ":") + (feedPreferences.hideFinanceCrypto ? ":hide-crypto" : ":show-crypto")
+    }
+
+    func loadFinanceCustomization() async {
+        guard let viewerDID else { return }
+        let context = financeContextEpoch
+        do {
+            var records: [FinanceSelectionRecord] = []
+            var cursor: String?
+            repeat {
+                let page: ListRecordsResponse<FinanceSelectionRecord> = try await xrpc.listRecords(
+                    repo: viewerDID, collection: FinanceSelectionRecord.collection,
+                    cursor: cursor, authorized: true
+                )
+                records += page.records.map(\.value)
+                cursor = page.cursor
+            } while cursor != nil
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+            financeSelections = records
+            let sectors = try await gateway.fetchFinanceSectors()
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+            financeSectors = sectors
+            for reference in Set(records.filter { $0.kind == "instrument" }.map(\.reference)).sorted().prefix(50) {
+                if let known = financeItems.flatMap(\.instruments).first(where: { $0.instrument.id == reference })?.instrument {
+                    financeInstrumentMetadata[reference] = known
+                    continue
+                }
+                let matches = try await gateway.searchFinanceInstruments(query: reference)
+                guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+                if let instrument = matches.first(where: { $0.id == reference }) {
+                    financeInstrumentMetadata[reference] = instrument
+                }
+            }
+        } catch {
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+            financeError = error.localizedDescription
+        }
+    }
+
+    func searchFinance(_ query: String) async {
+        financeSearchEpoch += 1
+        let epoch = financeSearchEpoch
+        let viewer = viewerDID
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            financeSearchResults = []
+            return
+        }
+        do {
+            let results = try await gateway.searchFinanceInstruments(query: query)
+            guard epoch == financeSearchEpoch, viewerDID == viewer else { return }
+            financeSearchResults = results
+            for instrument in results { financeInstrumentMetadata[instrument.id] = instrument }
+        } catch {
+            guard epoch == financeSearchEpoch, viewerDID == viewer else { return }
+            financeError = error.localizedDescription
+        }
+    }
+
+    func toggleFinanceSelection(kind: String, reference: String) async {
+        guard let viewerDID, !isSavingFinanceSelection else { return }
+        let context = financeContextEpoch
+        isSavingFinanceSelection = true
+        defer { if self.viewerDID == viewerDID, context == financeContextEpoch { isSavingFinanceSelection = false } }
+        let previous = financeSelections
+        let originalFeedID = selectedFinanceFeedID
+        let previousItems = financeItems
+        let previousSuspension = financeContinuationSuspended
+        let key = FinanceSelectionRecord.key(kind: kind, reference: reference)
+        let removing = financeSelections.contains { $0.key == key }
+        let now = DateFormatters.string()
+        let record = FinanceSelectionRecord(kind: kind, reference: reference, createdAt: now, updatedAt: now)
+        if removing { financeSelections.removeAll { $0.key == key } }
+        else { financeSelections.append(record) }
+        financeRequestEpoch += 1
+        financeContinuationSuspended = selectedFinanceFeedID == "finance"
+        isLoadingFinance = false
+        try? readerCacheCoordinator?.clearFinanceCache(viewerDID: viewerDID)
+        if selectedFinanceFeedID == "finance" {
+            financeItems = FinancePersonalization.reorder(financeItems, selections: financeSelections)
+        }
+        do {
+            if removing { try await xrpc.deleteRecord(collection: FinanceSelectionRecord.collection, rkey: key) }
+            else { try await xrpc.putRecord(collection: FinanceSelectionRecord.collection, rkey: key, record: record) }
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+        } catch {
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+            financeSelections = previous
+            if selectedFinanceFeedID == originalFeedID {
+                financeItems = previousItems
+                financeContinuationSuspended = previousSuspension
+            }
+            financeError = "Couldn't Save Selection. " + error.localizedDescription
+        }
+    }
+
     func setCircleVisible(_ visible: Bool) async {
         await setDiscoveryFeedVisible(visible, keyPath: \.showCircle)
         if !feedPreferences.showCircle {
@@ -1486,7 +1738,6 @@ final class SocialWireAppModel {
             }
             feedsWithUnreadCounts.removeAll { $0 == source }
         case .hideFeed:
-            guard visibleFeeds.count > 1 else { return }
             visibleFeeds.removeAll { $0 == source }
             feedsWithUnreadCounts.removeAll { $0 == source }
             if source == .subscribed {
@@ -1501,6 +1752,11 @@ final class SocialWireAppModel {
             feedsWithUnreadCounts: feedsWithUnreadCounts,
             showWire: feedPreferences.showWire,
             showCircle: feedPreferences.showCircle,
+            showFinance: feedPreferences.showFinance,
+            hideFinancePerformance: feedPreferences.hideFinancePerformance,
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
+            showSports: feedPreferences.showSports,
+            hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -1560,6 +1816,11 @@ final class SocialWireAppModel {
                 : feedPreferences.feedsWithUnreadCounts.filter { $0 != source },
             showWire: feedPreferences.showWire,
             showCircle: feedPreferences.showCircle,
+            showFinance: feedPreferences.showFinance,
+            hideFinancePerformance: feedPreferences.hideFinancePerformance,
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
+            showSports: feedPreferences.showSports,
+            hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -1585,6 +1846,11 @@ final class SocialWireAppModel {
             feedsWithUnreadCounts: feedsWithUnreadCounts,
             showWire: feedPreferences.showWire,
             showCircle: feedPreferences.showCircle,
+            showFinance: feedPreferences.showFinance,
+            hideFinancePerformance: feedPreferences.hideFinancePerformance,
+            hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
+            showSports: feedPreferences.showSports,
+            hideSportsScores: feedPreferences.hideSportsScores,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -1781,6 +2047,9 @@ final class SocialWireAppModel {
             bootstrapCoordinator.schedulePendingSelection { [weak self] in
                 await self?.applyPendingStreamedBootstrapSelectionIfNeeded()
             }
+        case .lists:
+            // List navigation is currently web-only; accept the supplemental bootstrap event.
+            break
         case .warning, .error:
             break
         case .done:
@@ -3415,6 +3684,11 @@ final class SocialWireAppModel {
                 visibleFeeds: previous?.visibleFeeds,
                 showWire: previous?.showWire,
                 showCircle: previous?.showCircle,
+            showFinance: previous?.showFinance,
+            hideFinancePerformance: previous?.hideFinancePerformance,
+            hideFinanceCrypto: previous?.hideFinanceCrypto,
+            showSports: previous?.showSports,
+            hideSportsScores: previous?.hideSportsScores,
                 showTopLevelFeedUnreadCounts: previous?.showTopLevelFeedUnreadCounts,
                 feedsWithUnreadCounts: previous?.feedsWithUnreadCounts,
                 rssArticleOpenMode: previous?.rssArticleOpenMode,

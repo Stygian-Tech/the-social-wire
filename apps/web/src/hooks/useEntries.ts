@@ -382,7 +382,7 @@ export function useAggregateFeedEntries(
   feed: AggregateAppViewFeed | null,
   articleFilter: ArticleListFilter = "all",
 ) {
-  const { session, getOAuthSession } = useAuth();
+  const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
   const dummyReaderDataEnabled = isDummyReaderDataEnabled();
   const viewerDid = session?.did ?? "";
   const queryClient = useQueryClient();
@@ -413,13 +413,27 @@ export function useAggregateFeedEntries(
       }
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
-      return listAggregateFeedFromAppView({
+      const page = await listAggregateFeedFromAppView({
         feed,
         cursor: pageParam,
         filter: articleFilter,
         oauthSession: oauth,
         signal,
       });
+      // A successful first page means the server has prepared list publication metadata.
+      if (feed.kind === "list" && !pageParam && !signal.aborted && getOAuthSession() === oauth) {
+        const resolvedListQuery = {
+          queryKey: ["standardReaderList", viewerDid, oauthSessionReloadSeq, feedId],
+          exact: true,
+        };
+        // Replace any earlier resolution still in flight with the prepared server metadata.
+        void queryClient.cancelQueries(resolvedListQuery).then(() => {
+          if (!signal.aborted && getOAuthSession() === oauth) {
+            return queryClient.invalidateQueries(resolvedListQuery);
+          }
+        });
+      }
+      return page;
     },
     initialPageParam: undefined as string | undefined,
     initialData:

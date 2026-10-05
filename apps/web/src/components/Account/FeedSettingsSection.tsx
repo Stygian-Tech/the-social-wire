@@ -20,12 +20,11 @@ export function FeedSettingsSection() {
     setDiscoveryFeedVisible,
     setFeedUnreadCountVisible,
     setRssArticleOpenInReader,
+    setHideFinanceCrypto,
     isPending,
     error,
   } = useFeedDisplayPreferences();
-  const displayedFeeds = TOP_LEVEL_FEEDS.filter(
-    (feed) => configuredReadLater.serviceId !== "semble" || feed !== "archive",
-  );
+  const displayedFeeds = TOP_LEVEL_FEEDS;
   const feedLabel = (feed: (typeof TOP_LEVEL_FEEDS)[number]) =>
     feed === "readLater" && configuredReadLater.serviceId === "semble"
       ? configuredReadLater.sembleConnection?.collectionName || "Semble Collection"
@@ -46,7 +45,7 @@ export function FeedSettingsSection() {
             Settings
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Customize the app&apos;s appearance and choose which top-level feeds appear.
+            Customize appearance, feed visibility, and unread counts.
           </p>
         </header>
         <AppearanceSettingsSection />
@@ -74,6 +73,20 @@ export function FeedSettingsSection() {
           </div>
         </section>
         <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
+          <h2 className="text-sm font-bold">Finance</h2>
+          <div className="mt-3 flex min-h-12 items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Hide Crypto</p>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                Exclude cryptocurrency stories and interests from Finance.
+              </p>
+            </div>
+            <Switch className="shrink-0" checked={preferences.hideFinanceCrypto}
+              disabled={isPending} onCheckedChange={setHideFinanceCrypto}
+              aria-label="Hide Crypto in Finance" />
+          </div>
+        </section>
+        <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
           <h2 className="text-sm font-bold">Feed Display</h2>
           <div className="mt-3 grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] items-center border-b pb-2 text-xs font-semibold text-muted-foreground">
             <span>Feed</span>
@@ -83,15 +96,13 @@ export function FeedSettingsSection() {
           <div className="mt-3 divide-y">
             <DiscoveryFeedDisplaySettings
               preferences={preferences}
-              disabled={isPending}
+              isPending={isPending}
               onVisibilityChange={setDiscoveryFeedVisible}
             />
             {displayedFeeds.map((feed) => {
               const feedVisible = preferences.visibleFeeds.includes(feed);
               const countVisible =
                 preferences.feedsWithUnreadCounts.includes(feed);
-              const finalVisible =
-                feedVisible && preferences.visibleFeeds.length === 1;
               return (
                 <div
                   key={feed}
@@ -101,7 +112,7 @@ export function FeedSettingsSection() {
                   <Switch
                     className="justify-self-center"
                     checked={feedVisible}
-                    disabled={isPending || finalVisible}
+                    disabled={isPending}
                     onCheckedChange={(value) =>
                       setFeedVisible(feed, value)
                     }

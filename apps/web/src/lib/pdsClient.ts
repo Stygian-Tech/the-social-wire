@@ -9,6 +9,16 @@
 
 import { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
+import {
+  STANDARD_READER_LIST_COLLECTION,
+  STANDARD_READER_LIST_SAVE_COLLECTION,
+  isStandardReaderListSaveRecord,
+  parseStandardReaderListUri,
+  standardReaderListSaveRkey,
+  standardReaderListRecord,
+  type CreateStandardReaderListInput,
+  type StandardReaderListSaveRecord,
+} from "@/lib/standardReaderList";
 
 import {
   resolveLatrSaveRowDisplay,
@@ -193,6 +203,11 @@ export interface PreferencesRecord {
   visibleFeeds?: Array<"readLater" | "archive" | "subscribed" | "following">;
   showWire?: boolean;
   showCircle?: boolean;
+  showFinance?: boolean;
+  showSports?: boolean;
+  hideSportsScores?: boolean;
+  hideFinancePerformance?: boolean;
+  hideFinanceCrypto?: boolean;
   showTopLevelFeedUnreadCounts?: boolean;
   feedsWithUnreadCounts?: Array<
     "readLater" | "archive" | "subscribed" | "following"
@@ -210,6 +225,11 @@ export type PreferencesUpdates = Partial<
     | "visibleFeeds"
     | "showWire"
     | "showCircle"
+    | "showFinance"
+    | "showSports"
+    | "hideSportsScores"
+    | "hideFinancePerformance"
+    | "hideFinanceCrypto"
     | "showTopLevelFeedUnreadCounts"
     | "feedsWithUnreadCounts"
     | "rssArticleOpenMode"
@@ -234,6 +254,11 @@ export function mergePreferencesRecord(
     ...(previous?.visibleFeeds ? { visibleFeeds: previous.visibleFeeds } : {}),
     ...(previous?.showWire !== undefined ? { showWire: previous.showWire } : {}),
     ...(previous?.showCircle !== undefined ? { showCircle: previous.showCircle } : {}),
+    ...(previous?.showSports !== undefined ? { showSports: previous.showSports } : {}),
+    ...(previous?.hideSportsScores !== undefined ? { hideSportsScores: previous.hideSportsScores } : {}),
+    ...(previous?.showFinance !== undefined ? { showFinance: previous.showFinance } : {}),
+    ...(previous?.hideFinancePerformance !== undefined ? { hideFinancePerformance: previous.hideFinancePerformance } : {}),
+    ...(previous?.hideFinanceCrypto !== undefined ? { hideFinanceCrypto: previous.hideFinanceCrypto } : {}),
     ...(previous?.showTopLevelFeedUnreadCounts !== undefined
       ? {
           showTopLevelFeedUnreadCounts:
@@ -616,6 +641,113 @@ export class PDSClient {
   /** Authenticated viewer DID (for one-shot migration guards). */
   get viewerDid(): string {
     return this.did;
+  }
+
+  private assertStandardReaderViewer(): void {
+    if (this.oauthSession.did !== this.did) {
+      throw new Error("The signed-in account changed. Refresh before updating lists.");
+    }
+  }
+
+  private async standardReaderListSaves(): Promise<RepoRecord<StandardReaderListSaveRecord>[]> {
+    this.assertStandardReaderViewer();
+    const records: RepoRecord<StandardReaderListSaveRecord>[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      this.assertStandardReaderViewer();
+      const page = await this.agent.api.com.atproto.repo.listRecords({
+        repo: this.did, collection: STANDARD_READER_LIST_SAVE_COLLECTION, limit: 100, cursor,
+      });
+      const prefix = `at://${this.did}/${STANDARD_READER_LIST_SAVE_COLLECTION}/`;
+      for (const record of page.data.records) {
+        if (record.uri.startsWith(prefix) && /^[A-Za-z0-9._~:-]{1,512}$/.test(record.uri.slice(prefix.length)) &&
+          record.value && typeof record.value === "object") {
+          records.push(record as unknown as RepoRecord<StandardReaderListSaveRecord>);
+        }
+      }
+      cursor = page.data.cursor;
+      if (cursor && cursors.has(cursor)) throw new Error("List saves could not be read completely.");
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    this.assertStandardReaderViewer();
+    return records;
+  }
+
+  async saveStandardReaderList(input: string): Promise<{ uri: string; cid: string }> {
+    const list = parseStandardReaderListUri(input);
+    if (!list) throw new Error("Enter a Standard Reader list AT URI.");
+    const existing = (await this.standardReaderListSaves()).find(record =>
+      isStandardReaderListSaveRecord(record.value) && record.value.list === list);
+    if (existing) return { uri: existing.uri, cid: existing.cid };
+    const rkey = await standardReaderListSaveRkey(list);
+    this.assertStandardReaderViewer();
+    const result = await this.agent.api.com.atproto.repo.putRecord({
+      repo: this.did, collection: STANDARD_READER_LIST_SAVE_COLLECTION, rkey,
+      record: { $type: STANDARD_READER_LIST_SAVE_COLLECTION, list, createdAt: new Date().toISOString() },
+    });
+    this.assertStandardReaderViewer();
+    return { uri: result.data.uri, cid: result.data.cid };
+  }
+
+  async createStandardReaderList(input: CreateStandardReaderListInput): Promise<{ uri: string; cid: string }> {
+    this.assertStandardReaderViewer();
+    const record = standardReaderListRecord(input);
+    // The PDS assigns the list's TID record key; a deterministic save key is not a list identity.
+    const result = await this.agent.api.com.atproto.repo.createRecord({
+      repo: this.did,
+      collection: STANDARD_READER_LIST_COLLECTION,
+      record: record as unknown as Record<string, unknown>,
+    });
+    this.assertStandardReaderViewer();
+    const uri = parseStandardReaderListUri(result.data.uri);
+    if (!uri?.startsWith(`at://${this.did}/${STANDARD_READER_LIST_COLLECTION}/`)) {
+      throw new Error("The PDS returned an invalid list reference. Refresh Lists before trying again.");
+    }
+    return { uri, cid: result.data.cid };
+  }
+
+  async deleteOwnedStandardReaderList(input: string): Promise<void> {
+    this.assertStandardReaderViewer();
+    const uri = parseStandardReaderListUri(input);
+    if (!uri?.startsWith(`at://${this.did}/${STANDARD_READER_LIST_COLLECTION}/`)) {
+      throw new Error("Only a list created by your signed-in account can be deleted.");
+    }
+    await this.agent.api.com.atproto.repo.deleteRecord({
+      repo: this.did,
+      collection: STANDARD_READER_LIST_COLLECTION,
+      rkey: rkeyFromURI(uri),
+    });
+    try {
+      this.assertStandardReaderViewer();
+      await this.removeStandardReaderList(uri);
+    } catch (cause) {
+      const failure = cause as { status?: number; message?: string };
+      const grantRecovery = failure?.status === 401 || failure?.status === 403 ||
+        /scope|permission|unauthor/i.test(failure?.message ?? "");
+      throw Object.assign(new Error(
+        grantRecovery
+          ? "Your list was deleted, but its saved reference could not be removed. Sign out and sign in again, then retry removing the saved reference."
+          : "Your list was deleted, but its saved reference could not be removed. Refresh Lists on the original account and retry removing the saved reference.",
+        { cause },
+      ), { originalDeleted: true });
+    }
+  }
+
+  async removeStandardReaderList(input: string): Promise<void> {
+    const list = parseStandardReaderListUri(input);
+    if (!list) throw new Error("Enter a Standard Reader list AT URI.");
+    const saves = await this.standardReaderListSaves();
+    const keys = new Set(saves.filter(record => record.value.list === list &&
+      record.uri.startsWith(`at://${this.did}/${STANDARD_READER_LIST_SAVE_COLLECTION}/`))
+      .map(record => rkeyFromURI(record.uri)));
+    for (const rkey of keys) {
+      this.assertStandardReaderViewer();
+      await this.agent.api.com.atproto.repo.deleteRecord({
+        repo: this.did, collection: STANDARD_READER_LIST_SAVE_COLLECTION, rkey,
+      });
+    }
+    this.assertStandardReaderViewer();
   }
 
   async createUserInputFeedback(input: {

@@ -8,7 +8,10 @@
       "key": "literal:self",
       "record": {
         "type": "object",
-        "required": ["createdAt", "updatedAt"],
+        "required": [
+          "createdAt",
+          "updatedAt"
+        ],
         "properties": {
           "readLaterService": {
             "type": "string",
@@ -28,16 +31,31 @@
             "type": "object",
             "description": "Non-sensitive connection metadata for read-later providers. Do not store API tokens, passwords, refresh tokens, or secrets here.",
             "properties": {
-              "instapaper": { "type": "ref", "ref": "#connection" },
-              "omnivore": { "type": "ref", "ref": "#connection" },
-              "readwise-reader": { "type": "ref", "ref": "#connection" },
-              "raindrop": { "type": "ref", "ref": "#connection" },
-              "semble": { "type": "ref", "ref": "#sembleConnection" }
+              "instapaper": {
+                "type": "ref",
+                "ref": "#connection"
+              },
+              "omnivore": {
+                "type": "ref",
+                "ref": "#connection"
+              },
+              "readwise-reader": {
+                "type": "ref",
+                "ref": "#connection"
+              },
+              "raindrop": {
+                "type": "ref",
+                "ref": "#connection"
+              },
+              "semble": {
+                "type": "ref",
+                "ref": "#sembleConnection"
+              }
             }
           },
           "visibleFeeds": {
             "type": "array",
-            "description": "Ordered top-level reader feeds shown in clients. At least one value must be retained by clients.",
+            "description": "Ordered top-level reader feeds shown in clients. An explicit empty array hides all of these feeds; defaults to all feeds when absent.",
             "items": {
               "type": "string",
               "maxLength": 32,
@@ -56,6 +74,14 @@
           "showCircle": {
             "type": "boolean",
             "description": "Whether Your Circle appears in reader navigation when available. Defaults to true when absent. Independent of visibleFeeds for compatibility with existing preferences."
+          },
+          "showFinance": {
+            "type": "boolean",
+            "description": "Whether Finance appears in navigation. Defaults to true when absent; hiding preserves selections."
+          },
+          "hideFinancePerformance": {
+            "type": "boolean",
+            "description": "Suppress all market performance widgets. Defaults to false when absent."
           },
           "showTopLevelFeedUnreadCounts": {
             "type": "boolean",
@@ -78,7 +104,10 @@
           "rssArticleOpenMode": {
             "type": "string",
             "maxLength": 16,
-            "knownValues": ["reader", "original"],
+            "knownValues": [
+              "reader",
+              "original"
+            ],
             "description": "Whether RSS articles open in The Social Wire's native feed-content reader or on the publisher's original site."
           },
           "createdAt": {
@@ -92,6 +121,18 @@
             "format": "datetime",
             "maxLength": 64,
             "description": "ISO 8601 timestamp when this preferences record was last updated."
+          },
+          "showSports": {
+            "type": "boolean",
+            "default": true
+          },
+          "hideSportsScores": {
+            "type": "boolean",
+            "default": false
+          },
+          "hideFinanceCrypto": {
+            "type": "boolean",
+            "description": "Hide cryptocurrency stories and instruments in Finance. Defaults to false."
           }
         }
       }
@@ -116,7 +157,11 @@
     "sembleConnection": {
       "type": "object",
       "description": "Non-sensitive Semble Read Later destination metadata. The collection AT-URI is authoritative; the name is a display fallback only.",
-      "required": ["collectionUri", "collectionName", "connectedAt"],
+      "required": [
+        "collectionUri",
+        "collectionName",
+        "connectedAt"
+      ],
       "properties": {
         "collectionUri": {
           "type": "string",

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { LogOut, Bookmark, Archive } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,9 +15,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarResizeHandle,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar } from "@/components/shared/Avatar";
 import { SidebarFoldersSection } from "./SidebarFoldersSection";
+import { SidebarListPublicationsSection } from "./SidebarListPublicationsSection";
 import { SidebarPublicationsSection } from "./SidebarPublicationsSection";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -38,14 +40,13 @@ import { rkeyFromURI } from "@/lib/pdsClient";
 import { type DiscoveredPublication } from "@/lib/atprotoClient";
 import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { PublicationTabs } from "./PublicationTabs";
+import { SidebarTopicsSection } from "./SidebarTopicsSection";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
-import { isCircleNavigationEnabled } from "@/lib/circleFeedAvailability";
 import { defaultSidebarExpandedKeys } from "@/lib/sidebarExpandedKeysStorage";
 import {
   DEFAULT_FEED_DISPLAY_PREFERENCES,
   feedDisplaysUnreadCount,
-  nextVisibleFeed,
   type TopLevelFeed,
   type ReaderNavigationFeed,
 } from "@/lib/feedPreferences";
@@ -61,15 +62,20 @@ import {
 } from "./appSidebarFeedSelection";
 import { MobileFeedNavigation } from "./MobileFeedNavigation";
 import { FeedbackDialog } from "./FeedbackDialog";
+import { SidebarListsSection } from "./SidebarListsSection";
+import { useStandardReaderList, useStandardReaderLists } from "@/hooks/useStandardReaderLists";
+import type { StandardReaderList } from "@/lib/standardReaderListsClient";
 import { AppSidebarBrandHeader } from "./AppSidebarBrandHeader";
+import { useFinanceCatalog } from "@/hooks/useFinanceCatalog";
+import { financeTopicIsVisible } from "@/lib/financeFeedClient";
+import { useSportsCatalog } from "@/hooks/useSportsCatalog";
+import { sportsTopicIsVisible } from "@/lib/sportsFeedClient";
 import { useWireFeedCatalog } from "@/hooks/useWireFeed";
-import { useCircleCatalog } from "@/hooks/useCircleFeed";
 import {
   loadReaderFeedSelection,
   saveReaderFeedSelection,
 } from "@/lib/readerFeedSelectionStorage";
 import { SIDEBAR_PUBLICATION_TAB_STORAGE_KEY } from "@/lib/sidebarPublicationTabStorage";
-import { readLaterCapabilities } from "@/lib/semble";
 import { readLaterSidebarButtonClassName } from "./readLaterSidebarButtonStyles";
 
 interface AppSidebarProps {
@@ -90,6 +96,20 @@ export function AppSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { session, signOut } = useAuth();
+  const { setOpenMobile } = useSidebar();
+  const readerLists = useStandardReaderLists();
+  const viewerDidRef = useRef(session?.did);
+  const creatorSearchEpoch = useRef(0);
+  useEffect(() => { viewerDidRef.current = session?.did; creatorSearchEpoch.current += 1; }, [session?.did]);
+  const [listsSearching, setListsSearching] = useState(false);
+  const [creatorResults, setCreatorResults] = useState<StandardReaderList[]>([]);
+  const selectedListUri = pathname === "/read" ? searchParams.get("list") : null;
+  const selectedList = useStandardReaderList(selectedListUri);
+  const selectedListUriRef = useRef(selectedListUri);
+  useEffect(() => {
+    selectedListUriRef.current = selectedListUri;
+  }, [selectedListUri]);
+  useEffect(() => { queueMicrotask(() => { setCreatorResults([]); setListsSearching(false); }); }, [session?.did]);
   const clientHydrated = useClientHydrated();
   const [loggingOut, setLoggingOut] = useState(false);
   const {
@@ -140,9 +160,6 @@ export function AppSidebar({
     sidebarDependentDataEnabled && bootstrapStreamComplete;
   const configuredReadLater = useConfiguredReadLaterService();
   const usingSemble = configuredReadLater.serviceId === "semble";
-  const readLaterCapabilitiesForProvider = readLaterCapabilities(
-    usingSemble ? "semble" : "latr-gateway",
-  );
   const { data: savedLinks = [] } = useLatrMergedHttpsSaves("active", {
     enabled: sidebarDependentDataEnabled && !usingSemble,
   });
@@ -155,15 +172,12 @@ export function AppSidebar({
   );
   const { preferences: feedPreferences } = useFeedDisplayPreferences();
   const wireCatalog = useWireFeedCatalog();
+  const sportsCatalog = useSportsCatalog();
+  const financeCatalog = useFinanceCatalog();
   const wireNavigationEnabled =
     feedPreferences.showWire &&
     wireCatalog.data?.enabled === true &&
     wireCatalog.data.available === true;
-  const circleCatalog = useCircleCatalog();
-  const circleNavigationEnabled = isCircleNavigationEnabled(
-    circleCatalog.data,
-    feedPreferences.showCircle,
-  );
   const savedSidebarRows = useMemo(
     () =>
       publicationSidebarProjection
@@ -185,7 +199,7 @@ export function AppSidebar({
   );
   const selectedSavedSource = searchParams.get("source");
   const selectedFolderRkey = searchParams.get("folder");
-  const currentFeed = currentAppSidebarFeed({
+  const currentFeed = selectedListUri ? null : currentAppSidebarFeed({
     pathname,
     feedParam: searchParams.get("feed"),
     folderParam: selectedFolderRkey,
@@ -236,6 +250,25 @@ export function AppSidebar({
     );
   }, [followingTabPublications, subscribedPublications]);
 
+  const listCreationPublications = useMemo(() => {
+    const seen = new Set<string>();
+    return publicationsForUnread
+      .filter((publication) => {
+        if (
+          !/^at:\/\/did:[^/]+\/site\.standard\.publication\/[^/?#]+$/.test(publication.publicationId) ||
+          seen.has(publication.publicationId)
+        ) return false;
+        seen.add(publication.publicationId);
+        return true;
+      })
+      .map((publication) => ({
+        publicationId: publication.publicationId,
+        title: publication.title,
+        authorDid: publication.authorDid,
+        authorHandle: publication.authorHandle,
+      }));
+  }, [publicationsForUnread]);
+
   const publicationUnreadCounts = useSidebarUnreadController({
     publications: publicationsForUnread,
     unreadCountsByPublicationId: clientHydrated
@@ -251,10 +284,15 @@ export function AppSidebar({
 
   useEffect(() => {
     if (!setActiveReadFeedScope) return;
+    if (selectedListUri) {
+      const displayName = readerLists.lists.find(list => list.uri === selectedListUri)?.name || "List";
+      setActiveReadFeedScope(previous => previous.gatewayScope === null && previous.displayName === displayName && previous.publications.length === 0 ? previous : { publications: [], gatewayScope: null, displayName });
+      return;
+    }
 
-    if (currentFeed === "wire" || currentFeed === "circle") {
+    if (currentFeed === "wire" || currentFeed === "circle" || currentFeed === "finance" || currentFeed === "sports") {
       const displayName =
-        currentFeed === "circle" ? "Your Circle" : "The Wire";
+        currentFeed === "circle" ? "Your Circle" : currentFeed === "finance" ? "Finance" : currentFeed === "sports" ? "Sports" : "The Wire";
       setActiveReadFeedScope((previous) =>
         previous.gatewayScope === null &&
         previous.displayName === displayName &&
@@ -319,6 +357,8 @@ export function AppSidebar({
     selectedPubId,
     selectedFolderRkey,
     currentFeed,
+    selectedListUri,
+    readerLists.lists,
     setActiveReadFeedScope,
     subscribedPublications,
   ]);
@@ -351,61 +391,17 @@ export function AppSidebar({
     setSelectedFolderUri(null);
   }, [selectedPubId, setSelectedFolderUri]);
 
-  useEffect(() => {
-    if (!currentFeed) return;
-    if (currentFeed === "wire" || currentFeed === "circle") {
-      const hidden =
-        currentFeed === "wire"
-          ? !feedPreferences.showWire ||
-            (wireCatalog.isFetched && !wireNavigationEnabled)
-          : !feedPreferences.showCircle ||
-            (circleCatalog.isFetched && !circleNavigationEnabled);
-      if (hidden) {
-        const remembered = loadReaderFeedSelection(window.localStorage);
-        const replacement =
-          remembered === "following" &&
-          feedPreferences.visibleFeeds.includes("following")
-            ? "following"
-            : feedPreferences.visibleFeeds.includes("subscribed")
-              ? "subscribed"
-              : feedPreferences.visibleFeeds[0]!;
-        if (replacement === "readLater") router.replace("/saved");
-        else if (replacement === "archive") {
-          router.replace(usingSemble ? "/saved" : "/archive");
-        }
-        else router.replace(`/read?feed=${replacement}`);
-      }
-      return;
-    }
-    if (feedPreferences.visibleFeeds.includes(currentFeed)) return;
-    const replacement = nextVisibleFeed(
-      currentFeed,
-      feedPreferences.visibleFeeds,
-    );
-    if (replacement === "readLater") router.replace("/saved");
-    else if (replacement === "archive") router.replace("/archive");
-    else router.replace(`/read?feed=${replacement}`);
-  }, [
-    currentFeed,
-    feedPreferences.visibleFeeds,
-    feedPreferences.showWire,
-    feedPreferences.showCircle,
-    usingSemble,
-    router,
-    circleCatalog.isFetched,
-    circleNavigationEnabled,
-    wireCatalog.isFetched,
-    wireNavigationEnabled,
-  ]);
 
   useEffect(() => {
     if (
       !clientHydrated ||
       !bootstrapStreamComplete ||
       !wireNavigationEnabled ||
+      !feedPreferences.showWire ||
       pathname !== "/read" ||
       searchParams.get("feed") ||
       searchParams.get("folder") ||
+      searchParams.get("list") ||
       subscribedPublications.length > 0 ||
       followingTabPublications.length > 0
     ) {
@@ -424,6 +420,7 @@ export function AppSidebar({
     searchParams,
     subscribedPublications.length,
     wireNavigationEnabled,
+    feedPreferences.showWire,
   ]);
 
   const showFeedCount = (feed: TopLevelFeed) =>
@@ -453,14 +450,11 @@ export function AppSidebar({
       ? feedPreferences.visibleFeeds
       : DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds,
   );
-  if (wireNavigationEnabled) visible.add("wire");
-  if (circleNavigationEnabled) visible.add("circle");
-  if (!readLaterCapabilitiesForProvider.archive) {
-    const legacySavedDestinationWasVisible =
-      visible.has("readLater") || visible.has("archive");
-    visible.delete("archive");
-    if (legacySavedDestinationWasVisible) visible.add("readLater");
-  }
+  const displayPreferences = clientHydrated ? feedPreferences : DEFAULT_FEED_DISPLAY_PREFERENCES;
+  if (displayPreferences.showWire) visible.add("wire");
+  if (displayPreferences.showCircle) visible.add("circle");
+  if (sportsTopicIsVisible(displayPreferences.showSports, { enabled: sportsCatalog.confirmedEnabled })) visible.add("sports");
+  if (financeTopicIsVisible(displayPreferences.showFinance, financeCatalog.data)) visible.add("finance");
 
   const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
     setSelectedFolderUri(null);
@@ -470,6 +464,16 @@ export function AppSidebar({
     }
     if (feed === "archive") {
       router.push(usingSemble ? "/saved" : "/archive");
+      return;
+    }
+    if (feed === "sports") {
+      saveReaderFeedSelection(window.localStorage, "sports");
+      router.push("/read?feed=sports");
+      return;
+    }
+    if (feed === "finance") {
+      saveReaderFeedSelection(window.localStorage, "finance");
+      router.push("/read?feed=finance");
       return;
     }
     if (feed === "wire") {
@@ -559,6 +563,7 @@ export function AppSidebar({
           </SidebarGroup>
           ) : null}
           <PublicationTabs
+            visibleFeeds={visible}
             activeTab={
               currentFeed === "subscribed" || currentFeed === "following"
                 ? currentFeed
@@ -571,21 +576,55 @@ export function AppSidebar({
             showFollowingUnreadCount={showFeedCount("following")}
             subscribedPublications={subscribedPublications}
             followingPublications={followingTabPublications}
-            visibleTabs={[
-              ...(visible.has("subscribed") ? ["subscribed" as const] : []),
-              ...(visible.has("following") ? ["following" as const] : []),
-            ]}
-            wireEnabled={wireNavigationEnabled}
             wireActive={currentFeed === "wire"}
             onWireSelect={() => selectTopLevelFeed("wire")}
-            circleEnabled={circleNavigationEnabled}
             circleActive={currentFeed === "circle"}
             onCircleSelect={() => selectTopLevelFeed("circle")}
           />
+          <SidebarTopicsSection
+            visibleFeeds={visible}
+            sportsEnabled={sportsCatalog.confirmedEnabled}
+            sportsActive={currentFeed === "sports"}
+            onSportsSelect={() => selectTopLevelFeed("sports")}
+            financeActive={currentFeed === "finance"}
+            onFinanceSelect={() => selectTopLevelFeed("finance")}
+          />
+          <SidebarListsSection
+            key={session?.did || "signed-out"}
+            lists={readerLists.lists}
+            creatorResults={creatorResults}
+            selectedUri={selectedListUri}
+            loading={readerLists.signedIn && readerLists.query.isPending}
+            searching={listsSearching}
+            saving={readerLists.saving}
+            error={readerLists.error instanceof Error ? readerLists.error.message : readerLists.error ? "Couldn't Load Lists." : null}
+            onSelect={uri => { setOpenMobile(false); router.push(`/read?list=${encodeURIComponent(uri)}`); }}
+            onSearchCreator={async creator => { const epoch = ++creatorSearchEpoch.current; setListsSearching(true); try { const results = await readerLists.searchCreator(creator); if (viewerDidRef.current === session?.did && epoch === creatorSearchEpoch.current) setCreatorResults(results); } finally { if (epoch === creatorSearchEpoch.current) setListsSearching(false); } }}
+            onAdd={async input => { const list = await readerLists.resolveList(input); await readerLists.saveList(list.uri); }}
+            onRemove={readerLists.removeList}
+            onDelete={async (uri) => {
+              const leaveDeletedList = () => {
+                if (viewerDidRef.current === session?.did && selectedListUriRef.current === uri) {
+                  router.push("/read");
+                }
+              };
+              try {
+                await readerLists.deleteList(uri);
+              } catch (failure) {
+                if ((failure as { originalDeleted?: boolean } | null)?.originalDeleted === true) leaveDeletedList();
+                throw failure;
+              }
+              leaveDeletedList();
+            }}
+            onCreate={readerLists.createList}
+            onResolveCreator={readerLists.resolveCreator}
+            publications={listCreationPublications}
+            onRefresh={readerLists.refresh}
+          />
         </div>
-        {showPublicationsRail &&
+        {showPublicationsRail && (selectedListUri || (
         currentFeed !== "wire" &&
-        currentFeed !== "circle" ? (
+        currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports")) ? (
         <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-var(--reader-shell-width,70rem))/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
           <div className="hidden min-h-12 shrink-0 items-end px-4 pb-1 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">
@@ -593,7 +632,7 @@ export function AppSidebar({
             </p>
           </div>
           <SidebarGroup className="px-3 pb-4 pt-1">
-            {currentFeed ? (
+            {!selectedListUri && currentFeed && currentFeed !== "wire" && currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" ? (
               <AllFeedSidebarButton
                 feed={currentFeed}
                 isActive={allFeedSelected}
@@ -601,7 +640,16 @@ export function AppSidebar({
               />
             ) : null}
             <SidebarMenu className="gap-2">
-              {pathname.startsWith("/saved") ||
+              {selectedListUri ? (
+                <SidebarListPublicationsSection
+                  list={selectedList.data}
+                  loading={selectedList.isPending}
+                  error={selectedList.error instanceof Error ? selectedList.error.message : null}
+                  selectedPubId={selectedPubId}
+                  onSelectPub={(publicationId) => { setOpenMobile(false); onSelectPub(publicationId); }}
+                  onRetry={() => { void selectedList.refetch(); }}
+                />
+              ) : pathname.startsWith("/saved") ||
               pathname.startsWith("/archive") ? (
                 <SavedFeedSourcesSection
                   sources={savedSources}
@@ -714,7 +762,7 @@ export function AppSidebar({
                   className="shrink-0"
                 />
                 <div className="min-w-0 flex-1 py-px text-left">
-                  <p className="truncate text-sm font-medium leading-tight">
+                  <p className="line-clamp-2 break-words text-sm font-medium leading-tight">
                     {profile?.displayName?.trim() ||
                       profile?.handle ||
                       session?.did ||
@@ -744,6 +792,8 @@ export function AppSidebar({
     </Sidebar>
     <MobileFeedNavigation
       currentFeed={currentFeed}
+      listsActive={!!selectedListUri}
+      onOpenLists={() => setOpenMobile(true)}
       visibleFeeds={visible}
       onSelect={selectTopLevelFeed}
       readLaterLabel={

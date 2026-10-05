@@ -13,6 +13,8 @@ public init(path dbPath: String, logger: Logger) throws {
     config.label = "com.thesocialwire.thin-appview"
     self.db = try DatabasePool(path: dbPath, configuration: config)
     try db.write { db in
+      try Self.migrateFinance(db)
+      try Self.migrateSports(db)
       try Self.migrate(db)
       try Self.migrateRepositoryRecovery(db)
     }
@@ -58,14 +60,17 @@ public init(path dbPath: String, logger: Logger) throws {
                   SELECT 1 FROM appview_publication_scopes scope
                   WHERE scope.author_did = i.repo_did))
               OR (i.collection IN (
-                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState'
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState', 'app.thesocialwire.finance.selection', 'app.thesocialwire.sports.selection'
                 ) AND (
                   EXISTS (
                     SELECT 1 FROM appview_viewer_feeds feed
                     WHERE feed.viewer_did = i.repo_did)
                   OR EXISTS (
                     SELECT 1 FROM appview_publication_scopes scope
-                    WHERE scope.viewer_did = i.repo_did)))
+                    WHERE scope.viewer_did = i.repo_did)
+                  OR (i.collection='app.thesocialwire.finance.selection' AND EXISTS (
+                    SELECT 1 FROM finance_selection_sync finance WHERE finance.viewer_did=i.repo_did))
+                  OR (i.collection='app.thesocialwire.sports.selection' AND EXISTS (SELECT 1 FROM sports_selection_sync sports WHERE sports.viewer_did=i.repo_did))))
             )
             AND NOT EXISTS (
               SELECT 1
@@ -172,7 +177,7 @@ public init(path dbPath: String, logger: Logger) throws {
                 inbox.collection IS NULL OR inbox.collection NOT IN (
                   'site.standard.document', 'site.standard.entry',
                   'com.standard.document', 'com.standard.entry',
-                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState'
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState', 'app.thesocialwire.finance.selection', 'app.thesocialwire.sports.selection'
                 )
                 OR (inbox.collection IN (
                     'site.standard.document', 'site.standard.entry',
@@ -181,13 +186,16 @@ public init(path dbPath: String, logger: Logger) throws {
                     SELECT 1 FROM appview_publication_scopes scope
                     WHERE scope.author_did = inbox.repo_did))
                 OR (inbox.collection IN (
-                    'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState'
+                    'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState', 'app.thesocialwire.finance.selection', 'app.thesocialwire.sports.selection'
                   ) AND NOT EXISTS (
                     SELECT 1 FROM appview_viewer_feeds feed
                     WHERE feed.viewer_did = inbox.repo_did)
                   AND NOT EXISTS (
                     SELECT 1 FROM appview_publication_scopes scope
-                    WHERE scope.viewer_did = inbox.repo_did))))
+                    WHERE scope.viewer_did = inbox.repo_did)
+                  AND NOT (inbox.collection='app.thesocialwire.finance.selection' AND EXISTS (
+                    SELECT 1 FROM finance_selection_sync finance WHERE finance.viewer_did=inbox.repo_did))
+                  AND NOT (inbox.collection='app.thesocialwire.sports.selection' AND EXISTS (SELECT 1 FROM sports_selection_sync sports WHERE sports.viewer_did=inbox.repo_did)))))
               OR (inbox.event_kind != 'commit'
                 AND NOT EXISTS (
                   SELECT 1 FROM appview_publication_scopes scope

@@ -15,6 +15,7 @@ export function EntryCardActionMenu({
   const actionEntry = useMemo<EntryDetail>(
     () => ({
       entryId: entry.entryId,
+      financeItem: entry.financeItem,
       title: entry.title,
       summary: entry.summary,
       publishedAt: entry.publishedAt,

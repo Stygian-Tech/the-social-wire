@@ -1,0 +1,25 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getFinance
+  type: http
+  seq: 60
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getFinance?feed=finance&limit=30&hideCrypto=false&lang=en&refreshSelections=true
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Wire-Moderation-DPoP: {{wireModerationDpopProofPool}}
+}
+
+docs {
+  Set feed to a getFinanceCatalog ID (for example industry:technology or group:mag7).
+  Named feeds return matching stories only; cursors cannot cross feeds.
+  Finance V1: instrument interests are public PDS records, while article serving
+  applies current moderation and generation-bound continuation. Catalog and
+  widgets remain disabled until rollout evidence gates are approved.
+}

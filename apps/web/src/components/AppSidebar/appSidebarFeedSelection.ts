@@ -18,6 +18,8 @@ export function currentAppSidebarFeed({
   if (folderParam) return "subscribed";
   if (feedParam === "wire") return "wire";
   if (feedParam === "circle") return "circle";
+  if (feedParam === "sports") return "sports";
+  if (feedParam === "finance") return "finance";
   if (feedParam === "following") return "following";
   if (feedParam === "subscribed") return "subscribed";
   return publicationTab;

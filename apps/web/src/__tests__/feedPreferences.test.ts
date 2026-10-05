@@ -17,6 +17,11 @@ describe("feed display preferences", () => {
           feedsWithUnreadCounts: [],
           showWire,
           showCircle,
+          showFinance: true,
+          showSports: true,
+          hideSportsScores: false,
+          hideFinancePerformance: false,
+          hideFinanceCrypto: false,
         });
         expect(preferences).toEqual({
           visibleFeeds: ["following"],
@@ -24,6 +29,11 @@ describe("feed display preferences", () => {
           rssArticleOpenMode: "original",
           showWire,
           showCircle,
+          showFinance: true,
+          showSports: true,
+          hideSportsScores: false,
+          hideFinancePerformance: false,
+          hideFinanceCrypto: false,
         });
         const cache = new Map<string, string>();
         const storage = {
@@ -43,17 +53,22 @@ describe("feed display preferences", () => {
     );
   });
 
-  test("rejects an empty visible feed list", () => {
+  test("preserves an explicit empty visible feed list", () => {
     expect(
       normalizeFeedDisplayPreferences({
         visibleFeeds: [],
         showTopLevelFeedUnreadCounts: false,
       }),
     ).toEqual({
-      visibleFeeds: DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds,
+      visibleFeeds: [],
       feedsWithUnreadCounts: [],
       showWire: true,
       showCircle: true,
+      showFinance: true,
+          showSports: true,
+          hideSportsScores: false,
+      hideFinancePerformance: false,
+          hideFinanceCrypto: false,
       rssArticleOpenMode: "original",
     });
   });
@@ -69,6 +84,11 @@ describe("feed display preferences", () => {
       feedsWithUnreadCounts: ["readLater", "following"],
       showWire: true,
       showCircle: true,
+      showFinance: true,
+          showSports: true,
+          hideSportsScores: false,
+      hideFinancePerformance: false,
+          hideFinanceCrypto: false,
       rssArticleOpenMode: "original",
     });
   });
@@ -113,3 +133,26 @@ describe("feed display preferences", () => {
     );
   });
 });
+
+
+test("drops counts for every explicitly hidden feed", () => {
+  const preferences = normalizeFeedDisplayPreferences({
+    visibleFeeds: ["readLater"],
+    feedsWithUnreadCounts: ["subscribed", "following", "archive"],
+  });
+  expect(preferences.visibleFeeds).toEqual(["readLater"]);
+  expect(preferences.feedsWithUnreadCounts).toEqual([]);
+  expect(feedDisplaysUnreadCount(preferences, "subscribed")).toBe(false);
+  expect(feedDisplaysUnreadCount(preferences, "following")).toBe(false);
+  expect(feedDisplaysUnreadCount(preferences, "archive")).toBe(false);
+});
+
+ test("crypto hiding is explicit and cached independently per viewer", () => {
+   expect(normalizeFeedDisplayPreferences(undefined).hideFinanceCrypto).toBe(false);
+   const preferences = normalizeFeedDisplayPreferences({ hideFinanceCrypto: true });
+   const cache = new Map<string, string>();
+   const storage = { getItem: (key: string) => cache.get(key) ?? null, setItem: (key: string, value: string) => { cache.set(key, value); } };
+   saveCachedFeedDisplayPreferences(storage, "did:plc:viewer", preferences);
+   expect(loadCachedFeedDisplayPreferences(storage, "did:plc:viewer")?.hideFinanceCrypto).toBe(true);
+   expect(loadCachedFeedDisplayPreferences(storage, "did:plc:other")).toBeNull();
+ });

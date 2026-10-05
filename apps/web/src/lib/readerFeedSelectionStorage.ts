@@ -1,6 +1,8 @@
 export type ReaderFeedSelection =
   | "wire"
   | "circle"
+  | "finance"
+  | "sports"
   | "subscribed"
   | "following";
 
@@ -10,6 +12,8 @@ export function isReaderFeedSelection(
   return (
     value === "wire" ||
     value === "circle" ||
+    value === "finance" ||
+    value === "sports" ||
     value === "subscribed" ||
     value === "following"
   );

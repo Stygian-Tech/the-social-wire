@@ -9,7 +9,7 @@ export const TOP_LEVEL_FEEDS = [
 
 export type TopLevelFeed = (typeof TOP_LEVEL_FEEDS)[number];
 /** Reader navigation also includes server-capability feeds that are not PDS preferences. */
-export type ReaderNavigationFeed = TopLevelFeed | "wire" | "circle";
+export type ReaderNavigationFeed = TopLevelFeed | "wire" | "circle" | "finance" | "sports";
 export type RssArticleOpenMode = "reader" | "original";
 
 export const TOP_LEVEL_FEED_LABELS: Record<TopLevelFeed, string> = {
@@ -22,6 +22,11 @@ export const TOP_LEVEL_FEED_LABELS: Record<TopLevelFeed, string> = {
 export type FeedDisplayPreferences = {
   showWire: boolean;
   showCircle: boolean;
+  showFinance: boolean;
+  showSports: boolean;
+  hideSportsScores: boolean;
+  hideFinancePerformance: boolean;
+  hideFinanceCrypto: boolean;
   visibleFeeds: TopLevelFeed[];
   feedsWithUnreadCounts: TopLevelFeed[];
   rssArticleOpenMode: RssArticleOpenMode;
@@ -30,6 +35,11 @@ export type FeedDisplayPreferences = {
 export const DEFAULT_FEED_DISPLAY_PREFERENCES: FeedDisplayPreferences = {
   showWire: true,
   showCircle: true,
+  showFinance: true,
+  showSports: true,
+  hideSportsScores: false,
+  hideFinancePerformance: false,
+  hideFinanceCrypto: false,
   visibleFeeds: [...TOP_LEVEL_FEEDS],
   feedsWithUnreadCounts: [...TOP_LEVEL_FEEDS],
   rssArticleOpenMode: "original",
@@ -57,6 +67,11 @@ export function normalizeFeedDisplayPreferences(
         | "visibleFeeds"
         | "showWire"
         | "showCircle"
+        | "showFinance"
+        | "showSports"
+        | "hideSportsScores"
+        | "hideFinancePerformance"
+        | "hideFinanceCrypto"
         | "showTopLevelFeedUnreadCounts"
         | "feedsWithUnreadCounts"
         | "rssArticleOpenMode"
@@ -65,13 +80,9 @@ export function normalizeFeedDisplayPreferences(
     | null
     | undefined,
 ): FeedDisplayPreferences {
-  const visible = Array.from(
-    new Set((value?.visibleFeeds ?? []).filter(isTopLevelFeed)),
-  );
-  const visibleFeeds =
-    visible.length > 0
-      ? visible
-      : [...DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds];
+  const visibleFeeds = Array.isArray(value?.visibleFeeds)
+    ? Array.from(new Set(value.visibleFeeds.filter(isTopLevelFeed)))
+    : [...DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds];
   const legacyShowCounts =
     value && "showTopLevelFeedUnreadCounts" in value
       ? value.showTopLevelFeedUnreadCounts
@@ -85,9 +96,16 @@ export function normalizeFeedDisplayPreferences(
   return {
     showWire: value?.showWire !== false,
     showCircle: value?.showCircle !== false,
+    showFinance: value?.showFinance !== false,
+    showSports: value?.showSports !== false,
+    hideSportsScores: value?.hideSportsScores === true,
+    hideFinancePerformance: value?.hideFinancePerformance === true,
+    hideFinanceCrypto: value?.hideFinanceCrypto === true,
     visibleFeeds,
     feedsWithUnreadCounts: TOP_LEVEL_FEEDS.filter(
-      (feed) => visibleFeeds.includes(feed) && requestedCountFeedSet.has(feed),
+      (feed) =>
+        visibleFeeds.includes(feed) &&
+        requestedCountFeedSet.has(feed),
     ),
     rssArticleOpenMode: isRssArticleOpenMode(value?.rssArticleOpenMode)
       ? value.rssArticleOpenMode

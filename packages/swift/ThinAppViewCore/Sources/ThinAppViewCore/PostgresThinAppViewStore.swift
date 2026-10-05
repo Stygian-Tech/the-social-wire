@@ -53,7 +53,10 @@ public init(pool: PostgresClient, logger: Logger) {
                 WHERE feed.viewer_did = i.repo_did)
               OR EXISTS (
                 SELECT 1 FROM appview_publication_scopes scope
-                WHERE scope.viewer_did = i.repo_did)))
+                WHERE scope.viewer_did = i.repo_did)
+              OR (i.collection = 'app.thesocialwire.finance.selection' AND EXISTS (
+                SELECT 1 FROM finance_selection_sync finance WHERE finance.viewer_did=i.repo_did))
+                  OR (i.collection='app.thesocialwire.sports.selection' AND EXISTS (SELECT 1 FROM sports_selection_sync sports WHERE sports.viewer_did=i.repo_did))))
           )
           AND NOT EXISTS (
             SELECT 1
@@ -153,7 +156,10 @@ public init(pool: PostgresClient, logger: Logger) {
                   WHERE feed.viewer_did = inbox.repo_did)
                 AND NOT EXISTS (
                   SELECT 1 FROM appview_publication_scopes scope
-                  WHERE scope.viewer_did = inbox.repo_did))))
+                  WHERE scope.viewer_did = inbox.repo_did)
+                AND NOT (inbox.collection='app.thesocialwire.finance.selection' AND EXISTS (
+                  SELECT 1 FROM finance_selection_sync finance WHERE finance.viewer_did=inbox.repo_did))
+                  AND NOT (inbox.collection='app.thesocialwire.sports.selection' AND EXISTS (SELECT 1 FROM sports_selection_sync sports WHERE sports.viewer_did=inbox.repo_did)))))
             OR (inbox.event_kind != 'commit'
               AND NOT EXISTS (
                 SELECT 1 FROM appview_publication_scopes scope

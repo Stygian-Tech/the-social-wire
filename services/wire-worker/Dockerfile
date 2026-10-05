@@ -19,6 +19,9 @@ RUN apt-get update \
 COPY packages/swift/OperationsCore/Package.swift packages/swift/OperationsCore/Package.resolved* packages/swift/OperationsCore/
 COPY packages/swift/OperationsCore/Sources packages/swift/OperationsCore/Sources
 
+COPY packages/swift/FinanceCore packages/swift/FinanceCore
+COPY packages/swift/SportsCore packages/swift/SportsCore
+
 COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resolved* packages/swift/WireCore/
 COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
 COPY packages/swift/WireCore/Tests packages/swift/WireCore/Tests

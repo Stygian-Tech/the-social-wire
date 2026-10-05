@@ -16,6 +16,7 @@ import {
   useQueryClient,
   useIsRestoring,
 } from "@tanstack/react-query";
+import { mergeStandardReaderListsPage, standardReaderListsQueryKey } from "@/lib/standardReaderListsClient";
 import { useAuth } from "@/hooks/useAuth";
 import { queueBootstrapFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 import { consumeBootstrapStream } from "@/lib/bootstrapStreamClient";
@@ -205,6 +206,11 @@ function PublicationSidebarProviderInner({
           handlers: {
             onEvent: (event) => {
               if (generation !== streamGenerationRef.current) return;
+              if (event.kind === "lists") {
+                const listsKey = standardReaderListsQueryKey(did, oauthSessionReloadSeq);
+                qc.setQueryData(listsKey, mergeStandardReaderListsPage(qc.getQueryData(listsKey), event.payload));
+                return;
+              }
 
               if (event.kind === "sidebarPriority") {
                 markBootstrapPerf("sidebarPriority");
@@ -345,7 +351,7 @@ function PublicationSidebarProviderInner({
         }
       }
     },
-    [did, getOAuthSession, qc]
+    [did, getOAuthSession, oauthSessionReloadSeq, qc]
   );
 
   useEffect(() => {

@@ -18,7 +18,7 @@ export async function consumeBootstrapStream(args: {
   handlers: BootstrapStreamHandlers;
 }): Promise<void> {
   const { oauthSession, signal, handlers } = args;
-  const res = await gatewayFetch(oauthSession, "/v1/appview/bootstrap-stream", {
+  const res = await gatewayFetch(oauthSession, "/v1/appview/bootstrap-stream?includeLists=true", {
     method: "GET",
     headers: { Accept: "application/x-ndjson" },
     signal,

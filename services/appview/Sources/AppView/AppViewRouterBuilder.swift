@@ -14,6 +14,8 @@ enum AppViewRouterBuilder {
     thinAppViewStore: any ThinAppViewStore,
     wireFeedStore: (any WireFeedStore)? = nil,
     wireModerationService: WireViewerModerationService? = nil,
+    financeFeedStore: PostgresFinanceFeedStore? = nil,
+    sportsFeedStore: PostgresSportsFeedStore? = nil,
     circleDiscoveryService: CircleDiscoveryService? = nil,
     circlePrivateState: (any CirclePrivateStateStoring)? = nil,
     projectionCache: (any AppViewProjectionCacheStore)?,
@@ -62,7 +64,7 @@ enum AppViewRouterBuilder {
       .add(middleware: authMiddleware)
       .add(middleware: PDSReadStateReadinessMiddleware(store: thinAppViewStore as? any PDSReadStateLifecycleStoring, recovery: readStateRecovery))
 
-    if let wireFeedStore, let wireModerationService, config.wire.mode.servesAPI {
+    if let wireFeedStore, let wireModerationService, (config.wire.mode.servesAPI || config.finance.mode.canServeAPI || config.sports.mode.canServeAPI) {
       let wireInternalTrustMiddleware = GatewayInternalTrustAuthMiddleware(
         sharedSecret: config.core.gatewayAppViewInternalSecret,
         allowsAnonymousDiscovery: true,
@@ -75,8 +77,17 @@ enum AppViewRouterBuilder {
       WireDiscoveryRoutes(
         store: wireFeedStore,
         moderation: wireModerationService,
-        telemetry: telemetry
+        telemetry: telemetry,
+        wireVisible: config.wire.mode.servesAPI,
+        financeStore: financeFeedStore,
+        sportsStore: sportsFeedStore
       ).register(on: wire)
+      if let financeFeedStore, config.finance.mode.canServeAPI {
+        FinanceDiscoveryRoutes(store: financeFeedStore, moderation: wireModerationService, telemetry: telemetry).register(on: wire)
+      }
+      if let sportsFeedStore, config.sports.mode.canServeAPI {
+        SportsDiscoveryRoutes(store: sportsFeedStore, moderation: wireModerationService, telemetry: telemetry).register(on: wire)
+      }
     }
 
     if let circleDiscoveryService, config.circle.mode.servesAPI {
@@ -137,6 +148,11 @@ enum AppViewRouterBuilder {
       plcURL: config.core.atprotoPLCURL,
       logger: logger
     )
+    let listsService = StandardReaderListsService(
+      reader: ATProtoStandardReaderListReader(repo: repo, httpClient: httpClient, plcURL: config.core.atprotoPLCURL),
+      publicationProjection: projection
+    )
+    StandardReaderListRoutes(service: listsService).register(on: protected)
     let skyreaderIngestionService = ThinAppViewSkyreaderIngestionService(
       repo: repo,
       rssIngestion: rssIngestion,
@@ -161,7 +177,8 @@ enum AppViewRouterBuilder {
     ThinAppViewRoutes(
       readService: readService,
       enrollService: enrollService,
-      projectionService: projection
+      projectionService: projection,
+      listsService: listsService
     ).register(on: protected)
 
     AppViewExtendedRoutes(
@@ -182,7 +199,8 @@ enum AppViewRouterBuilder {
       skyreaderIngestionService: skyreaderIngestionService,
       projectionCache: projectionCache,
       telemetry: telemetry,
-      logger: logger
+      logger: logger,
+      listsService: listsService
     )
     BootstrapStreamRoutes(bootstrapStreamService: bootstrapStream).register(on: protected)
 

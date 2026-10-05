@@ -33,6 +33,69 @@ const railwayServices = [
 ] as const;
 
 describe("CI workflow configuration", () => {
+  it("packages and watches FinanceCore in every deployed Finance consumer", () => {
+    for (const image of ["indexing-worker", "wire-worker", "appview", "wire-corpus-edge"]) {
+      const dockerfile = readFileSync(join(repositoryRoot, `services/${image}/Dockerfile`), "utf8");
+      const copiesWholePackage = dockerfile.includes("COPY packages/swift/FinanceCore packages/swift/FinanceCore");
+      const copiesManifestAndSources = dockerfile.includes("COPY packages/swift/FinanceCore/Package.swift") &&
+        dockerfile.includes("COPY packages/swift/FinanceCore/Sources packages/swift/FinanceCore/Sources");
+      expect(copiesWholePackage || copiesManifestAndSources).toBe(true);
+    }
+    for (const configName of ["appview", "wire-worker", "wire-inbox-drain", "wire-fresh-inbox-drain", "wire-corpus-edge"]) {
+      const config = JSON.parse(readFileSync(join(repositoryRoot, `railway/${configName}.json`), "utf8"));
+      expect(config.build.watchPatterns).toContain("/packages/swift/FinanceCore/**");
+    }
+    const indexingBuild = railwayInfrastructure.slice(
+      railwayInfrastructure.indexOf("const indexingBuild"),
+      railwayInfrastructure.indexOf("const longRunningDeploy"),
+    );
+    expect(indexingBuild).toContain('"/packages/swift/FinanceCore/**"');
+  });
+
+  it("packages and watches SportsCore in every deployed Sports consumer", () => {
+    for (const image of ["indexing-worker", "wire-worker", "appview", "wire-corpus-edge"]) {
+      const dockerfile = readFileSync(join(repositoryRoot, `services/${image}/Dockerfile`), "utf8");
+      const copiesWholePackage = dockerfile.includes("COPY packages/swift/SportsCore packages/swift/SportsCore");
+      const copiesManifestAndSources = dockerfile.includes("COPY packages/swift/SportsCore/Package.swift") &&
+        dockerfile.includes("COPY packages/swift/SportsCore/Sources packages/swift/SportsCore/Sources");
+      expect(copiesWholePackage || copiesManifestAndSources).toBe(true);
+    }
+    for (const configName of ["appview", "wire-worker", "wire-inbox-drain", "wire-fresh-inbox-drain", "wire-corpus-edge"]) {
+      const config = JSON.parse(readFileSync(join(repositoryRoot, `railway/${configName}.json`), "utf8"));
+      expect(config.build.watchPatterns).toContain("/packages/swift/SportsCore/**");
+    }
+    const indexingBuild = railwayInfrastructure.slice(
+      railwayInfrastructure.indexOf("const indexingBuild"),
+      railwayInfrastructure.indexOf("const longRunningDeploy"),
+    );
+    expect(indexingBuild).toContain('"/packages/swift/SportsCore/**"');
+  });
+
+  it("keeps Finance and Sports selection ingestion in Development's explicit collection override", () => {
+    const developmentProfile = railwayInfrastructure.slice(
+      railwayInfrastructure.indexOf("const developmentProfile"),
+      railwayInfrastructure.indexOf("const productionWireLiveGenerations"),
+    );
+    const collections = developmentProfile.match(/JETSTREAM_APPVIEW_COLLECTIONS:\s*"([^"]+)"/)?.[1].split(",");
+    expect(collections).toContain("app.thesocialwire.finance.selection");
+    expect(collections).toContain("app.thesocialwire.sports.selection");
+    expect(developmentProfile).toContain('appViewGeneration: "jetstream-v2-us-west-finance-sports-v1-20261003"');
+    expect(developmentProfile).toContain('JETSTREAM_APPVIEW_SOURCE_GENERATION: "jetstream-v2-us-west-finance-sports-v1-20261003"');
+    expect(developmentProfile).toContain('JETSTREAM_APPVIEW_HOST: "jetstream.us-west.bsky.network"');
+    expect(developmentProfile).toContain('JETSTREAM_WIRE_ENABLED: "false"');
+    expect(developmentProfile).toContain('JETSTREAM_WIRE_LANES: "publicationwest"');
+    expect(developmentProfile).toContain('WIRE_INBOX_SOURCE_GENERATIONS: "wire-global-v6-dev-publication-finance-live-20261001"');
+    expect(developmentProfile).toContain('JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_INCIDENT_BYTES: "4294967296"');
+    expect(developmentProfile).toContain('JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_DAILY_BYTES: "4294967296"');
+    expect(developmentProfile).toContain('JETSTREAM_WIRE_PUBLICATIONWEST_DATABASE_MAX_BYTES: "17179869184"');
+    expect(developmentProfile).toContain('JETSTREAM_WIRE_PUBLICATIONWEST_INBOX_MAX_ROWS: "50000"');
+    expect(developmentProfile).toContain('JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_SNAPSHOT_ONLY: "false"');
+    const appViewCursor = developmentProfile.match(/JETSTREAM_APPVIEW_BOOTSTRAP_AFTER_SEQ: "(\d+)"/)?.[1];
+    const publicationCursor = developmentProfile.match(/JETSTREAM_WIRE_PUBLICATIONWEST_BOOTSTRAP_AFTER_SEQ: "(\d+)"/)?.[1];
+    expect(appViewCursor).toBe("26608279414");
+    expect(publicationCursor).toBe("26512357203");
+  });
+
   it("matches the independently deployed Railway services", () => {
     expect(workflow).toContain("branches: [main, dev]");
 

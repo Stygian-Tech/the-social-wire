@@ -24,6 +24,9 @@ import {
   isDummyReaderDataEnabled,
 } from "@/lib/dummyReaderData";
 
+import { observeOAuthScopeErrors, onOAuthScopeRecovery, rememberOAuthReturnPath } from "@/lib/oauthScopeRecovery";
+import { OAuthScopeRecoveryDialog } from "@/components/Auth/OAuthScopeRecoveryDialog";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AuthSession {
@@ -83,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dummyReaderDataEnabled ? { did: DUMMY_VIEWER_DID } : null
   );
   const [oauthSessionReloadSeq, setOAuthSessionReloadSeq] = useState(0);
+  const [scopeRecoveryDid, setScopeRecoveryDid] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(
     () =>
       !dummyReaderDataEnabled &&
@@ -97,6 +101,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // tracked as React state.
   const oauthSessionRef = useRef<OAuthSession | null>(null);
 
+  useEffect(() => onOAuthScopeRecovery((did) => {
+    if (oauthSessionRef.current?.did === did) setScopeRecoveryDid(did);
+  }), []);
+
   const bumpOAuthReloadSeq = useCallback(() => {
     setOAuthSessionReloadSeq((n) => n + 1);
   }, []);
@@ -108,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const oauthSession = await getSession();
       if (oauthSession) {
-        oauthSessionRef.current = oauthSession;
+        oauthSessionRef.current = observeOAuthScopeErrors(oauthSession);
         setSession({ did: oauthSession.did });
         bumpOAuthReloadSeq();
         return true;
@@ -154,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       const oauthSession = await getSession();
       if (!cancelled && oauthSession) {
-        oauthSessionRef.current = oauthSession;
+        oauthSessionRef.current = observeOAuthScopeErrors(oauthSession);
         setSession({ did: oauthSession.did });
         setOAuthSessionReloadSeq((n) => n + 1);
       } else if (!cancelled) {
@@ -208,8 +216,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [bumpOAuthReloadSeq, dummyReaderDataEnabled, session]);
 
   const applyOAuthSession = useCallback((oauthSession: OAuthSession) => {
-    oauthSessionRef.current = oauthSession;
+    oauthSessionRef.current = observeOAuthScopeErrors(oauthSession);
     setSession({ did: oauthSession.did });
+    setScopeRecoveryDid(null);
     setIsLoading(false);
     bumpOAuthReloadSeq();
   }, [bumpOAuthReloadSeq]);
@@ -239,6 +248,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+      {scopeRecoveryDid !== null && scopeRecoveryDid === session?.did && <OAuthScopeRecoveryDialog
+        open={scopeRecoveryDid !== null && scopeRecoveryDid === session?.did}
+        onOpenChange={(open) => { if (!open) setScopeRecoveryDid(null); }}
+        onSignIn={async () => {
+          if (!scopeRecoveryDid || scopeRecoveryDid !== oauthSessionRef.current?.did) return;
+          rememberOAuthReturnPath();
+          await handleSignIn(scopeRecoveryDid);
+        }}
+      />}
     </AuthContext.Provider>
   );
 }

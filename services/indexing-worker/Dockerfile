@@ -30,6 +30,10 @@ COPY packages/swift/ThinAppViewCore/Sources packages/swift/ThinAppViewCore/Sourc
 COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resolved* packages/swift/WireCore/
 COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
 
+COPY packages/swift/FinanceCore/Package.swift packages/swift/FinanceCore/Package.resolved* packages/swift/FinanceCore/
+COPY packages/swift/FinanceCore/Sources packages/swift/FinanceCore/Sources
+COPY packages/swift/SportsCore packages/swift/SportsCore
+
 COPY services/appview-worker/Package.swift services/appview-worker/Package.resolved* services/appview-worker/
 COPY services/appview-worker/Sources services/appview-worker/Sources
 

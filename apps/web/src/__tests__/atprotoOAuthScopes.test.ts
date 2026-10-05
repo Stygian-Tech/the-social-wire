@@ -15,6 +15,7 @@ import {
   USER_INPUT_BLOB_OAUTH_SCOPE,
   USER_INPUT_OAUTH_SCOPE,
 } from "@/lib/userInputFeedback";
+import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 
 describe("atprotoOAuthScopes", () => {
   it("matches public client-metadata.json scope string", () => {
@@ -47,6 +48,8 @@ describe("atprotoOAuthScopes", () => {
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.skyreader.feed.subscription");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("site.standard.authSocial");
     expect(AT_PROTO_OAUTH_SCOPES).toContain(USER_INPUT_OAUTH_SCOPE);
+    expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(STANDARD_READER_LIST_SAVE_SCOPE);
+    expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(STANDARD_READER_LIST_WRITE_SCOPE);
   });
 
   it("defines collection-level permissions by feature", () => {
@@ -62,7 +65,7 @@ describe("atprotoOAuthScopes", () => {
             scope.startsWith("blob:")
         )
     ).toBe(true);
-    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(6);
+    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(8);
     expect(WIRE_FEEDBACK_REPO_SCOPE).toContain(
       "app.thesocialwire.wireFeedback"
     );
