@@ -32,9 +32,15 @@ extension WirePostgresIntegrationTests {
     do {
       // A discovered universe larger than the reader's 150-row bound must not
       // make the publication guard hash a different, unbounded universe.
-      let instruments = (0..<151).map { n in
-        FinanceInstrument(id: prefix + "-instrument-" + String(n), name: "Projection Fixture Company " + String(n),
-          symbol: "FIX" + String(n), kind: "Common Stock", providerID: "BBG" + suffix + String(n))
+      var instruments: [FinanceInstrument] = []
+      for n in 0..<151 {
+        let ordinal = String(n)
+        let instrumentID = prefix + "-instrument-" + ordinal
+        let name = "Projection Fixture Company " + ordinal
+        let symbol = "FIX" + ordinal
+        let providerID = "BBG" + suffix + ordinal
+        instruments.append(FinanceInstrument(id: instrumentID, name: name,
+          symbol: symbol, kind: "Common Stock", providerID: providerID))
       }
       let discoveredPayload = String(decoding: try JSONEncoder().encode(instruments), as: UTF8.self)
       try await pool.query("""
