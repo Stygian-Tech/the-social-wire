@@ -790,6 +790,18 @@ jobs:
         run: bun --cwd services/podcast-worker test
       - name: Build runtime image
         run: docker build --file services/podcast-worker/Dockerfile --tag the-social-wire-podcast-worker:test .
+      - name: Smoke test runtime entrypoint and database gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/sh the-social-wire-podcast-worker:test \
+            -c 'test -x /usr/local/bin/bun && /usr/local/bin/bun --version'
+          status=0
+          output="$(docker run --rm --env APP_ENV=dev the-social-wire-podcast-worker:test 2>&1)" || status=$?
+          if [[ "$status" != "1" || "$output" != *"schema readiness requires DATABASE_URL"* || "$output" == *"absolute application path"* ]]; then
+            printf '%s\n' "$output"
+            exit 1
+          fi
 
   required:
     name: CI — Required

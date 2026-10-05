@@ -41,7 +41,18 @@ describe("Development podcast deployment graph", () => {
     }
     expect(existsSync(join(root, "railway/podcast-worker.json"))).toBe(false);
     const dockerfile = readFileSync(join(root, "services/podcast-worker/Dockerfile"), "utf8");
-    expect(dockerfile).toContain('ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "bun", "services/podcast-worker/src/index.ts"]');
+    expect(dockerfile).toContain('ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "/usr/local/bin/bun", "services/podcast-worker/src/index.ts"]');
+  });
+
+  it("smoke-tests the runtime executable and real database gate after building the image", () => {
+    const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+    const job = workflow.slice(workflow.indexOf("  podcast-worker:"), workflow.indexOf("  required:"));
+    expect(job).toContain("Smoke test runtime entrypoint and database gate");
+    expect(job).toContain("test -x /usr/local/bin/bun && /usr/local/bin/bun --version");
+    expect(job).toContain("--env APP_ENV=dev the-social-wire-podcast-worker:test");
+    expect(job).toContain("schema readiness requires DATABASE_URL");
+    expect(job).toContain("absolute application path");
+    expect(job.indexOf("Smoke test runtime entrypoint")).toBeGreaterThan(job.indexOf("Build runtime image"));
   });
 
   it("does not provision or enable any podcast resource in Production", async () => {
