@@ -8,7 +8,8 @@ export type PodcastShow = {
   description?: string;
   artworkUrl?: string;
   feedUrl?: string;
-  sourceKind: "rss" | "atproto";
+  sourceKind: "rss" | "atproto" | "private-rss";
+  visibility?: "public" | "private";
   sourceUri?: string;
   guid?: string;
   episodeCollection?: string;
@@ -34,6 +35,7 @@ export type PodcastEpisode = {
   artworkUrl?: string;
   guid?: string;
   sourceUri?: string;
+  visibility?: "public" | "private";
   transcripts: PodcastTranscript[];
 };
 export type PodcastProgress = {
@@ -117,6 +119,11 @@ export async function writePodcastSubscription(
   show: PodcastShow,
   remove = false,
 ): Promise<void> {
+  if (show.visibility === "private" || show.sourceKind === "private-rss") {
+    if (!remove) throw new Error("Private feeds subscribe through the private RSS service");
+    await podcastRequest(oauth, `private/subscriptions?showId=${encodeURIComponent(show.id)}`, "DELETE");
+    return;
+  }
   const agent = createOAuthAgent(oauth);
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -165,6 +172,7 @@ export async function publishPodcastClip(
   clip: PodcastClip,
   episode: PodcastEpisode,
 ): Promise<string> {
+  if (episode.visibility === "private") throw new Error("Private Feed Episodes Cannot Be Published");
   if (!clip.audioUrl || !clip.videoUrl)
     throw new Error("Wait for the clip exports to finish before publishing");
   const collection = "app.thesocialwire.podcast.clip";

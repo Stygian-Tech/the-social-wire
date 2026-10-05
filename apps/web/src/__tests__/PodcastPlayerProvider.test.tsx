@@ -28,12 +28,12 @@ const episode: PodcastEpisode = {
   durationSeconds: 120,
   transcripts: [],
 };
-function Controls({ route }: { route: string }) {
+function Controls({ route, item = episode }: { route: string; item?: PodcastEpisode }) {
   const player = usePodcastPlayer();
   return (
     <div>
       <h1>{route}</h1>
-      <button onClick={() => void player.play(episode)}>Play Fixture</button>
+      <button onClick={() => void player.play(item)}>Play Fixture</button>
       <span data-testid="progress">
         {player.state.progress.episode?.positionSeconds ?? 0}
       </span>
@@ -132,6 +132,23 @@ function environment() {
   };
 }
 describe("Persistent podcast player", () => {
+  it("loads private audio with authenticated media fetch and disables public analysis", async () => {
+    const env = environment();
+    const fetch = spyOn(gateway, "gatewayFetch").mockImplementation(async (_oauth, path) => {
+      if (path.startsWith("/v1/podcasts/media?")) return new Response(new Blob(["private audio"], { type: "audio/mpeg" }));
+      return Response.json({ revision: 1, state: initialPodcastState() });
+    });
+    restores.push(() => fetch.mockRestore());
+    const create = spyOn(URL, "createObjectURL").mockReturnValue("blob:private-audio");
+    const revoke = spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    restores.push(() => create.mockRestore(), () => revoke.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" item={{ ...episode, visibility: "private", audioUrl: "/v1/podcasts/media?episodeId=episode" }} /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await waitFor(() => expect(env.element.src).toBe("blob:private-audio"));
+    expect(fetch.mock.calls.some((call) => call[1] === "/v1/podcasts/media?episodeId=episode")).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Remove Silences" }) as HTMLInputElement).disabled).toBe(true);
+    expect(fetch.mock.calls.some((call) => call[1].includes("analysis"))).toBe(false);
+  });
   it("keeps audio across route children, seeks and changes pitch-preserving speed", async () => {
     const env = environment();
     const view = render(

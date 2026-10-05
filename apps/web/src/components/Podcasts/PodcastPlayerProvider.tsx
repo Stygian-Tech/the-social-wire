@@ -9,10 +9,12 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
 import { useAuth } from "@/hooks/useAuth";
 import {
   initialPodcastState,
+  podcastMediaPath,
   podcastRequest,
   PodcastRevisionConflict,
   type PodcastEpisode,
@@ -195,6 +197,7 @@ export function PodcastPlayerProvider({
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = null;
       let source = item.audioUrl;
+      let localSource = false;
       try {
         const local = await getPodcastDownload(did, item.id);
         if (
@@ -203,6 +206,7 @@ export function PodcastPlayerProvider({
         )
           return;
         if (local?.media) {
+          localSource = true;
           if (navigator.serviceWorker?.controller)
             source = `/podcasts/offline-media?viewer=${encodeURIComponent(viewerRef.current)}&episodeId=${encodeURIComponent(item.id)}`;
           else {
@@ -224,6 +228,22 @@ export function PodcastPlayerProvider({
         viewerRef.current !== did
       )
         return;
+      if (item.visibility === "private" && !localSource) {
+        try {
+          const oauth = getOAuthSession();
+          if (!oauth) throw new Error("Sign In to Play This Private Episode");
+          const response = await gatewayFetch(oauth, `/v1/podcasts/${podcastMediaPath(item.id)}`);
+          if (!response.ok) throw new Error("Private Audio Could Not Be Loaded");
+          const media = await response.blob();
+          if (generation !== playbackGeneration.current || viewerRef.current !== did) return;
+          if (!media.size) throw new Error("The Audio File Was Empty");
+          objectUrl.current = URL.createObjectURL(media);
+          source = objectUrl.current;
+        } catch {
+          setError("Private Audio Could Not Be Loaded. Try Downloading It for Offline Playback.");
+          return;
+        }
+      }
       active.current = item;
       setEpisode(item);
       setSilence(null);
@@ -249,7 +269,7 @@ export function PodcastPlayerProvider({
         );
       }
       const oauth = getOAuthSession();
-      if (oauth && stateRef.current.removeSilences) {
+      if (oauth && item.visibility !== "private" && stateRef.current.removeSilences) {
         try {
           const local = await getPodcastDownload(viewerRef.current, item.id);
           const analysis =
@@ -286,6 +306,10 @@ export function PodcastPlayerProvider({
       const oauth = getOAuthSession();
       const item = active.current;
       if (!enabled || !item || !oauth) return;
+      if (item.visibility === "private") {
+        setSilence({ status: "unavailable", intervals: [] });
+        return;
+      }
       try {
         await podcastRequest(oauth, "analysis", "POST", { episodeId: item.id });
         const result = await podcastRequest<PodcastSilence>(
@@ -498,7 +522,7 @@ export function PodcastPlayerProvider({
     };
   }, [episode, seek, toggle]);
   useEffect(() => {
-    if (!episode || !state.removeSilences || silence?.status === "complete")
+    if (!episode || episode.visibility === "private" || !state.removeSilences || silence?.status === "complete")
       return;
     const timer = setInterval(() => {
       const oauth = getOAuthSession();
@@ -600,7 +624,8 @@ export function PodcastPlayerProvider({
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={state.removeSilences}
+                disabled={episode.visibility === "private"}
+                checked={episode.visibility === "private" ? false : state.removeSilences}
                 onChange={(event) =>
                   void setRemoveSilences(event.target.checked)
                 }
@@ -624,7 +649,7 @@ export function PodcastPlayerProvider({
               {formatPodcastTime(position)} /{" "}
               {formatPodcastTime(duration || episode.durationSeconds || 0)}
             </span>
-            {state.removeSilences && silence?.status !== "complete" ? (
+            {episode.visibility !== "private" && state.removeSilences && silence?.status !== "complete" ? (
               <span className="text-xs" role="status">
                 Silence Analysis: {silence?.status ?? "Pending"}
                 {silence?.status === "failed" ||
