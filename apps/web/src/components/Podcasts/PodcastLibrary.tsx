@@ -23,8 +23,9 @@ import {
   type PodcastDownload,
 } from "@/lib/podcasts/offline";
 import { formatPodcastTime } from "@/lib/podcasts/playback";
-import Image from "next/image";
-import { PodcastBridgeStatus } from "./PodcastBridgeStatus";
+import { PodcastArtwork } from "./PodcastArtwork";
+import { PodcastShowDetails } from "./PodcastShowDetails";
+import { PodcastChapters } from "./PodcastChapters";
 import { PodcastClips } from "./PodcastClips";
 import { PodcastTranscripts } from "./PodcastTranscripts";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
@@ -104,7 +105,7 @@ function PodcastViewerLibrary() {
       setEpisodes(page.episodes);
       setCursor(page.cursor);
     }).catch((reason) => {
-      if (!controller.signal.aborted) setError(String(reason));
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Episodes Could Not Load. Please Retry.");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [showId, feed, getOAuthSession, player.state.queue, player.state.subscriptions, downloads]);
@@ -146,7 +147,7 @@ function PodcastViewerLibrary() {
     try {
       await run();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reason instanceof Error ? reason.message : "Podcast Action Failed. Please Retry.");
     } finally {
       setBusy(false);
     }
@@ -196,7 +197,7 @@ function PodcastViewerLibrary() {
         ...current,
         [item.id]: controller.signal.aborted
           ? "Cancelled"
-          : `Failed: ${reason instanceof Error ? reason.message : String(reason)}`,
+          : `Failed: ${reason instanceof Error ? reason.message : "Podcast Action Failed. Please Retry."}`,
       }));
     } finally {
       controllers.current.delete(item.id);
@@ -245,7 +246,7 @@ function PodcastViewerLibrary() {
     } catch { setError("Audio Could Not Be Saved. Please Retry."); }
   }
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 pb-60 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6 lg:pb-60">
+    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6" style={{ paddingBottom: "calc(var(--podcast-player-height, 0px) + 1.5rem)" }}>
       <section className="min-w-0 space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Podcasts</h1>
@@ -274,7 +275,7 @@ function PodcastViewerLibrary() {
             <button disabled={busy || !url.trim()} className={button}>{busy ? "Finding…" : privateFeed ? "Subscribe" : "Find Podcast"}</button>
           </div>
           <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" checked={privateFeed} onChange={(event) => setPrivateFeed(event.target.checked)} />Private Feed</label>
-          <p id="podcast-feed-disclosure" className="text-xs text-muted-foreground">{privateFeed ? "Saved privately to your account. No public subscription record or AT Protocol mirror is created." : "Public RSS subscriptions are mirrored to AT Protocol with source attribution. For paid or tokenized feeds, choose Private Feed."}</p>
+          <p id="podcast-feed-disclosure" className="text-xs text-muted-foreground">{privateFeed ? "Saved privately to your account. No public subscription record is created." : "Subscribe with an RSS feed or AT Protocol account. For paid or tokenized RSS feeds, choose Private Feed."}</p>
         </form> : null}
         {error || player.error ? (
           <p
@@ -284,11 +285,8 @@ function PodcastViewerLibrary() {
             {error ?? player.error}
           </p>
         ) : null}
-        <h2 className="text-lg font-semibold">
-{heading}
-        </h2>
+        {selectedShow ? <PodcastShowDetails show={selectedShow} /> : <h2 className="text-lg font-semibold">{heading}</h2>}
         {selectedShow ? <div className="space-y-2">
-          {selectedShow.description ? <p className="line-clamp-3 text-sm text-muted-foreground">{selectedShow.description.replace(/<[^>]*>/g, " ")}</p> : null}
           <button type="button" className={button} disabled={busy} onClick={() => void subscribe(selectedShow)}>{player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}</button>
           {selectedShow.visibility === "private" ? <button type="button" className={button} disabled={busy} onClick={() => void action(async () => {
             const oauth = getOAuthSession();
@@ -298,23 +296,14 @@ function PodcastViewerLibrary() {
             setEpisodes(page.episodes);
             setCursor(page.cursor);
           })}>Refresh Feed</button> : null}
-          {selectedShow.visibility !== "private" ? <PodcastBridgeStatus show={selectedShow} subscribed={player.state.subscriptions.includes(selectedShow.id)} /> : <p className="text-xs text-muted-foreground">Private Feed</p>}
+          {selectedShow.visibility === "private" ? <p className="text-xs text-muted-foreground">Private Feed</p> : null}
         </div> : null}
         {loading ? <p role="status" className="text-sm text-muted-foreground">Loading Episodes…</p> : null}
         <ul className="space-y-3">
           {displayed.map((item) => (
             <li key={item.id} className="rounded-xl border p-4">
               <div className="flex items-center gap-3">
-                {item.artworkUrl ? (
-                  <Image
-                    unoptimized
-                    src={item.artworkUrl}
-                    alt=""
-                    width={64}
-                    height={64}
-                    className="size-16 shrink-0 rounded-lg object-cover"
-                  />
-                ) : null}
+                <PodcastArtwork src={item.artworkUrl ?? item.showArtworkUrl} alt="" size={64} className="size-16" />
                 <h3 className="font-semibold">{item.title}</h3>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -457,13 +446,14 @@ function PodcastViewerLibrary() {
             <h2 className="text-lg font-semibold">
               Now Playing: {player.episode.title}
             </h2>
+            <PodcastChapters chapters={player.episode.chapters} position={player.position} onSeek={player.seek} />
             <PodcastTranscripts transcripts={transcripts} />
             {player.episode.visibility !== "private" ? <PodcastClips key={player.episode.id} episode={player.episode} /> : <p className="text-sm text-muted-foreground">Clips Are Unavailable for Private Feeds</p>}
           </section>
         ) : null}
         {feed === "downloads" ? <p className="text-xs text-muted-foreground">Offline Audio: {(downloads.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)} MB. Save Audio exports a file to your device.</p> : null}
       </section>
-      <div className="min-w-0 self-start lg:col-start-2 lg:row-start-1">
+      <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px)-2rem)] lg:overflow-y-auto">
         <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} />
       </div>
     </div>

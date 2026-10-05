@@ -22,22 +22,22 @@ struct PodcastRoutes {
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       if let id = request.uri.queryParameters.get("episodeId") {
         guard let episode = try await service.episode(id: id, viewer: auth.did) else { throw HTTPError(.notFound) }
-        return try Self.episodesResponse([service.visibleEpisode(episode)], limit: 2)
+        return try Self.episodesResponse(await service.enrich([episode], viewer: auth.did).map(service.visibleEpisode), limit: 2)
       }
       let limit = max(1, min(Int(request.uri.queryParameters.get("limit") ?? "50") ?? 50, 100))
       let cursor = request.uri.queryParameters.get("cursor")
       if request.uri.queryParameters.get("queue") == "true" {
         let items = try await service.store.queuedEpisodes(viewer: auth.did)
-        return try Self.episodesResponse(items.map(service.visibleEpisode), limit: Int.max)
+        return try Self.episodesResponse(await service.enrich(items, viewer: auth.did).map(service.visibleEpisode), limit: Int.max)
       }
       if request.uri.queryParameters.get("showId") == nil {
         let items = try await service.store.subscribedEpisodes(viewer: auth.did, cursor: cursor, limit: limit)
-        return try Self.episodesResponse(items.map(service.visibleEpisode), limit: limit)
+        return try Self.episodesResponse(await service.enrich(items, viewer: auth.did).map(service.visibleEpisode), limit: limit)
       }
       if let id = request.uri.queryParameters.get("showId"), PodcastPrivateCatalog.isPrivateID(id) {
         guard try await service.store.privateShow(viewer: auth.did, id: id) != nil else { throw HTTPError(.notFound) }
         let items = try await service.store.privateEpisodes(viewer: auth.did, showID: id, cursor: cursor, limit: limit)
-        return try Self.episodesResponse(items.map(service.visibleEpisode), limit: limit)
+        return try Self.episodesResponse(await service.enrich(items, viewer: auth.did).map(service.visibleEpisode), limit: limit)
       }
       guard let showID = request.uri.queryParameters.get("showId"),
         let show = try await service.store.show(id: showID)
@@ -64,7 +64,8 @@ struct PodcastRoutes {
         }.filter { seen.insert($0.guid ?? $0.id).inserted }
         items = Array(items.prefix(limit))
       }
-      let encoded = try JSONEncoder().encode(items)
+      items = await service.enrich(items, viewer: auth.did)
+      let encoded = try JSONEncoder().encode(items.map(service.visibleEpisode))
       var body = "{\"episodes\":" + String(decoding: encoded, as: UTF8.self)
       if items.count == limit, let last = items.last {
         body += ",\"cursor\":" + (try PodcastJSON.encode(last.id))
@@ -141,7 +142,7 @@ struct PodcastRoutes {
         PodcastJobPayload(episode: episode, sourceFingerprint: fingerprint))
       let id = try await service.store.enqueue(
         viewer: nil, episodeID: episode.id, kind: "silence",
-        key: "silence:" + episode.id + ":" + fingerprint,
+        key: "silence:v2:" + episode.id + ":" + fingerprint,
         payload: payload)
       _ = try await service.store.retry(viewer: auth.did, id: id)
       guard
@@ -156,15 +157,15 @@ struct PodcastRoutes {
         let episode = try await service.episode(id: id, viewer: auth.did)
       else { throw HTTPError(.badRequest) }
       if episode.visibility == "private" {
-        return PodcastJSON.response("{\"status\":\"unavailable\",\"reason\":\"private-feed\",\"intervals\":[]}")
+        return PodcastJSON.response("{\"analysisVersion\":\"v2\",\"status\":\"unavailable\",\"reason\":\"private-feed\",\"intervals\":[]}")
       }
       let expectedFingerprint = try await service.fingerprint(episode: episode)
-      let analysisKey = "silence:" + id + ":" + expectedFingerprint
+      let analysisKey = "silence:v2:" + id + ":" + expectedFingerprint
       guard
         let raw = try await service.store.job(
           viewer: auth.did, jobID: nil, episodeID: id, kind: "silence", key: analysisKey),
         let job = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
-      else { return PodcastJSON.response("{\"status\":\"unavailable\",\"intervals\":[]}") }
+      else { return PodcastJSON.response("{\"analysisVersion\":\"v2\",\"status\":\"unavailable\",\"intervals\":[]}") }
       let result = job["result"] as? [String: Any] ?? [:]
       if job["status"] as? String == "complete",
         result["sourceFingerprint"] as? String != expectedFingerprint
@@ -172,12 +173,12 @@ struct PodcastRoutes {
         if let jobID = job["id"] as? String {
           try await service.store.invalidateAnalysis(id: jobID, fingerprint: expectedFingerprint)
         }
-        return PodcastJSON.response("{\"status\":\"unavailable\",\"intervals\":[]}")
+        return PodcastJSON.response("{\"analysisVersion\":\"v2\",\"status\":\"unavailable\",\"intervals\":[]}")
       }
       return PodcastJSON.response(
         String(
           decoding: try JSONSerialization.data(withJSONObject: [
-            "status": job["status"] ?? "unavailable", "intervals": result["intervals"] ?? [],
+            "analysisVersion": "v2", "status": job["status"] ?? "unavailable", "intervals": result["intervals"] ?? [],
           ]), as: UTF8.self))
     }
     group.get("/v1/podcasts/jobs") { request, context async throws -> Response in

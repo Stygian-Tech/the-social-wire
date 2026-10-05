@@ -40,17 +40,17 @@ export function silenceIntervals(log: string, duration: number): SilenceInterval
     if (!Number.isFinite(value)) continue;
     if (match[1] === "start") start = value;
     else if (start !== undefined) {
-      const interval = {start: Math.max(0, start + 0.15), end: Math.min(duration, value - 0.15)};
+      const interval = {start: Math.max(0, start + 0.10), end: Math.min(duration, value - 0.10)};
       if (interval.end > interval.start) intervals.push(interval);
       start = undefined;
     }
   }
-  if (start !== undefined && duration - start > 0.6) intervals.push({start: start + 0.15, end: duration});
+  if (start !== undefined && duration - start >= 0.35) intervals.push({start: start + 0.10, end: duration});
   return intervals;
 }
 
 export async function analyzeSilence(path: string, duration: number): Promise<SilenceInterval[]> {
-  const log = await runMedia("ffmpeg", ["-hide_banner", "-nostdin", "-protocol_whitelist", "file,pipe", "-format_whitelist", INPUT_FORMATS, "-i", path, "-vn", "-af", "silencedetect=noise=-45dB:d=0.6", "-f", "null", "-"]);
+  const log = await runMedia("ffmpeg", ["-hide_banner", "-nostdin", "-protocol_whitelist", "file,pipe", "-format_whitelist", INPUT_FORMATS, "-i", path, "-vn", "-af", "silencedetect=noise=-35dB:d=0.35", "-f", "null", "-"]);
   return silenceIntervals(log, duration);
 }
 

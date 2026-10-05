@@ -2,11 +2,14 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { gatewayFetch, gatewayBaseUrl } from "@/lib/socialWireGatewayClient";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import type { SilenceInterval } from "./playback";
+export type PodcastChapter = { startSeconds: number; title: string; artworkUrl?: string; url?: string };
+export type PodcastPerson = { name: string; role?: string; imageUrl?: string; url?: string };
 export type PodcastShow = {
   id: string;
   title: string;
   description?: string;
   artworkUrl?: string;
+  hosts?: PodcastPerson[];
   feedUrl?: string;
   sourceKind: "rss" | "atproto" | "private-rss";
   visibility?: "public" | "private";
@@ -33,6 +36,8 @@ export type PodcastEpisode = {
   audioMimeType?: string;
   durationSeconds?: number;
   artworkUrl?: string;
+  showArtworkUrl?: string;
+  chapters?: PodcastChapter[];
   guid?: string;
   sourceUri?: string;
   visibility?: "public" | "private";
@@ -52,7 +57,7 @@ export type PodcastState = {
   manualLinks: { rssShowId: string; protocolShowId: string }[];
 };
 export type PodcastStateEnvelope = { revision: number; state: PodcastState };
-export type PodcastSilence = { status: string; intervals: SilenceInterval[] };
+export type PodcastSilence = { status: string; intervals: SilenceInterval[]; analysisVersion?: string };
 export type PodcastClip = {
   id: string;
   episodeId: string;
@@ -103,7 +108,9 @@ export async function podcastRequest<T>(
     let detail: string | undefined;
     try {
       const data = await response.json();
-      detail = data.message ?? data.error;
+      const value = data.message ?? data.error;
+      if (typeof value === "string") detail = value;
+      else if (value && typeof value.message === "string") detail = value.message;
     } catch {}
     throw new Error(detail ?? `Podcasts request failed (${response.status})`);
   }

@@ -21,8 +21,8 @@ struct PodcastDiscoveryView: View {
                 .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || library.loading)
             } footer: {
                 Text(privateFeed
-                     ? "Private feeds stay in your account and on this device. Their URLs are never published to your PDS or mirrored to AT Protocol."
-                     : "Public RSS feeds are mirrored to AT Protocol with source attribution. Choose Private RSS Feed for subscriber-only or credential-bearing feeds.")
+                     ? "Private feeds stay in your account and on this device. Their URLs are never published to your PDS."
+                     : "Choose Private RSS Feed for subscriber-only or credential-bearing feeds.")
             }
             if library.loading { ProgressView(privateFeed ? "Subscribing Privately" : "Finding Podcast") }
             if let error = library.error { Text(error).foregroundStyle(.red) }

@@ -3,44 +3,53 @@ import SwiftUI
 struct PodcastPlayerView: View {
     @Environment(PodcastLibraryModel.self) private var library
     @State private var expanded = false
+    @State private var minimized = false
+    @State private var hovering = false
+    @FocusState private var artworkFocused: Bool
 
     var body: some View {
         let player = library.player
         if let episode = player.episode {
+            let chapter = episode.activeChapter(at: player.position)
+            let art = chapter?.artworkUrl ?? episode.artworkUrl ?? episode.showArtworkUrl ?? library.currentShow?.artworkUrl
             VStack(spacing: 8) {
-                Button { expanded = true } label: {
+                if minimized {
                     HStack {
-                        Image(systemName: "waveform")
-                        Text(episode.title).font(.subheadline).lineLimit(1)
-                        Spacer()
-                        Image(systemName: "chevron.up")
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Slider(value: Binding(get: { player.position }, set: { player.seek($0) }), in: 0...max(1, player.duration))
-                    .accessibilityLabel("Playback Position")
-                    .accessibilityValue(Self.time(player.position))
-                HStack {
-                    Text(Self.time(player.position)).monospacedDigit().font(.caption)
-                    Spacer()
-                    Button("Back 15 Seconds", systemImage: "gobackward.15") { player.skip(-15) }.labelStyle(.iconOnly)
-                    Button(player.isPlaying ? "Pause" : "Play", systemImage: player.isPlaying ? "pause.fill" : "play.fill") {
-                        player.isPlaying ? player.pause() : player.play()
-                    }.labelStyle(.iconOnly)
-                    Button("Forward 30 Seconds", systemImage: "goforward.30") { player.skip(30) }.labelStyle(.iconOnly)
-                    Spacer()
-                    Menu {
-                        ForEach(Array(stride(from: 0.5, through: 3.0, by: 0.25)), id: \.self) { speed in
-                            Button("\(speed.formatted())×") { Task { await library.setSpeed(speed) } }
+                        Button { minimized = false } label: { PodcastArtworkView(url: art) }
+                            .buttonStyle(.plain).focusable().focused($artworkFocused)
+                            .accessibilityLabel("Expand Player: \(episode.title)")
+                            .help("Expand Player")
+                        if hovering || artworkFocused {
+                            VStack(alignment: .leading) {
+                                Text(episode.title).lineLimit(1)
+                                if let chapter { Text(chapter.title).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                            }
+                            Spacer()
+                            playButton
                         }
-                    } label: { Text("\(player.speed.formatted())×").monospacedDigit() }
-                    .accessibilityLabel("Playback Speed")
+                    }
+                    .onHover { hovering = $0 }
+                } else {
+                    HStack {
+                        Button { expanded = true } label: {
+                            HStack {
+                                PodcastArtworkView(url: art)
+                                VStack(alignment: .leading) {
+                                    Text(episode.title).font(.subheadline).lineLimit(1)
+                                    if let chapter { Text(chapter.title).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                                }
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel("Now Playing: \(episode.title)")
+                        Spacer()
+                        Button("Minimize Player", systemImage: "chevron.down") { minimized = true }.labelStyle(.iconOnly)
+                    }
+                    Slider(value: Binding(get: { player.position }, set: { player.seek($0) }), in: 0...max(1, player.duration))
+                        .accessibilityLabel("Playback Position").accessibilityValue(Self.time(player.position))
+                    PodcastTransportControls()
+                    if let error = player.error { Text(error).font(.caption).foregroundStyle(.red) }
                 }
-                if let error = player.error { Text(error).font(.caption).foregroundStyle(.red) }
             }
-            .padding()
-            .background(.bar)
+            .padding().background(.bar)
             .sheet(isPresented: $expanded) {
                 NavigationStack {
                     PodcastNowPlayingView()
@@ -48,6 +57,12 @@ struct PodcastPlayerView: View {
                 }
             }
         }
+    }
+
+    private var playButton: some View {
+        Button(library.player.isPlaying ? "Pause" : "Play", systemImage: library.player.isPlaying ? "pause.fill" : "play.fill") {
+            library.player.isPlaying ? library.player.pause() : library.player.play()
+        }.labelStyle(.iconOnly)
     }
 
     static func time(_ seconds: Double) -> String {

@@ -11,6 +11,10 @@ struct PodcastMediaProxyRoutes {
   func register(
     on protected: RouterGroup<GatewayRequestContext>, router: Router<GatewayRequestContext>
   ) {
+    protected.get("/v1/podcasts/image") { request, context async throws -> Response in
+      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+      return try await forward(request: request, path: "/v1/podcasts/image", auth: auth)
+    }
     protected.get("/v1/podcasts/media") { request, context async throws -> Response in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       return try await forward(request: request, path: "/v1/podcasts/media", auth: auth)
@@ -39,7 +43,7 @@ struct PodcastMediaProxyRoutes {
     }
     let reply = try await httpClient.execute(req, timeout: .hours(6))
     var headers = HTTPFields()
-    for name in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"] {
+    for name in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "X-Content-Type-Options"] {
       if let field = HTTPField.Name(name), let value = reply.headers.first(name: name) {
         headers[field] = value
       }

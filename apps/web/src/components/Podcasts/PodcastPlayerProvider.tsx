@@ -1,5 +1,5 @@
 "use client";
-import { PodcastSelect } from "./PodcastSelect";
+import { PodcastPlayerView } from "./PodcastPlayerView";
 import {
   createContext,
   useCallback,
@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
 import { useAuth } from "@/hooks/useAuth";
@@ -30,14 +29,16 @@ import {
 } from "@/lib/podcasts/offline";
 import {
   clampPlaybackTime,
-  formatPodcastTime,
-  PODCAST_SPEEDS,
+  normalizePodcastSpeed,
+  activePodcastChapter,
   podcastsEnabled,
   silenceSkipTarget,
+  isCurrentSilenceAnalysis,
+  PODCAST_SILENCE_ANALYSIS_VERSION,
 } from "@/lib/podcasts/playback";
 
 type StatePatch = Partial<PodcastState>;
-type PlayerContext = {
+export type PlayerContext = {
   episode: PodcastEpisode | null;
   playing: boolean;
   position: number;
@@ -52,6 +53,8 @@ type PlayerContext = {
   setRemoveSilences: (enabled: boolean) => Promise<void>;
   clearError: () => void;
 };
+const currentSilence = (analysis: PodcastSilence): PodcastSilence => isCurrentSilenceAnalysis(analysis)
+  ? analysis : { status: "pending", intervals: [], analysisVersion: PODCAST_SILENCE_ANALYSIS_VERSION };
 const Context = createContext<PlayerContext | null>(null);
 const cacheKey = (did: string) => `the-social-wire.podcast-state.v1:${did}`;
 export function PodcastPlayerProvider({
@@ -75,6 +78,7 @@ export function PodcastPlayerProvider({
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const currentChapter = activePodcastChapter(episode?.chapters ?? [], position);
   const [silence, setSilence] = useState<PodcastSilence | null>(null);
   const silenceRef = useRef<PodcastSilence | null>(null);
   const persist = useCallback(() => {
@@ -123,6 +127,7 @@ export function PodcastPlayerProvider({
           if (remainder[field] === patches[field]) delete remainder[field];
         pending.current = remainder;
         stateRef.current = mergePodcastPatch(updated.state, remainder);
+        stateRef.current.playbackSpeed = normalizePodcastSpeed(stateRef.current.playbackSpeed);
         setState(stateRef.current);
         persist();
         return;
@@ -134,6 +139,7 @@ export function PodcastPlayerProvider({
   }, [getOAuthSession, persist]);
   const changeState = useCallback(
     async (patch: StatePatch) => {
+      if (patch.playbackSpeed !== undefined) patch = { ...patch, playbackSpeed: normalizePodcastSpeed(patch.playbackSpeed) };
       stateRef.current = mergePodcastPatch(stateRef.current, patch);
       setState(stateRef.current);
       pending.current = {
@@ -269,18 +275,20 @@ export function PodcastPlayerProvider({
         );
       }
       const oauth = getOAuthSession();
-      if (oauth && item.visibility !== "private" && stateRef.current.removeSilences) {
+      if (item.visibility !== "private" && stateRef.current.removeSilences) {
         try {
           const local = await getPodcastDownload(viewerRef.current, item.id);
-          const analysis =
-            local?.silence ??
-            (await podcastRequest<PodcastSilence>(
-              oauth,
-              `analysis?episodeId=${encodeURIComponent(item.id)}`,
-            ));
-          if (active.current?.id === item.id) {
+          let analysis: PodcastSilence;
+          if (local?.silence && isCurrentSilenceAnalysis(local.silence)) analysis = local.silence;
+          else if (oauth && navigator.onLine) {
+            await podcastRequest(oauth, "analysis", "POST", { episodeId: item.id });
+            analysis = currentSilence(await podcastRequest<PodcastSilence>(oauth, `analysis?episodeId=${encodeURIComponent(item.id)}`));
+          } else analysis = { status: "unavailable", intervals: [], analysisVersion: PODCAST_SILENCE_ANALYSIS_VERSION };
+          if (active.current?.id === item.id && viewerRef.current === did && playbackGeneration.current === generation) {
             silenceRef.current = analysis;
             setSilence(analysis);
+            if (local && analysis.status === "complete" && isCurrentSilenceAnalysis(analysis))
+              await savePodcastDownload(did, { ...local, silence: analysis }, local.media);
           }
         } catch {
           /* Playback continues while analysis is unavailable. */
@@ -317,9 +325,9 @@ export function PodcastPlayerProvider({
           `analysis?episodeId=${encodeURIComponent(item.id)}`,
         );
         if (active.current?.id === item.id) {
-          silenceRef.current = result;
-          setSilence(result);
-          if (result.status === "complete" && viewerRef.current) {
+          silenceRef.current = currentSilence(result);
+          setSilence(currentSilence(result));
+          if (result.status === "complete" && isCurrentSilenceAnalysis(result) && viewerRef.current) {
             const local = await getPodcastDownload(viewerRef.current, item.id);
             if (local)
               await savePodcastDownload(
@@ -343,7 +351,8 @@ export function PodcastPlayerProvider({
     const onTime = () => {
       if (
         stateRef.current.removeSilences &&
-        silenceRef.current?.status === "complete"
+        silenceRef.current?.status === "complete" &&
+        isCurrentSilenceAnalysis(silenceRef.current)
       ) {
         const target = silenceSkipTarget(
           element.currentTime,
@@ -451,7 +460,9 @@ export function PodcastPlayerProvider({
         if (raw) {
           const local = JSON.parse(raw);
           stateRef.current = { ...initialPodcastState(), ...local.state };
+          stateRef.current.playbackSpeed = normalizePodcastSpeed(stateRef.current.playbackSpeed);
           pending.current = local.pending ?? {};
+          if (pending.current.playbackSpeed !== undefined) pending.current.playbackSpeed = normalizePodcastSpeed(pending.current.playbackSpeed);
           active.current = local.episode ?? null;
           queueMicrotask(() => {
             if (!cancelled) {
@@ -472,6 +483,7 @@ export function PodcastPlayerProvider({
               envelope.state,
               pending.current,
             );
+            stateRef.current.playbackSpeed = normalizePodcastSpeed(stateRef.current.playbackSpeed);
             setState(stateRef.current);
             persist();
             return sync();
@@ -489,10 +501,11 @@ export function PodcastPlayerProvider({
   }, [state.playbackSpeed]);
   useEffect(() => {
     if (!episode || !("mediaSession" in navigator)) return;
+    const artwork = currentChapter?.artworkUrl ?? episode.artworkUrl ?? episode.showArtworkUrl;
     navigator.mediaSession.metadata = new MediaMetadata({
       title: episode.title,
       artist: "The Social Wire",
-      ...(episode.artworkUrl ? { artwork: [{ src: episode.artworkUrl }] } : {}),
+      ...(artwork && !artwork.startsWith("/v1/") ? { artwork: [{ src: artwork }] } : {}),
     });
     const handlers: Partial<
       Record<MediaSessionAction, MediaSessionActionHandler>
@@ -527,7 +540,7 @@ export function PodcastPlayerProvider({
         } catch {}
       }
     };
-  }, [episode, seek, toggle]);
+  }, [episode, currentChapter, seek, toggle]);
   useEffect(() => {
     if (!episode || episode.visibility === "private" || !state.removeSilences || silence?.status === "complete")
       return;
@@ -539,9 +552,10 @@ export function PodcastPlayerProvider({
           `analysis?episodeId=${encodeURIComponent(episode.id)}`,
         )
           .then(async (result) => {
-            silenceRef.current = result;
-            setSilence(result);
-            if (result.status === "complete" && viewerRef.current) {
+            if (active.current?.id !== episode.id) return;
+            silenceRef.current = currentSilence(result);
+            setSilence(currentSilence(result));
+            if (result.status === "complete" && isCurrentSilenceAnalysis(result) && viewerRef.current) {
               const local = await getPodcastDownload(
                 viewerRef.current,
                 episode.id,
@@ -578,111 +592,7 @@ export function PodcastPlayerProvider({
     >
       {children}
       {podcastsEnabled() && viewer && episode ? (
-        <aside
-          aria-label="Podcast Player"
-          className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-50 border-t bg-background p-3 shadow-lg md:bottom-0"
-        >
-          <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3">
-            <Link
-              href="/podcasts"
-              className="min-w-0 flex-1 truncate text-sm font-semibold"
-            >
-              {episode.title}
-            </Link>
-            <button
-              aria-label="Back 15 Seconds"
-              onClick={() => seek(position - 15)}
-              className="min-h-11 px-2"
-            >
-              −15
-            </button>
-            <button
-              onClick={toggle}
-              className="min-h-11 rounded bg-primary px-4 text-primary-foreground"
-            >
-              {playing ? "Pause" : "Play"}
-            </button>
-            <button
-              aria-label="Forward 30 Seconds"
-              onClick={() => seek(position + 30)}
-              className="min-h-11 px-2"
-            >
-              +30
-            </button>
-            <label className="text-sm">
-              Speed{" "}
-              <PodcastSelect
-                aria-label="Playback Speed"
-                value={state.playbackSpeed}
-                onChange={(event) =>
-                  void changeState({
-                    playbackSpeed: Number(event.target.value),
-                  })
-                }
-                className="rounded border bg-background px-2 py-2"
-              >
-                {PODCAST_SPEEDS.map((speed) => (
-                  <option key={speed} value={speed}>
-                    {speed}×
-                  </option>
-                ))}
-              </PodcastSelect>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                disabled={episode.visibility === "private"}
-                checked={episode.visibility === "private" ? false : state.removeSilences}
-                onChange={(event) =>
-                  void setRemoveSilences(event.target.checked)
-                }
-              />
-              Remove Silences
-            </label>
-            <input
-              aria-label="Seek Podcast"
-              type="range"
-              min={0}
-              max={duration || episode.durationSeconds || 0}
-              step={0.1}
-              value={Math.min(
-                position,
-                duration || episode.durationSeconds || 0,
-              )}
-              onChange={(event) => seek(Number(event.target.value))}
-              className="w-full"
-            />
-            <span className="text-xs tabular-nums">
-              {formatPodcastTime(position)} /{" "}
-              {formatPodcastTime(duration || episode.durationSeconds || 0)}
-            </span>
-            {episode.visibility !== "private" && state.removeSilences && silence?.status !== "complete" ? (
-              <span className="text-xs" role="status">
-                Silence Analysis: {silence?.status ?? "Pending"}
-                {silence?.status === "failed" ||
-                silence?.status === "unavailable" ? (
-                  <button
-                    className="ml-2 underline"
-                    onClick={() => void setRemoveSilences(true)}
-                  >
-                    Retry Analysis
-                  </button>
-                ) : null}
-              </span>
-            ) : null}
-            {error ? (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-                <button
-                  className="ml-2 underline"
-                  onClick={() => setError(null)}
-                >
-                  Dismiss
-                </button>
-              </p>
-            ) : null}
-          </div>
-        </aside>
+        <PodcastPlayerView player={{ episode, playing, position, duration, state, error, silence, play, toggle, seek, changeState, setRemoveSilences, clearError: () => setError(null) }} />
       ) : null}
     </Context.Provider>
   );

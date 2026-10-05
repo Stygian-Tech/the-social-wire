@@ -23,7 +23,7 @@ describe.skipIf(!url)("durable podcast jobs on disposable PostgreSQL",()=>{
   });
   it("claims work atomically across workers and reacquires expired leases",async()=>{
     const id=randomUUID();
-    await database`INSERT INTO podcast_jobs(id,kind,dedupe_key,payload_json) VALUES(${id}::uuid,'bridge',${id},'{}'::jsonb)`;
+    await database`INSERT INTO podcast_jobs(id,kind,dedupe_key,payload_json) VALUES(${id}::uuid,'transcript',${id},'{}'::jsonb)`;
     const one=new PodcastWorker(database,new S3Client());const two=new PodcastWorker(second,new S3Client());
     const claims=await Promise.all([one.claim(),two.claim()]);
     expect(claims.filter(Boolean)).toHaveLength(1);expect(claims.find(Boolean)?.attempts).toBe(1);
@@ -31,6 +31,20 @@ describe.skipIf(!url)("durable podcast jobs on disposable PostgreSQL",()=>{
     expect((await two.claim())?.attempts).toBe(2);
     await database`UPDATE podcast_jobs SET status='complete' WHERE id=${id}::uuid`;
     expect(await one.claim()).toBeUndefined();
+  });
+  it("does not lease or publish queued bridge jobs when the bridge flag is off",async()=>{
+    const previous=process.env.PODCAST_BRIDGE_ENABLED;delete process.env.PODCAST_BRIDGE_ENABLED;
+    const id=randomUUID();
+    try {
+      await database`INSERT INTO podcast_jobs(id,kind,dedupe_key,payload_json) VALUES(${id}::uuid,'bridge',${id},'{}'::jsonb)`;
+      const worker=new PodcastWorker(database,new S3Client());
+      expect(await worker.claim()).toBeUndefined();
+      expect((await database`SELECT status,attempts FROM podcast_jobs WHERE id=${id}::uuid`)[0]).toMatchObject({status:"queued",attempts:0});
+      await expect(worker.process({id,kind:"bridge",episode_id:null,viewer_did:null,payload_json:{},attempts:1})).rejects.toThrow("Podcast bridge is disabled");
+    } finally {
+      await database`UPDATE podcast_jobs SET status='complete' WHERE id=${id}::uuid`;
+      if(previous===undefined)delete process.env.PODCAST_BRIDGE_ENABLED;else process.env.PODCAST_BRIDGE_ENABLED=previous;
+    }
   });
   it("deduplicates shared bridge jobs and prevents duplicate episode GUIDs",async()=>{
     const key=randomUUID();
@@ -50,12 +64,13 @@ describe.skipIf(!url)("durable podcast jobs on disposable PostgreSQL",()=>{
   });
   it("retains canonical protocol identity and enrichment across RSS re-polls",async()=>{
     const transcript={url:"https://example.com/captions.vtt",type:"text/vtt"};
-    await database`UPDATE podcast_episodes SET episode_json=${{id:"test-episode",sourceUri:"at://did:plc:publisher/place.pod.episode/first",durationSeconds:42,transcripts:[transcript]}}::jsonb WHERE id='test-episode'`;
+    await database`UPDATE podcast_episodes SET episode_json=${{id:"test-episode",sourceUri:"at://did:plc:publisher/place.pod.episode/first",durationSeconds:42,transcripts:[transcript],chapters:[{startSeconds:0,title:"Intro"}]}}::jsonb WHERE id='test-episode'`;
     await upsertPodcastEpisode(database,{id:"rss-derived-id",showId:"test-show",guid:"original-guid",title:"Updated",publishedAt:new Date(0).toISOString(),audioUrl:"https://example.com/new.mp3",transcripts:[]});
     const row=(await database`SELECT id,episode_json FROM podcast_episodes WHERE show_id='test-show'`)[0];
     expect(row.id).toBe("test-episode");expect(row.episode_json.id).toBe("test-episode");
     expect(row.episode_json.sourceUri).toBe("at://did:plc:publisher/place.pod.episode/first");
     expect(row.episode_json.durationSeconds).toBe(42);expect(row.episode_json.transcripts).toEqual([transcript]);
+    expect(row.episode_json.chapters).toEqual([{startSeconds:0,title:"Intro"}]);
     expect(row.episode_json.audioUrl).toBe("https://example.com/new.mp3");
   });
   it("bounds repeated worker crashes but permits explicit queued retries",async()=>{

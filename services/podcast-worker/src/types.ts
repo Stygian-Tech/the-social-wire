@@ -1,3 +1,5 @@
+export interface PodcastChapter {startSeconds:number;title:string;artworkUrl?:string;url?:string}
+export interface PodcastPerson {name:string;role?:string;imageUrl?:string;url?:string}
 export interface PodcastShow {
   id: string;
   title: string;
@@ -7,6 +9,7 @@ export interface PodcastShow {
   sourceKind: "rss" | "atproto";
   sourceUri?: string;
   guid?: string;
+  hosts?: PodcastPerson[];
 }
 
 export interface TranscriptCue { startSeconds: number; endSeconds?: number; text: string }
@@ -16,6 +19,7 @@ export interface PodcastEpisode {
   publishedAt: string; audioUrl: string; audioMimeType?: string;
   durationSeconds?: number; artworkUrl?: string; guid?: string;
   sourceUri?: string; transcripts: TranscriptReference[];
+  chapters?: PodcastChapter[]; chapterSourceUrl?: string; showArtworkUrl?: string;
 }
 
 export interface PodcastJob {

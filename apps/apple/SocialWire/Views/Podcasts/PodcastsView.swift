@@ -22,8 +22,7 @@ struct PodcastsView: View {
                 ForEach(library.shows.filter { library.state.subscriptions.contains($0.id) && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query)) }) { show in
                     NavigationLink { PodcastShowView(show: show) } label: {
                         HStack {
-                            Image(systemName: show.isPrivate ? "lock.fill" : "mic")
-                                .foregroundStyle(.secondary)
+                            PodcastArtworkView(url: show.artworkUrl, size: 40)
                             Text(show.title)
                             Spacer()
                             if show.isPrivate { Text("Private").font(.caption).foregroundStyle(.secondary) }

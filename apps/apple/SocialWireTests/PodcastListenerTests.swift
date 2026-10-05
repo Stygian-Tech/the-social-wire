@@ -6,8 +6,8 @@ import Testing
 struct PodcastListenerTests {
     @Test("Playback speed preserves the supported quarter-step range")
     func playbackSpeedBounds() {
-        #expect(PodcastPlaybackController.normalizedSpeed(0) == 0.5)
-        #expect(PodcastPlaybackController.normalizedSpeed(5) == 3)
+        #expect(PodcastPlaybackController.normalizedSpeed(0) == 0.75)
+        #expect(PodcastPlaybackController.normalizedSpeed(5) == 2)
         #expect(PodcastPlaybackController.normalizedSpeed(.nan) == 1)
         #expect(PodcastPlaybackController.normalizedSpeed(1.26) == 1.25)
     }
@@ -19,6 +19,7 @@ struct PodcastListenerTests {
         #expect(episode.audioURL == "https://example.com/source.mp3")
         #expect(episode.durationSeconds == 3600)
         #expect(episode.transcripts.first?.type == "text/vtt")
+        #expect(episode.chapters == nil)
     }
 
     @Test("Server privacy controls public processing while signed public CDN media remains supported")
@@ -69,9 +70,53 @@ struct PodcastListenerTests {
         #expect(store.episodes[episode.id]?.isPrivate == true)
         #expect(store.storageBytes == 3)
         #expect(store.exportFilename(for: episode) == "Private-Show- Episode.m4a")
+        let show = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"private-show","title":"Show","sourceKind":"private-rss","hosts":[{"name":"Offline Host","imageUrl":"/v1/podcasts/artwork?assetId=host"}]}"#.utf8))
+        store.remember(show)
+        store.configure(viewer: nil)
+        store.configure(viewer: viewer)
+        #expect(store.shows[show.id]?.hosts?.first?.name == "Offline Host")
         store.configure(viewer: otherViewer)
         #expect(store.localURL(episode.id) == nil)
         #expect(store.episodes.isEmpty)
+        #expect(store.shows.isEmpty)
+    }
+
+    @Test("Chapters preserve source timestamps, active art, and backward decoding")
+    func chaptersAndHosts() throws {
+        let episode = try JSONDecoder().decode(PodcastEpisode.self, from: Data(#"{"id":"e","showId":"s","title":"Episode","publishedAt":"2026-10-04T00:00:00Z","audioUrl":"https://example.com/a.mp3","transcripts":[],"chapters":[{"startSeconds":60,"title":"Second","artworkUrl":"https://example.com/chapter.jpg"},{"startSeconds":0,"title":"First"}]}"#.utf8))
+        #expect(episode.activeChapter(at: 0)?.title == "First")
+        #expect(episode.activeChapter(at: 59)?.title == "First")
+        #expect(episode.activeChapter(at: 60)?.title == "Second")
+        #expect(episode.activeChapter(at: 60)?.artworkUrl == "https://example.com/chapter.jpg")
+        #expect(episode.activeChapter(at: -1) == nil)
+        let restored = try JSONDecoder().decode(PodcastEpisode.self, from: JSONEncoder().encode(episode))
+        #expect(restored.chapters == episode.chapters)
+        let show = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"s","title":"Show","sourceKind":"rss","hosts":[{"name":"Host","role":"Host","imageUrl":"https://example.com/host.jpg"}]}"#.utf8))
+        #expect(show.hosts?.first?.name == "Host")
+        #expect(try JSONDecoder().decode(PodcastShow.self, from: JSONEncoder().encode(show)).hosts == show.hosts)
+        #expect(PodcastPlaybackController.normalizedSpeed(0.5) == 0.75)
+        #expect(PodcastPlaybackController.normalizedSpeed(3) == 2)
+    }
+
+    @Test("Artwork ownership changes even when two viewers request the same private URL")
+    func artworkViewerIdentity() {
+        let url = "/v1/podcasts/image?showId=private-show&kind=artwork"
+        #expect(PodcastArtworkIdentity(viewer: "did:plc:alice", url: url) != PodcastArtworkIdentity(viewer: "did:plc:bob", url: url))
+        #expect(PodcastArtworkIdentity(viewer: "did:plc:alice", url: url) != PodcastArtworkIdentity(viewer: nil, url: url))
+        #expect(PodcastArtworkIdentity(viewer: "did:plc:alice", url: url) != PodcastArtworkIdentity(viewer: "did:plc:alice", url: url + "&index=1"))
+    }
+
+    @Test("Only completed v2 silence maps are applied")
+    func silenceAnalysisVersion() throws {
+        func analysis(_ version: String?, status: String = "complete") throws -> PodcastSilenceAnalysis {
+            var json: [String: Any] = ["status": status, "intervals": [["start": 1, "end": 2]]]
+            if let version { json["analysisVersion"] = version }
+            return try JSONDecoder().decode(PodcastSilenceAnalysis.self, from: JSONSerialization.data(withJSONObject: json))
+        }
+        #expect(try analysis(nil).currentIntervals == nil)
+        #expect(try analysis("v1").currentIntervals == nil)
+        #expect(try analysis("v2", status: "processing").currentIntervals == nil)
+        #expect(try analysis("v2").currentIntervals?.first?.start == 1)
     }
 
     @Test("Private listener state keeps intentional rewinds")

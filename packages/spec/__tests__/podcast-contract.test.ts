@@ -6,7 +6,7 @@ const read=(path:string)=>readFileSync(join(root,path),'utf8');
 const spec=Bun.YAML.parse(read('packages/spec/openapi.yaml')) as any;
 test('listener state is private revision CAS and supports exact rewind source positions',()=>{
  expect(spec.paths['/v1/podcasts/state'].put.responses['409']).toBeDefined();
- expect(spec.components.schemas.PodcastListenerState.properties.playbackSpeed).toEqual({type:'number',minimum:.5,maximum:3});
+ expect(spec.components.schemas.PodcastListenerState.properties.playbackSpeed).toEqual({type:'number',minimum:.75,maximum:2,multipleOf:.25});
  expect(spec.components.schemas.PodcastStateSnapshot.required).toEqual(['revision','state']);
  expect(read('database/migrations/20261005010000_podcast_listener.sql')).toContain('podcast_viewer_state');
  expect(read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore.swift')).toContain('revision=');
@@ -42,4 +42,13 @@ test('private RSS subscriptions are viewer-owned and excluded from public proces
  expect(privateSchema).not.toContain('podcast_aliases');
  expect(spec.components.schemas.PodcastShow.properties.visibility.enum).toEqual(['private']);
  expect(spec.components.schemas.PodcastEpisode.properties.visibility.enum).toEqual(['private']);
+});
+
+test('publisher chapter and host metadata use shared arrays and private artwork proxy',()=>{
+ expect(spec.components.schemas.PodcastEpisode.properties.chapters.items.$ref).toBe('#/components/schemas/PodcastChapter');
+ expect(spec.components.schemas.PodcastShow.properties.hosts.items.$ref).toBe('#/components/schemas/PodcastPerson');
+ expect(spec.paths['/v1/podcasts/image'].get.security).toEqual([{ATProtoOAuthDPoP:[]}]);
+ for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/GET image.bru`)).toContain('/v1/podcasts/image');
+ expect(read('services/appview/Sources/AppView/Podcasts/PodcastRoutes.swift')).toContain('silence:v2:');
+ expect(read('services/podcast-worker/.env.example')).toContain('PODCAST_BRIDGE_ENABLED=false');
 });

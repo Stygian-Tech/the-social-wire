@@ -81,7 +81,7 @@ struct PodcastTests {
   }
   @Test func playbackPreferencesValidateAndIntentionalRewindRemainsValid() {
     var state = PodcastListenerState()
-    state.playbackSpeed = 3
+    state.playbackSpeed = 2
     state.progress["episode"] = PodcastProgress(
       positionSeconds: 20, updatedAt: "2026-10-05T00:00:00.123Z")
     #expect(state.validate())
@@ -89,7 +89,7 @@ struct PodcastTests {
     #expect(state.validate())
     state.playbackSpeed = 3.1
     #expect(!state.validate())
-    state.playbackSpeed = 0.5
+    state.playbackSpeed = 0.75
     #expect(state.validate())
     state.progress["episode"]?.positionSeconds = -1
     #expect(!state.validate())

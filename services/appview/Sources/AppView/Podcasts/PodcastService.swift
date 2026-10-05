@@ -9,6 +9,7 @@ struct PodcastService: Sendable {
   let store: PostgresPodcastStore
   let http: HTTPClient
   let repo: ATProtoAuthenticatedRepoClient
+  var bridgeEnabled: Bool { ProcessInfo.processInfo.environment["PODCAST_BRIDGE_ENABLED"] == "true" }
   func resolve(_ raw: String) async throws -> PodcastResolveResponse {
     if raw.hasPrefix("at://") {
       guard let parsed = RenderFieldExtractor.parseAtUri(raw),
@@ -43,6 +44,7 @@ struct PodcastService: Sendable {
         }
         show = existing
       }
+      episodes = await enrich(Array(episodes.prefix(50)), viewer: nil, persist: false) + Array(episodes.dropFirst(50))
       try await store.upsert(show: show, episodes: episodes)
       let aliases = try await store.canonicalEpisodeIDs(episodes.map(\.id))
       episodes = episodes.map {
@@ -50,7 +52,7 @@ struct PodcastService: Sendable {
         episode.id = aliases[episode.id] ?? episode.id
         return episode
       }
-      return PodcastResolveResponse(show: show, episodes: episodes)
+      return PodcastResolveResponse(show: show, episodes: episodes.map(visibleEpisode))
     }
     if raw.hasPrefix("did:")
       || (!raw.contains("/") && !raw.hasPrefix("https:") && !raw.hasPrefix("http:"))
@@ -95,12 +97,14 @@ struct PodcastService: Sendable {
       result.show.sourceUri = existing.sourceUri
       result.show.episodeCollection = existing.episodeCollection
       result.show.sourceKind = existing.sourceKind
+      if result.show.hosts.isEmpty { result.show.hosts = existing.hosts }
       result.episodes = result.episodes.map {
         var episode = $0
         episode.showId = existing.id
         return episode
       }
     }
+    result.episodes = await enrich(Array(result.episodes.prefix(50)), viewer: nil, persist: false) + Array(result.episodes.dropFirst(50))
     try await store.upsert(show: result.show, episodes: result.episodes)
     let aliases = try await store.canonicalEpisodeIDs(result.episodes.map(\.id))
     result.episodes = result.episodes.map {
@@ -108,7 +112,7 @@ struct PodcastService: Sendable {
       episode.id = aliases[episode.id] ?? episode.id
       return episode
     }
-    return PodcastResolveResponse(show: result.show, episodes: result.episodes)
+    return PodcastResolveResponse(show: result.show, episodes: result.episodes.map(visibleEpisode))
   }
   func hydrate(auth: AuthContext) async throws -> [PodcastShow] {
     var records: [(showID: String, uri: String)] = []
@@ -132,7 +136,7 @@ struct PodcastService: Sendable {
           continue
         }
         records.append((show.id, item.uri))
-        if show.sourceKind == "rss", let feed = show.feedUrl {
+        if bridgeEnabled, show.sourceKind == "rss", let feed = show.feedUrl {
           let payload = try PodcastJSON.string(["showId": show.id, "feedUrl": feed])
           _ = try await store.enqueue(
             viewer: nil, episodeID: nil, kind: "bridge", key: "bridge:" + show.id, payload: payload)
@@ -142,7 +146,7 @@ struct PodcastService: Sendable {
     } while cursor != nil
     try await store.subscriptions(viewer: auth.did, records: records)
     var shows = try await store.shows(viewer: auth.did)
-    for index in shows.indices {
+    for index in shows.indices where bridgeEnabled {
       if let json = try await store.job(
         viewer: auth.did, jobID: nil, episodeID: nil, kind: "bridge", showID: shows[index].id),
         let status = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
@@ -155,6 +159,7 @@ struct PodcastService: Sendable {
   }
   func canonicalState(_ original: PodcastListenerState) async throws -> PodcastListenerState {
     var state = original
+    state.normalizePlaybackSpeed()
     let aliases = try await store.canonicalEpisodeIDs(state.queue + Array(state.progress.keys))
       .merging(
         store.manualEpisodeAliases(links: state.manualLinks),

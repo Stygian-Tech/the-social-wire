@@ -37,6 +37,9 @@ public actor PostgresPodcastStore {
           let canonical = value.0
           let existing = try decode(value.1, PodcastEpisode.self)
           episode.sourceUri = episode.sourceUri ?? existing.sourceUri
+          if episode.chapters.isEmpty, episode.chapterSourceUrl == existing.chapterSourceUrl {
+            episode.chapters = existing.chapters
+          }
           if canonical != episode.id {
             try await alias(episode.id, canonical: canonical, kind: "episode")
             episode.id = canonical
@@ -142,8 +145,9 @@ public actor PostgresPodcastStore {
       logger: logger)
     for try await row in rows {
       let value = try row.decode((Int64, String).self)
-      return PodcastStateSnapshot(
-        revision: value.0, state: try decode(value.1, PodcastListenerState.self))
+      var state = try decode(value.1, PodcastListenerState.self)
+      state.normalizePlaybackSpeed()
+      return PodcastStateSnapshot(revision: value.0, state: state)
     }
     return PodcastStateSnapshot(revision: 0, state: PodcastListenerState())
   }

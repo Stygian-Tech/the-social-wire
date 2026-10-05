@@ -819,6 +819,12 @@
       "method": "DELETE",
       "path": "/v1/podcasts/private/subscriptions",
       "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/podcasts/image",
+      "classification": "first-party-rest"
     }
   ]
 }

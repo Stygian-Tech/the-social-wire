@@ -6,7 +6,22 @@ import { analyzeSilence, clipCaptions, probeDuration, renderClip, runMedia, sile
 
 describe("source-time media processing",()=>{
   it("retains speech padding and handles trailing silence",()=>{
-    expect(silenceIntervals("silence_start: 2\nsilence_end: 4\nsilence_start: 8",10)).toEqual([{start:2.15,end:3.85},{start:8.15,end:10}]);
+    expect(silenceIntervals("silence_start: 2\nsilence_end: 4\nsilence_start: 8",10)).toEqual([{start:2.1,end:3.9},{start:8.1,end:10}]);
+  });
+  it("removes a short quiet room-tone pause while retaining audible speech edges",async()=>{
+    const directory=await mkdtemp(join(tmpdir(),"podcast-pause-test-"));
+    try {
+      const source=join(directory,"quiet-pause.wav");
+      // A .45s -40dB room-tone pause was ineligible under the old -45dB/.6s detector.
+      await runMedia("ffmpeg",["-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=1","-f","lavfi","-i","sine=frequency=100:duration=0.45","-f","lavfi","-i","sine=frequency=440:duration=1","-filter_complex","[1:a]volume=0.08[quiet];[0:a][quiet][2:a]concat=n=3:v=0:a=1[out]","-map","[out]",source]);
+      const legacy=await runMedia("ffmpeg",["-hide_banner","-nostdin","-i",source,"-af","silencedetect=noise=-45dB:d=0.6","-f","null","-"]);
+      expect(legacy).not.toContain("silence_start:");
+      const intervals=await analyzeSilence(source,await probeDuration(source));
+      expect(intervals).toHaveLength(1);
+      expect(intervals[0]!.start).toBeGreaterThanOrEqual(1.08);
+      expect(intervals[0]!.end).toBeLessThanOrEqual(1.37);
+      expect(intervals[0]!.end-intervals[0]!.start).toBeGreaterThan(.2);
+    } finally {await rm(directory,{recursive:true,force:true});}
   });
   it("clips captions to source bounds and shifts the exported timeline",()=>{
     const text=clipCaptions([{startSeconds:3,endSeconds:7,text:"<b>Hello</b>"},{startSeconds:8,endSeconds:12,text:"Later"}],5,10);

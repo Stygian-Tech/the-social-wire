@@ -72,6 +72,7 @@ enum AppViewRouterBuilder {
       let podcasts = protected.group().add(middleware: PodcastPrivateStorageMiddleware())
       routes.register(on: podcasts)
       PodcastPrivateRoutes(service: podcastService).register(on: podcasts)
+      PodcastImageRoutes(service: podcastService).register(on: podcasts)
       routes.registerPublic(on: router)
       PodcastAssetRoutes(service: podcastService, workerURL: "", secret: "").registerMedia(on: podcasts)
       let env = ProcessInfo.processInfo.environment

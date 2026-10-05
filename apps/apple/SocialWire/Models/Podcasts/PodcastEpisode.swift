@@ -10,10 +10,16 @@ struct PodcastEpisode: Codable, Identifiable, Hashable, Sendable {
     let audioMimeType: String?
     let durationSeconds: Double?
     let artworkUrl: String?
+    let showArtworkUrl: String?
     let guid: String?
     let sourceUri: String?
     let transcripts: [PodcastTranscriptReference]
     let visibility: String?
+    let chapters: [PodcastChapter]?
+    func activeChapter(at position: Double) -> PodcastChapter? {
+        (chapters ?? []).filter { $0.startSeconds.isFinite && $0.startSeconds >= 0 && $0.startSeconds <= position }
+            .max { $0.startSeconds < $1.startSeconds }
+    }
     var isPrivate: Bool {
         visibility == "private" || URLComponents(string: audioUrl)?.path == "/v1/podcasts/media"
     }

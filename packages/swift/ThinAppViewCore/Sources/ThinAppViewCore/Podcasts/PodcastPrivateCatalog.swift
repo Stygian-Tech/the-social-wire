@@ -34,6 +34,9 @@ public enum PodcastPrivateCatalog {
   }
 
   /// Publisher HTML and prose can also contain signed source links; clients receive labels only.
+  public static func imageURL(showID: String? = nil, episodeID: String? = nil, kind: String, index: Int = 0) -> String {
+    "/v1/podcasts/image?" + (showID.map { "showId=" + $0 } ?? "episodeId=" + (episodeID ?? "")) + "&kind=" + kind + "&index=" + String(index)
+  }
   public static func visibleText(_ text: String) -> String {
     text.replacingOccurrences(of: #"https?://[^\s<>\"']+"#, with: "[Private Link]",
       options: [.regularExpression, .caseInsensitive])
@@ -46,7 +49,14 @@ public enum PodcastPrivateCatalog {
     show.feedUrl = nil
     show.sourceUri = nil
     show.guid = nil
-    show.artworkUrl = nil
+    show.artworkUrl = show.artworkUrl.map { _ in imageURL(showID: show.id, kind: "artwork") }
+    show.hosts = show.hosts.enumerated().map { index, original in
+      var person = original
+      person.name = visibleText(person.name)
+      person.url = nil
+      person.imageUrl = person.imageUrl.map { _ in imageURL(showID: show.id, kind: "host", index: index) }
+      return person
+    }
     show.episodeCollection = nil
     show.bridgeJobId = nil
     show.bridgeStatus = nil
@@ -58,7 +68,16 @@ public enum PodcastPrivateCatalog {
     episode.title = visibleText(episode.title)
     episode.description = episode.description.map(visibleText)
     episode.audioUrl = "/v1/podcasts/media?episodeId=" + episode.id
-    episode.artworkUrl = nil
+    episode.artworkUrl = episode.artworkUrl.map { _ in imageURL(episodeID: episode.id, kind: "artwork") }
+    episode.showArtworkUrl = episode.showArtworkUrl.map { _ in imageURL(episodeID: episode.id, kind: "showArtwork") }
+    episode.chapterSourceUrl = nil
+    episode.chapters = episode.chapters.enumerated().map { index, original in
+      var chapter = original
+      chapter.title = visibleText(chapter.title)
+      chapter.url = nil
+      chapter.artworkUrl = chapter.artworkUrl.map { _ in imageURL(episodeID: episode.id, kind: "chapter", index: index) }
+      return chapter
+    }
     episode.sourceUri = nil
     episode.guid = nil
     episode.transcripts = episode.transcripts.map {

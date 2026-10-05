@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarAudioSection } from "@/components/AppSidebar/SidebarAudioSection";
 import { PublicationTabs } from "@/components/AppSidebar/PublicationTabs";
 import { SidebarTopicsSection } from "@/components/AppSidebar/SidebarTopicsSection";
 import { PodcastLibrarySidebar } from "@/components/Podcasts/PodcastLibrarySidebar";
@@ -9,14 +10,15 @@ import type { PodcastEpisode } from "@/lib/podcasts/client";
 const episode = (id: string): PodcastEpisode => ({ id, showId: "show", title: id, publishedAt: "2026-10-05", audioUrl: "/audio", transcripts: [] });
 afterEach(cleanup);
 describe("Podcast library feed selection", () => {
-  it("places Podcasts under Feeds even when article feeds and Topics are hidden", () => {
+  it("places Podcasts in Audio even when article feeds and Topics are hidden", () => {
     const media = Object.getOwnPropertyDescriptor(window, "matchMedia");
     Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
     const calls: string[] = [];
-    const { container } = render(<SidebarProvider><PublicationTabs visibleFeeds={new Set()} activeTab={null} onTabChange={() => {}} podcastsEnabled podcastsActive onPodcastsSelect={() => calls.push("podcasts")} /><SidebarTopicsSection visibleFeeds={new Set()} /></SidebarProvider>);
-    expect(screen.getByText("Feeds")).toBeTruthy();
+    const { container } = render(<SidebarProvider><SidebarAudioSection enabled active onSelect={() => calls.push("podcasts")} /><PublicationTabs visibleFeeds={new Set()} activeTab={null} onTabChange={() => {}} /><SidebarTopicsSection visibleFeeds={new Set()} /></SidebarProvider>);
+    expect(screen.getByText("Audio")).toBeTruthy();
+    expect(screen.queryByText("Feeds")).toBeNull();
     expect(screen.queryByText("Topics")).toBeNull();
-    expect(container.querySelector('[aria-label="Publication Source"]')?.contains(screen.getByRole("tab", { name: "Podcasts" }))).toBe(true);
+    expect(container.querySelector('[aria-label="Audio"]')?.contains(screen.getByRole("tab", { name: "Podcasts" }))).toBe(true);
     fireEvent.click(screen.getByRole("tab", { name: "Podcasts" }));
     expect(calls).toEqual(["podcasts"]);
     cleanup();

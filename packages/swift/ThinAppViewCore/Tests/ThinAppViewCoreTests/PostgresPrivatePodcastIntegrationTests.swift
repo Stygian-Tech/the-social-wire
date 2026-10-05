@@ -30,13 +30,70 @@ struct PostgresPrivatePodcastIntegrationTests {
     let suffix = UUID().uuidString
     let owner = "did:plc:private-owner-" + suffix
     let other = "did:plc:private-other-" + suffix
+    // Simulate a chapter fetch finishing after a public feed repoll.
+    let publicShow = PodcastShow(id: "metadata-race-show-" + suffix, title: "Public", sourceKind: "rss")
+    var publicEpisode = PodcastEpisode(id: "metadata-race-episode-" + suffix, showId: publicShow.id, title: "Original", publishedAt: "2026-10-05T00:00:00Z", audioUrl: "https://media.example.com/public.mp3", guid: suffix, transcripts: [])
+    publicEpisode.chapterSourceUrl = "https://media.example.com/public-chapters.json"
+    try await store.upsert(show: publicShow, episodes: [publicEpisode])
+    var lateMetadata = publicEpisode
+    lateMetadata.chapters = [PodcastChapter(startSeconds: 0, title: "Fetched Intro")]
+    lateMetadata.showArtworkUrl = "https://media.example.com/show.png"
+    publicEpisode.title = "Repoll Title"
+    publicEpisode.description = "Repoll Description"
+    try await store.upsert(show: publicShow, episodes: [publicEpisode])
+    try await store.updateMetadata(episode: lateMetadata, viewer: nil)
+    let publicMerged = try #require(try await store.episode(id: publicEpisode.id))
+    #expect(publicMerged.title == publicEpisode.title && publicMerged.description == publicEpisode.description)
+    #expect(publicMerged.chapters == lateMetadata.chapters && publicMerged.showArtworkUrl == lateMetadata.showArtworkUrl)
+    publicEpisode.audioUrl = "https://media.example.com/new-public.mp3"
+    publicEpisode.chapters = [PodcastChapter(startSeconds: 0, title: "New Publisher Chapter")]
+    try await store.upsert(show: publicShow, episodes: [publicEpisode])
+    try await store.updateMetadata(episode: lateMetadata, viewer: nil)
+    #expect(try await store.episode(id: publicEpisode.id)?.chapters == publicEpisode.chapters)
+    publicEpisode.audioUrl = lateMetadata.audioUrl
+    publicEpisode.chapterSourceUrl = "https://media.example.com/new-public-chapters.json"
+    try await store.upsert(show: publicShow, episodes: [publicEpisode])
+    try await store.updateMetadata(episode: lateMetadata, viewer: nil)
+    #expect(try await store.episode(id: publicEpisode.id)?.chapters == publicEpisode.chapters)
+    _ = try await pool.query("DELETE FROM podcast_episodes WHERE id=\(publicEpisode.id)", logger: logger)
+    _ = try await pool.query("DELETE FROM podcast_shows WHERE id=\(publicShow.id)", logger: logger)
     let feed = "https://feeds.example.com/private/" + suffix + "?token=owner-secret"
     let show = PodcastShow(id: "parsed-show", title: "Private", feedUrl: feed, sourceKind: "rss", guid: "shared-guid")
     let episode = PodcastEpisode(id: "parsed-episode", showId: show.id, title: "Private Episode", publishedAt: "2026-10-05T00:00:00Z", audioUrl: "https://media.example.com/a.mp3?token=owner-secret", guid: "shared-item-guid", transcripts: [])
-    let scoped = PodcastPrivateCatalog.scope(viewer: owner, feedURL: feed, show: show, episodes: [episode])
+    var scoped = PodcastPrivateCatalog.scope(viewer: owner, feedURL: feed, show: show, episodes: [episode])
     let scopedOther = PodcastPrivateCatalog.scope(viewer: other, feedURL: feed, show: show, episodes: [episode])
+    scoped.episodes[0].chapterSourceUrl = "https://media.example.com/chapters?token=owner-secret"
     try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: scoped.episodes)
     try await store.savePrivateCatalog(viewer: other, feedURL: feed, show: scopedOther.show, episodes: scopedOther.episodes)
+    scoped.episodes[0].chapters = [PodcastChapter(startSeconds: 0, title: "Private Intro", artworkUrl: "https://media.example.com/intro.png?token=owner-secret")]
+    try await store.updateMetadata(episode: scoped.episodes[0], viewer: owner)
+    var refreshedEpisode = scoped.episodes[0]
+    refreshedEpisode.chapters = []
+    try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: [refreshedEpisode], existingOnly: true)
+    #expect(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id)?.chapters.count == 1)
+    var newer = try #require(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id))
+    newer.title = "Refreshed Episode Title"
+    newer.description = "Concurrent Publisher Description"
+    try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: [newer], existingOnly: true)
+    try await store.updateMetadata(episode: scoped.episodes[0], viewer: owner)
+    let merged = try #require(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id))
+    #expect(merged.title == newer.title && merged.description == newer.description)
+    newer.audioUrl = "https://media.example.com/rotated.mp3?token=owner-secret"
+    newer.chapters = [PodcastChapter(startSeconds: 0, title: "Rotated Audio Chapter")]
+    try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: [newer], existingOnly: true)
+    try await store.updateMetadata(episode: scoped.episodes[0], viewer: owner)
+    let changed = try #require(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id))
+    #expect(changed.audioUrl == newer.audioUrl && changed.chapterSourceUrl == newer.chapterSourceUrl)
+    #expect(changed.chapters == newer.chapters && changed.title == newer.title)
+    newer.audioUrl = scoped.episodes[0].audioUrl
+    newer.chapterSourceUrl = "https://media.example.com/rotated-chapters?token=owner-secret"
+    newer.chapters = []
+    try await store.savePrivateCatalog(viewer: owner, feedURL: feed, show: scoped.show, episodes: [newer], existingOnly: true)
+    try await store.updateMetadata(episode: scoped.episodes[0], viewer: owner)
+    let changedChapters = try #require(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id))
+    #expect(changedChapters.chapterSourceUrl == newer.chapterSourceUrl && changedChapters.chapters.isEmpty)
+    try await store.updateMetadata(episode: scoped.episodes[0], viewer: other)
+    #expect(try await store.privateEpisode(viewer: other, id: scoped.episodes[0].id) == nil)
     let stored = try await pool.query("SELECT row_to_json(s)::text FROM podcast_private_shows s WHERE viewer_did=\(owner)", logger: logger)
     for try await row in stored {
       let raw = try row.decode(String.self)
@@ -56,7 +113,7 @@ struct PostgresPrivatePodcastIntegrationTests {
     #expect(try await store.privateShow(viewer: other, id: scoped.show.id) == nil)
     #expect(try await store.privateEpisode(viewer: other, id: scoped.episodes[0].id) == nil)
     #expect(try await store.privateFeed(viewer: other, id: scoped.show.id) == nil)
-    #expect(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id)?.audioUrl == episode.audioUrl)
+    #expect(try await store.privateEpisode(viewer: owner, id: scoped.episodes[0].id)?.audioUrl == newer.audioUrl)
     #expect(try await store.show(id: feed) == nil)
     #expect(try await store.show(id: scoped.show.id) == nil)
     #expect(try await store.episode(id: scoped.episodes[0].id) == nil)

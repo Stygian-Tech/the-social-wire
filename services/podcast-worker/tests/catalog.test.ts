@@ -15,6 +15,14 @@ describe("podcast source identity",()=>{
     expect(episodes[0]!.guid).toBe("original-id");expect(episodes[0]!.durationSeconds).toBe(3723);
     expect(episodes[0]!.transcripts).toEqual([{url:"https://example.com/transcript.vtt",type:"text/vtt",language:"en"}]);
   });
+  it("retains supplied host photos, cloud chapters and inline PSC without guessed credits",async()=>{
+    const {show,episodes}=await parsePodcast(`<rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:psc="http://podlove.org/simple-chapters"><channel><title>Show</title><podcast:person img="https://example.com/a.jpg">Alice</podcast:person><podcast:person role="co-host">Bob</podcast:person><podcast:person role="guest">Guest</podcast:person><item><title>Episode</title><guid>episode</guid><enclosure url="https://example.com/a.mp3" type="audio/mpeg"/><podcast:chapters url="https://example.com/chapters.json" type="application/json+chapters"/><psc:chapters><psc:chapter start="00:00:00" title="Intro" image="https://example.com/intro.jpg"/><psc:chapter start="01:02.500" title="Next"/></psc:chapters></item></channel></rss>`,"https://example.com/rss");
+    expect(show.hosts?.map(host=>host.name)).toEqual(["Alice","Bob"]);
+    expect(show.hosts?.[0]?.imageUrl).toBe("https://example.com/a.jpg");
+    expect(episodes[0]?.chapterSourceUrl).toBe("https://example.com/chapters.json");
+    expect(episodes[0]?.chapters?.map(chapter=>chapter.startSeconds)).toEqual([0,62.5]);
+    expect(episodes[0]?.chapters?.[0]?.artworkUrl).toBe("https://example.com/intro.jpg");
+  });
   it("keeps the complete available audio catalog",async()=>{
     const items=Array.from({length:205},(_,i)=>`<item><title>${i}</title><guid>${i}</guid><enclosure url="https://example.com/${i}.mp3" type="audio/mpeg"/></item>`).join("");
     const parsed=await parsePodcast(`<rss version="2.0"><channel><title>Show</title>${items}</channel></rss>`,"https://example.com/rss");

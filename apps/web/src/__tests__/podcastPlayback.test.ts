@@ -3,6 +3,10 @@ import {
   clampPlaybackTime,
   formatPodcastTime,
   PODCAST_SPEEDS,
+  normalizePodcastSpeed,
+  activePodcastChapter,
+  orderedPodcastChapters,
+  isCurrentSilenceAnalysis,
   silenceSkipTarget,
   activeTranscriptCue,
   validateClipBounds,
@@ -12,12 +16,31 @@ import { initialPodcastState } from "@/lib/podcasts/client";
 describe("Podcast playback timeline", () => {
   it("offers every supported speed and clamps forward/back seeks", () => {
     expect(PODCAST_SPEEDS).toEqual([
-      0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3,
+      0.75, 1, 1.25, 1.5, 1.75, 2,
     ]);
     expect(clampPlaybackTime(-15, 300)).toBe(0);
     expect(clampPlaybackTime(330, 300)).toBe(300);
     expect(clampPlaybackTime(NaN, 300)).toBe(0);
     expect(formatPodcastTime(3661)).toBe("1:01:01");
+  });
+  it("normalizes legacy speeds and selects the current original-time chapter", () => {
+    expect(normalizePodcastSpeed(0.5)).toBe(0.75);
+    expect(normalizePodcastSpeed(3)).toBe(2);
+    expect(normalizePodcastSpeed(1.35)).toBe(1.25);
+    expect(normalizePodcastSpeed(NaN)).toBe(1);
+    const chapters = [{ startSeconds: 60, title: "Second" }, { startSeconds: 0, title: "First" }, { startSeconds: -5, title: "Invalid" }, { startSeconds: NaN, title: "Invalid" }];
+    expect(activePodcastChapter(chapters, 59)?.title).toBe("First");
+    expect(activePodcastChapter(chapters, 60)?.title).toBe("Second");
+    expect(activePodcastChapter(chapters, -1)).toBeUndefined();
+    expect(activePodcastChapter(undefined, 10)).toBeUndefined();
+    expect(orderedPodcastChapters(chapters, 30).map((chapter) => chapter.title)).toEqual(["First"]);
+    expect(chapters[0].title).toBe("Second");
+  });
+  it("rejects absent and legacy analysis versions", () => {
+    expect(isCurrentSilenceAnalysis(undefined)).toBe(false);
+    expect(isCurrentSilenceAnalysis({})).toBe(false);
+    expect(isCurrentSilenceAnalysis({ analysisVersion: "v1" })).toBe(false);
+    expect(isCurrentSilenceAnalysis({ analysisVersion: "v2" })).toBe(true);
   });
   it("skips only analyzed silence interiors and keeps source-time cue alignment", () => {
     const silences = [
