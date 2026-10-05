@@ -1,5 +1,5 @@
 import { afterEach, expect, it, spyOn } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
 import * as playerModule from "@/components/Podcasts/PodcastPlayerProvider";
@@ -122,7 +122,7 @@ it("clears private library terms before directory search and previews before exp
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
   render(<PodcastLibrary />);
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "private library terms" } });
-  fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+  fireEvent.click(within(screen.getByRole("complementary", { name: "Podcast Library" })).getByRole("button", { name: "Discover" }));
   const input = screen.getByRole("searchbox", { name: "Discover Podcasts" }) as HTMLInputElement;
   expect(input.value).toBe("");
   expect(requests.some(request => request.path === "search")).toBe(false);
