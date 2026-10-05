@@ -400,10 +400,11 @@ export function PodcastPlayerProvider({
     element.addEventListener("play", onPlay);
     element.addEventListener("pause", onPause);
     element.addEventListener("ended", onEnded);
-    const onError = () =>
-      setError(
-        "Audio could not load. Try downloading it for offline playback.",
-      );
+    const onError = () => {
+      // Clearing playback on mount or account changes must not surface a media failure.
+      if (audio.current !== element || !active.current || !element.getAttribute("src")) return;
+      setError("Audio could not load. Try downloading it for offline playback.");
+    };
     element.addEventListener("error", onError);
     const timer = setInterval(saveProgress, 15000);
     const offline = () => {
@@ -415,7 +416,9 @@ export function PodcastPlayerProvider({
     return () => {
       clearInterval(timer);
       element.pause();
-      element.src = "";
+      element.removeEventListener("error", onError);
+      element.removeAttribute("src");
+      element.load();
       audio.current = null;
       window.removeEventListener("online", offline);
       window.removeEventListener("pagehide", saveProgress);
@@ -426,7 +429,10 @@ export function PodcastPlayerProvider({
     playbackGeneration.current++;
     active.current = null;
     audio.current?.pause();
-    if (audio.current) audio.current.src = "";
+    if (audio.current) {
+      audio.current.removeAttribute("src");
+      audio.current.load();
+    }
     viewerRef.current = viewer;
     pending.current = {};
     stateRef.current = initialPodcastState();
@@ -436,6 +442,7 @@ export function PodcastPlayerProvider({
         setState(stateRef.current);
         setEpisode(null);
         setPosition(0);
+        setError(null);
       }
     });
     if (viewer && podcastsEnabled()) {

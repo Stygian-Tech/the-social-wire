@@ -34,6 +34,7 @@ function Controls({ route, item = episode }: { route: string; item?: PodcastEpis
     <div>
       <h1>{route}</h1>
       <button onClick={() => void player.play(item)}>Play Fixture</button>
+      {player.error ? <p role="alert">{player.error}</p> : null}
       <span data-testid="progress">
         {player.state.progress.episode?.positionSeconds ?? 0}
       </span>
@@ -79,6 +80,7 @@ function environment() {
     duration: { configurable: true, get: () => 120 },
     paused: { configurable: true, get: () => paused },
   });
+  element.load = () => {};
   element.play = async () => {
     paused = false;
     element.onloadedmetadata?.(new window.Event("loadedmetadata"));
@@ -132,6 +134,22 @@ function environment() {
   };
 }
 describe("Persistent podcast player", () => {
+  it("ignores no-source audio errors on initial mount and account reset but reports real playback errors", async () => {
+    const env = environment();
+    const view = render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => env.element.dispatchEvent(new window.Event("error")));
+    expect(env.element.getAttribute("src")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    await act(async () => env.element.dispatchEvent(new window.Event("error")));
+    expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("Audio could not load"))).toBe(true);
+    env.setViewer("did:plc:viewer-b");
+    view.rerender(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => env.element.dispatchEvent(new window.Event("error")));
+    expect(env.element.getAttribute("src")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
   it("loads private audio with authenticated media fetch and disables public analysis", async () => {
     const env = environment();
     const fetch = spyOn(gateway, "gatewayFetch").mockImplementation(async (_oauth, path) => {
