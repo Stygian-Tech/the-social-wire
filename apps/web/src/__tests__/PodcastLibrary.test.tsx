@@ -12,7 +12,7 @@ const restores: (() => void)[] = [];
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 it("adds a tokenized private RSS feed without a public subscription write", async () => {
-  const oauth = {} as OAuthSession;
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
   const getOAuthSession = () => oauth;
   const state = client.initialPodcastState();
   const changes: Partial<client.PodcastState>[] = [];
@@ -66,4 +66,37 @@ it("offers device audio saving from viewer-owned offline downloads without an OA
   expect(save.mock.calls[0]?.[0]).toBe("did:plc:viewer");
   expect(save.mock.calls[0]?.[1]).toEqual(item);
   expect(await screen.findByText("Saved to Device")).toBeTruthy();
+});
+
+it("searches subscribed shows and episodes, clears to the feed, and opens a matching show", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const state = { ...client.initialPodcastState(), subscriptions: ["show"] };
+  const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: "did:plc:viewer" }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
+  const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
+  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+  const show: client.PodcastShow = { id: "show", title: "Science Show", sourceKind: "rss" };
+  const item = (id: string, title: string): client.PodcastEpisode => ({ id, title, showId: "show", audioUrl: "/media", publishedAt: "2026-10-05", transcripts: [] });
+  const requests: string[] = [];
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
+    requests.push(path);
+    if (path === "shows") return { shows: [show] } as T;
+    if (path === "search") return { shows: [show], episodes: [item("match", "Matched Science Episode")], hasMore: false } as T;
+    return { episodes: [item("recent", path.includes("showId") ? "Show Episode" : "Recent Episode")] } as T;
+  });
+  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  render(<PodcastLibrary />);
+  await screen.findByText("Recent Episode");
+  const input = screen.getByRole("searchbox", { name: "Search Your Library" });
+  fireEvent.change(input, { target: { value: "science" } });
+  await screen.findByText("Matched Science Episode");
+  expect(screen.queryByText("Recent Episode")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Clear Search" }));
+  await screen.findByText("Recent Episode");
+  fireEvent.change(input, { target: { value: "science" } });
+  const results = await screen.findByRole("region", { name: "Matching Shows" });
+  fireEvent.click(results.querySelector("button")!);
+  await screen.findByText("Show Episode");
+  expect((screen.getByRole("searchbox", { name: "Search This Show" }) as HTMLInputElement).value).toBe("");
+  expect(requests).toContain("episodes?showId=show");
 });
