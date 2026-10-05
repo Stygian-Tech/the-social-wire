@@ -4,6 +4,8 @@ import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
 import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
 import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, CheckCircle, Circle, Download, HardDriveDownload, ListPlus, ListX, Play, RotateCw, Trash2, X } from "lucide-react";
+import { PodcastEpisodeActionButton } from "./PodcastEpisodeActionButton";
 import { PodcastDirectoryResults } from "./PodcastDirectoryResults";
 import { usePodcastLibrarySearch, type PodcastDirectoryCandidate } from "@/hooks/usePodcastLibrarySearch";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
@@ -381,16 +383,16 @@ function PodcastViewerLibrary() {
                   {item.description.replace(/<[^>]*>/g, " ")}
                 </p>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className={button}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <PodcastEpisodeActionButton
+                  icon={Play}
                   disabled={preparingEpisode === item.id}
                   onClick={() => void playEpisode(item)}
                 >
                   Play
-                </button>
-                <button
-                  className={button}
+                </PodcastEpisodeActionButton>
+                <PodcastEpisodeActionButton
+                  icon={ListPlus}
                   onClick={() =>
                     void player.changeState({
                       queue: [...new Set([...player.state.queue, item.id])],
@@ -398,9 +400,9 @@ function PodcastViewerLibrary() {
                   }
                 >
                   Add to Queue
-                </button>
-                <button
-                  className={button}
+                </PodcastEpisodeActionButton>
+                <PodcastEpisodeActionButton
+                  icon={player.state.progress[item.id]?.completed ? Circle : CheckCircle}
                   onClick={() =>
                     void player.changeState({
                       progress: {
@@ -418,26 +420,26 @@ function PodcastViewerLibrary() {
                   {player.state.progress[item.id]?.completed
                     ? "Mark Unplayed"
                     : "Mark Played"}
-                </button>
-                <button type="button" className={button} onClick={() => void saveAudio(item)}>Save Audio</button>
-                {feed === "queue" ? <button type="button" className={button} disabled={player.state.queue.indexOf(item.id) <= 0} onClick={() => {
+                </PodcastEpisodeActionButton>
+                <PodcastEpisodeActionButton icon={Download} onClick={() => void saveAudio(item)}>Save Audio</PodcastEpisodeActionButton>
+                {feed === "queue" ? <PodcastEpisodeActionButton icon={ArrowUp} disabled={player.state.queue.indexOf(item.id) <= 0} onClick={() => {
                   const queue = [...player.state.queue];
                   const index = queue.indexOf(item.id);
                   if (index <= 0) return;
                   [queue[index - 1], queue[index]] = [queue[index], queue[index - 1]];
                   void player.changeState({ queue });
-                }}>Move Up</button> : null}
-                {feed === "queue" ? <button type="button" className={button} onClick={() => void player.changeState({ queue: player.state.queue.filter((id) => id !== item.id) })}>Remove from Queue</button> : null}
+                }}>Move Up</PodcastEpisodeActionButton> : null}
+                {feed === "queue" ? <PodcastEpisodeActionButton icon={ListX} onClick={() => void player.changeState({ queue: player.state.queue.filter((id) => id !== item.id) })}>Remove from Queue</PodcastEpisodeActionButton> : null}
                 {controllers.current.has(item.id) ? (
-                  <button
-                    className={button}
+                  <PodcastEpisodeActionButton
+                    icon={X}
                     onClick={() => controllers.current.get(item.id)?.abort()}
                   >
                     Cancel Download
-                  </button>
+                  </PodcastEpisodeActionButton>
                 ) : downloaded.has(item.id) ? (
-                  <button
-                    className={button}
+                  <PodcastEpisodeActionButton
+                    icon={Trash2}
                     onClick={() => {
                       if (window.confirm("Delete This Download?"))
                         void action(async () => {
@@ -448,16 +450,16 @@ function PodcastViewerLibrary() {
                     }}
                   >
                     Delete Download
-                  </button>
+                  </PodcastEpisodeActionButton>
                 ) : (
-                  <button
-                    className={button}
+                  <PodcastEpisodeActionButton
+                    icon={downloadStatus[item.id]?.startsWith("Failed") ? RotateCw : HardDriveDownload}
                     onClick={() => void download(item)}
                   >
                     {downloadStatus[item.id]?.startsWith("Failed")
                       ? "Retry Download"
                       : "Download for Offline"}
-                  </button>
+                  </PodcastEpisodeActionButton>
                 )}
               </div>
               {preparingEpisode === item.id ? <p role="status" className="mt-2 text-xs">Preparing Private Audio…</p> : null}

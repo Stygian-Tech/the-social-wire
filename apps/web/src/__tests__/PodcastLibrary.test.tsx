@@ -49,10 +49,12 @@ it("adds a tokenized private RSS feed without a public subscription write", asyn
 it("offers device audio saving from viewer-owned offline downloads without an OAuth session", async () => {
   const state = client.initialPodcastState();
   const getOAuthSession = () => null;
+  const played: client.PodcastEpisode[] = [];
+  const patches: Partial<client.PodcastState>[] = [];
   const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: "did:plc:viewer" }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
   const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({
     state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null,
-    play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {},
+    play: async item => { played.push(item); }, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async patch => { patches.push(patch); },
   });
   const item: client.PodcastEpisode = { id: "downloaded", title: "Offline Episode", showId: "show", audioUrl: "/media", publishedAt: "2026-10-05", transcripts: [] };
   const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([{ episode: item, downloadedAt: "2026-10-05", bytes: 10 }]);
@@ -61,7 +63,16 @@ it("offers device audio saving from viewer-owned offline downloads without an OA
   render(<PodcastLibrary />);
   await waitFor(() => expect(screen.getByRole("button", { name: /Downloaded/ }).textContent).toContain("1"));
   fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
-  fireEvent.click(await screen.findByRole("button", { name: "Save Audio" }));
+  await screen.findByRole("button", { name: "Save Audio" });
+  for (const label of ["Play", "Add to Queue", "Mark Played", "Save Audio", "Delete Download"]) {
+    const action = screen.getByRole("button", { name: label });
+    expect(action.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add to Queue" }));
+  expect(played).toEqual([item]);
+  expect(patches).toEqual([{ queue: [item.id] }]);
+  fireEvent.click(screen.getByRole("button", { name: "Save Audio" }));
   await waitFor(() => expect(save).toHaveBeenCalled());
   expect(save.mock.calls[0]?.[0]).toBe("did:plc:viewer");
   expect(save.mock.calls[0]?.[1]).toEqual(item);
