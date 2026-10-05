@@ -1,5 +1,5 @@
 public enum FinanceReviewedCatalog {
-  public static let version = "reviewed-v2"
+  public static let version = "reviewed-v3"
   /// Reference fixtures only. Activation requires operator review of coverage and rights.
   public static let instruments: [FinanceInstrument] = [
     .init(id: FinanceIdentity.instrumentID(provider: "reviewed", nativeID: "sp500-index"),

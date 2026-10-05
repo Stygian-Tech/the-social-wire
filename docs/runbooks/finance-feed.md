@@ -384,10 +384,16 @@ OpenFIGI coverage/rights activation gate remains required.
 
 Reviewed reference definitions add the [Nasdaq-100](https://www.nasdaq.com/market-activity/index/ndx)
 and [Dow Jones Industrial Average](https://www.spglobal.com/spdji/en/indices/equity/dow-jones-industrial-average/),
-alongside S&P 500. Bitcoin and Ethereum use CoinGecko canonical IDs `bitcoin` and
-`ethereum`, with provider refresh taking precedence over equivalent bootstrap
-identities. Crypto publication remains gated by `FINANCE_CRYPTO_CATALOG_ENABLED`
-and the existing reviewed rights controls; this change does not enable that flag,
-purchase access, or activate a provider. No price data or TradingView mappings were
+alongside S&P 500. Bitcoin and Ethereum use independently reviewed project references,
+`reviewed:bitcoin-asset` and `reviewed:ethereum-ether-asset`, sourced from
+[Bitcoin.org](https://bitcoin.org/en/bitcoin-for-individuals) and
+[Ethereum.org](https://ethereum.org/what-is-ether/).
+`FINANCE_REVIEWED_CRYPTO_CATALOG_ENABLED=true` permits only these exact reviewed
+identities and requires the existing catalog-rights gate. It defaults to false and
+is independent of `FINANCE_CRYPTO_CATALOG_ENABLED`, which continues to control
+CoinGecko API import. Keep that provider flag false until its separate entitlement
+and product requirements are established. Reviewed activation performs no crypto
+API requests, purchases access, or imports prices. Any future provider mapping to
+these local identities requires explicit identity review rather than automatic merging. No price data or TradingView mappings were
 added. Resolver version `finance-resolver-v3.4` rebuilds obsolete topic analysis
 through the existing bounded projector.

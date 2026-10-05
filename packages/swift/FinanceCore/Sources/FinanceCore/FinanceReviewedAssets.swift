@@ -9,10 +9,11 @@ public enum FinanceReviewedAssets {
       name: "Nasdaq 100", symbol: "NDX", kind: "index", providerID: "reviewed:nasdaq100-index", aliases: ["Nasdaq-100", "NASDAQ 100"]),
     .init(id: FinanceIdentity.instrumentID(provider: "reviewed", nativeID: "dow-jones-industrial-average"),
       name: "Dow Jones Industrial Average", symbol: "DJI", kind: "index", providerID: "reviewed:dow-jones-industrial-average", aliases: ["Dow Jones", "Dow industrials"]),
-    // CoinGecko canonical IDs, never ticker-derived identities. The provider-policy flag still gates publication.
-    .init(id: FinanceIdentity.instrumentID(provider: "coingecko", nativeID: "bitcoin"),
-      name: "Bitcoin", symbol: "BTC", kind: "crypto", providerID: "bitcoin"),
-    .init(id: FinanceIdentity.instrumentID(provider: "coingecko", nativeID: "ethereum"),
-      name: "Ethereum", symbol: "ETH", kind: "crypto", providerID: "ethereum")
+    // First-party project definitions, independently gated; no CoinGecko data or API activation.
+    // Sources: bitcoin.org/en/bitcoin-for-individuals and ethereum.org/what-is-ether/.
+    .init(id: FinanceIdentity.instrumentID(provider: "reviewed", nativeID: "bitcoin-asset"),
+      name: "Bitcoin", symbol: "BTC", kind: "crypto", providerID: "reviewed:bitcoin-asset"),
+    .init(id: FinanceIdentity.instrumentID(provider: "reviewed", nativeID: "ethereum-ether-asset"),
+      name: "Ethereum", symbol: "ETH", kind: "crypto", providerID: "reviewed:ethereum-ether-asset")
   ]
 }

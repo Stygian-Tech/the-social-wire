@@ -1517,10 +1517,6 @@ final class SocialWireAppModel {
         await setDiscoveryFeedVisible(hidden, keyPath: \.hideFinancePerformance)
     }
 
-    func recordFinanceComposition(event: String, count: Int) async {
-        guard count > 0 else { return }
-        await gateway.recordFinanceComposition(event: event, suggestionCount: count)
-    }
     func setFinanceCryptoHidden(_ hidden: Bool) async {
         guard !isSavingDiscoveryFeedVisibility, feedPreferences.hideFinanceCrypto != hidden else { return }
         let viewer = viewerDID
@@ -1540,6 +1536,10 @@ final class SocialWireAppModel {
 
     func financeSuggestions(for entryID: String) -> [FinanceInstrument] {
         financeItems.first { $0.id == entryID }?.suggestions ?? []
+    }
+    func recordFinanceComposition(event: String, count: Int) async {
+        guard count > 0 else { return }
+        await gateway.recordFinanceComposition(event: event, suggestionCount: count)
     }
 
     func selectFinanceFeed(_ id: String) async {

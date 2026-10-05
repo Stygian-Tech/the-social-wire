@@ -23,9 +23,8 @@ struct FinanceAssetFeedsTests {
     #expect(crypto.matches(bitcoin, title: "Bitcoin price rises after institutional investment", summary: nil))
     #expect(FinanceAssetKind.isCryptoStory(title: "Bitcoin price rises after institutional investment", summary: nil, analysis: bitcoin, catalog: catalog))
   }
-  @Test func providerGatingAndRefreshDeduplicationRemainIndependent() throws {
-    let coins = FinanceReviewedAssets.referenceInstruments.filter { $0.kind == "crypto" }
-    let snapshot = try FinanceCatalogRefresh.candidate(previous: nil, securities: [], crypto: coins)
+  @Test func providerGatingAndReviewedCatalogRemainIndependent() throws {
+    let snapshot = try FinanceCatalogRefresh.candidate(previous: nil, securities: [], crypto: [], reviewed: FinanceReviewedCatalog.instruments)
     #expect(Set(snapshot.instruments.map(\.id)).count == snapshot.instruments.count)
     let permitted = FinanceCatalogProviderPolicy(environment: [:]).filter(snapshot.instruments)
     #expect(!permitted.contains { $0.kind == "crypto" })
