@@ -86,7 +86,7 @@ final class PodcastPlaybackController {
 
     nonisolated static func normalizedSpeed(_ value: Double) -> Double {
         guard value.isFinite else { return 1 }
-        return min(3, max(0.5, (value * 4).rounded() / 4))
+        return min(2, max(0.75, (value * 4).rounded() / 4))
     }
 
     func load(_ episode: PodcastEpisode, localURL: URL? = nil, resume: Double = 0, showTitle: String? = nil) {

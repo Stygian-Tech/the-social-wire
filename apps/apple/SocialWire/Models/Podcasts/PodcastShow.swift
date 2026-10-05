@@ -11,5 +11,6 @@ struct PodcastShow: Codable, Identifiable, Hashable, Sendable {
     let guid: String?
     let episodeCollection: String?
     let visibility: String?
+    let hosts: [PodcastHost]?
     var isPrivate: Bool { sourceKind == "private-rss" || visibility == "private" }
 }

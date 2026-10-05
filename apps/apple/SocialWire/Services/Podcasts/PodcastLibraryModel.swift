@@ -29,7 +29,7 @@ final class PodcastLibraryModel {
     let downloads = PodcastDownloadStore()
     @ObservationIgnored private let gateway: SocialWireGatewayClient
     @ObservationIgnored private let xrpc: XRPCClient
-    @ObservationIgnored private var viewer: String?
+    private(set) var viewer: String?
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private var progressTask: Task<Void, Never>?
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
@@ -147,7 +147,6 @@ final class PodcastLibraryModel {
             for show in response.shows ?? [] where !shows.contains(where: { $0.id == show.id }) { shows.append(show) }
             episodes = response.episodes
             if privateFeed { try await refreshState(viewer: viewer) }
-            else { await refreshBridgeStatus(showId: response.show.id) }
         } catch { self.error = error.localizedDescription }
     }
 
@@ -163,7 +162,7 @@ final class PodcastLibraryModel {
             showEpisodes[show.id] = response.episodes
             guard selectedShowId == show.id else { return }
             episodes = response.episodes
-            if !show.isPrivate { await refreshBridgeStatus(showId: show.id) }
+
         } catch { self.error = error.localizedDescription }
     }
 
@@ -184,6 +183,19 @@ final class PodcastLibraryModel {
             transcript = result.transcripts
         } catch { self.error = error.localizedDescription }
         if player.removesSilence, episode.permitsPublicProcessing { await requestSilence() }
+    }
+
+    var currentShow: PodcastShow? {
+        guard let id = player.episode?.showId else { return nil }
+        return shows.first { $0.id == id } ?? downloads.shows[id]
+    }
+
+    func artworkData(_ raw: String) async -> Data? {
+        guard raw.hasPrefix("/v1/podcasts/"), let viewer,
+              let url = URL(string: raw, relativeTo: URL(string: SocialWireAPIEnvironment.baseURLString))?.absoluteURL else { return nil }
+        let data = try? await gateway.podcastAsset(url: url, expectedViewer: viewer)
+        guard !Task.isCancelled, self.viewer == viewer else { return nil }
+        return data
     }
 
     var knownEpisodes: [String: PodcastEpisode] {
@@ -219,6 +231,7 @@ final class PodcastLibraryModel {
     func download(_ episode: PodcastEpisode) async {
         guard let viewer else { return }
         do {
+            if let show = shows.first(where: { $0.id == episode.showId }) { downloads.remember(show) }
             if episode.isPrivate {
                 let request = try await gateway.podcastDownloadRequest(media: episode.audioURL, expectedViewer: viewer)
                 guard self.viewer == viewer else { return }
@@ -257,7 +270,7 @@ final class PodcastLibraryModel {
     func removeFromQueue(_ id: String) async { await mutateState { $0.queue.removeAll { $0 == id } } }
 
     func setSpeed(_ speed: Double) async {
-        guard (0.5...3).contains(speed), (speed * 4).rounded() == speed * 4 else { return }
+        guard (0.75...2).contains(speed), (speed * 4).rounded() == speed * 4 else { return }
         player.speed = speed
         await mutateState { $0.playbackSpeed = speed }
     }
@@ -277,6 +290,7 @@ final class PodcastLibraryModel {
             return
         }
         analysisTask?.cancel()
+        player.silenceIntervals = []
         processingSilence = true
         analysisTask = Task { [weak self] in
             guard let self else { return }
@@ -284,10 +298,13 @@ final class PodcastLibraryModel {
                 let _: JobResponse = try await self.request(method: "POST", path: "/v1/podcasts/analysis", body: ["episodeId": episode.id], viewer: viewer)
                 for _ in 0..<120 {
                     try Task.checkCancellation()
-                    let result: AnalysisResponse = try await self.request(path: "/v1/podcasts/analysis", query: ["episodeId": episode.id], viewer: viewer)
+                    let result: PodcastSilenceAnalysis = try await self.request(path: "/v1/podcasts/analysis", query: ["episodeId": episode.id], viewer: viewer)
                     guard self.viewer == viewer, self.player.episode?.id == episode.id else { return }
                     if result.status == "ready" || result.status == "completed" || result.status == "complete" {
-                        self.player.silenceIntervals = result.intervals ?? []
+                        guard let intervals = result.currentIntervals else {
+                            throw SocialWireError.badResponse("Silence Analysis Needs Refreshing. Try Again.")
+                        }
+                        self.player.silenceIntervals = intervals
                         self.processingSilence = false
                         return
                     }
@@ -500,6 +517,7 @@ final class PodcastLibraryModel {
         guard self.viewer == viewer else { return }
         revision = result.revision
         state = result.state
+        state.playbackSpeed = PodcastPlaybackController.normalizedSpeed(state.playbackSpeed)
         for (id, value) in pendingProgress { state.progress[id] = value }
         player.speed = state.playbackSpeed
         player.removesSilence = state.removeSilences
@@ -518,6 +536,7 @@ final class PodcastLibraryModel {
                     guard self.viewer == viewer else { return false }
                     revision = result.revision
                     state = result.state
+                    state.playbackSpeed = PodcastPlaybackController.normalizedSpeed(state.playbackSpeed)
                     return true
                 } catch let error as PodcastGatewayFailure where error.status == 409 && attempt < 2 {
                     try await refreshState(viewer: viewer)
@@ -546,5 +565,4 @@ final class PodcastLibraryModel {
     private struct StateResponse: Decodable { let revision: Int; let state: PodcastListenerState }
     private struct StateInput: Encodable { let expectedRevision: Int; let state: PodcastListenerState }
     private struct JobResponse: Decodable { let id: String; let status: String }
-    private struct AnalysisResponse: Decodable { let status: String; let intervals: [PodcastSilenceInterval]? }
 }

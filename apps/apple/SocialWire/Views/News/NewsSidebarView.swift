@@ -11,6 +11,7 @@ struct NewsSidebarView: View {
     var body: some View {
         List {
             savedSection
+            audioSection
             feedsSection
             topicsSection
         }
@@ -64,6 +65,11 @@ struct NewsSidebarView: View {
         }
     }
 
+    @ViewBuilder
+    private var audioSection: some View {
+        if availableTabs.contains(.podcasts) { Section("Audio") { destinationRow(.podcasts) } }
+    }
+
     private var feedsSection: some View {
         @Bindable var model = appModel
 
@@ -71,7 +77,6 @@ struct NewsSidebarView: View {
             if availableTabs.contains(.wire) {
                 destinationRow(.wire)
             }
-            if availableTabs.contains(.podcasts) { destinationRow(.podcasts) }
             if availableTabs.contains(.circle) {
                 destinationRow(.circle)
             }

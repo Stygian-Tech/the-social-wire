@@ -8,6 +8,7 @@ final class PodcastDownloadStore {
     private(set) var progress: [String: Double] = [:]
     private(set) var errors: [String: String] = [:]
     private(set) var downloadedIDs: Set<String> = []
+    private(set) var shows: [String: PodcastShow] = [:]
     private(set) var episodes: [String: PodcastEpisode] = [:]
     @ObservationIgnored var onCompletion: ((PodcastEpisode) -> Void)?
     @ObservationIgnored var onAuthenticationChallenge: ((PodcastEpisode, HTTPURLResponse) async throws -> URLRequest)?
@@ -30,6 +31,7 @@ final class PodcastDownloadStore {
         errors = [:]
         downloadedIDs = []
         episodes = [:]
+        shows = [:]
         nonceRetries = [:]
         retryingIDs = []
         storageBytes = 0
@@ -192,8 +194,22 @@ final class PodcastDownloadStore {
         } catch { errors[id] = "Could Not Store Download. Check Available Device Storage." }
     }
 
+    func remember(_ show: PodcastShow) {
+        shows[show.id] = show
+        guard let directory, let data = try? JSONEncoder().encode(shows) else { return }
+        let file = directory.appendingPathComponent("shows.json")
+        try? data.write(to: file, options: .atomic)
+        var resource = file
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? resource.setResourceValues(values)
+    }
+
     private func restoreFiles() {
         guard let viewer else { return }
+        if let directory, let data = try? Data(contentsOf: directory.appendingPathComponent("shows.json")) {
+            shows = (try? JSONDecoder().decode([String: PodcastShow].self, from: data)) ?? [:]
+        }
         if let directory, let data = try? Data(contentsOf: directory.appendingPathComponent("episodes.json")) {
             episodes = (try? JSONDecoder().decode([String: PodcastEpisode].self, from: data)) ?? [:]
         }
