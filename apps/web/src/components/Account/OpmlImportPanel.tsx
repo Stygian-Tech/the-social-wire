@@ -18,6 +18,8 @@ import {
 import { cn } from "@/lib/utils";
 
 interface OpmlImportPanelProps {
+  successDescription?: string;
+  onPendingChange?: (pending: boolean) => void;
   existingFeedUrls: readonly string[];
   existingSubscriptionsLoading: boolean;
   existingSubscriptionsError?: string | null;
@@ -34,6 +36,8 @@ function importedSummary(result: OpmlImportBatchResult): string {
 }
 
 export function OpmlImportPanel({
+  successDescription = "Your subscriptions are saved on your PDS and will appear in the sidebar.",
+  onPendingChange,
   existingFeedUrls,
   existingSubscriptionsLoading,
   existingSubscriptionsError = null,
@@ -114,6 +118,7 @@ export function OpmlImportPanel({
   async function importSelected() {
     if (pending || selectedFeeds.length === 0) return;
     setPending(true);
+    onPendingChange?.(true);
     setImportError(null);
     setResult(null);
     setProgress(null);
@@ -129,6 +134,7 @@ export function OpmlImportPanel({
       );
     } finally {
       setPending(false);
+      onPendingChange?.(false);
     }
   }
 
@@ -141,7 +147,7 @@ export function OpmlImportPanel({
             {importedSummary(result)}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your subscriptions are saved on your PDS and will appear in the sidebar.
+            {successDescription}
           </p>
           {result.skippedExisting.length > 0 ? (
             <p className="mt-1 text-xs text-muted-foreground">
@@ -315,7 +321,7 @@ export function OpmlImportPanel({
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button
           type="button"
-          disabled={pending || selectedFeeds.length === 0 || existingSubscriptionsLoading}
+          disabled={pending || selectedFeeds.length === 0 || existingSubscriptionsLoading || !!existingSubscriptionsError}
           onClick={() => void importSelected()}
         >
           {pending
