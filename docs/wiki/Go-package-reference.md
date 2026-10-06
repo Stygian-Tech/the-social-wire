@@ -195,4 +195,3 @@ This is a library, not a runnable Coordinator. Build a GenerationStore against c
 [Package README and test inventory](https://github.com/Stygian-Tech/the-social-wire/blob/dev/packages/go/wireworkercore/README.md).
 
 Migration boundary: partial. Remaining: inbox application and drain; baseline label refresh transport; metadata, profile, graph and recovery jobs; Finance/Sports projectors and materializers; worker host and runtime configuration.
-
