@@ -35,10 +35,10 @@ func seedGenerationItems(t *testing.T, db *sql.DB, at time.Time) []wirecore.Cand
 		t.Fatal(err)
 	}
 	result := []wirecore.Candidate{}
-	for i := range 6 {
-		key := "url:go-fixture-" + id + fmt.Sprint(i)
-		uri := "https://" + id + fmt.Sprint(i) + ".example/story"
-		domain := id + fmt.Sprint(i) + ".example"
+	for itemIndex := range 6 {
+		key := "url:go-fixture-" + id + fmt.Sprint(itemIndex)
+		uri := "https://" + id + fmt.Sprint(itemIndex) + ".example/story"
+		domain := id + fmt.Sprint(itemIndex) + ".example"
 		if _, err := db.Exec(`INSERT INTO wire_items(canonical_key,canonical_url,source_domain,source_name,title,language_code,provenance,published_at,first_seen_at,last_seen_at,last_signal_at,source_confidence,expires_at) VALUES($1,$2,$3,'Fixture','Fixture story','en','["standard_site"]'::jsonb,$4,$4,$4,$4,1,$5)`, key, uri, domain, at, at.Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
@@ -46,12 +46,12 @@ func seedGenerationItems(t *testing.T, db *sql.DB, at time.Time) []wirecore.Cand
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM wire_items WHERE canonical_key=$1`, key) })
-		c := wirecore.NewCandidate(key, uri, domain, at)
+		candidate := wirecore.NewCandidate(key, uri, domain, at)
 		yes := true
-		c.IsStandardSite = &yes
-		c.SourceConfidence = 1
-		c.Shares24h = 5
-		result = append(result, c)
+		candidate.IsStandardSite = &yes
+		candidate.SourceConfidence = 1
+		candidate.Shares24h = 5
+		result = append(result, candidate)
 	}
 	return result
 }
@@ -74,10 +74,10 @@ func TestGenerationCandidateProjectionMatchesOriginal(t *testing.T) {
 		t.Fatal("metadata projection changed candidate snapshot")
 	}
 	found := false
-	for _, c := range plain {
-		if c.CanonicalKey == items[0].CanonicalKey {
+	for _, candidate := range plain {
+		if candidate.CanonicalKey == items[0].CanonicalKey {
 			found = true
-			if c.Shares24h != 5 {
+			if candidate.Shares24h != 5 {
 				t.Fatal("baseline included external shares")
 			}
 		}
@@ -90,10 +90,10 @@ func TestGenerationCandidateProjectionMatchesOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	found = false
-	for _, c := range external {
-		if c.CanonicalKey == items[0].CanonicalKey {
+	for _, candidate := range external {
+		if candidate.CanonicalKey == items[0].CanonicalKey {
 			found = true
-			if c.Shares24h != 10 {
+			if candidate.Shares24h != 10 {
 				t.Fatal("external plan omitted shares")
 			}
 		}

@@ -23,6 +23,7 @@ Automated and manual verification for every package in the monorepo.
 | Database migrations | `DATABASE_URL=… bash scripts/apply-database-migrations.sh` | `database-migrator` (empty DB + idempotence) |
 | Lexicons | `cd packages/lexicons && bun test` | `lexicons` |
 | OpenAPI spec | `cd packages/spec && bun test` | `spec` |
+| Repository-local Go | `GOWORK=off go -C packages/go test -race ./...` | `go-packages` plus actual Swift differential checks and PostgreSQL 17 |
 | iOS | Xcode **Cmd+U** | `apple` |
 
 ## Per-surface plans
@@ -56,3 +57,5 @@ baselines; percentages are non-regression floors, not whole-application claims.
 
 - [[Contributing]]
 - [CONTRIBUTING.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/CONTRIBUTING.md)
+
+Go migration evidence, database setup and bounded parity claims: [[Go-verification-and-deployment]].

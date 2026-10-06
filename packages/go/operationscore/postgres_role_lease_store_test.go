@@ -64,40 +64,40 @@ func leaseDatabase(t *testing.T) *sql.DB {
 func TestPostgresRoleLeaseTakeover(t *testing.T) {
 	db := leaseDatabase(t)
 	ctx := context.Background()
-	s := PostgresRoleLeaseStore{db, "go-test"}
+	store := PostgresRoleLeaseStore{db, "go-test"}
 	role := "takeover-" + time.Now().Format("150405.000000000")
-	a, err := s.Acquire(ctx, role, "first", time.Minute)
-	if err != nil || a == nil {
+	lease, err := store.Acquire(ctx, role, "first", time.Minute)
+	if err != nil || lease == nil {
 		t.Fatalf("acquire: %v", err)
 	}
-	b, err := s.Acquire(ctx, role, "second", time.Minute)
-	if err != nil || b != nil {
-		t.Fatalf("standby got %v, %v", b, err)
+	replacementLease, err := store.Acquire(ctx, role, "second", time.Minute)
+	if err != nil || replacementLease != nil {
+		t.Fatalf("standby got %v, %v", replacementLease, err)
 	}
-	same, err := s.Acquire(ctx, role, "first", time.Minute)
-	if err != nil || same.FencingToken != a.FencingToken {
+	same, err := store.Acquire(ctx, role, "first", time.Minute)
+	if err != nil || same.FencingToken != lease.FencingToken {
 		t.Fatal("live owner changed token", err)
 	}
-	if _, err := s.Renew(ctx, a.RoleLeaseAuthority, time.Minute); err != nil {
+	if _, err := store.Renew(ctx, lease.RoleLeaseAuthority, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Release(ctx, a.RoleLeaseAuthority); err != nil {
+	if err := store.Release(ctx, lease.RoleLeaseAuthority); err != nil {
 		t.Fatal(err)
 	}
-	b, err = s.Acquire(ctx, role, "second", time.Minute)
-	if err != nil || b == nil || b.FencingToken <= a.FencingToken {
-		t.Fatalf("takeover: %v %v", b, err)
+	replacementLease, err = store.Acquire(ctx, role, "second", time.Minute)
+	if err != nil || replacementLease == nil || replacementLease.FencingToken <= lease.FencingToken {
+		t.Fatalf("takeover: %v %v", replacementLease, err)
 	}
-	if err := s.Validate(ctx, a.RoleLeaseAuthority); !errors.Is(err, ErrLeaseConflict) {
+	if err := store.Validate(ctx, lease.RoleLeaseAuthority); !errors.Is(err, ErrLeaseConflict) {
 		t.Fatalf("stale validation: %v", err)
 	}
-	if _, err := s.Renew(ctx, a.RoleLeaseAuthority, time.Minute); !errors.Is(err, ErrLeaseConflict) {
+	if _, err := store.Renew(ctx, lease.RoleLeaseAuthority, time.Minute); !errors.Is(err, ErrLeaseConflict) {
 		t.Fatalf("stale renewal: %v", err)
 	}
-	if err := s.Release(ctx, a.RoleLeaseAuthority); !errors.Is(err, ErrLeaseConflict) {
+	if err := store.Release(ctx, lease.RoleLeaseAuthority); !errors.Is(err, ErrLeaseConflict) {
 		t.Fatalf("stale release: %v", err)
 	}
-	if err := s.Validate(ctx, b.RoleLeaseAuthority); err != nil {
+	if err := store.Validate(ctx, replacementLease.RoleLeaseAuthority); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -105,10 +105,10 @@ func TestPostgresRoleLeaseTakeover(t *testing.T) {
 func TestPostgresFenceChecksTimeAfterLock(t *testing.T) {
 	db := leaseDatabase(t)
 	ctx := context.Background()
-	s := PostgresRoleLeaseStore{db, "go-test"}
+	store := PostgresRoleLeaseStore{db, "go-test"}
 	role := "wait-" + time.Now().Format("150405.000000000")
-	a, err := s.Acquire(ctx, role, "owner", 150*time.Millisecond)
-	if err != nil || a == nil {
+	lease, err := store.Acquire(ctx, role, "owner", 150*time.Millisecond)
+	if err != nil || lease == nil {
 		t.Fatal(err)
 	}
 	blocker, err := db.BeginTx(ctx, nil)
@@ -116,11 +116,11 @@ func TestPostgresFenceChecksTimeAfterLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer blocker.Rollback()
-	if _, err := blocker.ExecContext(ctx, "SELECT fencing_token FROM operations_role_leases WHERE environment=$1 AND role=$2 FOR UPDATE", s.Environment, role); err != nil {
+	if _, err := blocker.ExecContext(ctx, "SELECT fencing_token FROM operations_role_leases WHERE environment=$1 AND role=$2 FOR UPDATE", store.Environment, role); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- s.Validate(ctx, a.RoleLeaseAuthority) }()
+	go func() { done <- store.Validate(ctx, lease.RoleLeaseAuthority) }()
 	timer := time.NewTimer(200 * time.Millisecond)
 	defer timer.Stop()
 	<-timer.C
@@ -135,10 +135,10 @@ func TestPostgresFenceChecksTimeAfterLock(t *testing.T) {
 func TestPostgresPublicationFenceAllowsRenewalBlocksRevocation(t *testing.T) {
 	db := leaseDatabase(t)
 	ctx := context.Background()
-	s := PostgresRoleLeaseStore{db, "go-test"}
+	store := PostgresRoleLeaseStore{db, "go-test"}
 	role := "shared-" + time.Now().Format("150405.000000000")
-	a, err := s.Acquire(ctx, role, "owner", time.Minute)
-	if err != nil || a == nil {
+	lease, err := store.Acquire(ctx, role, "owner", time.Minute)
+	if err != nil || lease == nil {
 		t.Fatal(err)
 	}
 	publication, err := db.BeginTx(ctx, nil)
@@ -146,19 +146,19 @@ func TestPostgresPublicationFenceAllowsRenewalBlocksRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer publication.Rollback()
-	if err := LockRoleLeaseFence(ctx, publication, a.RoleLeaseAuthority, false); err != nil {
+	if err := LockRoleLeaseFence(ctx, publication, lease.RoleLeaseAuthority, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Renew(ctx, a.RoleLeaseAuthority, time.Minute); err != nil {
+	if _, err := store.Renew(ctx, lease.RoleLeaseAuthority, time.Minute); err != nil {
 		t.Fatalf("shared fence blocked expiry-only renewal: %v", err)
 	}
-	if err := s.Release(ctx, a.RoleLeaseAuthority); err == nil {
+	if err := store.Release(ctx, lease.RoleLeaseAuthority); err == nil {
 		t.Fatal("revocation crossed active publication fence")
 	}
 	if err := publication.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Release(ctx, a.RoleLeaseAuthority); err != nil {
+	if err := store.Release(ctx, lease.RoleLeaseAuthority); err != nil {
 		t.Fatal(err)
 	}
 }

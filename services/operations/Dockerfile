@@ -1,5 +1,6 @@
 FROM golang:1.26-bookworm AS schema-ready-builder
 WORKDIR /src/services/jetstream-ingest
+# The schema gate needs local module metadata even in Swift runtime images.
 COPY packages/go/go.mod packages/go/go.sum /src/packages/go/
 COPY services/jetstream-ingest/go.mod services/jetstream-ingest/go.sum ./
 RUN go mod download

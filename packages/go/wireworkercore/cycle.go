@@ -1,5 +1,10 @@
 package wireworkercore
 
+// Orchestrates connectivity, optional inbox maintenance, bounded retention, mandatory
+// label refresh, language discovery, ranking plans, and publication. Off performs
+// connectivity only; shadow never activates; api/visible activation requires both
+// candidate and diverse-first-page floors.
+
 import (
 	"context"
 	"crypto/rand"
@@ -9,6 +14,8 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 )
 
+// CycleConfig sets activation mode, external-signal plan, candidate/retention bounds,
+// language, and rank policy.
 type CycleConfig struct {
 	Mode, ExternalSignalMode, LanguageBucket string
 	CandidateLimit, RetentionBatchSize       int
@@ -16,15 +23,22 @@ type CycleConfig struct {
 	Ranking                                  wirecore.RankingConfig
 }
 
+// DefaultCycleConfig defaults to off with 5,000 candidates/retention rows and one-hour
+// generation expiry.
 func DefaultCycleConfig() CycleConfig {
 	return CycleConfig{Mode: "off", ExternalSignalMode: "off", LanguageBucket: "und", CandidateLimit: 5000, RetentionBatchSize: 5000, GenerationRetention: time.Hour, Ranking: wirecore.DefaultRankingConfig()}
 }
 
+// CycleOutcome reports the primary plan’s generation, ranked count, and whether it became
+// active.
 type CycleOutcome struct {
 	GenerationID string
 	ItemCount    int
 	Activated    bool
 }
+
+// Cycle orchestrates one rank/publication pass with caller-supplied inbox and label-
+// refresh hooks.
 type Cycle struct {
 	Store         GenerationStore
 	Config        CycleConfig
@@ -33,17 +47,20 @@ type Cycle struct {
 }
 
 func newGenerationID() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	var identifierBytes [16]byte
+	if _, err := rand.Read(identifierBytes[:]); err != nil {
 		return "", err
 	}
-	b[6] = b[6]&15 | 64
-	b[8] = b[8]&63 | 128
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+	identifierBytes[6] = identifierBytes[6]&15 | 64
+	identifierBytes[8] = identifierBytes[8]&63 | 128
+	return fmt.Sprintf("%x-%x-%x-%x-%x", identifierBytes[:4], identifierBytes[4:6], identifierBytes[6:8], identifierBytes[8:10], identifierBytes[10:]), nil
 }
-func (c Cycle) Run(ctx context.Context, at time.Time) (CycleOutcome, error) {
-	config := c.Config
-	if c.Store == nil {
+
+// Run runs maintenance and all eligible ranking plans; off checks connectivity and shadow
+// plans cannot change serving pointers.
+func (cycle Cycle) Run(ctx context.Context, at time.Time) (CycleOutcome, error) {
+	config := cycle.Config
+	if cycle.Store == nil {
 		return CycleOutcome{}, fmt.Errorf("missing generation store")
 	}
 	if err := config.Ranking.Validate(); err != nil {
@@ -70,24 +87,24 @@ func (c Cycle) Run(ctx context.Context, at time.Time) (CycleOutcome, error) {
 	default:
 		return CycleOutcome{}, fmt.Errorf("invalid external signal mode %q", config.ExternalSignalMode)
 	}
-	if err := c.Store.Ping(ctx); err != nil {
+	if err := cycle.Store.Ping(ctx); err != nil {
 		return CycleOutcome{}, err
 	}
 	if config.Mode == "off" {
 		return CycleOutcome{}, nil
 	}
-	if c.MaintainInbox != nil {
-		if err := c.MaintainInbox(ctx, at); err != nil {
+	if cycle.MaintainInbox != nil {
+		if err := cycle.MaintainInbox(ctx, at); err != nil {
 			return CycleOutcome{}, err
 		}
 	}
-	if err := c.Store.DeleteExpired(ctx, at, config.RetentionBatchSize); err != nil {
+	if err := cycle.Store.DeleteExpired(ctx, at, config.RetentionBatchSize); err != nil {
 		return CycleOutcome{}, err
 	}
-	if c.RefreshLabels == nil {
+	if cycle.RefreshLabels == nil {
 		return CycleOutcome{}, fmt.Errorf("baseline label refresh is required")
 	}
-	if err := c.RefreshLabels(ctx, at); err != nil {
+	if err := cycle.RefreshLabels(ctx, at); err != nil {
 		return CycleOutcome{}, err
 	}
 	buckets := []string{config.LanguageBucket}
@@ -99,7 +116,7 @@ func (c Cycle) Run(ctx context.Context, at time.Time) (CycleOutcome, error) {
 				break
 			}
 		}
-		languages, err := c.Store.EligibleLanguageBuckets(ctx, 12, wirecore.MinimumLocaleCandidates, servingRanking, at)
+		languages, err := cycle.Store.EligibleLanguageBuckets(ctx, 12, wirecore.MinimumLocaleCandidates, servingRanking, at)
 		if err != nil {
 			return CycleOutcome{}, err
 		}
@@ -119,7 +136,7 @@ func (c Cycle) Run(ctx context.Context, at time.Time) (CycleOutcome, error) {
 			if err := ctx.Err(); err != nil {
 				return CycleOutcome{}, err
 			}
-			candidates, err := c.Store.LoadCandidates(ctx, bucket, config.CandidateLimit, plan.ranking, at)
+			candidates, err := cycle.Store.LoadCandidates(ctx, bucket, config.CandidateLimit, plan.ranking, at)
 			if err != nil {
 				return CycleOutcome{}, err
 			}
@@ -132,7 +149,7 @@ func (c Cycle) Run(ctx context.Context, at time.Time) (CycleOutcome, error) {
 				return CycleOutcome{}, err
 			}
 			activate := plan.activationEligible && (config.Mode == "api" || config.Mode == "visible") && len(result.Items) >= floor && len(result.Items) >= wirecore.DiverseFirstPageCount
-			if err := c.Store.Commit(ctx, GenerationCommit{id, "wire", bucket, plan.ranking.Version, at, at.Add(config.GenerationRetention), activate, result}); err != nil {
+			if err := cycle.Store.Commit(ctx, GenerationCommit{id, "wire", bucket, plan.ranking.Version, at, at.Add(config.GenerationRetention), activate, result}); err != nil {
 				return CycleOutcome{}, err
 			}
 			if bucket == config.LanguageBucket && plan.activationEligible {

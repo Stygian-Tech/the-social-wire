@@ -1,5 +1,10 @@
 package thinappviewcore
 
+// Translates publisher RSS, Atom, and JSON Feed bytes through gofeed into shared item
+// fields. Published/updated timestamps fall back to the supplied clock, are rendered in
+// UTC, and are sorted by actual instant. Network fetching and durable ingestion remain
+// caller responsibilities.
+
 import (
 	"bytes"
 	"sort"
@@ -9,6 +14,8 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
+// ParsedRSSItem retains the publisher’s article identity, text/HTML, UTC date, and
+// selected thumbnail.
 type ParsedRSSItem struct {
 	GUID           *string `json:"guid,omitempty"`
 	Title          string  `json:"title"`
@@ -18,6 +25,8 @@ type ParsedRSSItem struct {
 	PublishedAtISO string  `json:"publishedAtISO"`
 	ThumbnailURL   *string `json:"thumbnailUrl,omitempty"`
 }
+
+// ParsedRSSFeed contains an optional publisher title and newest-first parsed items.
 type ParsedRSSFeed struct {
 	Title *string         `json:"title,omitempty"`
 	Items []ParsedRSSItem `json:"items"`
@@ -78,10 +87,10 @@ func ParseRSS(data []byte, feedURL *string, now time.Time) (ParsedRSSFeed, error
 		item.ThumbnailURL = ResolveThumbnail(image, source.Content, source.Description, item.Link, feedURL)
 		result.Items = append(result.Items, item)
 	}
-	sort.SliceStable(result.Items, func(i, j int) bool {
-		a, _ := time.Parse(time.RFC3339Nano, result.Items[i].PublishedAtISO)
-		b, _ := time.Parse(time.RFC3339Nano, result.Items[j].PublishedAtISO)
-		return a.After(b)
+	sort.SliceStable(result.Items, func(itemIndex, comparisonIndex int) bool {
+		leftPublishedAt, _ := time.Parse(time.RFC3339Nano, result.Items[itemIndex].PublishedAtISO)
+		rightPublishedAt, _ := time.Parse(time.RFC3339Nano, result.Items[comparisonIndex].PublishedAtISO)
+		return leftPublishedAt.After(rightPublishedAt)
 	})
 	return result, err
 }

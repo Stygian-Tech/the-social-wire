@@ -17,13 +17,18 @@ type fakeCommands struct {
 	err     error
 }
 
-func (f *fakeCommands) Get(context.Context, string) ([]byte, error) { return f.data, f.err }
-func (f *fakeCommands) Set(_ context.Context, _ string, data []byte, ttl time.Duration) error {
-	f.data = data
-	f.ttl = ttl
-	return f.err
+func (commands *fakeCommands) Get(context.Context, string) ([]byte, error) {
+	return commands.data, commands.err
 }
-func (f *fakeCommands) Delete(context.Context, []string) error { f.deleted = true; return f.err }
+func (commands *fakeCommands) Set(_ context.Context, _ string, data []byte, ttl time.Duration) error {
+	commands.data = data
+	commands.ttl = ttl
+	return commands.err
+}
+func (commands *fakeCommands) Delete(context.Context, []string) error {
+	commands.deleted = true
+	return commands.err
+}
 func TestSwiftCacheEnvelopeBoundaries(t *testing.T) {
 	at := time.Unix(100, 0)
 	commands := &fakeCommands{data: []byte(`{"schemaVersion":1,"cachedAt":100000,"freshUntil":110000,"hardExpiresAt":120000,"value":{"title":"cached"}}`)}
@@ -32,9 +37,9 @@ func TestSwiftCacheEnvelopeBoundaries(t *testing.T) {
 		offset time.Duration
 		state  LookupState
 	}{{0, Fresh}, {10 * time.Second, Stale}, {20 * time.Second, Miss}} {
-		v, err := LookupValue[map[string]string](context.Background(), client, "key", at.Add(test.offset))
-		if err != nil || v.State != test.state {
-			t.Fatalf("%v got %v %v", test.offset, v.State, err)
+		lookup, err := LookupValue[map[string]string](context.Background(), client, "key", at.Add(test.offset))
+		if err != nil || lookup.State != test.state {
+			t.Fatalf("%v got %v %v", test.offset, lookup.State, err)
 		}
 	}
 	if !commands.deleted {
@@ -44,9 +49,9 @@ func TestSwiftCacheEnvelopeBoundaries(t *testing.T) {
 func TestMalformedCacheIsMiss(t *testing.T) {
 	for _, data := range []string{`{}`, `{"schemaVersion":2,"cachedAt":1,"freshUntil":2,"hardExpiresAt":999999,"value":0}`, `{"schemaVersion":1,"cachedAt":1,"freshUntil":2,"hardExpiresAt":999999}`, `not json`} {
 		commands := &fakeCommands{data: []byte(data)}
-		v, err := LookupValue[int](context.Background(), NewCacheClient(commands), "key", time.Unix(1, 0))
-		if err != nil || v.State != Miss || !commands.deleted {
-			t.Fatalf("malformed cache %s got %+v %v", data, v, err)
+		lookup, err := LookupValue[int](context.Background(), NewCacheClient(commands), "key", time.Unix(1, 0))
+		if err != nil || lookup.State != Miss || !commands.deleted {
+			t.Fatalf("malformed cache %s got %+v %v", data, lookup, err)
 		}
 	}
 }

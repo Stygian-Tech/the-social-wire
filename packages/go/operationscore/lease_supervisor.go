@@ -1,5 +1,9 @@
 package operationscore
 
+// Runs acquisition/standby and, while owned, coordinates workload, periodic renewal, and
+// an independent expiry watchdog. Any completion cancels all owned work; joining precedes
+// bounded release, so an old worker cannot keep publishing after reacquisition.
+
 import (
 	"context"
 	"errors"
@@ -15,54 +19,59 @@ type LeaseSupervisor struct {
 	OnEvent func(LeaseEvent)
 }
 
-func (s *LeaseSupervisor) event(phase string, a RoleLeaseAuthority, err error) {
-	if s.OnEvent != nil {
-		s.OnEvent(LeaseEvent{phase, a, err})
+func (leaseSupervisor *LeaseSupervisor) event(phase string, authority RoleLeaseAuthority, err error) {
+	if leaseSupervisor.OnEvent != nil {
+		leaseSupervisor.OnEvent(LeaseEvent{phase, authority, err})
 	}
 }
-func sleep(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(max(0, d))
-	defer t.Stop()
+func sleep(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(max(0, duration))
+	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-t.C:
+	case <-timer.C:
 		return nil
 	}
 }
-func (s *LeaseSupervisor) Run(ctx context.Context, operation func(context.Context, RoleLeaseAuthority) error) error {
-	if err := s.Config.Validate(); err != nil {
+
+// Run retries acquisition until cancellation and runs at most one joined ownership epoch
+// at a time.
+func (leaseSupervisor *LeaseSupervisor) Run(ctx context.Context, operation func(context.Context, RoleLeaseAuthority) error) error {
+	if err := leaseSupervisor.Config.Validate(); err != nil {
 		return err
 	}
-	if s.Store == nil || operation == nil {
+	if leaseSupervisor.Store == nil || operation == nil {
 		return ErrInvalidProgress
 	}
 	for ctx.Err() == nil {
 		started := time.Now()
-		s.event("acquiring", RoleLeaseAuthority{}, nil)
-		lease, err := s.Store.Acquire(ctx, s.Config.Role, s.Config.OwnerID, s.Config.LeaseDuration)
+		leaseSupervisor.event("acquiring", RoleLeaseAuthority{}, nil)
+		lease, err := leaseSupervisor.Store.Acquire(ctx, leaseSupervisor.Config.Role, leaseSupervisor.Config.OwnerID, leaseSupervisor.Config.LeaseDuration)
 		if err != nil {
-			s.event("acquisition_failed", RoleLeaseAuthority{}, err)
+			leaseSupervisor.event("acquisition_failed", RoleLeaseAuthority{}, err)
 		} else if lease == nil {
-			s.event("standby", RoleLeaseAuthority{}, nil)
+			leaseSupervisor.event("standby", RoleLeaseAuthority{}, nil)
 		} else {
-			s.event("acquired", lease.RoleLeaseAuthority, nil)
-			s.runOwned(ctx, *lease, started, operation)
+			leaseSupervisor.event("acquired", lease.RoleLeaseAuthority, nil)
+			leaseSupervisor.runOwned(ctx, *lease, started, operation)
 		}
-		if err := sleep(ctx, s.Config.StandbyRetryInterval); err != nil {
+		if err := sleep(ctx, leaseSupervisor.Config.StandbyRetryInterval); err != nil {
 			return err
 		}
 	}
 	return ctx.Err()
 }
-func (s *LeaseSupervisor) runOwned(parent context.Context, lease FencedRoleLease, started time.Time, operation func(context.Context, RoleLeaseAuthority) error) {
-	a := lease.RoleLeaseAuthority
-	deadline := started.Add(min(s.Config.LeaseDuration, lease.ExpiresAt.Sub(lease.UpdatedAt)) - 5*time.Second)
-	var mu sync.Mutex
-	safeDeadline := func() time.Time { mu.Lock(); defer mu.Unlock(); return deadline }
+func (leaseSupervisor *LeaseSupervisor) runOwned(parent context.Context, lease FencedRoleLease, started time.Time, operation func(context.Context, RoleLeaseAuthority) error) {
+	authority := lease.RoleLeaseAuthority
+	// Anchor safety to request start, not response receipt: network delay must not
+	// grant extra ownership time beyond the database lease.
+	deadline := started.Add(min(leaseSupervisor.Config.LeaseDuration, lease.ExpiresAt.Sub(lease.UpdatedAt)) - 5*time.Second)
+	var deadlineMutex sync.Mutex
+	safeDeadline := func() time.Time { deadlineMutex.Lock(); defer deadlineMutex.Unlock(); return deadline }
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	err := s.Store.Validate(ctx, a)
+	err := leaseSupervisor.Store.Validate(ctx, authority)
 	if err == nil {
 		err = ctx.Err()
 	}
@@ -70,12 +79,20 @@ func (s *LeaseSupervisor) runOwned(parent context.Context, lease FencedRoleLease
 		err = ErrAuthorityExpired
 	}
 	if err == nil {
+		// Each worker reports once; buffering all reports allows cancellation/join
+		// even though only the first completion determines the stopping cause.
 		results := make(chan error, 3)
-		var wg sync.WaitGroup
-		wg.Add(3)
-		go func() { defer wg.Done(); s.event("operation_started", a, nil); results <- operation(ctx, a) }()
+		var ownedWorkers sync.WaitGroup
+		ownedWorkers.Add(3)
 		go func() {
-			defer wg.Done()
+			defer ownedWorkers.Done()
+			leaseSupervisor.event("operation_started", authority, nil)
+			results <- operation(ctx, authority)
+		}()
+		// Expiry is watched independently so a blocked renewal cannot keep the
+		// workload alive past the conservative safe deadline.
+		go func() {
+			defer ownedWorkers.Done()
 			for ctx.Err() == nil {
 				if err := sleep(ctx, time.Until(safeDeadline())); err != nil {
 					results <- err
@@ -89,8 +106,8 @@ func (s *LeaseSupervisor) runOwned(parent context.Context, lease FencedRoleLease
 			results <- ctx.Err()
 		}()
 		go func() {
-			defer wg.Done()
-			scheduled := started.Add(s.Config.RenewInterval)
+			defer ownedWorkers.Done()
+			scheduled := started.Add(leaseSupervisor.Config.RenewInterval)
 			for ctx.Err() == nil {
 				if err := sleep(ctx, time.Until(scheduled)); err != nil {
 					results <- err
@@ -103,43 +120,44 @@ func (s *LeaseSupervisor) runOwned(parent context.Context, lease FencedRoleLease
 					return
 				}
 				renewCtx, stop := context.WithTimeout(ctx, min(3*time.Second, remaining))
-				renewed, err := s.Store.Renew(renewCtx, a, s.Config.LeaseDuration)
+				renewed, err := leaseSupervisor.Store.Renew(renewCtx, authority, leaseSupervisor.Config.LeaseDuration)
 				stop()
 				if err != nil {
 					results <- err
 					return
 				}
-				confirmed := attempt.Add(min(s.Config.LeaseDuration, renewed.ExpiresAt.Sub(renewed.UpdatedAt)) - 5*time.Second)
-				mu.Lock()
+				confirmed := attempt.Add(min(leaseSupervisor.Config.LeaseDuration, renewed.ExpiresAt.Sub(renewed.UpdatedAt)) - 5*time.Second)
+				deadlineMutex.Lock()
 				if !time.Now().Before(deadline) || !time.Now().Before(confirmed) {
-					mu.Unlock()
+					deadlineMutex.Unlock()
 					results <- ErrAuthorityExpired
 					return
 				}
 				deadline = confirmed
-				mu.Unlock()
-				scheduled = scheduled.Add(s.Config.RenewInterval)
+				deadlineMutex.Unlock()
+				scheduled = scheduled.Add(leaseSupervisor.Config.RenewInterval)
 				if !scheduled.After(time.Now()) {
-					scheduled = time.Now().Add(s.Config.RenewInterval)
+					scheduled = time.Now().Add(leaseSupervisor.Config.RenewInterval)
 				}
 			}
 			results <- ctx.Err()
 		}()
 		err = <-results
-		s.event("operation_stopping", a, err)
+		leaseSupervisor.event("operation_stopping", authority, err)
 		cancel()
-		wg.Wait()
-		s.event("operation_stopped", a, err)
+		// Join workload cleanup before releasing authority or entering standby.
+		ownedWorkers.Wait()
+		leaseSupervisor.event("operation_stopped", authority, err)
 	} else {
-		s.event("validation_failed", a, err)
+		leaseSupervisor.event("validation_failed", authority, err)
 	}
 	// Cancellation must not suppress release, but cleanup remains bounded.
 	releaseCtx, stop := context.WithTimeout(context.WithoutCancel(parent), 3*time.Second)
 	defer stop()
-	releaseErr := s.Store.Release(releaseCtx, a)
+	releaseErr := leaseSupervisor.Store.Release(releaseCtx, authority)
 	if releaseErr != nil && !errors.Is(releaseErr, ErrLeaseConflict) {
-		s.event("release_failed", a, releaseErr)
+		leaseSupervisor.event("release_failed", authority, releaseErr)
 	} else {
-		s.event("released", a, releaseErr)
+		leaseSupervisor.event("released", authority, releaseErr)
 	}
 }

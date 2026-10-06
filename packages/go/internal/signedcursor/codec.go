@@ -1,5 +1,9 @@
 package signedcursor
 
+// Provides the shared HMAC-SHA256 cursor envelope: unpadded base64url JSON plus an
+// authenticated signature. Secrets are copied, signatures compared in constant time, and
+// noncanonical encodings rejected. Public cursor wrappers enforce domain-specific fields.
+
 import (
 	"crypto/hmac"
 	"crypto/sha256"
@@ -15,27 +19,36 @@ var (
 	ErrSecret    = errors.New("invalid cursor secret")
 )
 
+// Codec holds a copied key for a canonical base64url JSON/HMAC envelope.
 type Codec struct{ secret []byte }
 
+// New requires at least 32 key bytes and copies them into codec-owned memory.
 func New(secret []byte) (*Codec, error) {
 	if len(secret) < 32 {
 		return nil, ErrSecret
 	}
 	return &Codec{append([]byte(nil), secret...)}, nil
 }
-func (c *Codec) MAC(message []byte) []byte {
-	mac := hmac.New(sha256.New, c.secret)
+
+// MAC computes HMAC-SHA256 over exact bytes for envelope or domain-separated binding use.
+func (codec *Codec) MAC(message []byte) []byte {
+	mac := hmac.New(sha256.New, codec.secret)
 	mac.Write(message)
 	return mac.Sum(nil)
 }
-func (c *Codec) Encode(value any) (string, error) {
+
+// Encode encodes JSON plus its MAC as two unpadded base64url components.
+func (codec *Codec) Encode(value any) (string, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(data) + "." + base64.RawURLEncoding.EncodeToString(c.MAC(data)), nil
+	return base64.RawURLEncoding.EncodeToString(data) + "." + base64.RawURLEncoding.EncodeToString(codec.MAC(data)), nil
 }
-func (c *Codec) Decode(value string, target any) error {
+
+// Decode bounds input to 4,096 characters, requires canonical encoding, verifies HMAC,
+// then decodes the payload.
+func (codec *Codec) Decode(value string, target any) error {
 	if len(value) == 0 || len(value) > 4096 {
 		return ErrMalformed
 	}
@@ -51,7 +64,7 @@ func (c *Codec) Decode(value string, target any) error {
 	if err != nil {
 		return ErrMalformed
 	}
-	if base64.RawURLEncoding.EncodeToString(data) != parts[0] || base64.RawURLEncoding.EncodeToString(signature) != parts[1] || !hmac.Equal(signature, c.MAC(data)) {
+	if base64.RawURLEncoding.EncodeToString(data) != parts[0] || base64.RawURLEncoding.EncodeToString(signature) != parts[1] || !hmac.Equal(signature, codec.MAC(data)) {
 		return ErrSignature
 	}
 	if err := json.Unmarshal(data, target); err != nil {

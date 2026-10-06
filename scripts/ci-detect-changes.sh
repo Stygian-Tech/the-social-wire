@@ -93,6 +93,9 @@ filter_changed apple \
   'packages/swift/ReadStateCore/**' \
   '.github/workflows/ci.yml'
 
+# Shared Go manifests also affect Swift images because their Go schema gate
+# resolves the local module. Keep those image checks in sync with Docker COPY.
+
 filter_changed operations \
   'packages/go/go.mod' \
   'packages/go/go.sum' \

@@ -24,17 +24,17 @@ func TestFinanceReservesGlobalSlotAfterPersonalization(t *testing.T) {
 }
 func TestFinanceCoverageSuppressionDoesNotReserveDroppedIdentity(t *testing.T) {
 	now := time.Unix(1000, 0)
-	a := financialCandidate("a", 3)
-	a.Item.Title = "An earnings report with substantive coverage"
-	a.Item.PublishedAt = &now
-	b := a
-	b.Item.ItemID = "b"
-	b.Item.CanonicalURL = "https://example.com/b"
-	b.BaseScore = 2
-	c := b
-	c.BaseScore = 1
-	c.Item.Title = "A different story"
-	ranked := Rank([]RankCandidate{a, b, c}, nil, nil, false)
+	candidate := financialCandidate("a", 3)
+	candidate.Item.Title = "An earnings report with substantive coverage"
+	candidate.Item.PublishedAt = &now
+	duplicateCoverage := candidate
+	duplicateCoverage.Item.ItemID = "b"
+	duplicateCoverage.Item.CanonicalURL = "https://example.com/b"
+	duplicateCoverage.BaseScore = 2
+	distinctCoverage := duplicateCoverage
+	distinctCoverage.BaseScore = 1
+	distinctCoverage.Item.Title = "A different story"
+	ranked := Rank([]RankCandidate{candidate, duplicateCoverage, distinctCoverage}, nil, nil, false)
 	if len(ranked) != 2 || ranked[1].Item.ItemID != "b" {
 		t.Fatal("dropped coverage incorrectly reserved identity", ranked)
 	}

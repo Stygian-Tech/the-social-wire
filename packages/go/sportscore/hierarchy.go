@@ -1,5 +1,9 @@
 package sportscore
 
+// Normalizes names with Unicode case folding and accent removal, builds active sport-
+// parent relationships, and computes ancestor/descendant closure. Visited sets make
+// traversal terminate even if input contains a cycle.
+
 import (
 	"strings"
 	"unicode"
@@ -8,45 +12,50 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// Normalize case-folds text, removes combining accents, and joins letter/number tokens for
+// evidence matching.
 func Normalize(text string) string {
 	text = norm.NFD.String(cases.Fold().String(text))
-	text = strings.Map(func(r rune) rune {
-		if unicode.Is(unicode.Mn, r) {
+	text = strings.Map(func(character rune) rune {
+		if unicode.Is(unicode.Mn, character) {
 			return -1
 		}
-		return r
+		return character
 	}, text)
-	return strings.Join(strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }), " ")
+	return strings.Join(strings.FieldsFunc(text, func(character rune) bool { return !unicode.IsLetter(character) && !unicode.IsNumber(character) }), " ")
 }
 func set(values []string) map[string]bool {
 	result := map[string]bool{}
-	for _, v := range values {
-		result[v] = true
+	for _, value := range values {
+		result[value] = true
 	}
 	return result
 }
-func intersects(a, b map[string]bool) bool {
-	for k := range a {
-		if b[k] {
+func intersects(leftSet, rightSet map[string]bool) bool {
+	for key := range leftSet {
+		if rightSet[key] {
 			return true
 		}
 	}
 	return false
 }
+
+// ParentIDs builds active sport parent sets, including the reviewed ice-hockey/winter-
+// sports relationship.
 func ParentIDs(catalog []Entity) map[string]map[string]bool {
 	sports := map[string]bool{}
-	for _, e := range catalog {
-		if e.Kind == "sport" && e.Active {
-			sports[e.ID] = true
+	for _, entity := range catalog {
+		if entity.Kind == "sport" && entity.Active {
+			sports[entity.ID] = true
 		}
 	}
 	parents := map[string]map[string]bool{}
-	for _, e := range catalog {
-		if sports[e.ID] && e.SportID != nil && sports[*e.SportID] {
-			if parents[e.ID] == nil {
-				parents[e.ID] = map[string]bool{}
+	for _, entity := range catalog {
+		if sports[entity.ID] && entity.SportID != nil && sports[*entity.SportID] {
+			if parents[entity.ID] == nil {
+				parents[entity.ID] = map[string]bool{}
 			}
-			parents[e.ID][*e.SportID] = true
+			parents[entity.ID][*entity.SportID] = true
 		}
 	}
 	ice, winter := EntityID("sport:ice-hockey"), EntityID("sport:winter-sports")
@@ -58,6 +67,8 @@ func ParentIDs(catalog []Entity) map[string]map[string]bool {
 	}
 	return parents
 }
+
+// Ancestors includes starting IDs and all reachable parents with cycle-safe traversal.
 func Ancestors(ids map[string]bool, parents map[string]map[string]bool) map[string]bool {
 	result := map[string]bool{}
 	pending := []string{}
@@ -77,6 +88,9 @@ func Ancestors(ids map[string]bool, parents map[string]map[string]bool) map[stri
 	}
 	return result
 }
+
+// Descendants includes starting IDs and reachable active sport children from the supplied
+// catalog.
 func Descendants(ids map[string]bool, catalog []Entity) map[string]bool {
 	result := set(nil)
 	for id := range ids {
@@ -85,9 +99,9 @@ func Descendants(ids map[string]bool, catalog []Entity) map[string]bool {
 	parents := ParentIDs(catalog)
 	for changed := true; changed; {
 		changed = false
-		for _, e := range catalog {
-			if e.Active && e.Kind == "sport" && !result[e.ID] && intersects(parents[e.ID], result) {
-				result[e.ID] = true
+		for _, entity := range catalog {
+			if entity.Active && entity.Kind == "sport" && !result[entity.ID] && intersects(parents[entity.ID], result) {
+				result[entity.ID] = true
 				changed = true
 			}
 		}

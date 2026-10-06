@@ -1,5 +1,9 @@
 package wirecore
 
+// Moves ordinary US-politics stories by three virtual slots while retaining breaking,
+// widely discussed, and cross-community stories. Stable virtual-position and original-
+// offset tie-breaks preserve deterministic order.
+
 import (
 	"sort"
 	"strings"
@@ -13,41 +17,47 @@ const AmericanPoliticsDownrankSlots = 3
 
 func normalizedTopic(value string) string {
 	value = norm.NFD.String(cases.Fold().String(strings.TrimSpace(value)))
-	value = strings.Map(func(r rune) rune {
-		if unicode.Is(unicode.Mn, r) {
+	value = strings.Map(func(character rune) rune {
+		if unicode.Is(unicode.Mn, character) {
 			return -1
 		}
-		if r == '_' {
+		if character == '_' {
 			return '-'
 		}
-		return r
+		return character
 	}, value)
-	return strings.Join(strings.FieldsFunc(value, func(r rune) bool { return r == ' ' || r == '-' }), "-")
+	return strings.Join(strings.FieldsFunc(value, func(character rune) bool { return character == ' ' || character == '-' }), "-")
 }
+
+// ShouldDownrankAmericanPolitics flags US-politics topics unless breaking, widely-
+// discussed, or cross-community evidence exempts them.
 func ShouldDownrankAmericanPolitics(topics []string, reasons []ReasonCode) bool {
-	for _, r := range reasons {
-		if r == BreakingStory || r == WidelyDiscussed || r == SharedAcrossCommunities {
+	for _, reasonCode := range reasons {
+		if reasonCode == BreakingStory || reasonCode == WidelyDiscussed || reasonCode == SharedAcrossCommunities {
 			return false
 		}
 	}
 	normalized := map[string]bool{}
-	for _, t := range topics {
-		normalized[normalizedTopic(t)] = true
+	for _, topic := range topics {
+		normalized[normalizedTopic(topic)] = true
 	}
-	for _, t := range []string{"american-politics", "politics-us", "politics-usa", "united-states-politics", "us-politics", "usa-politics"} {
-		if normalized[t] {
+	for _, topic := range []string{"american-politics", "politics-us", "politics-usa", "united-states-politics", "us-politics", "usa-politics"} {
+		if normalized[topic] {
 			return true
 		}
 	}
 	us, politics := false, false
-	for _, t := range []string{"america", "american", "united-states", "us", "usa"} {
-		us = us || normalized[t]
+	for _, topic := range []string{"america", "american", "united-states", "us", "usa"} {
+		us = us || normalized[topic]
 	}
-	for _, t := range []string{"election", "elections", "government", "political", "politics"} {
-		politics = politics || normalized[t]
+	for _, topic := range []string{"election", "elections", "government", "political", "politics"} {
+		politics = politics || normalized[topic]
 	}
 	return us && politics
 }
+
+// DownrankAmericanPolitics orders items by virtual positions shifted three slots for
+// flagged stories without dropping items.
 func DownrankAmericanPolitics[T any](items []T, topics func(T) []string, reasons func(T) []ReasonCode) []T {
 	type positioned struct {
 		item             T
@@ -55,27 +65,27 @@ func DownrankAmericanPolitics[T any](items []T, topics func(T) []string, reasons
 		flagged          bool
 	}
 	values := make([]positioned, len(items))
-	for i, item := range items {
+	for itemIndex, item := range items {
 		flagged := ShouldDownrankAmericanPolitics(topics(item), reasons(item))
-		position := i
+		position := itemIndex
 		if flagged {
 			position += AmericanPoliticsDownrankSlots
 		}
-		values[i] = positioned{item, i, position, flagged}
+		values[itemIndex] = positioned{item, itemIndex, position, flagged}
 	}
-	sort.Slice(values, func(i, j int) bool {
-		a, b := values[i], values[j]
-		if a.position != b.position {
-			return a.position < b.position
+	sort.Slice(values, func(itemIndex, comparisonIndex int) bool {
+		leftItem, rightItem := values[itemIndex], values[comparisonIndex]
+		if leftItem.position != rightItem.position {
+			return leftItem.position < rightItem.position
 		}
-		if a.flagged != b.flagged {
-			return !a.flagged
+		if leftItem.flagged != rightItem.flagged {
+			return !leftItem.flagged
 		}
-		return a.offset < b.offset
+		return leftItem.offset < rightItem.offset
 	})
 	result := make([]T, len(items))
-	for i, v := range values {
-		result[i] = v.item
+	for itemIndex, positionedItem := range values {
+		result[itemIndex] = positionedItem.item
 	}
 	return result
 }

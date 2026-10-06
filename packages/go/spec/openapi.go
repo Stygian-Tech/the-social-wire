@@ -1,5 +1,9 @@
 package spec
 
+// Returns libopenapi documents directly so callers use the upstream OpenAPI 3.1
+// model/reference implementation. Building a model is separate from creating the document
+// and from checking service route conformance.
+
 import "github.com/pb33f/libopenapi"
 
 // OpenAPIDocument exposes the library's document directly. Canonical source

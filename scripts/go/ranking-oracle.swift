@@ -1,3 +1,5 @@
+// Run the actual Swift Wire ranker for one explicit-time JSON snapshot.
+// stdin/stdout are the fixture protocol; no hosted services or stores are used.
 import Foundation
 
 private struct Input: Decodable {

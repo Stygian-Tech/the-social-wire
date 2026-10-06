@@ -64,3 +64,9 @@ half-open probe; old request completions cannot close a newer open circuit.
 Jetstream record values must be objects. JOSE inspection rejects unsigned or
 malformed envelopes but still does not verify signatures or authenticate users.
 Canonical receipt/intent hashes remain identical to the shared fixtures.
+
+## Detailed guides
+
+Each package has a README covering its source files, caller responsibilities, tests, and migration gaps. Start with [wirecore](wirecore/README.md), [wireworkercore](wireworkercore/README.md), [operationscore](operationscore/README.md), and [thinappviewcore](thinappviewcore/README.md). Also see [Finance](financecore/README.md), [Sports](sportscore/README.md), [Gateway](gatewaycore/README.md), [Redis](socialwireredis/README.md), [ReadStateCore](readstatecore/README.md), [ReadState facade](readstate/README.md), [Lexicons](lexicons/README.md), [Spec](spec/README.md), and the [internal cursor codec](internal/signedcursor/README.md).
+
+[Migration evidence](migration/README.md), [oracle commands](cmd/README.md), and [tooling](../../scripts/go/README.md) explain generated data and verification boundaries. The canonical wiki includes the [migration architecture](../../docs/wiki/Go-ingestion-and-ranking.md), [full package reference](../../docs/wiki/Go-package-reference.md), and [CI/deployment guide](../../docs/wiki/Go-verification-and-deployment.md). Public wiki publication follows the existing main-only workflow and separate Lichen process.

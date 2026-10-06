@@ -1,5 +1,10 @@
 package socialwireredis
 
+// Maintains the Swift-compatible JSON cache envelope in epoch milliseconds. Reads
+// distinguish fresh, stale, and miss; malformed, unknown-version, or hard-expired entries
+// are deleted best-effort. Writes jitter hard TTL only and run through the shared circuit
+// breaker.
+
 import (
 	"context"
 	"encoding/json"
@@ -13,24 +18,31 @@ import (
 
 var ErrCircuitOpen = errors.New("redis cache circuit open")
 
+// Commands is the cache transport boundary; missing Get results are nil data with no
+// error.
 type Commands interface {
 	Get(context.Context, string) ([]byte, error)
 	Set(context.Context, string, []byte, time.Duration) error
 	Delete(context.Context, []string) error
 }
+
+// CachePolicy sets fresh lifetime, hard lifetime, and optional positive hard-TTL jitter up
+// to ten percent.
 type CachePolicy struct {
 	FreshDuration, HardDuration time.Duration
 	MaximumJitterFraction       float64
 }
 
-func (p CachePolicy) Validate() error {
-	if p.FreshDuration <= 0 || p.HardDuration < p.FreshDuration || math.IsNaN(p.MaximumJitterFraction) || p.MaximumJitterFraction < 0 || p.MaximumJitterFraction > .1 {
+// Validate rejects values that violate this type’s documented bounds before they are used.
+func (policy CachePolicy) Validate() error {
+	if policy.FreshDuration <= 0 || policy.HardDuration < policy.FreshDuration || math.IsNaN(policy.MaximumJitterFraction) || policy.MaximumJitterFraction < 0 || policy.MaximumJitterFraction > .1 {
 		return errors.New("invalid cache policy")
 	}
 	return nil
 }
 
-// Milliseconds retains the existing JSONEncoder.millisecondsSince1970 format.
+// Envelope stores schema and freshness metadata with a generic cached value.
+// Timestamp fields retain Swift JSONEncoder.millisecondsSince1970 compatibility.
 type Envelope[T any] struct {
 	SchemaVersion *int     `json:"schemaVersion"`
 	CachedAt      *float64 `json:"cachedAt"`
@@ -38,6 +50,9 @@ type Envelope[T any] struct {
 	HardExpiresAt *float64 `json:"hardExpiresAt"`
 	Value         T        `json:"value"`
 }
+
+// LookupState distinguishes a fresh value, usable stale value, and absent/unusable cache
+// entry.
 type LookupState string
 
 const (
@@ -46,21 +61,29 @@ const (
 	Stale LookupState = "stale"
 )
 
+// Lookup carries an envelope for fresh/stale results; misses do not carry a usable value.
 type Lookup[T any] struct {
 	State    LookupState
 	Envelope *Envelope[T]
 }
+
+// CacheClient pairs cache transport with a shared concurrent circuit breaker; it does not
+// own transport shutdown.
 type CacheClient struct {
 	Commands Commands
 	Breaker  *gobreaker.CircuitBreaker[[]byte]
 }
 
+// NewCacheClient wraps supplied commands with the standard three-failure circuit breaker.
 func NewCacheClient(commands Commands) *CacheClient {
 	return &CacheClient{commands, NewCircuitBreaker()}
 }
-func LookupValue[T any](ctx context.Context, c *CacheClient, key string, now time.Time) (Lookup[T], error) {
+
+// LookupValue returns fresh/stale/miss according to supplied time and removes unusable
+// envelopes best-effort.
+func LookupValue[T any](ctx context.Context, client *CacheClient, key string, now time.Time) (Lookup[T], error) {
 	miss := Lookup[T]{State: Miss}
-	data, err := c.Breaker.Execute(func() ([]byte, error) { return c.Commands.Get(ctx, key) })
+	data, err := client.Breaker.Execute(func() ([]byte, error) { return client.Commands.Get(ctx, key) })
 	if err != nil {
 		if errors.Is(err, gobreaker.ErrOpenState) || errors.Is(err, gobreaker.ErrTooManyRequests) {
 			return miss, ErrCircuitOpen
@@ -70,23 +93,26 @@ func LookupValue[T any](ctx context.Context, c *CacheClient, key string, now tim
 	if data == nil {
 		return miss, nil
 	}
-	var e Envelope[T]
+	var envelope Envelope[T]
 	var raw map[string]json.RawMessage
-	malformed := json.Unmarshal(data, &e) != nil || json.Unmarshal(data, &raw) != nil || e.SchemaVersion == nil || e.CachedAt == nil || e.FreshUntil == nil || e.HardExpiresAt == nil || raw["value"] == nil
+	malformed := json.Unmarshal(data, &envelope) != nil || json.Unmarshal(data, &raw) != nil || envelope.SchemaVersion == nil || envelope.CachedAt == nil || envelope.FreshUntil == nil || envelope.HardExpiresAt == nil || raw["value"] == nil
 	milliseconds := float64(now.UnixNano()) / 1e6
-	if malformed || (e.SchemaVersion != nil && *e.SchemaVersion != 1) || (e.HardExpiresAt != nil && milliseconds >= *e.HardExpiresAt) {
-		_ = c.Commands.Delete(ctx, []string{key})
+	if malformed || (envelope.SchemaVersion != nil && *envelope.SchemaVersion != 1) || (envelope.HardExpiresAt != nil && milliseconds >= *envelope.HardExpiresAt) {
+		_ = client.Commands.Delete(ctx, []string{key})
 		return miss, nil
 	}
 	state := Stale
-	if milliseconds < *e.FreshUntil {
+	if milliseconds < *envelope.FreshUntil {
 		state = Fresh
 	}
-	return Lookup[T]{state, &e}, nil
+	return Lookup[T]{state, &envelope}, nil
 }
-func StoreValue[T any](ctx context.Context, c *CacheClient, key string, value T, policy CachePolicy, now time.Time) error {
-	if e := policy.Validate(); e != nil {
-		return e
+
+// StoreValue writes a v1 envelope with positive hard-expiry jitter and matching
+// millisecond transport TTL.
+func StoreValue[T any](ctx context.Context, client *CacheClient, key string, value T, policy CachePolicy, now time.Time) error {
+	if err := policy.Validate(); err != nil {
+		return err
 	}
 	jitter := float64(policy.HardDuration) * rand.Float64() * policy.MaximumJitterFraction
 	duration := policy.HardDuration + time.Duration(jitter)
@@ -98,8 +124,8 @@ func StoreValue[T any](ctx context.Context, c *CacheClient, key string, value T,
 	if err != nil {
 		return err
 	}
-	_, err = c.Breaker.Execute(func() ([]byte, error) {
-		return nil, c.Commands.Set(ctx, key, data, max(time.Millisecond, duration.Truncate(time.Millisecond)))
+	_, err = client.Breaker.Execute(func() ([]byte, error) {
+		return nil, client.Commands.Set(ctx, key, data, max(time.Millisecond, duration.Truncate(time.Millisecond)))
 	})
 	if errors.Is(err, gobreaker.ErrOpenState) || errors.Is(err, gobreaker.ErrTooManyRequests) {
 		return ErrCircuitOpen

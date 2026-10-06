@@ -1,3 +1,5 @@
+// Run actual Finance/Sports rankers; emit ordered IDs without claiming resolver parity.
+// stdin/stdout are the fixture protocol; no hosted services or stores are used.
 import Foundation
 
 @main
@@ -20,6 +22,6 @@ struct DomainRankingOracle {
       sectorIDs: Set(request.sectorIDs), reserveGlobal: request.reserveGlobal)
     let sports = SportsRanker.rank(candidates: request.sports, followIDs: Set(request.followIDs),
       muteIDs: Set(request.muteIDs), entities: request.entities, reserveGlobal: request.reserveGlobal)
-    FileHandle.standardOutput.write(try JSONEncoder().encode(Response(finance: finance.map { $0.item.itemID }, sports: sports.map { $0.item.itemID })))
+    FileHandle.standardOutput.write(try JSONEncoder().encode(Response(finance: finance.map { candidate in candidate.item.itemID }, sports: sports.map { candidate in candidate.item.itemID })))
   }
 }

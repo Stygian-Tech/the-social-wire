@@ -1,5 +1,10 @@
 package wireworkercore
 
+// Publishes generation metadata, all ranked rows, two regional edition variants, and
+// account highlights in one PostgreSQL transaction. A feed/language lock serializes
+// publications and the role fence is checked just before activation. Any failure rolls
+// back all generation rows and pointer changes.
+
 import (
 	"context"
 	"database/sql"
@@ -38,31 +43,39 @@ func jsonString(value any) (string, error) {
 	return string(data), err
 }
 func pointer(value string) *string { return &value }
-func (s *PostgresGenerationStore) Commit(ctx context.Context, g GenerationCommit) error {
-	if g.Activate && s.Authority == nil {
+
+// Commit atomically writes generation/ranks/editions and fences optional activation;
+// errors leave no partial generation.
+func (store *PostgresGenerationStore) Commit(ctx context.Context, generation GenerationCommit) error {
+	if generation.Activate && store.Authority == nil {
 		return ErrMissingAuthority
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	diagnostics, err := jsonString(g.Result.Diagnostics)
+	diagnostics, err := jsonString(generation.Result.Diagnostics)
 	if err != nil {
 		return err
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := store.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	exec := func(query string, args ...any) error { _, err := tx.ExecContext(ctx, query, args...); return err }
-	if err := exec(`INSERT INTO wire_feed_state(feed_key,language_bucket,active_generation_id,updated_at) VALUES($1,$2,NULL,$3) ON CONFLICT(feed_key,language_bucket) DO NOTHING`, g.FeedKey, g.LanguageBucket, g.GeneratedAt); err != nil {
+	exec := func(query string, args ...any) error {
+		_, err := tx.ExecContext(ctx, query, args...)
 		return err
 	}
+	if err := exec(`INSERT INTO wire_feed_state(feed_key,language_bucket,active_generation_id,updated_at) VALUES($1,$2,NULL,$3) ON CONFLICT(feed_key,language_bucket) DO NOTHING`, generation.FeedKey, generation.LanguageBucket, generation.GeneratedAt); err != nil {
+		return err
+	}
+	// Serialize competing commits for this feed/language before materializing
+	// rows. The separate role fence later verifies distributed ownership.
 	var active sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT active_generation_id FROM wire_feed_state WHERE feed_key=$1 AND language_bucket=$2 FOR UPDATE`, g.FeedKey, g.LanguageBucket).Scan(&active); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT active_generation_id FROM wire_feed_state WHERE feed_key=$1 AND language_bucket=$2 FOR UPDATE`, generation.FeedKey, generation.LanguageBucket).Scan(&active); err != nil {
 		return err
 	}
-	if err := exec(`INSERT INTO wire_rank_generations(generation_id,feed_key,language_bucket,status,is_active,config_version,generated_at,committed_at,expires_at,candidate_count,ranked_count,diagnostics) VALUES($1,$2,$3,'building',FALSE,$4,$5,NULL,$6,$7,$8,$9::jsonb)`, g.GenerationID, g.FeedKey, g.LanguageBucket, g.ConfigVersion, g.GeneratedAt, g.ExpiresAt, g.Result.Diagnostics.CandidateCount, len(g.Result.Items), diagnostics); err != nil {
+	if err := exec(`INSERT INTO wire_rank_generations(generation_id,feed_key,language_bucket,status,is_active,config_version,generated_at,committed_at,expires_at,candidate_count,ranked_count,diagnostics) VALUES($1,$2,$3,'building',FALSE,$4,$5,NULL,$6,$7,$8,$9::jsonb)`, generation.GenerationID, generation.FeedKey, generation.LanguageBucket, generation.ConfigVersion, generation.GeneratedAt, generation.ExpiresAt, generation.Result.Diagnostics.CandidateCount, len(generation.Result.Items), diagnostics); err != nil {
 		return err
 	}
 	type rankedRecord struct {
@@ -71,34 +84,34 @@ func (s *PostgresGenerationStore) Commit(ctx context.Context, g GenerationCommit
 		Score        float64               `json:"score"`
 		Reasons      []wirecore.ReasonCode `json:"reasons"`
 	}
-	ranks := make([]rankedRecord, len(g.Result.Items))
-	for i, item := range g.Result.Items {
-		ranks[i] = rankedRecord{i, item.Candidate.CanonicalKey, item.Score, item.ReasonCodes}
+	ranks := make([]rankedRecord, len(generation.Result.Items))
+	for itemIndex, item := range generation.Result.Items {
+		ranks[itemIndex] = rankedRecord{itemIndex, item.Candidate.CanonicalKey, item.Score, item.ReasonCodes}
 	}
 	rankedJSON, err := jsonString(ranks)
 	if err != nil {
 		return err
 	}
-	if err := exec(`INSERT INTO wire_ranked_items(generation_id,position,canonical_key,score,reason_codes,diversity_metadata) SELECT $1,position,canonical_key,score,reasons,'{}'::jsonb FROM jsonb_to_recordset($2::jsonb) AS ranked(position integer,canonical_key text,score double precision,reasons jsonb)`, g.GenerationID, rankedJSON); err != nil {
+	if err := exec(`INSERT INTO wire_ranked_items(generation_id,position,canonical_key,score,reason_codes,diversity_metadata) SELECT $1,position,canonical_key,score,reasons,'{}'::jsonb FROM jsonb_to_recordset($2::jsonb) AS ranked(position integer,canonical_key text,score double precision,reasons jsonb)`, generation.GenerationID, rankedJSON); err != nil {
 		return err
 	}
-	items, err := loadEditionItems(ctx, tx, g.GenerationID)
+	items, err := loadEditionItems(ctx, tx, generation.GenerationID)
 	if err != nil {
 		return err
 	}
-	accounts, err := loadEditionAccounts(ctx, tx, g.GenerationID, g.GeneratedAt)
+	accounts, err := loadEditionAccounts(ctx, tx, generation.GenerationID, generation.GeneratedAt)
 	if err != nil {
 		return err
 	}
-	edition := wirecore.AssembleEdition(g.GenerationID, g.GeneratedAt, g.LanguageBucket, nil, "ranked", false, items, accounts)
+	edition := wirecore.AssembleEdition(generation.GenerationID, generation.GeneratedAt, generation.LanguageBucket, nil, "ranked", false, items, accounts)
 	topics, reasons := map[string][]string{}, map[string][]wirecore.ReasonCode{}
-	for _, item := range g.Result.Items {
+	for _, item := range generation.Result.Items {
 		topics[item.Candidate.CanonicalKey] = item.Candidate.TopicKeys
 		reasons[item.Candidate.CanonicalKey] = item.ReasonCodes
 	}
 	outside := wirecore.DownrankAmericanPolitics(items, func(item wirecore.FeedItem) []string { return topics[item.ItemID] }, func(item wirecore.FeedItem) []wirecore.ReasonCode { return reasons[item.ItemID] })
-	outsideEdition := wirecore.AssembleEdition(g.GenerationID, g.GeneratedAt, g.LanguageBucket, nil, "ranked", false, outside, accounts)
-	if err := exec(`INSERT INTO wire_edition_generations(generation_id,algorithm_version,language_bucket,continuation_ordinal,materialized_at) VALUES($1,$2,$3,$4,$5)`, g.GenerationID, edition.AlgorithmVersion, g.LanguageBucket, min(50, len(g.Result.Items)), g.GeneratedAt); err != nil {
+	outsideEdition := wirecore.AssembleEdition(generation.GenerationID, generation.GeneratedAt, generation.LanguageBucket, nil, "ranked", false, outside, accounts)
+	if err := exec(`INSERT INTO wire_edition_generations(generation_id,algorithm_version,language_bucket,continuation_ordinal,materialized_at) VALUES($1,$2,$3,$4,$5)`, generation.GenerationID, edition.AlgorithmVersion, generation.LanguageBucket, min(50, len(generation.Result.Items)), generation.GeneratedAt); err != nil {
 		return err
 	}
 	modules, moduleItems := []moduleRecord{}, []moduleItemRecord{}
@@ -108,23 +121,23 @@ func (s *PostgresGenerationStore) Commit(ctx context.Context, g GenerationCommit
 				return
 			}
 			key = prefix + key
-			m := moduleRecord{ModuleKey: key, ModuleKind: kind, Title: pointer(title), Position: position, ReasonCode: reason}
+			module := moduleRecord{ModuleKey: key, ModuleKind: kind, Title: pointer(title), Position: position, ReasonCode: reason}
 			if publication != nil {
-				m.PublicationKey = pointer(publication.Key)
-				m.PublicationName = pointer(publication.Name)
-				m.PublicationDomain = pointer(publication.Domain)
-				m.PublicationHomepageURL = publication.HomepageURL
-				m.PublicationIconURL = publication.IconURL
+				module.PublicationKey = pointer(publication.Key)
+				module.PublicationName = pointer(publication.Name)
+				module.PublicationDomain = pointer(publication.Domain)
+				module.PublicationHomepageURL = publication.HomepageURL
+				module.PublicationIconURL = publication.IconURL
 			}
-			modules = append(modules, m)
-			for i, story := range stories {
-				moduleItems = append(moduleItems, moduleItemRecord{key, i, story.ItemID})
+			modules = append(modules, module)
+			for itemIndex, story := range stories {
+				moduleItems = append(moduleItems, moduleItemRecord{key, itemIndex, story.ItemID})
 			}
 			position++
 		}
 		appendModule("top-stories", "top_stories", "Top Stories", nil, nil, value.LeadStories)
-		for i, panel := range value.PublicationPanels {
-			appendModule("publication-"+strconv.Itoa(i), "publication_spotlight", panel.Publication.Name, nil, &panel.Publication, panel.Stories)
+		for itemIndex, panel := range value.PublicationPanels {
+			appendModule("publication-"+strconv.Itoa(itemIndex), "publication_spotlight", panel.Publication.Name, nil, &panel.Publication, panel.Stories)
 		}
 		for _, rail := range value.StoryRails {
 			appendModule(rail.ID, "story_rail", rail.Title, pointer(string(rail.Reason)), nil, rail.Stories)
@@ -132,6 +145,8 @@ func (s *PostgresGenerationStore) Commit(ctx context.Context, g GenerationCommit
 		appendModule("general", "general", "More Across the Social Web", nil, nil, value.GeneralStories)
 		appendModule("trending", "trending", "Trending", nil, nil, value.TrendingStories)
 	}
+	// Keep regional modules in one atomic generation while assigning separate
+	// keys and ordinal ranges so serving can select either complete variant.
 	appendEdition(edition, "", 0)
 	appendEdition(outsideEdition, "outside-us:", 1000)
 	moduleJSON, err := jsonString(modules)
@@ -142,45 +157,47 @@ func (s *PostgresGenerationStore) Commit(ctx context.Context, g GenerationCommit
 	if err != nil {
 		return err
 	}
-	if err := exec(`INSERT INTO wire_edition_modules(generation_id,module_key,module_kind,title,position,reason_code,publication_key,publication_name,publication_domain,publication_homepage_url,publication_icon_url) SELECT $1,module_key,module_kind,title,position,reason_code,publication_key,publication_name,publication_domain,publication_homepage_url,publication_icon_url FROM jsonb_to_recordset($2::jsonb) AS module(module_key text,module_kind text,title text,position integer,reason_code text,publication_key text,publication_name text,publication_domain text,publication_homepage_url text,publication_icon_url text)`, g.GenerationID, moduleJSON); err != nil {
+	if err := exec(`INSERT INTO wire_edition_modules(generation_id,module_key,module_kind,title,position,reason_code,publication_key,publication_name,publication_domain,publication_homepage_url,publication_icon_url) SELECT $1,module_key,module_kind,title,position,reason_code,publication_key,publication_name,publication_domain,publication_homepage_url,publication_icon_url FROM jsonb_to_recordset($2::jsonb) AS module(module_key text,module_kind text,title text,position integer,reason_code text,publication_key text,publication_name text,publication_domain text,publication_homepage_url text,publication_icon_url text)`, generation.GenerationID, moduleJSON); err != nil {
 		return err
 	}
-	if err := exec(`INSERT INTO wire_edition_module_items(generation_id,module_key,position,canonical_key) SELECT $1,module_key,position,canonical_key FROM jsonb_to_recordset($2::jsonb) AS item(module_key text,position integer,canonical_key text)`, g.GenerationID, moduleItemsJSON); err != nil {
+	if err := exec(`INSERT INTO wire_edition_module_items(generation_id,module_key,position,canonical_key) SELECT $1,module_key,position,canonical_key FROM jsonb_to_recordset($2::jsonb) AS item(module_key text,position integer,canonical_key text)`, generation.GenerationID, moduleItemsJSON); err != nil {
 		return err
 	}
 	accountIDs := make([]struct {
 		Position int    `json:"position"`
 		DID      string `json:"did"`
 	}, len(edition.TalkedAboutAccounts))
-	for i, a := range edition.TalkedAboutAccounts {
-		accountIDs[i].Position = i
-		accountIDs[i].DID = a.DID
+	for itemIndex, talkedAboutAccount := range edition.TalkedAboutAccounts {
+		accountIDs[itemIndex].Position = itemIndex
+		accountIDs[itemIndex].DID = talkedAboutAccount.DID
 	}
 	accountsJSON, err := jsonString(accountIDs)
 	if err != nil {
 		return err
 	}
-	if err := exec(`INSERT INTO wire_edition_talked_accounts(generation_id,position,subject_did) SELECT $1,position,did FROM jsonb_to_recordset($2::jsonb) AS account(position integer,did text)`, g.GenerationID, accountsJSON); err != nil {
+	if err := exec(`INSERT INTO wire_edition_talked_accounts(generation_id,position,subject_did) SELECT $1,position,did FROM jsonb_to_recordset($2::jsonb) AS account(position integer,did text)`, generation.GenerationID, accountsJSON); err != nil {
 		return err
 	}
 	// Validate ownership only after building, inside the publication transaction.
-	if s.Authority != nil {
-		if err := operationscore.LockRoleLeaseFence(ctx, tx, *s.Authority, false); err != nil {
+	if store.Authority != nil {
+		if err := operationscore.LockRoleLeaseFence(ctx, tx, *store.Authority, false); err != nil {
 			return err
 		}
 	}
-	if g.Activate {
-		if err := exec(`UPDATE wire_rank_generations SET status='superseded',is_active=FALSE WHERE feed_key=$1 AND language_bucket=$2 AND is_active=TRUE`, g.FeedKey, g.LanguageBucket); err != nil {
+	// A shadow generation is committed for comparison without changing the
+	// serving pointer; active publication and supersession remain atomic.
+	if generation.Activate {
+		if err := exec(`UPDATE wire_rank_generations SET status='superseded',is_active=FALSE WHERE feed_key=$1 AND language_bucket=$2 AND is_active=TRUE`, generation.FeedKey, generation.LanguageBucket); err != nil {
 			return err
 		}
-		if err := exec(`UPDATE wire_rank_generations SET status='committed',is_active=TRUE,committed_at=$2 WHERE generation_id=$1`, g.GenerationID, g.GeneratedAt); err != nil {
+		if err := exec(`UPDATE wire_rank_generations SET status='committed',is_active=TRUE,committed_at=$2 WHERE generation_id=$1`, generation.GenerationID, generation.GeneratedAt); err != nil {
 			return err
 		}
-		if err := exec(`UPDATE wire_feed_state SET active_generation_id=$3,updated_at=$4 WHERE feed_key=$1 AND language_bucket=$2`, g.FeedKey, g.LanguageBucket, g.GenerationID, g.GeneratedAt); err != nil {
+		if err := exec(`UPDATE wire_feed_state SET active_generation_id=$3,updated_at=$4 WHERE feed_key=$1 AND language_bucket=$2`, generation.FeedKey, generation.LanguageBucket, generation.GenerationID, generation.GeneratedAt); err != nil {
 			return err
 		}
 	} else {
-		if err := exec(`UPDATE wire_rank_generations SET status='shadow',committed_at=$2 WHERE generation_id=$1`, g.GenerationID, g.GeneratedAt); err != nil {
+		if err := exec(`UPDATE wire_rank_generations SET status='shadow',committed_at=$2 WHERE generation_id=$1`, generation.GenerationID, generation.GeneratedAt); err != nil {
 			return err
 		}
 	}
@@ -221,20 +238,23 @@ func loadEditionAccounts(ctx context.Context, tx *sql.Tx, generation string, at 
 	defer rows.Close()
 	result := []wirecore.TalkedAboutAccountCandidate{}
 	for rows.Next() {
-		var c wirecore.TalkedAboutAccountCandidate
-		if err := rows.Scan(&c.Account.DID, &c.Account.Handle, &c.Account.DisplayName, &c.Account.AvatarURL, &c.Account.Description, &c.DistinctStoryCount, &c.DistinctSpeakerCount, &c.BestStoryRank, &c.LatestMentionAt); err != nil {
+		var talkedAboutAccountCandidate wirecore.TalkedAboutAccountCandidate
+		if err := rows.Scan(&talkedAboutAccountCandidate.Account.DID, &talkedAboutAccountCandidate.Account.Handle, &talkedAboutAccountCandidate.Account.DisplayName, &talkedAboutAccountCandidate.Account.AvatarURL, &talkedAboutAccountCandidate.Account.Description, &talkedAboutAccountCandidate.DistinctStoryCount, &talkedAboutAccountCandidate.DistinctSpeakerCount, &talkedAboutAccountCandidate.BestStoryRank, &talkedAboutAccountCandidate.LatestMentionAt); err != nil {
 			return nil, err
 		}
-		result = append(result, c)
+		result = append(result, talkedAboutAccountCandidate)
 	}
 	return result, rows.Err()
 }
-func (s *PostgresGenerationStore) RecordCycleDuration(ctx context.Context, milliseconds float64, generation string) error {
+
+// RecordCycleDuration adds finite nonnegative duration telemetry to a completed generation
+// under a two-second timeout.
+func (store *PostgresGenerationStore) RecordCycleDuration(ctx context.Context, milliseconds float64, generation string) error {
 	if math.IsNaN(milliseconds) || math.IsInf(milliseconds, 0) || milliseconds < 0 {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	_, err := s.DB.ExecContext(ctx, `UPDATE wire_rank_generations SET diagnostics=diagnostics||jsonb_build_object('cycleDurationMilliseconds',$2::double precision) WHERE generation_id=$1 AND status IN('committed','shadow','superseded')`, generation, milliseconds)
+	_, err := store.DB.ExecContext(ctx, `UPDATE wire_rank_generations SET diagnostics=diagnostics||jsonb_build_object('cycleDurationMilliseconds',$2::double precision) WHERE generation_id=$1 AND status IN('committed','shadow','superseded')`, generation, milliseconds)
 	return err
 }

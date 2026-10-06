@@ -1,5 +1,10 @@
 package wirecore
 
+// Allocates deduplicated ranked stories to lead stories, publication panels, reason rails,
+// and general stories in deterministic order. Trending is a separate view allowed to
+// repeat allocated stories. Account highlights require distinct-story/speaker evidence and
+// deterministic tie-breaks.
+
 import (
 	"encoding/json"
 	"sort"
@@ -9,6 +14,8 @@ import (
 
 const EditionVersion = "wire-edition-v2"
 
+// ItemSource contains publisher display metadata and optional canonical publication
+// identity.
 type ItemSource struct {
 	Name           string  `json:"name"`
 	Domain         string  `json:"domain"`
@@ -18,6 +25,9 @@ type ItemSource struct {
 	HomepageURL    *string `json:"homepageUrl,omitempty"`
 	IconURL        *string `json:"iconUrl,omitempty"`
 }
+
+// FeedItem is the serving article shape; JSON loading bounds reasons to two and provenance
+// to eight.
 type FeedItem struct {
 	ItemID            string       `json:"itemId"`
 	CanonicalURL      string       `json:"canonicalUrl"`
@@ -31,18 +41,21 @@ type FeedItem struct {
 	Provenance        []string     `json:"provenance"`
 }
 
-func (f *FeedItem) UnmarshalJSON(data []byte) error {
+// UnmarshalJSON decodes the shared wire representation while enforcing this type’s
+// compatibility rules.
+func (item *FeedItem) UnmarshalJSON(data []byte) error {
 	type raw FeedItem
 	var value raw
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	*f = FeedItem(value)
-	f.Reasons = append([]ReasonCode{}, f.Reasons[:min(2, len(f.Reasons))]...)
-	f.Provenance = append([]string{}, f.Provenance[:min(8, len(f.Provenance))]...)
+	*item = FeedItem(value)
+	item.Reasons = append([]ReasonCode{}, item.Reasons[:min(2, len(item.Reasons))]...)
+	item.Provenance = append([]string{}, item.Provenance[:min(8, len(item.Provenance))]...)
 	return nil
 }
 
+// EditionPublication is a publication spotlight identity and its serving metadata.
 type EditionPublication struct {
 	Key         string  `json:"key"`
 	ID          *string `json:"id,omitempty"`
@@ -51,16 +64,22 @@ type EditionPublication struct {
 	HomepageURL *string `json:"homepageUrl,omitempty"`
 	IconURL     *string `json:"iconUrl,omitempty"`
 }
+
+// PublicationPanel groups two to three unallocated stories from one publication.
 type PublicationPanel struct {
 	Publication EditionPublication `json:"publication"`
 	Stories     []FeedItem         `json:"stories"`
 }
+
+// StoryRail groups four to ten unallocated stories sharing a ranking reason.
 type StoryRail struct {
 	ID      string     `json:"id"`
 	Title   string     `json:"title"`
 	Reason  ReasonCode `json:"reason"`
 	Stories []FeedItem `json:"stories"`
 }
+
+// TalkedAboutAccount contains the serving profile fields of a highlighted account.
 type TalkedAboutAccount struct {
 	DID         string  `json:"did"`
 	Handle      *string `json:"handle,omitempty"`
@@ -68,6 +87,9 @@ type TalkedAboutAccount struct {
 	AvatarURL   *string `json:"avatarUrl,omitempty"`
 	Description *string `json:"description,omitempty"`
 }
+
+// TalkedAboutAccountCandidate provides story/speaker counts and deterministic tie-break
+// evidence for account highlights.
 type TalkedAboutAccountCandidate struct {
 	Account              TalkedAboutAccount `json:"account"`
 	DistinctStoryCount   int                `json:"distinctStoryCount"`
@@ -75,6 +97,9 @@ type TalkedAboutAccountCandidate struct {
 	BestStoryRank        int                `json:"bestStoryRank"`
 	LatestMentionAt      *time.Time         `json:"latestMentionAt,omitempty"`
 }
+
+// Edition contains a materialized ranked generation’s lead, spotlight, rail, general,
+// trending, and account sections.
 type Edition struct {
 	AlgorithmVersion    string               `json:"algorithmVersion"`
 	GenerationID        string               `json:"generationId"`
@@ -93,9 +118,9 @@ type Edition struct {
 
 func normalized(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
 func hasReason(item FeedItem, reasons ...ReasonCode) bool {
-	for _, r := range item.Reasons {
+	for _, reasonCode := range item.Reasons {
 		for _, wanted := range reasons {
-			if r == wanted {
+			if reasonCode == wanted {
 				return true
 			}
 		}
@@ -118,6 +143,9 @@ func publicationKey(item FeedItem) string {
 	}
 	return "domain:" + normalized(item.Source.Domain)
 }
+
+// AssembleEdition allocates deduplicated stories into deterministic edition sections and
+// selects qualifying account highlights.
 func AssembleEdition(generation string, at time.Time, language string, cursor *string, source string, degraded bool, ranked []FeedItem, accounts []TalkedAboutAccountCandidate) Edition {
 	result := Edition{AlgorithmVersion: EditionVersion, GenerationID: generation, GeneratedAt: at, Language: language, Cursor: cursor, Source: source, Degraded: degraded, LeadStories: []FeedItem{}, PublicationPanels: []PublicationPanel{}, StoryRails: []StoryRail{}, GeneralStories: []FeedItem{}, TrendingStories: []FeedItem{}, TalkedAboutAccounts: []TalkedAboutAccount{}}
 	seen, domains, allocated := map[string]bool{}, map[string]bool{}, map[string]bool{}
@@ -149,8 +177,8 @@ func AssembleEdition(generation string, at time.Time, language string, cursor *s
 				continue
 			}
 			conflict := false
-			for i, lead := range result.LeadStories {
-				if lead.ItemID == story.ItemID || i < 3 && normalized(lead.Source.Domain) == normalized(story.Source.Domain) {
+			for itemIndex, lead := range result.LeadStories {
+				if lead.ItemID == story.ItemID || itemIndex < 3 && normalized(lead.Source.Domain) == normalized(story.Source.Domain) {
 					conflict = true
 				}
 			}
@@ -181,8 +209,8 @@ func AssembleEdition(generation string, at time.Time, language string, cursor *s
 			continue
 		}
 		selected := group[:min(3, len(group))]
-		s := selected[0].Source
-		result.PublicationPanels = append(result.PublicationPanels, PublicationPanel{EditionPublication{key, s.Publication, s.Name, s.Domain, s.HomepageURL, s.IconURL}, selected})
+		publicationSource := selected[0].Source
+		result.PublicationPanels = append(result.PublicationPanels, PublicationPanel{EditionPublication{key, publicationSource.Publication, publicationSource.Name, publicationSource.Domain, publicationSource.HomepageURL, publicationSource.IconURL}, selected})
 		for _, story := range selected {
 			allocated[story.ItemID] = true
 		}
@@ -224,44 +252,46 @@ func AssembleEdition(generation string, at time.Time, language string, cursor *s
 		}
 	}
 	result.TrendingStories = result.TrendingStories[:min(10, len(result.TrendingStories))]
-	precedes := func(a, b TalkedAboutAccountCandidate) bool {
-		if a.DistinctStoryCount != b.DistinctStoryCount {
-			return a.DistinctStoryCount > b.DistinctStoryCount
+	precedes := func(leftAccount, rightAccount TalkedAboutAccountCandidate) bool {
+		if leftAccount.DistinctStoryCount != rightAccount.DistinctStoryCount {
+			return leftAccount.DistinctStoryCount > rightAccount.DistinctStoryCount
 		}
-		if a.DistinctSpeakerCount != b.DistinctSpeakerCount {
-			return a.DistinctSpeakerCount > b.DistinctSpeakerCount
+		if leftAccount.DistinctSpeakerCount != rightAccount.DistinctSpeakerCount {
+			return leftAccount.DistinctSpeakerCount > rightAccount.DistinctSpeakerCount
 		}
-		if a.BestStoryRank != b.BestStoryRank {
-			return a.BestStoryRank < b.BestStoryRank
+		if leftAccount.BestStoryRank != rightAccount.BestStoryRank {
+			return leftAccount.BestStoryRank < rightAccount.BestStoryRank
 		}
-		if a.LatestMentionAt == nil && b.LatestMentionAt != nil {
+		if leftAccount.LatestMentionAt == nil && rightAccount.LatestMentionAt != nil {
 			return false
 		}
-		if a.LatestMentionAt != nil && b.LatestMentionAt == nil {
+		if leftAccount.LatestMentionAt != nil && rightAccount.LatestMentionAt == nil {
 			return true
 		}
-		if a.LatestMentionAt != nil && !a.LatestMentionAt.Equal(*b.LatestMentionAt) {
-			return a.LatestMentionAt.After(*b.LatestMentionAt)
+		if leftAccount.LatestMentionAt != nil && !leftAccount.LatestMentionAt.Equal(*rightAccount.LatestMentionAt) {
+			return leftAccount.LatestMentionAt.After(*rightAccount.LatestMentionAt)
 		}
-		return normalized(a.Account.DID) < normalized(b.Account.DID)
+		return normalized(leftAccount.Account.DID) < normalized(rightAccount.Account.DID)
 	}
 	best := map[string]TalkedAboutAccountCandidate{}
-	for _, a := range accounts {
-		if a.DistinctStoryCount < 2 || a.DistinctSpeakerCount < 3 {
+	for _, accountCandidate := range accounts {
+		if accountCandidate.DistinctStoryCount < 2 || accountCandidate.DistinctSpeakerCount < 3 {
 			continue
 		}
-		key := normalized(a.Account.DID)
-		if b, ok := best[key]; !ok || precedes(a, b) {
-			best[key] = a
+		key := normalized(accountCandidate.Account.DID)
+		if existingAccount, ok := best[key]; !ok || precedes(accountCandidate, existingAccount) {
+			best[key] = accountCandidate
 		}
 	}
 	selected := []TalkedAboutAccountCandidate{}
-	for _, a := range best {
-		selected = append(selected, a)
+	for _, accountCandidate := range best {
+		selected = append(selected, accountCandidate)
 	}
-	sort.Slice(selected, func(i, j int) bool { return precedes(selected[i], selected[j]) })
-	for _, a := range selected[:min(10, len(selected))] {
-		result.TalkedAboutAccounts = append(result.TalkedAboutAccounts, a.Account)
+	sort.Slice(selected, func(itemIndex, comparisonIndex int) bool {
+		return precedes(selected[itemIndex], selected[comparisonIndex])
+	})
+	for _, accountCandidate := range selected[:min(10, len(selected))] {
+		result.TalkedAboutAccounts = append(result.TalkedAboutAccounts, accountCandidate.Account)
 	}
 	return result
 }

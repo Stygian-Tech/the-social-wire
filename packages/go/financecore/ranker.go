@@ -1,5 +1,10 @@
 package financecore
 
+// Filters ineligible/nonfinite candidates, applies materiality and capped preference
+// boosts, breaks ties by item ID, and suppresses duplicate URLs and six-hour
+// headline/entity coverage. Optional global slots are filled from remaining candidates by
+// base score.
+
 import (
 	"math"
 	"sort"
@@ -9,13 +14,15 @@ import (
 	"unicode/utf8"
 )
 
+// Rank orders eligible articles by materiality and preference boosts, deduplicates
+// coverage, and optionally reserves every fifth slot for major global news.
 func Rank(candidates []RankCandidate, instrumentIDs, sectorIDs map[string]bool, reserveGlobal bool) []RankCandidate {
-	score := func(c RankCandidate) float64 {
+	score := func(candidate RankCandidate) float64 {
 		instrument, sector := false, false
-		for _, a := range c.Analysis.Associations {
-			instrument = instrument || instrumentIDs[a.InstrumentID]
+		for _, association := range candidate.Analysis.Associations {
+			instrument = instrument || instrumentIDs[association.InstrumentID]
 		}
-		for _, id := range c.Analysis.SectorIDs {
+		for _, id := range candidate.Analysis.SectorIDs {
 			sector = sector || sectorIDs[id]
 		}
 		boost := 0.0
@@ -26,7 +33,7 @@ func Rank(candidates []RankCandidate, instrumentIDs, sectorIDs map[string]bool, 
 			boost += .1
 		}
 		materiality := 1.0
-		switch c.Analysis.Materiality {
+		switch candidate.Analysis.Materiality {
 		case "earnings", "merger":
 			materiality = 1.2
 		case "filing", "regulation":
@@ -36,55 +43,55 @@ func Rank(candidates []RankCandidate, instrumentIDs, sectorIDs map[string]bool, 
 		case "price-chatter":
 			materiality = .5
 		}
-		return c.BaseScore * materiality * (1 + min(.35, boost))
+		return candidate.BaseScore * materiality * (1 + min(.35, boost))
 	}
 	sorted := []RankCandidate{}
-	for _, c := range candidates {
-		if c.Analysis.Eligible && !math.IsNaN(c.BaseScore) && !math.IsInf(c.BaseScore, 0) && c.BaseScore >= 0 {
-			sorted = append(sorted, c)
+	for _, candidate := range candidates {
+		if candidate.Analysis.Eligible && !math.IsNaN(candidate.BaseScore) && !math.IsInf(candidate.BaseScore, 0) && candidate.BaseScore >= 0 {
+			sorted = append(sorted, candidate)
 		}
 	}
-	sort.SliceStable(sorted, func(i, j int) bool {
-		a, b := score(sorted[i]), score(sorted[j])
-		if a == b {
-			return sorted[i].Item.ItemID < sorted[j].Item.ItemID
+	sort.SliceStable(sorted, func(itemIndex, comparisonIndex int) bool {
+		leftScore, rightScore := score(sorted[itemIndex]), score(sorted[comparisonIndex])
+		if leftScore == rightScore {
+			return sorted[itemIndex].Item.ItemID < sorted[comparisonIndex].Item.ItemID
 		}
-		return a > b
+		return leftScore > rightScore
 	})
 	seenIDs, seenURLs := map[string]bool{}, map[string]bool{}
 	coverageDates := map[string]time.Time{}
 	remaining := []RankCandidate{}
-	for _, c := range sorted {
-		if seenIDs[c.Item.ItemID] || seenURLs[c.Item.CanonicalURL] {
+	for _, candidate := range sorted {
+		if seenIDs[candidate.Item.ItemID] || seenURLs[candidate.Item.CanonicalURL] {
 			continue
 		}
-		headline := strings.Join(strings.FieldsFunc(strings.ToLower(c.Item.Title), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }), " ")
+		headline := strings.Join(strings.FieldsFunc(strings.ToLower(candidate.Item.Title), func(character rune) bool { return !unicode.IsLetter(character) && !unicode.IsNumber(character) }), " ")
 		entities := []string{}
-		for _, a := range c.Analysis.Associations {
-			entities = append(entities, a.InstrumentID)
+		for _, association := range candidate.Analysis.Associations {
+			entities = append(entities, association.InstrumentID)
 		}
 		sort.Strings(entities)
 		coverage := headline + "|" + strings.Join(entities, ",")
-		if utf8.RuneCountInString(headline) >= 20 && c.Item.PublishedAt != nil {
+		if utf8.RuneCountInString(headline) >= 20 && candidate.Item.PublishedAt != nil {
 			if previous, ok := coverageDates[coverage]; ok {
-				delta := c.Item.PublishedAt.Sub(previous)
+				delta := candidate.Item.PublishedAt.Sub(previous)
 				if delta >= -6*time.Hour && delta <= 6*time.Hour {
 					continue
 				}
 			}
-			coverageDates[coverage] = *c.Item.PublishedAt
+			coverageDates[coverage] = *candidate.Item.PublishedAt
 		}
-		seenIDs[c.Item.ItemID], seenURLs[c.Item.CanonicalURL] = true, true
-		remaining = append(remaining, c)
+		seenIDs[candidate.Item.ItemID], seenURLs[candidate.Item.CanonicalURL] = true, true
+		remaining = append(remaining, candidate)
 	}
 	result := make([]RankCandidate, 0, len(remaining))
 	for len(remaining) > 0 {
 		index := 0
 		if reserveGlobal && len(result)%5 == 4 {
 			best := -1
-			for i, c := range remaining {
-				if c.MajorGlobal && (best < 0 || c.BaseScore > remaining[best].BaseScore) {
-					best = i
+			for itemIndex, candidate := range remaining {
+				if candidate.MajorGlobal && (best < 0 || candidate.BaseScore > remaining[best].BaseScore) {
+					best = itemIndex
 				}
 			}
 			if best >= 0 {

@@ -2,6 +2,10 @@
 // not connect to PostgreSQL, acquire authority, or publish generations.
 package main
 
+// Reads one JSON snapshot from stdin, runs the pure Wire ranker with explicit time and
+// optional config, and emits its full result. This is a test oracle bridge, not a worker
+// or HTTP server.
+
 import (
 	"encoding/json"
 	"fmt"

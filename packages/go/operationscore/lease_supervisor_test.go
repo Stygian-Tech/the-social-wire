@@ -18,18 +18,18 @@ type supervisorStore struct {
 func (*supervisorStore) Acquire(context.Context, string, string, time.Duration) (*FencedRoleLease, error) {
 	panic("unused")
 }
-func (s *supervisorStore) Validate(ctx context.Context, _ RoleLeaseAuthority) error {
-	if s.validate != nil {
-		return s.validate(ctx)
+func (store *supervisorStore) Validate(ctx context.Context, _ RoleLeaseAuthority) error {
+	if store.validate != nil {
+		return store.validate(ctx)
 	}
-	return s.validation
+	return store.validation
 }
-func (s *supervisorStore) Renew(ctx context.Context, _ RoleLeaseAuthority, _ time.Duration) (FencedRoleLease, error) {
-	return s.renew(ctx)
+func (store *supervisorStore) Renew(ctx context.Context, _ RoleLeaseAuthority, _ time.Duration) (FencedRoleLease, error) {
+	return store.renew(ctx)
 }
-func (s *supervisorStore) Release(context.Context, RoleLeaseAuthority) error {
-	if s.release != nil {
-		s.release()
+func (store *supervisorStore) Release(context.Context, RoleLeaseAuthority) error {
+	if store.release != nil {
+		store.release()
 	}
 	return nil
 }
@@ -43,9 +43,9 @@ func TestSupervisorJoinsBeforeRelease(t *testing.T) {
 	started, cleanup, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var released atomic.Bool
 	store := &supervisorStore{release: func() { released.Store(true) }}
-	s := LeaseSupervisor{Store: store, Config: DefaultSupervisorConfig("role", "owner")}
+	leaseSupervisor := LeaseSupervisor{Store: store, Config: DefaultSupervisorConfig("role", "owner")}
 	go func() {
-		s.runOwned(parent, testLease(), time.Now(), func(ctx context.Context, _ RoleLeaseAuthority) error {
+		leaseSupervisor.runOwned(parent, testLease(), time.Now(), func(ctx context.Context, _ RoleLeaseAuthority) error {
 			close(started)
 			<-ctx.Done()
 			<-cleanup
@@ -80,8 +80,8 @@ func TestSupervisorDoesNotStartWithoutAuthority(t *testing.T) {
 		if cancelDuringValidation {
 			store.validate = func(context.Context) error { cancel(); return nil }
 		}
-		s := LeaseSupervisor{Store: store, Config: DefaultSupervisorConfig("role", "owner")}
-		s.runOwned(parent, testLease(), time.Now(), func(context.Context, RoleLeaseAuthority) error { t.Error("started without authority"); return nil })
+		leaseSupervisor := LeaseSupervisor{Store: store, Config: DefaultSupervisorConfig("role", "owner")}
+		leaseSupervisor.runOwned(parent, testLease(), time.Now(), func(context.Context, RoleLeaseAuthority) error { t.Error("started without authority"); return nil })
 		cancel()
 	}
 }
@@ -90,9 +90,9 @@ func TestSupervisorWatchdogCancelsBlockedRenewal(t *testing.T) {
 	config := DefaultSupervisorConfig("role", "owner")
 	config.LeaseDuration = 5100 * time.Millisecond
 	config.RenewInterval = 10 * time.Millisecond
-	s := LeaseSupervisor{Store: store, Config: config}
+	leaseSupervisor := LeaseSupervisor{Store: store, Config: config}
 	start := time.Now()
-	s.runOwned(context.Background(), testLease(), start, func(ctx context.Context, _ RoleLeaseAuthority) error {
+	leaseSupervisor.runOwned(context.Background(), testLease(), start, func(ctx context.Context, _ RoleLeaseAuthority) error {
 		<-ctx.Done()
 		if !errors.Is(ctx.Err(), context.Canceled) {
 			t.Error(ctx.Err())

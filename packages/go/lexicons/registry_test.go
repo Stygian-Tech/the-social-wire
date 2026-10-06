@@ -35,11 +35,11 @@ func TestGeneratedLexiconsMatchCanonicalSources(t *testing.T) {
 			t.Errorf("missing %s", source.ID)
 			return nil
 		}
-		a, _ := json.Marshal(source)
-		b, _ := json.Marshal(generated)
+		sourceJSON, _ := json.Marshal(source)
+		generatedJSON, _ := json.Marshal(generated)
 		var left, right any
-		_ = json.Unmarshal(a, &left)
-		_ = json.Unmarshal(b, &right)
+		_ = json.Unmarshal(sourceJSON, &left)
+		_ = json.Unmarshal(generatedJSON, &right)
 		if !reflect.DeepEqual(left, right) {
 			t.Errorf("schema drift for %s", source.ID)
 		}

@@ -1,5 +1,10 @@
 package wirecore
 
+// Validates configuration, computes reason percentiles, applies age/quality/signal
+// admission, and combines normalized breadth, velocity, freshness, authority, and feedback
+// signals. Penalties and deterministic rotation precede primary/backfill ordering and
+// diversity reranking.
+
 import (
 	"math"
 	"sort"
@@ -7,133 +12,146 @@ import (
 	"time"
 )
 
-func clamp(v float64) float64 { return min(1, max(0, v)) }
-func logarithmicRatio(v, target int) float64 {
-	return clamp(math.Log1p(float64(max(0, v))) / math.Log1p(float64(target)))
+func clamp(value float64) float64 { return min(1, max(0, value)) }
+func logarithmicRatio(value, target int) float64 {
+	return clamp(math.Log1p(float64(max(0, value))) / math.Log1p(float64(target)))
 }
 func velocity(hour, day int) float64 {
 	return clamp(float64(max(0, hour)) / (max(1, float64(max(0, day))/24) * 4))
 }
+
+// RotationNudge returns a deterministic score nudge up to 0.005 from key and thirty-minute
+// time bucket.
 func RotationNudge(key string, asOf time.Time) float64 {
 	bucket := int64(math.Floor(float64(asOf.Unix()) / 1800))
 	hash := uint64(14695981039346656037)
-	for _, b := range []byte(strconv.FormatInt(bucket, 10) + "|" + key) {
-		hash ^= uint64(b)
+	for _, octet := range []byte(strconv.FormatInt(bucket, 10) + "|" + key) {
+		hash ^= uint64(octet)
 		hash *= 1099511628211
 	}
 	return float64(hash%1000001) / 1000000 * .005
 }
-func freshPublication(c Candidate, age float64, config RankingConfig) bool {
-	return age <= 3*86400 && c.SourceConfidence >= config.StandardSiteMinimumSourceConfidence && enabled(c.IsStandardSite)
+func freshPublication(candidate Candidate, age float64, config RankingConfig) bool {
+	return age <= 3*86400 && candidate.SourceConfidence >= config.StandardSiteMinimumSourceConfidence && enabled(candidate.IsStandardSite)
 }
-func admissionTier(c Candidate, age float64, config RankingConfig) int {
-	if age <= 21600 && c.Shares1h >= 3 && c.Shares24h >= 3 {
+func admissionTier(candidate Candidate, age float64, config RankingConfig) int {
+	if age <= 21600 && candidate.Shares1h >= 3 && candidate.Shares24h >= 3 {
 		return 1
 	}
-	if c.Shares24h >= config.MinimumHighIntentActors || c.Recommendations24h >= config.MinimumRecommendations || (freshPublication(c, age, config) && c.Shares24h >= config.StandardSiteMinimumHighIntentActors) {
+	if candidate.Shares24h >= config.MinimumHighIntentActors || candidate.Recommendations24h >= config.MinimumRecommendations || (freshPublication(candidate, age, config) && candidate.Shares24h >= config.StandardSiteMinimumHighIntentActors) {
 		return 1
 	}
-	if c.Shares24h >= config.BackfillMinimumHighIntentActors || c.Recommendations24h >= config.BackfillMinimumRecommendations {
+	if candidate.Shares24h >= config.BackfillMinimumHighIntentActors || candidate.Recommendations24h >= config.BackfillMinimumRecommendations {
 		return 2
 	}
 	return 0
 }
-func percentile(values []int, q float64) int {
+func percentile(values []int, quantile float64) int {
 	if len(values) == 0 {
 		return int(^uint(0) >> 1)
 	}
 	sort.Ints(values)
-	return values[min(len(values)-1, max(0, int(math.Ceil(float64(len(values))*q))-1))]
+	return values[min(len(values)-1, max(0, int(math.Ceil(float64(len(values))*quantile))-1))]
 }
-func LimitedCommercialPenalty(c Candidate, config RankingConfig) float64 {
-	if c.CommercialClass != Limited {
+
+// LimitedCommercialPenalty scales the configured limited-content penalty with commercial
+// evidence between scores three and five.
+func LimitedCommercialPenalty(candidate Candidate, config RankingConfig) float64 {
+	if candidate.CommercialClass != Limited {
 		return 0
 	}
-	return config.LimitedCommercialPenalty * min(max(c.CommercialScore, 3), 5) / 5
+	return config.LimitedCommercialPenalty * min(max(candidate.CommercialScore, 3), 5) / 5
 }
+
+// Rank admits and scores an explicit-time snapshot, selects bounded quality backfill, then
+// diversifies the ordered stream.
 func Rank(candidates []Candidate, asOf time.Time, config RankingConfig) (RankingResult, error) {
 	if err := config.Validate(); err != nil {
 		return RankingResult{}, err
 	}
-	d := RankingDiagnostics{CandidateCount: len(candidates)}
+	diagnostics := RankingDiagnostics{CandidateCount: len(candidates)}
 	primary := []ScoredCandidate{}
 	backfill := []ScoredCandidate{}
+	// Reason thresholds intentionally use signal-admitted candidates before
+	// the later quality/age filter, matching the Swift reason population.
 	sharesHour, sharesDay, communities := []int{}, []int{}, []int{}
-	for _, c := range candidates {
-		if admissionTier(c, c.Age(asOf), config) != 0 {
-			sharesHour = append(sharesHour, c.Shares1h)
-			sharesDay = append(sharesDay, c.Shares24h)
-			communities = append(communities, c.Communities24h)
+	for _, candidate := range candidates {
+		if admissionTier(candidate, candidate.Age(asOf), config) != 0 {
+			sharesHour = append(sharesHour, candidate.Shares1h)
+			sharesDay = append(sharesDay, candidate.Shares24h)
+			communities = append(communities, candidate.Communities24h)
 		}
 	}
-	pHour, pDay, pCommunity := percentile(sharesHour, .9), percentile(sharesDay, .9), percentile(communities, .75)
-	total := 0.0
-	for _, v := range config.Weights.all() {
-		total += v
+	hourSharePercentile, daySharePercentile, communityPercentile := percentile(sharesHour, .9), percentile(sharesDay, .9), percentile(communities, .75)
+	positiveWeightTotal := 0.0
+	for _, value := range config.Weights.all() {
+		positiveWeightTotal += value
 	}
-	w := config.Weights
-	for _, c := range candidates {
-		age := c.Age(asOf)
+	weights := config.Weights
+	for _, candidate := range candidates {
+		age := candidate.Age(asOf)
 		if age > config.MaximumCandidateAge {
-			d.RejectedForAge++
+			diagnostics.RejectedForAge++
 			continue
 		}
-		if !finite(c.SourceConfidence) || c.SourceConfidence < config.MinimumSourceConfidence || !c.TargetKind.CanCreateItem() || c.CommercialClass == ProbableAd || (!enabled(c.IsStandardSite) && !enabled(c.HasUsableOpenGraphMetadata)) {
-			d.RejectedForQuality++
+		if !finite(candidate.SourceConfidence) || candidate.SourceConfidence < config.MinimumSourceConfidence || !candidate.TargetKind.CanCreateItem() || candidate.CommercialClass == ProbableAd || (!enabled(candidate.IsStandardSite) && !enabled(candidate.HasUsableOpenGraphMetadata)) {
+			diagnostics.RejectedForQuality++
 			continue
 		}
-		tier := admissionTier(c, age, config)
+		tier := admissionTier(candidate, age, config)
 		if tier == 0 {
-			d.RejectedForSignalFloor++
+			diagnostics.RejectedForSignalFloor++
 			continue
 		}
 		standard, metadata := 0.0, 0.0
-		if enabled(c.IsStandardSite) {
+		if enabled(candidate.IsStandardSite) {
 			standard = 1
 		}
-		if enabled(c.HasUsableOpenGraphMetadata) {
+		if enabled(candidate.HasUsableOpenGraphMetadata) {
 			metadata = 1
 		}
-		baseline := max(1, float64(c.Signals7d)/(7*24))
-		positive := (logarithmicRatio(c.Shares24h, config.ActorBreadthTarget)*w.DistinctSharers24h +
-			velocity(c.Shares1h, c.Shares24h)*w.ShareVelocity1h +
-			.5*(logarithmicRatio(c.DistinctLikes24h, config.ActorBreadthTarget)+velocity(c.Likes1h, c.Likes24h))*w.LikeBreadthVelocity +
-			.5*(logarithmicRatio(c.DistinctReposts24h, config.ActorBreadthTarget)+velocity(c.Reposts1h, c.Reposts24h))*w.RepostBreadthVelocity +
-			clamp(float64(c.Communities24h)/float64(config.CommunityBreadthTarget))*w.CommunitySpread +
-			math.Pow(.5, age/config.FreshnessHalfLife)*w.Freshness +
-			clamp(float64(c.Shares1h)/(baseline*3))*w.ResurfacingAcceleration +
-			clamp(c.SourceConfidence)*w.SourceConfidence + standard*w.StandardSiteAuthority + metadata*w.OpenGraphMetadata +
-			logarithmicRatio(c.Recommendations24h, config.RecommendationBreadthTarget)*w.RecommendationBreadth +
-			logarithmicRatio(c.PositiveFeedback24h, config.FeedbackBreadthTarget)*w.PositiveFeedbackBreadth) / total
-		feedback := clamp(positive - logarithmicRatio(c.NegativeFeedback24h, config.FeedbackBreadthTarget)*w.NegativeFeedbackPenalty)
+		baseline := max(1, float64(candidate.Signals7d)/(7*24))
+		// Normalize positive contributions together, then apply feedback and
+		// content/presentation penalties separately before final clamping.
+		positive := (logarithmicRatio(candidate.Shares24h, config.ActorBreadthTarget)*weights.DistinctSharers24h +
+			velocity(candidate.Shares1h, candidate.Shares24h)*weights.ShareVelocity1h +
+			.5*(logarithmicRatio(candidate.DistinctLikes24h, config.ActorBreadthTarget)+velocity(candidate.Likes1h, candidate.Likes24h))*weights.LikeBreadthVelocity +
+			.5*(logarithmicRatio(candidate.DistinctReposts24h, config.ActorBreadthTarget)+velocity(candidate.Reposts1h, candidate.Reposts24h))*weights.RepostBreadthVelocity +
+			clamp(float64(candidate.Communities24h)/float64(config.CommunityBreadthTarget))*weights.CommunitySpread +
+			math.Pow(.5, age/config.FreshnessHalfLife)*weights.Freshness +
+			clamp(float64(candidate.Shares1h)/(baseline*3))*weights.ResurfacingAcceleration +
+			clamp(candidate.SourceConfidence)*weights.SourceConfidence + standard*weights.StandardSiteAuthority + metadata*weights.OpenGraphMetadata +
+			logarithmicRatio(candidate.Recommendations24h, config.RecommendationBreadthTarget)*weights.RecommendationBreadth +
+			logarithmicRatio(candidate.PositiveFeedback24h, config.FeedbackBreadthTarget)*weights.PositiveFeedbackBreadth) / positiveWeightTotal
+		feedback := clamp(positive - logarithmicRatio(candidate.NegativeFeedback24h, config.FeedbackBreadthTarget)*weights.NegativeFeedbackPenalty)
 		thumbnail := 0.0
-		if !enabled(c.HasUsableThumbnail) {
+		if !enabled(candidate.HasUsableThumbnail) {
 			thumbnail = config.MissingThumbnailPenalty
 		}
-		score := clamp(feedback - config.DomainPenalties.Penalty(c.SourceDomain) - LimitedCommercialPenalty(c, config) - thumbnail + RotationNudge(c.CanonicalKey, asOf))
+		score := clamp(feedback - config.DomainPenalties.Penalty(candidate.SourceDomain) - LimitedCommercialPenalty(candidate, config) - thumbnail + RotationNudge(candidate.CanonicalKey, asOf))
 		if !finite(score) {
 			continue
 		}
 		reasons := []ReasonCode{}
-		if age <= 21600 && c.Shares1h >= max(1, pHour) {
+		if age <= 21600 && candidate.Shares1h >= max(1, hourSharePercentile) {
 			reasons = append(reasons, BreakingStory)
 		}
-		if c.Shares24h >= max(1, pDay) {
+		if candidate.Shares24h >= max(1, daySharePercentile) {
 			reasons = append(reasons, WidelyDiscussed)
 		}
-		if c.Communities24h >= 3 && c.Communities24h >= max(1, pCommunity) {
+		if candidate.Communities24h >= 3 && candidate.Communities24h >= max(1, communityPercentile) {
 			reasons = append(reasons, SharedAcrossCommunities)
 		}
-		if freshPublication(c, age, config) {
+		if freshPublication(candidate, age, config) {
 			reasons = append(reasons, FreshPublication)
 		}
-		if age >= 172800 && float64(c.Shares1h) >= baseline*3 {
+		if age >= 172800 && float64(candidate.Shares1h) >= baseline*3 {
 			reasons = append(reasons, Resurfacing)
 		}
 		if len(reasons) > 2 {
 			reasons = reasons[:2]
 		}
-		item := ScoredCandidate{c, score, reasons}
+		item := ScoredCandidate{candidate, score, reasons}
 		if tier == 1 {
 			primary = append(primary, item)
 		} else {
@@ -141,21 +159,23 @@ func Rank(candidates []Candidate, asOf time.Time, config RankingConfig) (Ranking
 		}
 	}
 	less := func(items []ScoredCandidate) func(int, int) bool {
-		return func(i, j int) bool {
-			if items[i].Score != items[j].Score {
-				return items[i].Score > items[j].Score
+		return func(itemIndex, comparisonIndex int) bool {
+			if items[itemIndex].Score != items[comparisonIndex].Score {
+				return items[itemIndex].Score > items[comparisonIndex].Score
 			}
-			return items[i].Candidate.CanonicalKey < items[j].Candidate.CanonicalKey
+			return items[itemIndex].Candidate.CanonicalKey < items[comparisonIndex].Candidate.CanonicalKey
 		}
 	}
 	sort.SliceStable(primary, less(primary))
 	sort.SliceStable(backfill, less(backfill))
-	n := min(len(backfill), max(0, config.MinimumRankedItems-len(primary)))
-	d.QualityBackfillCount = n
-	d.RejectedForSignalFloor += len(backfill) - n
-	scored := append(primary, backfill[:n]...)
-	d.EligibleCount = len(scored)
+	// Backfill fills only a short primary list; its scores never displace
+	// primary candidates. Diversity operates on the combined stream.
+	count := min(len(backfill), max(0, config.MinimumRankedItems-len(primary)))
+	diagnostics.QualityBackfillCount = count
+	diagnostics.RejectedForSignalFloor += len(backfill) - count
+	scored := append(primary, backfill[:count]...)
+	diagnostics.EligibleCount = len(scored)
 	result := Rerank(scored, config.Diversity)
-	d.DiversityDeferrals = len(result.Interventions)
-	return RankingResult{result.Items, d}, nil
+	diagnostics.DiversityDeferrals = len(result.Interventions)
+	return RankingResult{result.Items, diagnostics}, nil
 }

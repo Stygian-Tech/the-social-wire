@@ -24,25 +24,25 @@ func TestCorpusTrustBindsCompleteTargetAndBody(t *testing.T) {
 	secret := []byte(strings.Repeat("s", 32))
 	now := time.Unix(1000, 0)
 	digest := CorpusBodyDigest([]byte("body"))
-	h, err := SignCorpusRequest(secret, "appview", "get", "/v1/candidates?a=1", &digest, now, "")
+	headers, err := SignCorpusRequest(secret, "appview", "get", "/v1/candidates?a=1", &digest, now, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyCorpusRequest(secret, "appview", "GET", "/v1/candidates?a=1", h, now.Add(60*time.Second)); err != nil {
+	if err := VerifyCorpusRequest(secret, "appview", "GET", "/v1/candidates?a=1", headers, now.Add(60*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	for _, target := range []string{"/v1/candidates?a=2", "/v1/candidates"} {
-		if VerifyCorpusRequest(secret, "appview", "GET", target, h, now) == nil {
+		if VerifyCorpusRequest(secret, "appview", "GET", target, headers, now) == nil {
 			t.Fatal("accepted altered target")
 		}
 	}
-	changed := h
+	changed := headers
 	other := CorpusBodyDigest([]byte("altered"))
 	changed.BodyDigest = &other
 	if VerifyCorpusRequest(secret, "appview", "GET", "/v1/candidates?a=1", changed, now) == nil {
 		t.Fatal("accepted altered body")
 	}
-	if VerifyCorpusRequest(secret, "appview", "GET", "/v1/candidates?a=1", h, now.Add(61*time.Second)) == nil {
+	if VerifyCorpusRequest(secret, "appview", "GET", "/v1/candidates?a=1", headers, now.Add(61*time.Second)) == nil {
 		t.Fatal("accepted expired signature")
 	}
 }

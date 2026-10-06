@@ -1,5 +1,9 @@
 package sportscore
 
+// Models membership as a half-open time interval. JSON decoding accepts RFC3339 strings
+// and legacy Swift Date numbers measured in seconds since 2001-01-01, preserving
+// fractional seconds.
+
 import (
 	"encoding/json"
 	"errors"
@@ -7,6 +11,7 @@ import (
 	"time"
 )
 
+// Membership associates an entity with a half-open validity interval and optional season.
 type Membership struct {
 	EntityID   string     `json:"entityID"`
 	ValidFrom  time.Time  `json:"validFrom"`
@@ -14,10 +19,14 @@ type Membership struct {
 	Season     *string    `json:"season,omitempty"`
 }
 
-func (m Membership) Includes(at time.Time) bool {
-	return !at.Before(m.ValidFrom) && (m.ValidUntil == nil || at.Before(*m.ValidUntil))
+// Includes accepts the inclusive start and excludes the optional end instant.
+func (membership Membership) Includes(at time.Time) bool {
+	return !at.Before(membership.ValidFrom) && (membership.ValidUntil == nil || at.Before(*membership.ValidUntil))
 }
-func (m *Membership) UnmarshalJSON(data []byte) error {
+
+// UnmarshalJSON decodes the shared wire representation while enforcing this type’s
+// compatibility rules.
+func (membership *Membership) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		EntityID   string
 		ValidFrom  json.RawMessage
@@ -46,13 +55,13 @@ func (m *Membership) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*m = Membership{EntityID: raw.EntityID, ValidFrom: start, Season: raw.Season}
+	*membership = Membership{EntityID: raw.EntityID, ValidFrom: start, Season: raw.Season}
 	if len(raw.ValidUntil) > 0 && string(raw.ValidUntil) != "null" {
 		end, err := parse(raw.ValidUntil)
 		if err != nil {
 			return err
 		}
-		m.ValidUntil = &end
+		membership.ValidUntil = &end
 	}
 	return nil
 }

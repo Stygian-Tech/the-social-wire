@@ -1,6 +1,11 @@
 // Package thinappviewcore provides repository-local ingestion and projection contracts.
 package thinappviewcore
 
+// Validates a stored event against its independent cursor/kind/DID metadata before
+// decoding with the official Jetstream SDK. Numeric strings remain backward-compatible,
+// record integers stay exact, and event-specific payload rules reject malformed commits or
+// lifecycle events.
+
 import (
 	"bytes"
 	"encoding/json"
@@ -23,6 +28,8 @@ var (
 	ErrInvalidSync      = errors.New("invalid projection sync")
 )
 
+// ProjectionEvent is one validated commit, identity, account, or sync event using the
+// provider cursor.
 type ProjectionEvent struct {
 	Kind      string
 	DID       string
@@ -33,45 +40,62 @@ type ProjectionEvent struct {
 	Account   *ProjectionAccount
 	Sync      *ProjectionSync
 }
+
+// ProjectionCommit carries create/update/delete identity and raw object JSON; delete
+// events may omit record data.
 type ProjectionCommit struct {
 	Operation, Collection, RKey, RepoRev string
 	CID                                  *string
 	RecordJSON                           json.RawMessage
 }
+
+// ProjectionIdentity carries the optional updated repository handle.
 type ProjectionIdentity struct{ Handle *string }
+
+// ProjectionAccount carries activation and normalized lifecycle status for an account.
 type ProjectionAccount struct {
 	Active bool
 	Status string
 }
+
+// ProjectionSync carries the repository revision requesting reconciliation.
 type ProjectionSync struct{ RepoRev string }
 
-func stringValue(v any) string { s, _ := v.(string); return strings.TrimSpace(s) }
-func integerValue(v any) (int64, bool) {
-	switch x := v.(type) {
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return strings.TrimSpace(text)
+}
+func integerValue(value any) (int64, bool) {
+	switch typedValue := value.(type) {
 	case int64:
-		return x, true
+		return typedValue, true
 	case json.Number:
-		n, e := x.Int64()
-		return n, e == nil
+		count, err := typedValue.Int64()
+		return count, err == nil
 	case string:
-		n, e := strconv.ParseInt(x, 10, 64)
-		return n, e == nil
+		count, err := strconv.ParseInt(typedValue, 10, 64)
+		return count, err == nil
 	}
 	return 0, false
 }
-func optionalString(v any) *string {
-	if s := stringValue(v); s != "" {
-		return &s
+func optionalString(value any) *string {
+	if text := stringValue(value); text != "" {
+		return &text
 	}
 	return nil
 }
-func validDID(v any) string {
-	if s := stringValue(v); strings.HasPrefix(s, "did:") {
-		return s
+func validDID(value any) string {
+	if text := stringValue(value); strings.HasPrefix(text, "did:") {
+		return text
 	}
 	return ""
 }
-func nestedEventTime(v any) (time.Time, error) { return time.Parse(time.RFC3339Nano, stringValue(v)) }
+func nestedEventTime(value any) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, stringValue(value))
+}
+
+// ParseProjectionEvent checks cursor/kind/DID against stored metadata and returns SDK-
+// decoded event fields without applying durable side effects.
 func ParseProjectionEvent(data []byte, expectedSequence int64, expectedKind, expectedDID string) (ProjectionEvent, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()

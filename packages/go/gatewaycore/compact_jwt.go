@@ -3,6 +3,10 @@
 // authenticate an access token or a DPoP proof.
 package gatewaycore
 
+// Uses go-jose to parse a signed compact envelope without verifying its signature.
+// Payloads remain raw JSON to preserve exact numbers. ATH hashing is a DPoP helper;
+// neither operation authenticates the caller.
+
 import (
 	"crypto/sha256"
 	"encoding/base64"
@@ -15,6 +19,8 @@ import (
 
 var ErrMalformedJWT = errors.New("malformed compact JWT payload")
 
+// Base64URLDecode accepts URL-safe base64 with optional padding for compatible compact-
+// token fields.
 func Base64URLDecode(value string) ([]byte, error) {
 	value = strings.ReplaceAll(strings.ReplaceAll(value, "-", "+"), "_", "/")
 	if remainder := len(value) % 4; remainder != 0 {
@@ -22,7 +28,12 @@ func Base64URLDecode(value string) ([]byte, error) {
 	}
 	return base64.StdEncoding.DecodeString(value)
 }
+
+// Base64URLEncode emits unpadded URL-safe base64.
 func Base64URLEncode(value []byte) string { return base64.RawURLEncoding.EncodeToString(value) }
+
+// AccessTokenATH returns the base64url SHA-256 access-token hash required by DPoP; it does
+// not validate the token.
 func AccessTokenATH(accessToken string) string {
 	hash := sha256.Sum256([]byte(accessToken))
 	return Base64URLEncode(hash[:])

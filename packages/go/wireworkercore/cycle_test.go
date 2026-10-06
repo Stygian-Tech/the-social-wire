@@ -17,15 +17,15 @@ type cycleStore struct {
 	deleted bool
 }
 
-func (s *cycleStore) Ping(context.Context) error { return nil }
-func (s *cycleStore) EligibleLanguageBuckets(context.Context, int, int, wirecore.RankingConfig, time.Time) ([]string, error) {
+func (store *cycleStore) Ping(context.Context) error { return nil }
+func (store *cycleStore) EligibleLanguageBuckets(context.Context, int, int, wirecore.RankingConfig, time.Time) ([]string, error) {
 	return []string{}, nil
 }
-func (s *cycleStore) LoadCandidates(_ context.Context, _ string, _ int, ranking wirecore.RankingConfig, at time.Time) ([]wirecore.Candidate, error) {
-	s.loads = append(s.loads, ranking.Version)
+func (store *cycleStore) LoadCandidates(_ context.Context, _ string, _ int, ranking wirecore.RankingConfig, at time.Time) ([]wirecore.Candidate, error) {
+	store.loads = append(store.loads, ranking.Version)
 	items := []wirecore.Candidate{}
-	for i := range s.count {
-		item := wirecore.NewCandidate(fmt.Sprint(i), fmt.Sprintf("https://%d.example/story", i), fmt.Sprintf("%d.example", i), at)
+	for itemIndex := range store.count {
+		item := wirecore.NewCandidate(fmt.Sprint(itemIndex), fmt.Sprintf("https://%d.example/story", itemIndex), fmt.Sprintf("%d.example", itemIndex), at)
 		yes := true
 		item.IsStandardSite = &yes
 		item.SourceConfidence = 1
@@ -34,12 +34,12 @@ func (s *cycleStore) LoadCandidates(_ context.Context, _ string, _ int, ranking 
 	}
 	return items, nil
 }
-func (s *cycleStore) Commit(_ context.Context, g GenerationCommit) error {
-	s.commits = append(s.commits, g)
+func (store *cycleStore) Commit(_ context.Context, generation GenerationCommit) error {
+	store.commits = append(store.commits, generation)
 	return nil
 }
-func (s *cycleStore) DeleteExpired(context.Context, time.Time, int) error {
-	s.deleted = true
+func (store *cycleStore) DeleteExpired(context.Context, time.Time, int) error {
+	store.deleted = true
 	return nil
 }
 func TestCycleRequiresLabelsBeforeBuilding(t *testing.T) {

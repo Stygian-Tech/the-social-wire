@@ -1,5 +1,9 @@
 package wirecore
 
+// Adds field/version validation around the shared signed envelope. Wire cursors bind
+// generation/language/ordinal; Circle additionally binds a secret-derived viewer identity,
+// snapshot, and second-precision expiry checked against the caller clock.
+
 import (
 	"encoding/base64"
 	"errors"
@@ -15,19 +19,23 @@ var (
 	ErrCursorExpired  = errors.New("cursor expired")
 )
 
+// Cursor identifies a Wire generation/language and the next ranked ordinal.
 type Cursor struct {
 	GenerationID string
 	Language     string
 	NextOrdinal  int
 }
+
+// CursorCodec signs and validates Wire generation cursors using the shared envelope codec.
 type CursorCodec struct{ codec *signedcursor.Codec }
 
+// NewCursorCodec requires a copied secret of at least 32 bytes.
 func NewCursorCodec(secret []byte) (*CursorCodec, error) {
-	c, e := signedcursor.New(secret)
-	if e != nil {
-		return nil, e
+	codec, err := signedcursor.New(secret)
+	if err != nil {
+		return nil, err
 	}
-	return &CursorCodec{c}, nil
+	return &CursorCodec{codec}, nil
 }
 
 type cursorPayload struct {
@@ -37,54 +45,69 @@ type cursorPayload struct {
 	NextOrdinal *int    `json:"nextOrdinal"`
 }
 
-func validCursor(c Cursor) bool {
-	return c.NextOrdinal >= 0 && len(c.GenerationID) > 0 && len(c.GenerationID) <= 128 && len(c.Language) > 0 && len(c.Language) <= 35
+func validCursor(cursor Cursor) bool {
+	return cursor.NextOrdinal >= 0 && len(cursor.GenerationID) > 0 && len(cursor.GenerationID) <= 128 && len(cursor.Language) > 0 && len(cursor.Language) <= 35
 }
-func (c *CursorCodec) Encode(v Cursor) (string, error) {
-	if !validCursor(v) {
+
+// Encode validates fields and signs their JSON representation for a subsequent
+// authenticated decode.
+func (codec *CursorCodec) Encode(cursor Cursor) (string, error) {
+	if !validCursor(cursor) {
 		return "", ErrCursorPayload
 	}
 	version := 1
-	return c.codec.Encode(cursorPayload{&version, &v.GenerationID, &v.Language, &v.NextOrdinal})
-}
-func (c *CursorCodec) Decode(encoded string) (Cursor, error) {
-	var p cursorPayload
-	if err := c.codec.Decode(encoded, &p); err != nil {
-		return Cursor{}, err
-	}
-	if p.Version == nil || p.Generation == nil || p.Language == nil || p.NextOrdinal == nil {
-		return Cursor{}, signedcursor.ErrMalformed
-	}
-	if *p.Version != 1 {
-		return Cursor{}, ErrCursorVersion
-	}
-	v := Cursor{*p.Generation, *p.Language, *p.NextOrdinal}
-	if !validCursor(v) {
-		return Cursor{}, ErrCursorPayload
-	}
-	return v, nil
+	return codec.codec.Encode(cursorPayload{&version, &cursor.GenerationID, &cursor.Language, &cursor.NextOrdinal})
 }
 
+// Decode verifies the signed envelope before accepting domain fields; failures return no
+// usable cursor.
+func (codec *CursorCodec) Decode(encoded string) (Cursor, error) {
+	var payload cursorPayload
+	if err := codec.codec.Decode(encoded, &payload); err != nil {
+		return Cursor{}, err
+	}
+	if payload.Version == nil || payload.Generation == nil || payload.Language == nil || payload.NextOrdinal == nil {
+		return Cursor{}, signedcursor.ErrMalformed
+	}
+	if *payload.Version != 1 {
+		return Cursor{}, ErrCursorVersion
+	}
+	cursor := Cursor{*payload.Generation, *payload.Language, *payload.NextOrdinal}
+	if !validCursor(cursor) {
+		return Cursor{}, ErrCursorPayload
+	}
+	return cursor, nil
+}
+
+// CircleCursor adds snapshot and expiry to the Wire position used for viewer-specific
+// pagination.
 type CircleCursor struct {
 	SnapshotID, GenerationID, Language string
 	NextOrdinal                        int
 	ExpiresAt                          time.Time
 }
+
+// CircleCursorCodec signs viewer-bound Circle snapshots and validates their expiry.
 type CircleCursorCodec struct{ codec *signedcursor.Codec }
 
+// NewCircleCursorCodec requires a copied secret of at least 32 bytes for Circle cursor and
+// viewer binding MACs.
 func NewCircleCursorCodec(secret []byte) (*CircleCursorCodec, error) {
-	c, e := signedcursor.New(secret)
-	if e != nil {
-		return nil, e
+	codec, err := signedcursor.New(secret)
+	if err != nil {
+		return nil, err
 	}
-	return &CircleCursorCodec{c}, nil
+	return &CircleCursorCodec{codec}, nil
 }
-func (c *CircleCursorCodec) ViewerBinding(viewer string) (string, error) {
+
+// ViewerBinding returns a domain-separated secret MAC of the normalized viewer instead of
+// placing its raw identifier in the cursor.
+func (codec *CircleCursorCodec) ViewerBinding(viewer string) (string, error) {
 	viewer = strings.ToLower(strings.TrimSpace(viewer))
 	if len(viewer) == 0 || len(viewer) > 2048 {
 		return "", ErrCursorPayload
 	}
-	return "cv1:" + base64.RawURLEncoding.EncodeToString(c.codec.MAC([]byte("circle-viewer-v1\n"+viewer))), nil
+	return "cv1:" + base64.RawURLEncoding.EncodeToString(codec.codec.MAC([]byte("circle-viewer-v1\n"+viewer))), nil
 }
 
 type circleCursorPayload struct {
@@ -97,45 +120,51 @@ type circleCursorPayload struct {
 	ExpiresAt   *int64  `json:"expiresAt"`
 }
 
-func validCircleCursor(v CircleCursor) bool {
-	return validCursor(Cursor{v.GenerationID, v.Language, v.NextOrdinal}) && len(v.SnapshotID) > 0 && len(v.SnapshotID) <= 128 && v.ExpiresAt.After(time.Unix(0, 0))
+func validCircleCursor(cursor CircleCursor) bool {
+	return validCursor(Cursor{cursor.GenerationID, cursor.Language, cursor.NextOrdinal}) && len(cursor.SnapshotID) > 0 && len(cursor.SnapshotID) <= 128 && cursor.ExpiresAt.After(time.Unix(0, 0))
 }
-func (c *CircleCursorCodec) Encode(v CircleCursor, viewer string) (string, error) {
-	if !validCircleCursor(v) {
+
+// Encode validates fields and signs their JSON representation for a subsequent
+// authenticated decode.
+func (codec *CircleCursorCodec) Encode(cursor CircleCursor, viewer string) (string, error) {
+	if !validCircleCursor(cursor) {
 		return "", ErrCursorPayload
 	}
-	binding, err := c.ViewerBinding(viewer)
+	binding, err := codec.ViewerBinding(viewer)
 	if err != nil {
 		return "", err
 	}
 	version := 1
-	expiry := v.ExpiresAt.Unix()
-	return c.codec.Encode(circleCursorPayload{&version, &binding, &v.SnapshotID, &v.GenerationID, &v.Language, &v.NextOrdinal, &expiry})
+	expiry := cursor.ExpiresAt.Unix()
+	return codec.codec.Encode(circleCursorPayload{&version, &binding, &cursor.SnapshotID, &cursor.GenerationID, &cursor.Language, &cursor.NextOrdinal, &expiry})
 }
-func (c *CircleCursorCodec) Decode(encoded, viewer string, now time.Time) (CircleCursor, error) {
-	var p circleCursorPayload
-	if err := c.codec.Decode(encoded, &p); err != nil {
+
+// Decode verifies the signed envelope before accepting domain fields; failures return no
+// usable cursor.
+func (codec *CircleCursorCodec) Decode(encoded, viewer string, now time.Time) (CircleCursor, error) {
+	var payload circleCursorPayload
+	if err := codec.codec.Decode(encoded, &payload); err != nil {
 		return CircleCursor{}, err
 	}
-	if p.Version == nil || p.Viewer == nil || p.Snapshot == nil || p.Generation == nil || p.Language == nil || p.NextOrdinal == nil || p.ExpiresAt == nil {
+	if payload.Version == nil || payload.Viewer == nil || payload.Snapshot == nil || payload.Generation == nil || payload.Language == nil || payload.NextOrdinal == nil || payload.ExpiresAt == nil {
 		return CircleCursor{}, signedcursor.ErrMalformed
 	}
-	if *p.Version != 1 {
+	if *payload.Version != 1 {
 		return CircleCursor{}, ErrCursorVersion
 	}
-	binding, err := c.ViewerBinding(viewer)
+	binding, err := codec.ViewerBinding(viewer)
 	if err != nil {
 		return CircleCursor{}, err
 	}
-	if *p.Viewer != binding {
+	if *payload.Viewer != binding {
 		return CircleCursor{}, ErrViewerMismatch
 	}
-	v := CircleCursor{*p.Snapshot, *p.Generation, *p.Language, *p.NextOrdinal, time.Unix(*p.ExpiresAt, 0)}
-	if !validCircleCursor(v) {
+	cursor := CircleCursor{*payload.Snapshot, *payload.Generation, *payload.Language, *payload.NextOrdinal, time.Unix(*payload.ExpiresAt, 0)}
+	if !validCircleCursor(cursor) {
 		return CircleCursor{}, ErrCursorPayload
 	}
-	if !v.ExpiresAt.After(now) {
+	if !cursor.ExpiresAt.After(now) {
 		return CircleCursor{}, ErrCursorExpired
 	}
-	return v, nil
+	return cursor, nil
 }

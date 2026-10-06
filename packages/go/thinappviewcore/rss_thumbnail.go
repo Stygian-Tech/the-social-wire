@@ -1,5 +1,9 @@
 package thinappviewcore
 
+// Normalizes feed/image URLs and discovers thumbnails from explicit media, article HTML,
+// and summary HTML. The HTML tokenizer ignores comment/script text and decodes attributes.
+// URL normalization is not a DNS, redirect, or fetch authorization check.
+
 import (
 	"io"
 	"net/url"
@@ -8,6 +12,8 @@ import (
 	"golang.org/x/net/html"
 )
 
+// NormalizeFeedURL normalizes HTTP(S) input to HTTPS without credentials, fragments, or a
+// trailing slash; it does not authorize fetching.
 func NormalizeFeedURL(raw string) *string {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -17,31 +23,34 @@ func NormalizeFeedURL(raw string) *string {
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 		value = "https://" + value
 	}
-	u, err := url.Parse(value)
-	if err != nil || u.Hostname() == "" || !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") {
+	uRL, err := url.Parse(value)
+	if err != nil || uRL.Hostname() == "" || !strings.EqualFold(uRL.Scheme, "http") && !strings.EqualFold(uRL.Scheme, "https") {
 		return nil
 	}
-	if strings.EqualFold(u.Scheme, "http") {
-		u.Scheme = "https"
+	if strings.EqualFold(uRL.Scheme, "http") {
+		uRL.Scheme = "https"
 	}
-	u.Fragment = ""
-	u.RawFragment = ""
-	u.User = nil
-	value = u.String()
+	uRL.Fragment = ""
+	uRL.RawFragment = ""
+	uRL.User = nil
+	value = uRL.String()
 	if strings.HasSuffix(value, "/") {
 		value = strings.TrimSuffix(value, "/")
 	}
 	return &value
 }
+
+// NormalizeThumbnailURL resolves relative images against an optional base, then applies
+// feed URL normalization.
 func NormalizeThumbnailURL(raw string, base *string) *string {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return nil
 	}
 	if !strings.HasPrefix(strings.ToLower(value), "http") && base != nil {
-		relative, e := url.Parse(value)
-		parent, e2 := url.Parse(*base)
-		if e == nil && e2 == nil {
+		relative, err := url.Parse(value)
+		parent, baseParseErr := url.Parse(*base)
+		if err == nil && baseParseErr == nil {
 			value = parent.ResolveReference(relative).String()
 		}
 	}
@@ -50,6 +59,9 @@ func NormalizeThumbnailURL(raw string, base *string) *string {
 	}
 	return NormalizeFeedURL(value)
 }
+
+// AcceptsMediaURL admits image media hints or recognized URL forms; explicit non-image
+// hints are rejected.
 func AcceptsMediaURL(raw string, mediaType, medium *string) bool {
 	if strings.TrimSpace(raw) == "" {
 		return false
@@ -67,11 +79,11 @@ func AcceptsMediaURL(raw string, mediaType, medium *string) bool {
 	if strings.Contains(lower, "gravatar.com/avatar") {
 		return true
 	}
-	u, err := url.Parse(raw)
+	uRL, err := url.Parse(raw)
 	if err != nil {
 		return false
 	}
-	path := strings.ToLower(u.Path)
+	path := strings.ToLower(uRL.Path)
 	for _, extension := range []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".bmp"} {
 		if strings.HasSuffix(path, extension) || strings.Contains(path, extension+"?") {
 			return true
@@ -80,6 +92,8 @@ func AcceptsMediaURL(raw string, mediaType, medium *string) bool {
 	return false
 }
 
+// FirstImageURL returns the first real img source, falling back to the first og:image
+// attribute after tokenizing the whole document.
 func FirstImageURL(document string) *string {
 	tokens := html.NewTokenizer(strings.NewReader(document))
 	var openGraph *string
@@ -113,6 +127,9 @@ func FirstImageURL(document string) *string {
 		}
 	}
 }
+
+// ResolveThumbnail prefers a normalized stored image, then content HTML, then summary
+// HTML, using article URL before feed URL as base.
 func ResolveThumbnail(storedURL, contentHTML, summary string, articleLink, feedURL *string) *string {
 	base := articleLink
 	if base == nil {

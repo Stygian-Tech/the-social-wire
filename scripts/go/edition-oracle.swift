@@ -1,3 +1,5 @@
+// Run the actual Swift edition assembler and emit the complete serving JSON.
+// stdin/stdout are the fixture protocol; no hosted services or stores are used.
 import Foundation
 
 @main

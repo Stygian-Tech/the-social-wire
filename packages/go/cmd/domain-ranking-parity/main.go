@@ -1,5 +1,9 @@
 package main
 
+// Reads Finance/Sports candidates and preferences, invokes both domain rankers, and emits
+// only ordered IDs. This deliberately checks ordering parity rather than article
+// resolution, catalogs, or complete serving JSON.
+
 import (
 	"encoding/json"
 	"fmt"
@@ -25,11 +29,11 @@ func main() {
 		fail(err)
 	}
 	set := func(ids []string) map[string]bool {
-		m := map[string]bool{}
+		value := map[string]bool{}
 		for _, id := range ids {
-			m[id] = true
+			value[id] = true
 		}
-		return m
+		return value
 	}
 	finance := financecore.Rank(request.Finance, set(request.InstrumentIDs), set(request.SectorIDs), request.ReserveGlobal)
 	sports := sportscore.Rank(request.Sports, set(request.FollowIDs), set(request.MuteIDs), request.Entities, request.ReserveGlobal)
@@ -37,11 +41,11 @@ func main() {
 		Finance []string `json:"finance"`
 		Sports  []string `json:"sports"`
 	}{[]string{}, []string{}}
-	for _, c := range finance {
-		result.Finance = append(result.Finance, c.Item.ItemID)
+	for _, candidate := range finance {
+		result.Finance = append(result.Finance, candidate.Item.ItemID)
 	}
-	for _, c := range sports {
-		result.Sports = append(result.Sports, c.Item.ItemID)
+	for _, candidate := range sports {
+		result.Sports = append(result.Sports, candidate.Item.ItemID)
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 		fail(err)

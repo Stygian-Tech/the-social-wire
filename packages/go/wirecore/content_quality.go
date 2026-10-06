@@ -1,5 +1,10 @@
 package wirecore
 
+// Classifies supported targets and computes explainable commercial and base adult-content
+// evidence from URLs, text, topics, and structured indicators. These domain heuristics
+// preserve Swift behavior and complement persisted moderation labels; they are not a
+// general content-safety service.
+
 import (
 	"net/url"
 	"regexp"
@@ -8,11 +13,16 @@ import (
 	"unicode"
 )
 
+// CommercialAssessment returns additive commercial evidence, stable reason strings, and
+// the resulting admission class.
 type CommercialAssessment struct {
 	Score          float64         `json:"score"`
 	Classification CommercialClass `json:"classification"`
 	Reasons        []string        `json:"reasons"`
 }
+
+// ContentEvidence provides URL/text/topic and structured evidence for domain
+// classification.
 type ContentEvidence struct {
 	CanonicalURL                                  string
 	Title, Summary, SourceText                    string
@@ -20,6 +30,8 @@ type ContentEvidence struct {
 	HasProductOfferSchema, HasAffiliateDisclosure bool
 }
 
+// TargetKindForURL distinguishes article, social/profile, operational, and unsupported
+// targets using repository policy.
 func TargetKindForURL(raw string, standardSite bool) TargetKind {
 	trimmed := strings.TrimSpace(raw)
 	lower := strings.ToLower(trimmed)
@@ -29,11 +41,11 @@ func TargetKindForURL(raw string, standardSite bool) TargetKind {
 		}
 		return Unsupported
 	}
-	u, err := url.Parse(trimmed)
-	if err != nil || u.Hostname() == "" {
+	uRL, err := url.Parse(trimmed)
+	if err != nil || uRL.Hostname() == "" {
 		return Unsupported
 	}
-	host, path := strings.ToLower(u.Hostname()), strings.ToLower(u.Path)
+	host, path := strings.ToLower(uRL.Hostname()), strings.ToLower(uRL.Path)
 	if host == "bsky.app" || strings.HasSuffix(host, ".bsky.app") {
 		if regexp.MustCompile(`^/profile/[^/]+/post/[^/]+/?$`).MatchString(path) {
 			return SocialPost
@@ -50,29 +62,32 @@ func TargetKindForURL(raw string, standardSite bool) TargetKind {
 	return ExternalArticle
 }
 func matchesDomain(host string, domains []string) bool {
-	for _, d := range domains {
-		if host == d || strings.HasSuffix(host, "."+d) {
+	for _, digest := range domains {
+		if host == digest || strings.HasSuffix(host, "."+digest) {
 			return true
 		}
 	}
 	return false
 }
 func containsAny(text string, needles []string) bool {
-	for _, n := range needles {
-		if strings.Contains(text, n) {
+	for _, count := range needles {
+		if strings.Contains(text, count) {
 			return true
 		}
 	}
 	return false
 }
-func AssessCommercial(e ContentEvidence) CommercialAssessment {
-	text := strings.ToLower(strings.Join(append([]string{e.Title, e.Summary, e.SourceText}, e.TopicKeys...), " "))
+
+// AssessCommercial adds explicit disclosure/offer/CTA/link evidence and sorts reasons;
+// scores 3–5 are limited and scores above 5 probable ads.
+func AssessCommercial(evidence ContentEvidence) CommercialAssessment {
+	text := strings.ToLower(strings.Join(append([]string{evidence.Title, evidence.Summary, evidence.SourceText}, evidence.TopicKeys...), " "))
 	reasons := []string{}
 	score := 0.0
 	add := func(reason string, value float64) { reasons = append(reasons, reason); score += value }
 	// RE2 has no lookbehind; consuming the surrounding boundaries is equivalent
 	// here because the classifier only asks whether any disclosure exists.
-	if e.HasAffiliateDisclosure || containsAny(text, []string{"paid partnership", "sponsored post", "affiliate link"}) || regexp.MustCompile(`(^|[^a-z0-9])#(ad|sponsored)($|[^a-z0-9])`).MatchString(text) {
+	if evidence.HasAffiliateDisclosure || containsAny(text, []string{"paid partnership", "sponsored post", "affiliate link"}) || regexp.MustCompile(`(^|[^a-z0-9])#(ad|sponsored)($|[^a-z0-9])`).MatchString(text) {
 		add("explicit_ad_disclosure", 4)
 	}
 	if containsAny(text, []string{"buy now", "shop now", "order today", "use code", "promo code", "book a demo", "register now", "limited-time offer", "limited time offer", "subscribe and save", "free trial", "tag a friend", "follow and repost"}) {
@@ -84,31 +99,31 @@ func AssessCommercial(e ContentEvidence) CommercialAssessment {
 	if containsAny(text, []string{"whatsapp", "telegram", "dm to order", "contact us at"}) {
 		add("contact_solicitation", 1)
 	}
-	if e.HasProductOfferSchema || containsAny(text, []string{`"@type":"product"`, `"@type":"offer"`, "pricecurrency", "availability"}) {
+	if evidence.HasProductOfferSchema || containsAny(text, []string{`"@type":"product"`, `"@type":"offer"`, "pricecurrency", "availability"}) {
 		add("product_offer_schema", 3)
 	}
-	if u, err := url.Parse(e.CanonicalURL); err == nil {
+	if uRL, err := url.Parse(evidence.CanonicalURL); err == nil {
 		names := map[string]bool{}
-		for _, part := range strings.Split(u.RawQuery, "&") {
-			n, _, _ := strings.Cut(part, "=")
-			if decoded, err := url.PathUnescape(n); err == nil {
+		for _, part := range strings.Split(uRL.RawQuery, "&") {
+			count, _, _ := strings.Cut(part, "=")
+			if decoded, err := url.PathUnescape(count); err == nil {
 				names[strings.ToLower(decoded)] = true
 			}
 		}
-		for _, n := range []string{"affiliate", "aff", "ref", "referrer", "coupon", "promo"} {
-			if names[n] {
+		for _, count := range []string{"affiliate", "aff", "ref", "referrer", "coupon", "promo"} {
+			if names[count] {
 				add("affiliate_parameter", 2)
 				break
 			}
 		}
-		for n := range names {
-			if strings.HasPrefix(n, "utm_") || n == "gclid" || n == "fbclid" || n == "dclid" || n == "msclkid" {
+		for count := range names {
+			if strings.HasPrefix(count, "utm_") || count == "gclid" || count == "fbclid" || count == "dclid" || count == "msclkid" {
 				add("tracking_parameters", .25)
 				break
 			}
 		}
 		// Foundation removes one additional percent-encoding layer from .path.
-		path, err := url.PathUnescape(u.Path)
+		path, err := url.PathUnescape(uRL.Path)
 		if err != nil {
 			path = ""
 		}
@@ -121,7 +136,7 @@ func AssessCommercial(e ContentEvidence) CommercialAssessment {
 			if segment == "partner-content" || segment == "brand-studio" {
 				commercial = true
 			}
-			for _, token := range strings.FieldsFunc(segment, func(r rune) bool { return r == '-' || r == '_' || r == '.' }) {
+			for _, token := range strings.FieldsFunc(segment, func(character rune) bool { return character == '-' || character == '_' || character == '.' }) {
 				if containsExact([]string{"sponsored", "advertorial", "deals", "offers", "shop", "shopping", "store", "product", "giveaway"}, token) {
 					commercial = true
 				}
@@ -144,8 +159,8 @@ func AssessCommercial(e ContentEvidence) CommercialAssessment {
 	return CommercialAssessment{score, class, reasons}
 }
 func containsExact(values []string, value string) bool {
-	for _, v := range values {
-		if v == value {
+	for _, candidateValue := range values {
+		if candidateValue == value {
 			return true
 		}
 	}
@@ -154,27 +169,29 @@ func containsExact(values []string, value string) bool {
 
 const BaseContentLabelSource = "app.thesocialwire.base-content-labeler"
 
-func IsExplicitAdultContent(e ContentEvidence) bool {
+// IsExplicitAdultContent evaluates explicit tokens, corroborating combinations, and
+// reviewed source rules for baseline labels.
+func IsExplicitAdultContent(evidence ContentEvidence) bool {
 	host := ""
-	if u, err := url.Parse(e.CanonicalURL); err == nil {
-		host = strings.ToLower(u.Hostname())
+	if uRL, err := url.Parse(evidence.CanonicalURL); err == nil {
+		host = strings.ToLower(uRL.Hostname())
 	}
 	if matchesDomain(host, []string{"3movs.com", "3dporndude.com", "mengem.com"}) {
 		return true
 	}
-	text := strings.ToLower(strings.Join(append([]string{e.Title, e.Summary, e.SourceText}, e.TopicKeys...), " "))
+	text := strings.ToLower(strings.Join(append([]string{evidence.Title, evidence.Summary, evidence.SourceText}, evidence.TopicKeys...), " "))
 	tokens := map[string]bool{}
-	for _, s := range strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
-		tokens[s] = true
+	for _, token := range strings.FieldsFunc(text, func(character rune) bool { return !unicode.IsLetter(character) && !unicode.IsNumber(character) }) {
+		tokens[token] = true
 	}
 	count := func(values []string) int {
-		n := 0
-		for _, v := range values {
-			if tokens[v] {
-				n++
+		count := 0
+		for _, value := range values {
+			if tokens[value] {
+				count++
 			}
 		}
-		return n
+		return count
 	}
 	if count([]string{"blowjob", "blowjobs", "cumshot", "cumshots", "deepthroat", "gangbang", "gangbangs", "hardcoreporn", "hentai", "pornographic"}) > 0 {
 		return true

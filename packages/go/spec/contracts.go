@@ -1,11 +1,17 @@
 // Package spec exposes contracts generated from canonical repository API sources.
 package spec
 
+// Reads the generated canonical endpoint manifest and looks up exact surface/path pairs
+// with an uppercase method. An endpoint classification describes the contract, not runtime
+// route availability.
+
 import (
 	"encoding/json"
 	"strings"
 )
 
+// Endpoint describes a canonical route’s surface, method, path, classification, and
+// optional XRPC NSID.
 type Endpoint struct {
 	Surface        string `json:"surface"`
 	Method         string `json:"method"`
@@ -14,6 +20,7 @@ type Endpoint struct {
 	XRPCNSID       string `json:"xrpcNsid,omitempty"`
 }
 
+// Endpoints decodes an independent list from the embedded endpoint manifest.
 func Endpoints() ([]Endpoint, error) {
 	var manifest struct {
 		Version int        `json:"version"`
@@ -24,14 +31,16 @@ func Endpoints() ([]Endpoint, error) {
 	}
 	return manifest.Entries, nil
 }
+
+// Find matches surface/path exactly and normalizes the requested method to uppercase.
 func Find(surface, method, path string) (Endpoint, bool) {
 	entries, err := Endpoints()
 	if err != nil {
 		return Endpoint{}, false
 	}
-	for _, e := range entries {
-		if e.Surface == surface && e.Method == strings.ToUpper(method) && e.Path == path {
-			return e, true
+	for _, endpoint := range entries {
+		if endpoint.Surface == surface && endpoint.Method == strings.ToUpper(method) && endpoint.Path == path {
+			return endpoint, true
 		}
 	}
 	return Endpoint{}, false

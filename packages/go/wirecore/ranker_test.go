@@ -8,94 +8,94 @@ import (
 	"time"
 )
 
-func pointer[T any](v T) *T { return &v }
+func pointer[T any](value T) *T { return &value }
 func TestRankingAdmissionAndBoundaries(t *testing.T) {
 	now := time.Unix(1800000000, 0)
-	c := NewCandidate("a", "https://a.example/story", "a.example", now)
-	c.SourceConfidence = .75
-	c.IsStandardSite = pointer(true)
-	c.HasUsableThumbnail = pointer(true)
-	c.Shares24h = 1
-	r, e := Rank([]Candidate{c}, now, DefaultRankingConfig())
-	if e != nil || len(r.Items) != 1 || r.Items[0].ReasonCodes[0] != WidelyDiscussed {
-		t.Fatalf("fresh single-share publication: %+v %v", r, e)
+	candidate := NewCandidate("a", "https://a.example/story", "a.example", now)
+	candidate.SourceConfidence = .75
+	candidate.IsStandardSite = pointer(true)
+	candidate.HasUsableThumbnail = pointer(true)
+	candidate.Shares24h = 1
+	rankingResult, err := Rank([]Candidate{candidate}, now, DefaultRankingConfig())
+	if err != nil || len(rankingResult.Items) != 1 || rankingResult.Items[0].ReasonCodes[0] != WidelyDiscussed {
+		t.Fatalf("fresh single-share publication: %+v %v", rankingResult, err)
 	}
-	c.FirstSeenAt = now.Add(-72*time.Hour - time.Second)
-	r, e = Rank([]Candidate{c}, now, DefaultRankingConfig())
-	if e != nil || len(r.Items) != 0 || r.Diagnostics.RejectedForSignalFloor != 1 {
-		t.Fatalf("old single-share publication admitted: %+v %v", r, e)
+	candidate.FirstSeenAt = now.Add(-72*time.Hour - time.Second)
+	rankingResult, err = Rank([]Candidate{candidate}, now, DefaultRankingConfig())
+	if err != nil || len(rankingResult.Items) != 0 || rankingResult.Diagnostics.RejectedForSignalFloor != 1 {
+		t.Fatalf("old single-share publication admitted: %+v %v", rankingResult, err)
 	}
-	c.Shares24h = 5
-	c.FirstSeenAt = now.Add(-ItemRetention)
-	r, e = Rank([]Candidate{c}, now, DefaultRankingConfig())
-	if e != nil || len(r.Items) != 1 {
-		t.Fatal("inclusive age ceiling rejected", e)
+	candidate.Shares24h = 5
+	candidate.FirstSeenAt = now.Add(-ItemRetention)
+	rankingResult, err = Rank([]Candidate{candidate}, now, DefaultRankingConfig())
+	if err != nil || len(rankingResult.Items) != 1 {
+		t.Fatal("inclusive age ceiling rejected", err)
 	}
-	c.FirstSeenAt = c.FirstSeenAt.Add(-time.Second)
-	r, _ = Rank([]Candidate{c}, now, DefaultRankingConfig())
-	if r.Diagnostics.RejectedForAge != 1 {
+	candidate.FirstSeenAt = candidate.FirstSeenAt.Add(-time.Second)
+	rankingResult, _ = Rank([]Candidate{candidate}, now, DefaultRankingConfig())
+	if rankingResult.Diagnostics.RejectedForAge != 1 {
 		t.Fatal("expired item admitted")
 	}
 }
 func TestInvalidConfigAndNonfiniteQuality(t *testing.T) {
-	c := DefaultRankingConfig()
-	c.Weights.Freshness = math.NaN()
-	if !errors.Is(c.Validate(), ErrInvalidWeight) {
+	config := DefaultRankingConfig()
+	config.Weights.Freshness = math.NaN()
+	if !errors.Is(config.Validate(), ErrInvalidWeight) {
 		t.Fatal("NaN weight accepted")
 	}
-	c = DefaultRankingConfig()
-	c.Weights = RankingWeights{}
-	if !errors.Is(c.Validate(), ErrZeroWeightTotal) {
+	config = DefaultRankingConfig()
+	config.Weights = RankingWeights{}
+	if !errors.Is(config.Validate(), ErrZeroWeightTotal) {
 		t.Fatal("zero weight total accepted")
 	}
 	candidate := NewCandidate("a", "https://a.example", "a.example", time.Now())
 	candidate.SourceConfidence = math.Inf(1)
-	r, e := Rank([]Candidate{candidate}, time.Now(), DefaultRankingConfig())
-	if e != nil || r.Diagnostics.RejectedForQuality != 1 {
+	rankingResult, err := Rank([]Candidate{candidate}, time.Now(), DefaultRankingConfig())
+	if err != nil || rankingResult.Diagnostics.RejectedForQuality != 1 {
 		t.Fatal("non-finite confidence accepted")
 	}
 }
 func TestCircleParticipantsAndViewerBoundCursor(t *testing.T) {
 	now := time.Unix(1800000000, 0)
-	r, e := RankCircle([]CircleRankCandidate{{CanonicalKey: "a", Quality: 1, Presentation: 1, InterestMatch: 1, ParticipantSignals: []CircleParticipantSignal{{"person", CircleRelationship{Direct: true}, now}, {"person", CircleRelationship{PathCount: 1}, now}, {"future", CircleRelationship{Direct: true}, now.Add(time.Second)}}}}, now, DefaultCircleRankingConfig())
-	if e != nil || len(r.Items) != 1 {
-		t.Fatal(e)
+	rankingResult, err := RankCircle([]CircleRankCandidate{{CanonicalKey: "a", Quality: 1, Presentation: 1, InterestMatch: 1, ParticipantSignals: []CircleParticipantSignal{{"person", CircleRelationship{Direct: true}, now}, {"person", CircleRelationship{PathCount: 1}, now}, {"future", CircleRelationship{Direct: true}, now.Add(time.Second)}}}}, now, DefaultCircleRankingConfig())
+	if err != nil || len(rankingResult.Items) != 1 {
+		t.Fatal(err)
 	}
-	if r.Items[0].Components.RelationshipStrength != 1 {
+	if rankingResult.Items[0].Components.RelationshipStrength != 1 {
 		t.Fatal("duplicate signal weakened participant")
 	}
-	codec, e := NewCircleCursorCodec([]byte(strings.Repeat("s", 32)))
-	if e != nil {
-		t.Fatal(e)
+	codec, err := NewCircleCursorCodec([]byte(strings.Repeat("s", 32)))
+	if err != nil {
+		t.Fatal(err)
 	}
 	cursor := CircleCursor{"snapshot", "generation", "und", 0, now.Add(time.Minute)}
-	value, e := codec.Encode(cursor, "did:plc:a")
-	if e != nil {
-		t.Fatal(e)
+	value, err := codec.Encode(cursor, "did:plc:a")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, e = codec.Decode(value, "did:plc:b", now); !errors.Is(e, ErrViewerMismatch) {
-		t.Fatal("viewer cursor isolation failed", e)
+	if _, err = codec.Decode(value, "did:plc:b", now); !errors.Is(err, ErrViewerMismatch) {
+		t.Fatal("viewer cursor isolation failed", err)
 	}
-	if _, e = codec.Decode(value, "did:plc:a", cursor.ExpiresAt); !errors.Is(e, ErrCursorExpired) {
-		t.Fatal("expired cursor accepted", e)
+	if _, err = codec.Decode(value, "did:plc:a", cursor.ExpiresAt); !errors.Is(err, ErrCursorExpired) {
+		t.Fatal("expired cursor accepted", err)
 	}
-	if _, e = codec.Decode(value+"x", "did:plc:a", now); e == nil {
+	if _, err = codec.Decode(value+"x", "did:plc:a", now); err == nil {
 		t.Fatal("tampered cursor accepted")
 	}
 }
 func TestActorHashNormalizationAndSecretCopy(t *testing.T) {
 	secret := []byte(strings.Repeat("s", 32))
-	h, e := NewActorHasher(secret)
-	if e != nil {
-		t.Fatal(e)
+	hasher, err := NewActorHasher(secret)
+	if err != nil {
+		t.Fatal(err)
 	}
-	a, _ := h.Hash(" DID:PLC:ABC ")
+	leftValue, _ := hasher.Hash(" DID:PLC:ABC ")
 	secret[0] = 'x'
-	b, _ := h.Hash("did:plc:abc")
-	if a != b || !strings.HasPrefix(a, "h1:") {
+	rightValue, _ := hasher.Hash("did:plc:abc")
+	if leftValue != rightValue || !strings.HasPrefix(leftValue, "h1:") {
 		t.Fatal("unstable actor identity")
 	}
-	if _, e = h.Hash(" "); e == nil {
+	if _, err = hasher.Hash(" "); err == nil {
 		t.Fatal("empty actor accepted")
 	}
 }

@@ -24,16 +24,16 @@ func TestPersonalFollowOverridesBroadMuteOnly(t *testing.T) {
 	}
 }
 func TestSportsRejectsStaleResolverEvidence(t *testing.T) {
-	c := sportsCandidate("a")
-	c.Analysis.ResolverVersion = "old"
-	if len(Rank([]RankCandidate{c}, nil, nil, nil, false)) != 0 {
+	candidate := sportsCandidate("a")
+	candidate.Analysis.ResolverVersion = "old"
+	if len(Rank([]RankCandidate{candidate}, nil, nil, nil, false)) != 0 {
 		t.Fatal("accepted old resolver")
 	}
 }
 func TestSportsHierarchyCycleTerminates(t *testing.T) {
-	a, b := "a", "b"
-	catalog := []Entity{{ID: a, Kind: "sport", SportID: &b, Active: true}, {ID: b, Kind: "sport", SportID: &a, Active: true}}
-	ancestors := Ancestors(map[string]bool{a: true}, ParentIDs(catalog))
+	firstSportID, secondSportID := "a", "b"
+	catalog := []Entity{{ID: firstSportID, Kind: "sport", SportID: &secondSportID, Active: true}, {ID: secondSportID, Kind: "sport", SportID: &firstSportID, Active: true}}
+	ancestors := Ancestors(map[string]bool{firstSportID: true}, ParentIDs(catalog))
 	if len(ancestors) != 2 {
 		t.Fatal(ancestors)
 	}

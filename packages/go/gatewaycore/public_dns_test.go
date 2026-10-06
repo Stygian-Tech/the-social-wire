@@ -14,8 +14,8 @@ import (
 
 type fixtureResolver []netip.Addr
 
-func (r fixtureResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
-	return r, nil
+func (resolver fixtureResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
+	return resolver, nil
 }
 func TestPublicAddressPolicy(t *testing.T) {
 	for _, value := range []string{"8.8.8.8", "2606:4700:4700::1111", "2001:3::1", "64:ff9b::808:808"} {
@@ -30,8 +30,8 @@ func TestPublicAddressPolicy(t *testing.T) {
 	}
 }
 func TestMixedDNSAnswersFailClosed(t *testing.T) {
-	v := NewPublicDNSValidator(fixtureResolver{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("10.0.0.1")}, 8)
-	if _, err := v.Validate(context.Background(), "https://example.com"); !errors.Is(err, ErrInvalidEndpoint) {
+	validator := NewPublicDNSValidator(fixtureResolver{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("10.0.0.1")}, 8)
+	if _, err := validator.Validate(context.Background(), "https://example.com"); !errors.Is(err, ErrInvalidEndpoint) {
 		t.Fatal(err)
 	}
 }

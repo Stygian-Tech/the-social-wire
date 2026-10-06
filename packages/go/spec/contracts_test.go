@@ -23,9 +23,9 @@ func TestGeneratedAPIContractsMatchCanonicalSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _ := json.Marshal(entries)
-	b, _ := json.Marshal(expected.Entries)
-	if string(a) != string(b) {
+	actualJSON, _ := json.Marshal(entries)
+	expectedJSON, _ := json.Marshal(expected.Entries)
+	if string(actualJSON) != string(expectedJSON) {
 		t.Fatal("endpoint manifest drift")
 	}
 	source, err := os.ReadFile("../../spec/openapi.yaml")

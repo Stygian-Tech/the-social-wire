@@ -1,5 +1,9 @@
 package wirecore
 
+// Centralizes bounded retention windows, graph cardinalities, clustering cadence, and
+// candidate/first-page floors. Constants are policy inputs; host jobs and database
+// retention must enforce them.
+
 import "time"
 
 const (

@@ -392,6 +392,8 @@ jobs:
       - name: Build Operations production image
         run: docker build --file services/operations/Dockerfile --tag the-social-wire-operations:test .
 
+  # Real PostgreSQL transactions and actual Swift oracles verify the local Go
+  # foundation; this job participates in the required aggregate branch gate.
   go-packages:
     name: Repository-local Go Packages
     needs: changes

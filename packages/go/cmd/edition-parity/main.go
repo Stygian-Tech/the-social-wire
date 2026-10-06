@@ -1,5 +1,9 @@
 package main
 
+// Reads ranked items, account evidence, and a fixed clock, then emits a fixture edition
+// for full JSON comparison with the actual Swift assembler. It performs no database or
+// network operations.
+
 import (
 	"encoding/json"
 	"fmt"

@@ -1,5 +1,10 @@
 package wirecore
 
+// Forms HTTPS article identities, normalizes host/default ports/path, removes fragments
+// and known tracking parameters, and sorts semantic query pairs. Literal plus signs retain
+// Foundation semantics; the canonical URL is SHA-256 keyed. Identity normalization is not
+// network admission.
+
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +16,7 @@ import (
 
 const CanonicalizerVersion = "canonical-url-v1"
 
+// CanonicalIdentity pairs a normalized article URL with its url: SHA-256 key.
 type CanonicalIdentity struct {
 	CanonicalKey string `json:"canonicalKey"`
 	CanonicalURL string `json:"canonicalURL"`
@@ -21,16 +27,16 @@ var trackingNames = map[string]bool{"dclid": true, "fbclid": true, "gclid": true
 // Canonicalize retains Foundation's literal plus signs in query values. Go's
 // form-query parser cannot be used here because it turns '+' into a space.
 func Canonicalize(raw string) *CanonicalIdentity {
-	u, err := url.Parse(raw)
-	if err != nil || u.User != nil || u.Opaque != "" || u.Hostname() == "" {
+	uRL, err := url.Parse(raw)
+	if err != nil || uRL.User != nil || uRL.Opaque != "" || uRL.Hostname() == "" {
 		return nil
 	}
-	scheme := strings.ToLower(u.Scheme)
+	scheme := strings.ToLower(uRL.Scheme)
 	if scheme != "http" && scheme != "https" {
 		return nil
 	}
-	u.Scheme = "https"
-	host, port := strings.ToLower(u.Hostname()), u.Port()
+	uRL.Scheme = "https"
+	host, port := strings.ToLower(uRL.Hostname()), uRL.Port()
 	if port == "80" || port == "443" {
 		port = ""
 	}
@@ -40,73 +46,73 @@ func Canonicalize(raw string) *CanonicalIdentity {
 	if port != "" {
 		host = net.JoinHostPort(strings.Trim(host, "[]"), port)
 	}
-	u.Host, u.Fragment, u.RawFragment = host, "", ""
-	path := u.EscapedPath()
+	uRL.Host, uRL.Fragment, uRL.RawFragment = host, "", ""
+	path := uRL.EscapedPath()
 	if path == "" {
 		path = "/"
 	}
 	for len(path) > 1 && strings.HasSuffix(path, "/") {
 		path = strings.TrimSuffix(path, "/")
 	}
-	u.Path, err = url.PathUnescape(path)
+	uRL.Path, err = url.PathUnescape(path)
 	if err != nil {
 		return nil
 	}
-	u.RawPath = path
+	uRL.RawPath = path
 	type queryItem struct {
 		name, value string
 		hasValue    bool
 	}
 	items := []queryItem{}
-	if u.RawQuery != "" {
-		for _, part := range strings.Split(u.RawQuery, "&") {
-			n, v, found := strings.Cut(part, "=")
-			n, err = url.PathUnescape(n)
+	if uRL.RawQuery != "" {
+		for _, part := range strings.Split(uRL.RawQuery, "&") {
+			queryName, queryValue, found := strings.Cut(part, "=")
+			queryName, err = url.PathUnescape(queryName)
 			if err != nil {
 				return nil
 			}
-			v, err = url.PathUnescape(v)
+			queryValue, err = url.PathUnescape(queryValue)
 			if err != nil {
 				return nil
 			}
-			if lower := strings.ToLower(n); strings.HasPrefix(lower, "utm_") || trackingNames[lower] {
+			if lower := strings.ToLower(queryName); strings.HasPrefix(lower, "utm_") || trackingNames[lower] {
 				continue
 			}
-			items = append(items, queryItem{n, v, found})
+			items = append(items, queryItem{queryName, queryValue, found})
 		}
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].name != items[j].name {
-			return items[i].name < items[j].name
+	sort.SliceStable(items, func(itemIndex, comparisonIndex int) bool {
+		if items[itemIndex].name != items[comparisonIndex].name {
+			return items[itemIndex].name < items[comparisonIndex].name
 		}
-		return items[i].value < items[j].value
+		return items[itemIndex].value < items[comparisonIndex].value
 	})
-	escape := func(s string) string {
+	escape := func(text string) string {
 		// URLComponents queryItems allow URI query characters except '&'/'='.
 		var out strings.Builder
 		const digits = "0123456789ABCDEF"
-		for _, b := range []byte(s) {
-			if b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || strings.ContainsRune("-._~!$'()*+,;:@/?", rune(b)) {
-				out.WriteByte(b)
+		for _, octet := range []byte(text) {
+			if octet >= 'a' && octet <= 'z' || octet >= 'A' && octet <= 'Z' || octet >= '0' && octet <= '9' || strings.ContainsRune("-._~!$'()*+,;:@/?", rune(octet)) {
+				out.WriteByte(octet)
 			} else {
 				out.WriteByte('%')
-				out.WriteByte(digits[b>>4])
-				out.WriteByte(digits[b&15])
+				out.WriteByte(digits[octet>>4])
+				out.WriteByte(digits[octet&15])
 			}
 		}
 		return out.String()
 	}
 	parts := make([]string, 0, len(items))
-	for _, q := range items {
-		p := escape(q.name)
-		if q.hasValue {
-			p += "=" + escape(q.value)
+	for _, queryItem2 := range items {
+		part := escape(queryItem2.name)
+		if queryItem2.hasValue {
+			part += "=" + escape(queryItem2.value)
 		}
-		parts = append(parts, p)
+		parts = append(parts, part)
 	}
-	u.RawQuery = strings.Join(parts, "&")
-	u.ForceQuery = false
-	canonical := u.String()
+	uRL.RawQuery = strings.Join(parts, "&")
+	uRL.ForceQuery = false
+	canonical := uRL.String()
 	hash := sha256.Sum256([]byte(canonical))
 	return &CanonicalIdentity{"url:" + hex.EncodeToString(hash[:]), canonical}
 }

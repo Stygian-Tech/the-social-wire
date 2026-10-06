@@ -1,16 +1,22 @@
 package wireworkercore
 
+// Deletes expired inactive generations in small bounded batches, then independently cleans
+// expired leaf tables with SKIP LOCKED. The active generation is retained even after
+// expiry; separate statements bound transaction size and allow partial cleanup progress.
+
 import (
 	"context"
 	"time"
 )
 
-func (s *PostgresGenerationStore) DeleteExpired(ctx context.Context, at time.Time, batchSize int) error {
+// DeleteExpired bounds inactive generation and expired leaf cleanup; active generations
+// are never deleted by this method.
+func (store *PostgresGenerationStore) DeleteExpired(ctx context.Context, at time.Time, batchSize int) error {
 	batchSize = max(1, min(batchSize, 5000))
 	generationLimit := min(batchSize, 4)
 	start := time.Now()
 	for range 16 {
-		result, err := s.DB.ExecContext(ctx, `DELETE FROM wire_rank_generations WHERE generation_id IN(SELECT generation_id FROM wire_rank_generations WHERE expires_at<=$1 AND is_active=FALSE ORDER BY expires_at LIMIT $2 FOR UPDATE SKIP LOCKED)`, at, generationLimit)
+		result, err := store.DB.ExecContext(ctx, `DELETE FROM wire_rank_generations WHERE generation_id IN(SELECT generation_id FROM wire_rank_generations WHERE expires_at<=$1 AND is_active=FALSE ORDER BY expires_at LIMIT $2 FOR UPDATE SKIP LOCKED)`, at, generationLimit)
 		if err != nil {
 			return err
 		}
@@ -33,7 +39,7 @@ func (s *PostgresGenerationStore) DeleteExpired(ctx context.Context, at time.Tim
 		`DELETE FROM wire_labels WHERE(canonical_key,label_key,source)IN(SELECT canonical_key,label_key,source FROM wire_labels WHERE expires_at<=$1 ORDER BY expires_at LIMIT $2 FOR UPDATE SKIP LOCKED)`,
 		`DELETE FROM wire_items WHERE canonical_key IN(SELECT canonical_key FROM wire_items WHERE expires_at<=$1 ORDER BY expires_at LIMIT $2 FOR UPDATE SKIP LOCKED)`,
 	} {
-		if _, err := s.DB.ExecContext(ctx, query, at, batchSize); err != nil {
+		if _, err := store.DB.ExecContext(ctx, query, at, batchSize); err != nil {
 			return err
 		}
 	}

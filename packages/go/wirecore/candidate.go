@@ -1,8 +1,14 @@
 // Package wirecore implements the shared Wire and Circle data policies and ranking contracts.
 package wirecore
 
+// Defines ranking inputs, admission categories, scores, reason codes, and rejection
+// diagnostics. Optional evidence booleans are true only when explicitly supplied; age
+// falls back to first-seen time and is clamped for future timestamps.
+
 import "time"
 
+// TargetKind categorizes article targets independently of engagement or presentation
+// quality.
 type TargetKind string
 
 const (
@@ -15,8 +21,13 @@ const (
 	Unsupported          TargetKind = "unsupported"
 )
 
-func (k TargetKind) CanCreateItem() bool { return k == ExternalArticle || k == StandardSiteDocument }
+// CanCreateItem permits only external articles and standard.site documents to create
+// ranked items.
+func (targetKind TargetKind) CanCreateItem() bool {
+	return targetKind == ExternalArticle || targetKind == StandardSiteDocument
+}
 
+// CommercialClass records normal, limited, or probable-ad admission evidence.
 type CommercialClass string
 
 const (
@@ -25,6 +36,8 @@ const (
 	ProbableAd CommercialClass = "probable_ad"
 )
 
+// Candidate is an explicit-time ranking snapshot of identity, aggregate signals, quality,
+// and content evidence.
 type Candidate struct {
 	CanonicalKey               string          `json:"canonicalKey"`
 	CanonicalURL               string          `json:"canonicalURL"`
@@ -64,19 +77,25 @@ type Candidate struct {
 	CommercialScore            float64         `json:"commercialScore"`
 }
 
+// NewCandidate initializes a conservative external-article candidate; evidence flags
+// remain absent until supplied.
 func NewCandidate(key, url, domain string, firstSeen time.Time) Candidate {
 	return Candidate{CanonicalKey: key, CanonicalURL: url, SourceDomain: domain, FirstSeenAt: firstSeen,
 		TopicKeys: []string{}, SourceConfidence: 0.5, TargetKind: ExternalArticle, CommercialClass: Normal}
 }
-func (c Candidate) Age(asOf time.Time) float64 {
-	date := c.FirstSeenAt
-	if c.PublishedAt != nil {
-		date = *c.PublishedAt
+
+// Age returns nonnegative age in seconds from publication time, falling back to first-seen
+// time.
+func (candidate Candidate) Age(asOf time.Time) float64 {
+	date := candidate.FirstSeenAt
+	if candidate.PublishedAt != nil {
+		date = *candidate.PublishedAt
 	}
 	return max(0, asOf.Sub(date).Seconds())
 }
-func enabled(v *bool) bool { return v != nil && *v }
+func enabled(value *bool) bool { return value != nil && *value }
 
+// ReasonCode is one stable human-facing ranking explanation.
 type ReasonCode string
 
 const (
@@ -87,11 +106,16 @@ const (
 	WidelyDiscussed         ReasonCode = "widely_discussed"
 )
 
+// ScoredCandidate pairs an admitted candidate with its normalized score and bounded
+// reasons.
 type ScoredCandidate struct {
 	Candidate   Candidate    `json:"candidate"`
 	Score       float64      `json:"score"`
 	ReasonCodes []ReasonCode `json:"reasonCodes"`
 }
+
+// RankingDiagnostics counts admission rejections, backfill selection, and diversity
+// interventions for one rank call.
 type RankingDiagnostics struct {
 	CandidateCount         int `json:"candidateCount"`
 	EligibleCount          int `json:"eligibleCount"`
@@ -102,6 +126,8 @@ type RankingDiagnostics struct {
 	GeneralBackfillCount   int `json:"generalBackfillCount"`
 	DiversityDeferrals     int `json:"diversityDeferrals"`
 }
+
+// RankingResult returns deterministic ranked items plus admission/diversity diagnostics.
 type RankingResult struct {
 	Items       []ScoredCandidate  `json:"items"`
 	Diagnostics RankingDiagnostics `json:"diagnostics"`

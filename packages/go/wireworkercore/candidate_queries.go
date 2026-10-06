@@ -1,5 +1,10 @@
 package wireworkercore
 
+// Keeps PostgreSQL candidate projection contracts and bind ordering next to their
+// scanners. Both candidate queries exclude expired/ineligible/moderated items and switch
+// baseline versus external rollups together; locale discovery applies quality and signal
+// floors before choosing at most twelve buckets.
+
 // Typed binds and metadata projection preserve PostgresWireCandidateQuery.
 const candidateQuery = `
       WITH candidate_keys AS MATERIALIZED (

@@ -1,5 +1,10 @@
 package wirecore
 
+// Signs internal corpus requests with a versioned newline-delimited HMAC over service,
+// timestamp, nonce, method, and complete target. v2 also binds a supplied body digest.
+// Verification checks the expected service and a 60-second clock window; body comparison
+// and replay storage belong to the receiver.
+
 import (
 	"crypto/hmac"
 	"crypto/rand"
@@ -29,6 +34,8 @@ var (
 	digestPattern      = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
+// CorpusServiceHeaders carries service identity, clock, nonce, signature, and optional v2
+// body digest.
 type CorpusServiceHeaders struct {
 	ServiceID  string  `json:"serviceID"`
 	Timestamp  string  `json:"timestamp"`
@@ -37,52 +44,62 @@ type CorpusServiceHeaders struct {
 	BodyDigest *string `json:"bodyDigest,omitempty"`
 }
 
-func CorpusBodyDigest(body []byte) string { h := sha256.Sum256(body); return hex.EncodeToString(h[:]) }
+// CorpusBodyDigest returns lowercase SHA-256 of the exact request body bytes.
+func CorpusBodyDigest(body []byte) string {
+	value := sha256.Sum256(body)
+	return hex.EncodeToString(value[:])
+}
 func validateCorpusRequest(secret []byte, service, target, nonce string, digest *string) error {
 	if len(secret) < 32 || !serviceIDPattern.MatchString(service) || !strings.HasPrefix(target, "/") || len(target) > 2048 || strings.ContainsAny(target, "#\r\n") || !corpusNoncePattern.MatchString(nonce) || digest != nil && !digestPattern.MatchString(*digest) {
 		return ErrCorpusTrust
 	}
 	return nil
 }
-func corpusMessage(h CorpusServiceHeaders, method, target string) []byte {
+func corpusMessage(headers CorpusServiceHeaders, method, target string) []byte {
 	version := "wire-corpus-v1"
-	if h.BodyDigest != nil {
+	if headers.BodyDigest != nil {
 		version = "wire-corpus-v2"
 	}
-	message := strings.Join([]string{version, h.ServiceID, h.Timestamp, h.Nonce, strings.ToUpper(method), target}, "\n")
-	if h.BodyDigest != nil {
-		message += "\n" + *h.BodyDigest
+	message := strings.Join([]string{version, headers.ServiceID, headers.Timestamp, headers.Nonce, strings.ToUpper(method), target}, "\n")
+	if headers.BodyDigest != nil {
+		message += "\n" + *headers.BodyDigest
 	}
 	return []byte(message)
 }
+
+// SignCorpusRequest signs the complete method/target and optional body digest, generating
+// a random UUID nonce when omitted.
 func SignCorpusRequest(secret []byte, service, method, target string, digest *string, now time.Time, nonce string) (CorpusServiceHeaders, error) {
 	if nonce == "" {
-		var b [16]byte
-		if _, err := rand.Read(b[:]); err != nil {
+		var nonceBytes [16]byte
+		if _, err := rand.Read(nonceBytes[:]); err != nil {
 			return CorpusServiceHeaders{}, err
 		}
-		b[6] = b[6]&15 | 64
-		b[8] = b[8]&63 | 128
-		nonce = fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
+		nonceBytes[6] = nonceBytes[6]&15 | 64
+		nonceBytes[8] = nonceBytes[8]&63 | 128
+		nonce = fmt.Sprintf("%x-%x-%x-%x-%x", nonceBytes[:4], nonceBytes[4:6], nonceBytes[6:8], nonceBytes[8:10], nonceBytes[10:])
 	}
 	if err := validateCorpusRequest(secret, service, target, nonce, digest); err != nil {
 		return CorpusServiceHeaders{}, err
 	}
-	h := CorpusServiceHeaders{ServiceID: service, Timestamp: strconv.FormatInt(now.Unix(), 10), Nonce: nonce, BodyDigest: digest}
+	headers := CorpusServiceHeaders{ServiceID: service, Timestamp: strconv.FormatInt(now.Unix(), 10), Nonce: nonce, BodyDigest: digest}
 	mac := hmac.New(sha256.New, secret)
-	mac.Write(corpusMessage(h, method, target))
-	h.Signature = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return h, nil
+	mac.Write(corpusMessage(headers, method, target))
+	headers.Signature = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return headers, nil
 }
-func VerifyCorpusRequest(secret []byte, expectedService, method, target string, h CorpusServiceHeaders, now time.Time) error {
-	if err := validateCorpusRequest(secret, expectedService, target, h.Nonce, h.BodyDigest); err != nil {
+
+// VerifyCorpusRequest verifies expected service, HMAC, and ±60-second clock window. The
+// receiver must also compare the body digest and prevent replay.
+func VerifyCorpusRequest(secret []byte, expectedService, method, target string, headers CorpusServiceHeaders, now time.Time) error {
+	if err := validateCorpusRequest(secret, expectedService, target, headers.Nonce, headers.BodyDigest); err != nil {
 		return err
 	}
-	seconds, err := strconv.ParseInt(h.Timestamp, 10, 64)
-	if err != nil || h.ServiceID != expectedService || now.Sub(time.Unix(seconds, 0)) > 60*time.Second || time.Unix(seconds, 0).Sub(now) > 60*time.Second || len(h.Signature) > 128 || h.Signature == "" {
+	seconds, err := strconv.ParseInt(headers.Timestamp, 10, 64)
+	if err != nil || headers.ServiceID != expectedService || now.Sub(time.Unix(seconds, 0)) > 60*time.Second || time.Unix(seconds, 0).Sub(now) > 60*time.Second || len(headers.Signature) > 128 || headers.Signature == "" {
 		return ErrCorpusTrust
 	}
-	encoded := strings.ReplaceAll(strings.ReplaceAll(h.Signature, "-", "+"), "_", "/")
+	encoded := strings.ReplaceAll(strings.ReplaceAll(headers.Signature, "-", "+"), "_", "/")
 	if remainder := len(encoded) % 4; remainder != 0 {
 		encoded += strings.Repeat("=", 4-remainder)
 	}
@@ -91,7 +108,7 @@ func VerifyCorpusRequest(secret []byte, expectedService, method, target string, 
 		return ErrCorpusTrust
 	}
 	mac := hmac.New(sha256.New, secret)
-	mac.Write(corpusMessage(h, method, target))
+	mac.Write(corpusMessage(headers, method, target))
 	if !hmac.Equal(signature, mac.Sum(nil)) {
 		return ErrCorpusTrust
 	}

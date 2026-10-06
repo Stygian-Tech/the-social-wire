@@ -1,5 +1,11 @@
 package wirecore
 
+// Reranks an already scored stream using domain, publication, author, topic, and community
+// caps. It progressively relaxes caps to meet minimum fill, completes the first page from
+// deferred items, then appends the unselected tail without discarding ranked candidates.
+
+// DiversityPolicy sets first-page caps and the minimum fill that triggers ordered cap
+// relaxation.
 type DiversityPolicy struct {
 	FirstPageLimit    int `json:"firstPageLimit"`
 	MaxPerDomain      int `json:"maxPerDomain"`
@@ -10,15 +16,20 @@ type DiversityPolicy struct {
 	MinimumStrictFill int `json:"minimumStrictFill"`
 }
 
+// DefaultDiversityPolicy sets the Swift-compatible
+// domain/publication/author/topic/community caps for fifty items.
 func DefaultDiversityPolicy() DiversityPolicy { return DiversityPolicy{50, 4, 3, 2, 5, 10, 40} }
-func (p DiversityPolicy) allCaps() []int {
-	return []int{p.FirstPageLimit, p.MaxPerDomain, p.MaxPerPublication, p.MaxPerAuthor, p.MaxPerTopic, p.MaxPerCommunity, p.MinimumStrictFill}
+func (policy DiversityPolicy) allCaps() []int {
+	return []int{policy.FirstPageLimit, policy.MaxPerDomain, policy.MaxPerPublication, policy.MaxPerAuthor, policy.MaxPerTopic, policy.MaxPerCommunity, policy.MinimumStrictFill}
 }
 
+// DiversityIntervention identifies a deferred candidate’s cap or a global relaxation step.
 type DiversityIntervention struct {
 	CanonicalKey string `json:"canonicalKey"`
 	Kind         string `json:"kind"`
 }
+
+// DiversityResult returns the reranked stream with cap/relaxation evidence.
 type DiversityResult struct {
 	Items         []ScoredCandidate       `json:"items"`
 	Interventions []DiversityIntervention `json:"interventions"`
@@ -34,52 +45,55 @@ func selectDiverse(items []ScoredCandidate, size int, caps diversityCaps) (selec
 		if len(selected) >= size {
 			break
 		}
-		c := item.Candidate
+		candidate := item.Candidate
 		violation := ""
 		switch {
-		case domains[c.SourceDomain] >= caps.domain:
+		case domains[candidate.SourceDomain] >= caps.domain:
 			violation = "domain"
-		case c.PublicationID != nil && publications[*c.PublicationID] >= caps.publication:
+		case candidate.PublicationID != nil && publications[*candidate.PublicationID] >= caps.publication:
 			violation = "publication"
-		case c.AuthorKey != nil && authors[*c.AuthorKey] >= caps.author:
+		case candidate.AuthorKey != nil && authors[*candidate.AuthorKey] >= caps.author:
 			violation = "author"
 		default:
-			for _, t := range c.TopicKeys {
-				if topics[t] >= caps.topic {
+			for _, topic := range candidate.TopicKeys {
+				if topics[topic] >= caps.topic {
 					violation = "topic"
 					break
 				}
 			}
-			if violation == "" && c.PrimaryCommunityKey != nil && communities[*c.PrimaryCommunityKey] >= caps.community {
+			if violation == "" && candidate.PrimaryCommunityKey != nil && communities[*candidate.PrimaryCommunityKey] >= caps.community {
 				violation = "community"
 			}
 		}
 		if violation != "" {
 			deferred = append(deferred, item)
-			interventions = append(interventions, DiversityIntervention{c.CanonicalKey, violation})
+			interventions = append(interventions, DiversityIntervention{candidate.CanonicalKey, violation})
 			continue
 		}
 		selected = append(selected, item)
-		domains[c.SourceDomain]++
-		if c.PublicationID != nil {
-			publications[*c.PublicationID]++
+		domains[candidate.SourceDomain]++
+		if candidate.PublicationID != nil {
+			publications[*candidate.PublicationID]++
 		}
-		if c.AuthorKey != nil {
-			authors[*c.AuthorKey]++
+		if candidate.AuthorKey != nil {
+			authors[*candidate.AuthorKey]++
 		}
 		seen := map[string]bool{}
-		for _, t := range c.TopicKeys {
-			if !seen[t] {
-				topics[t]++
-				seen[t] = true
+		for _, topic := range candidate.TopicKeys {
+			if !seen[topic] {
+				topics[topic]++
+				seen[topic] = true
 			}
 		}
-		if c.PrimaryCommunityKey != nil {
-			communities[*c.PrimaryCommunityKey]++
+		if candidate.PrimaryCommunityKey != nil {
+			communities[*candidate.PrimaryCommunityKey]++
 		}
 	}
 	return
 }
+
+// Rerank diversifies the first page, relaxing only as needed, then appends the remaining
+// ranked stream.
 func Rerank(items []ScoredCandidate, policy DiversityPolicy) DiversityResult {
 	if len(items) == 0 {
 		return DiversityResult{[]ScoredCandidate{}, []DiversityIntervention{}}
@@ -88,8 +102,8 @@ func Rerank(items []ScoredCandidate, policy DiversityPolicy) DiversityResult {
 	caps := diversityCaps{policy.MaxPerDomain, policy.MaxPerPublication, policy.MaxPerAuthor, policy.MaxPerTopic, policy.MaxPerCommunity}
 	selected, deferred, interventions := selectDiverse(items, size, caps)
 	target := min(size, policy.MinimumStrictFill)
-	for i := 0; len(selected) < target && len(deferred) > 0; i++ {
-		switch i % 5 {
+	for itemIndex := 0; len(selected) < target && len(deferred) > 0; itemIndex++ {
+		switch itemIndex % 5 {
 		case 0:
 			caps.topic++
 		case 1:
@@ -108,12 +122,12 @@ func Rerank(items []ScoredCandidate, policy DiversityPolicy) DiversityResult {
 		selected = append(selected, deferred[:min(size-len(selected), len(deferred))]...)
 	}
 	keys := map[string]bool{}
-	for _, i := range selected {
-		keys[i.Candidate.CanonicalKey] = true
+	for _, scoredCandidate := range selected {
+		keys[scoredCandidate.Candidate.CanonicalKey] = true
 	}
-	for _, i := range items {
-		if !keys[i.Candidate.CanonicalKey] {
-			selected = append(selected, i)
+	for _, scoredCandidate := range items {
+		if !keys[scoredCandidate.Candidate.CanonicalKey] {
+			selected = append(selected, scoredCandidate)
 		}
 	}
 	return DiversityResult{selected, interventions}
