@@ -18,12 +18,13 @@ const groups = [
   { title: "Drivers", kinds: ["driver"], icon: Flag },
 ];
 
-export function SportsFollowingSidebar({ entities, definitions, selections, loading = false, error = false, feedID, onFeedChange }: {
+export function SportsFollowingSidebar({ entities, definitions, selections, loading = false, error = false, catalogError = false, feedID, onFeedChange }: {
   entities: readonly SportsEntity[];
   definitions: readonly SportsFeedDefinition[];
   selections: readonly SportsSelection[];
   loading?: boolean;
   error?: boolean;
+  catalogError?: boolean;
   feedID: string;
   onFeedChange?: (id: string) => void;
 }) {
@@ -51,7 +52,8 @@ export function SportsFollowingSidebar({ entities, definitions, selections, load
     </Link>
     {loading ? <p role="status" className="mt-3 text-sm text-muted-foreground">Loading Your Sports Interests…</p> : null}
     {error ? <p role="status" className="mt-3 text-sm text-muted-foreground">Your sports interests could not load. Try Refresh.</p> : null}
-    {!loading && !error && rows.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">Follow sports, leagues, teams, or people in Customize to see them here.</p> : null}
+    {catalogError ? <p role="status" className="mt-3 text-sm text-muted-foreground">Sports catalog could not load. Try Refresh.</p> : null}
+    {!loading && !error && !catalogError && rows.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">Follow sports, leagues, teams, or people in Customize to see them here.</p> : null}
     {sections.map(({ title, kinds, icon: Icon }) => {
       const section = rows.filter(entity => kinds.includes(entity.kind));
       if (!section.length) return null;

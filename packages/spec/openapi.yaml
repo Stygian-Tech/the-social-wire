@@ -2394,6 +2394,7 @@ paths:
         "400": { description: Invalid parameters or event. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: Request budget exhausted. }
+        "502": { description: Upstream catalog response unavailable or exceeds the bounded Gateway response limit. }
         "503": { description: Sports unavailable or rollout disabled. }
 
   /xrpc/app.thesocialwire.discovery.searchSportsEntities:
@@ -2580,6 +2581,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/WireFeedCatalog" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { description: Upstream catalog response unavailable or exceeds the bounded Gateway response limit. }
         "503": { description: Catalog unavailable. }
 
   /xrpc/app.thesocialwire.discovery.getCircleCatalog:

@@ -126,7 +126,7 @@ export default function SportsExperience({ feedID = "sports", onFeedChange }: { 
       {sports.feed.hasNextPage && !sports.suspended ? <Button className="mt-4" variant="outline" disabled={sports.feed.isFetchingNextPage} onClick={() => void sports.feed.fetchNextPage()}>Load More</Button> : null}
       <SportsCustomize key={customize ? "open" : "closed"} open={customize} onOpenChange={setCustomize} selections={sports.selections} save={saveSelection} saving={sports.saving} signedIn={sports.signedIn} viewerDID={sports.viewerDID} />
       </div>
-      <SportsFollowingSidebar entities={catalogEntities} definitions={definitions} selections={sports.selections} loading={sports.catalog.isPending || sports.selectionsLoading} error={!!sports.catalog.error || !!sports.selectionsError} feedID={feedID} onFeedChange={onFeedChange} />
+      <SportsFollowingSidebar entities={catalogEntities} definitions={definitions} selections={sports.selections} loading={sports.catalog.isPending || sports.selectionsLoading} error={!!sports.selectionsError} catalogError={!!sports.catalog.error} feedID={feedID} onFeedChange={onFeedChange} />
       </div>
     </div>
   );

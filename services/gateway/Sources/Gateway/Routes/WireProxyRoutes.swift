@@ -118,7 +118,18 @@ struct WireProxyRoutes {
       logger.error("The Wire AppView proxy failed", metadata: ["error": .string("\(error)")])
       throw HTTPError(.badGateway, message: "The Wire is temporarily unavailable.")
     }
-    let body = try await reply.body.collect(upTo: 8 * 1024 * 1024)
+    let maximumBytes = Self.maximumResponseBytes(for: path)
+    let body: ByteBuffer
+    do {
+      body = try await reply.body.collect(upTo: maximumBytes)
+    } catch {
+      if error is CancellationError { throw error }
+      logger.warning("The Wire AppView response body failed", metadata: [
+        "route": .string(path), "maximumBytes": .stringConvertible(maximumBytes),
+      ])
+      // A rejected upstream body is a gateway failure, not an oversized client request (413).
+      throw HTTPError(.badGateway, message: "The Wire is temporarily unavailable.")
+    }
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     headers[.vary] = "Authorization, Accept-Language"
@@ -141,6 +152,16 @@ struct WireProxyRoutes {
       headers: headers,
       body: .init(byteBuffer: body)
     )
+  }
+
+  static func maximumResponseBytes(for path: String) -> Int {
+    // Full Sports catalogs contain both entities and named feeds; combined catalogs embed them too.
+    switch path {
+    case "/xrpc/app.thesocialwire.discovery.getSportsCatalog", "/xrpc/app.thesocialwire.discovery.getFeedCatalog":
+      return 32 * 1024 * 1024
+    default:
+      return 8 * 1024 * 1024
+    }
   }
 
   private func normalizeBase(_ raw: String) -> String {
