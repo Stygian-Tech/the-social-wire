@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { act } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import * as provider from "@/components/Podcasts/PodcastPlayerProvider";
 import { SidebarAudioSection } from "@/components/AppSidebar/SidebarAudioSection";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -8,7 +10,7 @@ import { initialPodcastState } from "@/lib/podcasts/client";
 
 const restores: (() => void)[] = [];
 afterEach(async () => { await act(async () => { cleanup(); await new Promise(resolve => setTimeout(resolve, 0)); }); for (const restore of restores.splice(0).reverse()) restore(); });
-function setup(playing = true, duration = 120) {
+function setup(playing = true, duration = 120, mount = true) {
   const actEnvironment = Object.getOwnPropertyDescriptor(globalThis, "IS_REACT_ACT_ENVIRONMENT");
   Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
   restores.push(() => { if (actEnvironment) Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", actEnvironment); else Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT"); });
@@ -34,7 +36,7 @@ function setup(playing = true, duration = 120) {
   };
   const hook = spyOn(provider, "useOptionalPodcastPlayer").mockReturnValue(player);
   restores.push(() => hook.mockRestore());
-  render(<SidebarProvider><SidebarAudioSection enabled active={false} onSelect={() => calls.push("navigate")} /></SidebarProvider>);
+  if (mount) render(<SidebarProvider><SidebarAudioSection enabled active={false} onSelect={() => calls.push("navigate")} /></SidebarProvider>);
   return calls;
 }
 
@@ -47,6 +49,36 @@ function touch(target: HTMLElement, type: string, x = 20, y = 20) {
 async function hold() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)); }); }
 
 describe("Podcast sidebar playback controls", () => {
+  it("hydrates a plain sidebar tab even when cached playback restores before the sidebar, then enables its controls", async () => {
+    const calls = setup(true, 120, false);
+    const fixture = <SidebarProvider><SidebarAudioSection enabled active={false} onSelect={() => calls.push("navigate")} /></SidebarProvider>;
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(fixture);
+    document.body.append(container);
+    expect(container.querySelector('[role="tab"]')).toBeTruthy();
+    expect(container.querySelector('[data-base-ui-focus-guard]')).toBeNull();
+    expect(container.querySelector('[role="tab"]')?.getAttribute("aria-describedby")).toBeNull();
+    const errors: unknown[] = [];
+    const error = spyOn(console, "error").mockImplementation((...args) => errors.push(args));
+    restores.push(() => error.mockRestore());
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, fixture, { onRecoverableError: (error) => errors.push(error) });
+      });
+      expect(errors).toEqual([]);
+      expect(container.querySelector('[role="tab"]')?.getAttribute("aria-describedby")).toBeTruthy();
+      fireEvent.focus(screen.getByRole("tab", { name: "Podcasts, Beta" }));
+      await waitFor(() => expect(screen.getByRole("dialog", { name: "Podcast Mini Player" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Pause Podcast" }));
+      expect(calls).toEqual(["toggle"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await act(async () => { root?.unmount(); await new Promise(resolve => setTimeout(resolve, 0)); });
+      container.remove();
+    }
+  });
+
   it("opens portal controls without navigating, toggles playback and seeks original audio", async () => {
     const calls = setup();
     expect(screen.queryByText("A Sidebar Episode")).toBeNull();
