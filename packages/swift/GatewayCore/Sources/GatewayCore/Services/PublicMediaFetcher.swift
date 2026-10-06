@@ -80,7 +80,8 @@ public enum PublicMediaFetcher {
   public static func fetch(
     url: String, httpClient: HTTPClient, maximumBytes: Int,
     validateURL: (@Sendable (String) -> Bool)? = nil, timeout: Duration = .seconds(25),
-    requestHeaders: [(String, String)] = [], requiredContentType: String? = nil
+    requestHeaders: [(String, String)] = [], requiredContentType: String? = nil,
+    allowPartialResponse: Bool = false
   ) async throws
     -> Data
   {
@@ -114,7 +115,8 @@ public enum PublicMediaFetcher {
           current = next
           continue
         }
-        guard response.status.code == 200 else { throw PDSAccessTokenAttestationError.unavailable }
+        guard response.status.code == 200 || (allowPartialResponse && response.status.code == 206)
+        else { throw PDSAccessTokenAttestationError.unavailable }
         let body = try await collectBeforeDeadline(response, maximumBytes: maximumBytes, deadline: deadline, requiredContentType: requiredContentType)
         try await client.shutdown()
         return body

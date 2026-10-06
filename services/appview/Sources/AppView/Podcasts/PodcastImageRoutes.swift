@@ -22,7 +22,16 @@ struct PodcastImageRoutes {
       } else if let id = query.get("episodeId"), let episode = try await service.episode(id: id, viewer: auth.did) {
         if kind == "artwork" { url = episode.artworkUrl }
         if kind == "showArtwork" { url = episode.showArtworkUrl }
-        if kind == "chapter", episode.chapters.indices.contains(index) { url = episode.chapters[index].artworkUrl }
+        if kind == "chapter", episode.chapters.indices.contains(index) {
+          let chapter = episode.chapters[index]
+          if chapter.artworkUrl?.hasPrefix("/v1/podcasts/image?") == true {
+            guard let images = try? await PodcastEmbeddedChapterArtwork.shared.artwork(episode: episode, viewer: auth.did, http: service.http),
+              let image = images.first(where: { abs($0.startSeconds - chapter.startSeconds) < 0.5 })
+            else { throw HTTPError(.notFound) }
+            return Response(status: .ok, headers: [.contentType: image.mimeType, .cacheControl: "private, no-store", .init("X-Content-Type-Options")!: "nosniff"], body: .init(byteBuffer: .init(data: image.data)))
+          }
+          url = chapter.artworkUrl
+        }
       }
       guard let url else { throw HTTPError(.notFound) }
       let data: Data

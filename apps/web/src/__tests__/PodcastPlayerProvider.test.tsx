@@ -159,6 +159,73 @@ function environment() {
   };
 }
 describe("Persistent podcast player", () => {
+  it("loads selected chapter artwork without restarting audio", async () => {
+    const env = environment();
+    const chaptered = { ...episode, chapters: [{ startSeconds: 0, title: "Intro" }] };
+    const artworkUrl = "/v1/podcasts/image?episodeId=episode&kind=chapter&index=0";
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("episodes?")
+      ? { episodes: [{ ...chaptered, chapters: [{ ...chaptered.chapters[0], artworkUrl }] }] }
+      : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    const play = spyOn(env.element, "play");
+    restores.push(() => play.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" item={chaptered} /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await waitFor(() => expect(request.mock.calls.some(call => call[1] === "episodes?episodeId=episode")).toBe(true));
+    await screen.findByRole("img", { name: "Chapter Artwork: Intro" });
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(env.element.src).toBe(episode.audioUrl);
+    expect(env.element.paused).toBe(false);
+  });
+
+  it("does not report intentional cancellation of a pending play request", async () => {
+    const env = environment();
+    let rejectPlay: (reason: Error) => void = () => {};
+    const delayedPlay = spyOn(env.element, "play").mockImplementation(() => new Promise<void>((_resolve, reject) => { rejectPlay = reject; }));
+    restores.push(() => delayedPlay.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await waitFor(() => expect(delayedPlay).toHaveBeenCalled());
+    await act(async () => {
+      env.element.pause();
+      rejectPlay(new DOMException("The play() request was interrupted by a call to pause().", "AbortError"));
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("ignores canceled resume requests but still reports actual playback failures", async () => {
+    const env = environment();
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await act(async () => env.element.pause());
+    const resume = spyOn(env.element, "play").mockRejectedValueOnce(new DOMException("Interrupted", "AbortError"));
+    restores.push(() => resume.mockRestore());
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Play$/ })));
+    expect(screen.queryByRole("alert")).toBeNull();
+    resume.mockRejectedValueOnce(new DOMException("Playback is not allowed", "NotAllowedError"));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Play$/ })));
+    expect(screen.getAllByRole("alert").some(el => el.textContent?.includes("Playback is not allowed"))).toBe(true);
+  });
+
+  it("honors the preview start when a restored episode loads instead of resuming beyond the clip end", async () => {
+    const env = environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("transcript?") ? { transcripts: [] } : path === "clips" ? { clips: [] } : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    window.localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({
+      episode, state: { ...initialPodcastState(), progress: { episode: { positionSeconds: 80, durationSeconds: 120, completed: false, updatedAt: "2026-10-06" } } }, pending: {},
+    }));
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await screen.findByRole("button", { name: /^Clip$/ });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Clip$/ })));
+    await act(async () => fireEvent.change(screen.getByLabelText("Start (Seconds)"), { target: { value: "10" } }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Preview Clip" })));
+    await waitFor(() => expect(env.element.currentTime).toBe(10));
+    expect(env.element.paused).toBe(false);
+    await act(async () => { env.element.currentTime = 31; env.element.dispatchEvent(new window.Event("timeupdate")); });
+    await waitFor(() => expect(env.element.paused).toBe(true));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("ignores no-source audio errors on initial mount and account reset but reports real playback errors", async () => {
     const env = environment();
     const view = render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);

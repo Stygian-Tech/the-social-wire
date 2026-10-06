@@ -70,6 +70,7 @@ export function PodcastPlayerProvider({
   const getAudioElement = useCallback(() => audio.current, []);
   const active = useRef<PodcastEpisode | null>(null);
   const playbackGeneration = useRef(0);
+  const pendingSeek = useRef<{ episodeId: string; time: number } | null>(null);
   const objectUrl = useRef<string | null>(null);
   const stateRef = useRef(initialPodcastState());
   const pending = useRef<StatePatch>({});
@@ -216,6 +217,10 @@ export function PodcastPlayerProvider({
   const seek = useCallback(
     (time: number) => {
       if (!audio.current) return;
+      if (!audio.current.getAttribute("src") && active.current) {
+        // A restored episode has no media source until playback starts.
+        pendingSeek.current = { episodeId: active.current.id, time };
+      }
       audio.current.currentTime = clampPlaybackTime(
         time,
         audio.current.duration || active.current?.durationSeconds || 0,
@@ -291,22 +296,40 @@ export function PodcastPlayerProvider({
       element.playbackRate = stateRef.current.playbackSpeed;
       element.preservesPitch = true;
       const resume = stateRef.current.progress[item.id];
+      const requestedPosition = pendingSeek.current?.episodeId === item.id ? pendingSeek.current.time : undefined;
+      pendingSeek.current = null;
       element.onloadedmetadata = () => {
         element.currentTime = clampPlaybackTime(
-          resume?.completed ? 0 : (resume?.positionSeconds ?? 0),
+          requestedPosition ?? (resume?.completed ? 0 : (resume?.positionSeconds ?? 0)),
           element.duration,
         );
         setDuration(element.duration);
         setPosition(element.currentTime);
       };
       persist();
+      const metadataSession = getOAuthSession();
+      if (metadataSession && navigator.onLine && item.chapters?.some(chapter => !chapter.artworkUrl)) {
+        // Enrich only selected media; image extraction must not delay or restart playback.
+        void podcastRequest<{ episodes: PodcastEpisode[] }>(metadataSession, `episodes?episodeId=${encodeURIComponent(item.id)}`)
+          .then(page => {
+            if (generation !== playbackGeneration.current || viewerRef.current !== did || audio.current !== element) return;
+            const enriched = page.episodes?.find(candidate => candidate.id === item.id);
+            if (!enriched) return;
+            active.current = { ...item, chapters: enriched.chapters, artworkUrl: enriched.artworkUrl ?? item.artworkUrl, showArtworkUrl: enriched.showArtworkUrl ?? item.showArtworkUrl };
+            setEpisode(active.current);
+            persist();
+          }).catch(() => { /* Existing artwork remains available when enrichment cannot load. */ });
+      }
       try {
         await element.play();
       } catch (reason) {
-        setError(
-          reason instanceof Error ? reason.message : "Audio could not play",
-        );
+        if (generation !== playbackGeneration.current || viewerRef.current !== did || audio.current !== element) return;
+        // pause(), source replacement, and clip completion cancel pending play requests.
+        if (!(reason instanceof Error && reason.name === "AbortError"))
+          setError(reason instanceof Error ? reason.message : "Audio could not play");
+        return;
       }
+      if (generation !== playbackGeneration.current || viewerRef.current !== did || audio.current !== element) return;
       const oauth = getOAuthSession();
       if (item.visibility !== "private" && stateRef.current.removeSilences) {
         try {
@@ -337,9 +360,15 @@ export function PodcastPlayerProvider({
       void play(active.current);
       return;
     }
-    if (element.paused)
-      void element.play().catch((reason) => setError(String(reason)));
-    else element.pause();
+    if (element.paused) {
+      const generation = playbackGeneration.current;
+      const did = viewerRef.current;
+      void element.play().catch((reason) => {
+        if (generation !== playbackGeneration.current || viewerRef.current !== did || audio.current !== element) return;
+        if (!(reason instanceof Error && reason.name === "AbortError"))
+          setError(reason instanceof Error ? reason.message : "Audio could not play");
+      });
+    } else element.pause();
   }, [play]);
   const setRemoveSilences = useCallback(
     async (enabled: boolean) => {
@@ -469,6 +498,7 @@ export function PodcastPlayerProvider({
   }, [changeState, getOAuthSession, play, saveProgress, sync]);
   useEffect(() => {
     playbackGeneration.current++;
+    pendingSeek.current = null;
     active.current = null;
     audio.current?.pause();
     if (audio.current) {
