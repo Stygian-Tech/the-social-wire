@@ -165,6 +165,10 @@ it("tracks animated sticky topbar height for sidebar margin and available viewpo
 
 it("uses the full viewport for its independent scrolling rail", () => {
  render(<SportsFollowingSidebar {...props} />);
+ expect(screen.getByRole("complementary").className).toContain("rounded-xl");
+ expect(screen.getByRole("complementary").className).toContain("p-3");
+ expect(screen.getByRole("link", {name: "All Sports"}).className).toContain("min-h-8");
+ expect(screen.getByRole("link", {name: "All Sports"}).className).toContain("pointer-coarse:min-h-11");
  expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-3rem)]");
 });
 
