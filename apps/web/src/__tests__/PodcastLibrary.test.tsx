@@ -42,7 +42,7 @@ it("adds a tokenized private RSS feed without a public subscription write", asyn
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
   render(<PodcastLibrary />);
   const add = screen.getByRole("button", { name: "Add a Podcast" });
-  expect(add.className).toContain("min-h-8");
+  expect(add.className).toContain("min-h-7");
   expect(add.className).toContain("pointer-coarse:min-h-11");
   expect(add.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   fireEvent.click(add);
