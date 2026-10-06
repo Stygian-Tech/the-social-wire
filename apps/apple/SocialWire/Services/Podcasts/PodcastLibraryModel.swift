@@ -379,7 +379,8 @@ final class PodcastLibraryModel {
         }
         let collection = "app.skyreader.feed.subscription"
         var record: [String: JSONValue] = ["$type": .string(collection), "title": .string(show.title),
-            "source": .string("the-social-wire"), "createdAt": .string(DateFormatters.string())]
+            "source": .string("the-social-wire"), "category": .string("podcast"),
+            "createdAt": .string(DateFormatters.string())]
         if let feed = show.feedUrl {
             record["feedUrl"] = .string(feed)
             record["sourceType"] = .string("rss")

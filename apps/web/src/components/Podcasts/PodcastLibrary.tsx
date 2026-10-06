@@ -1,10 +1,11 @@
 "use client";
+import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
 import { PodcastLibrarySearch } from "./PodcastLibrarySearch";
 import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
 import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
 import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CheckCircle, Circle, Download, HardDriveDownload, ListPlus, ListX, Play, RotateCw, Trash2, X } from "lucide-react";
+import { ArrowUp, CheckCircle, Circle, Download, HardDriveDownload, ListPlus, ListX, Minus, Play, Plus, RotateCw, Trash2, X } from "lucide-react";
 import { PodcastEpisodeActionButton } from "./PodcastEpisodeActionButton";
 import { PodcastDirectoryResults } from "./PodcastDirectoryResults";
 import { usePodcastLibrarySearch, type PodcastDirectoryCandidate } from "@/hooks/usePodcastLibrarySearch";
@@ -36,6 +37,7 @@ import { PodcastTranscripts } from "./PodcastTranscripts";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
 const button =
   "min-h-11 rounded border px-3 text-sm hover:bg-accent disabled:opacity-50";
+const compactButton = "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded border px-2 text-xs hover:bg-accent disabled:opacity-50 pointer-coarse:min-h-11";
 export function PodcastLibrary() {
   const viewer = usePodcastViewer();
   return <PodcastViewerLibrary key={viewer ?? "signed-out"} />;
@@ -287,7 +289,10 @@ function PodcastViewerLibrary() {
       <section className="min-w-0 space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Podcasts</h1>
-          <button type="button" className={button} aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}>Add a Podcast</button>
+          <div className="flex items-center gap-2">
+            <PodcastPlaybackDefaults player={player} />
+            <button type="button" className={compactButton} aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}><Plus aria-hidden="true" className="size-3.5" />Add a Podcast</button>
+          </div>
         </header>
         <PodcastLibrarySearch
           scope={searchScope}
@@ -347,9 +352,13 @@ function PodcastViewerLibrary() {
             {error ?? player.error}
           </p>
         ) : null}
-        {selectedShow ? <PodcastShowDetails show={selectedShow} /> : <h2 className="text-lg font-semibold">{heading}</h2>}
-        {selectedShow ? <div className="space-y-2">
-          <button type="button" className={button} disabled={busy} onClick={() => void subscribe(selectedShow)}>{player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}</button>
+        {selectedShow ? <PodcastShowDetails show={selectedShow} action={
+          <button type="button" className={compactButton} disabled={busy} onClick={() => void subscribe(selectedShow)}>
+            {player.state.subscriptions.includes(selectedShow.id) ? <Minus aria-hidden="true" className="size-3.5" /> : <Plus aria-hidden="true" className="size-3.5" />}
+            {player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}
+          </button>
+        } /> : <h2 className="text-lg font-semibold">{heading}</h2>}
+        {selectedShow?.visibility === "private" ? <div className="space-y-2">
           {selectedShow.visibility === "private" ? <button type="button" className={button} disabled={busy} onClick={() => void action(async () => {
             const oauth = getOAuthSession();
             if (!oauth) return;
