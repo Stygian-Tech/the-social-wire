@@ -84,3 +84,28 @@ describe("Sports generation handoff",()=>{
  });
 
 });
+
+it("loads Sports for a signed-in viewer with a confirmed empty selection collection", async () => {
+ const {result}=renderHook(()=>useSportsFeed(),{wrapper});
+ await waitFor(()=>expect(result.current.items).toHaveLength(1));
+ expect(result.current.signedIn).toBe(true);
+ expect(result.current.selections).toEqual([]);
+ expect(result.current.selectionsLoading).toBe(false);
+ expect(result.current.selectionsError).toBeNull();
+ expect(result.current.error).toBeNull();
+ expect(requests).toBe(1);
+});
+
+it("keeps genuine selection request failures visible rather than treating them as empty interests", async () => {
+ const failure=new Error("PDS selection request failed");
+ mock.module("@/lib/sportsFeedClient",()=>({...realSports,
+  getSportsCatalog:async()=>({enabled:true,available:true,eventsEnabled:false,feeds:[],entities:[],version:"test"}),
+  listSportsSelections:async()=>{throw failure;},
+  getSports:async()=>{requests++;return page;},
+ }));
+ const {result}=renderHook(()=>useSportsFeed(),{wrapper});
+ await waitFor(()=>expect(result.current.selectionsError).toBe(failure));
+ expect(result.current.error).toBe(failure);
+ expect(result.current.selectionsLoading).toBe(false);
+ expect(requests).toBe(0);
+});

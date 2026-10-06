@@ -167,3 +167,17 @@ it("uses the full viewport for its independent scrolling rail", () => {
  render(<SportsFollowingSidebar {...props} />);
  expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-3rem)]");
 });
+
+it("distinguishes failed catalog requests from failed selections and confirmed empty interests", () => {
+ const mounted = render(<SportsFollowingSidebar {...props} catalogError />);
+ expect(screen.getByText("Sports catalog could not load. Try Refresh.")).toBeTruthy();
+ expect(screen.queryByText("Your sports interests could not load. Try Refresh.")).toBeNull();
+ expect(screen.queryByText(/Follow sports, leagues, teams/)).toBeNull();
+ mounted.rerender(<SportsFollowingSidebar {...props} error />);
+ expect(screen.getByText("Your sports interests could not load. Try Refresh.")).toBeTruthy();
+ expect(screen.queryByText("Sports catalog could not load. Try Refresh.")).toBeNull();
+ expect(screen.queryByText(/Follow sports, leagues, teams/)).toBeNull();
+ mounted.rerender(<SportsFollowingSidebar {...props} />);
+ expect(screen.queryByRole("status")).toBeNull();
+ expect(screen.getByText(/Follow sports, leagues, teams/)).toBeTruthy();
+});
