@@ -1,10 +1,11 @@
 "use client";
+import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
 import { PodcastLibrarySearch } from "./PodcastLibrarySearch";
 import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
 import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
 import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CheckCircle, Circle, Download, HardDriveDownload, ListPlus, ListX, Play, RotateCw, Trash2, X } from "lucide-react";
+import { ArrowUp, CheckCircle, Circle, Download, HardDriveDownload, ListPlus, ListX, Minus, Play, Plus, RotateCw, Trash2, X } from "lucide-react";
 import { PodcastEpisodeActionButton } from "./PodcastEpisodeActionButton";
 import { PodcastDirectoryResults } from "./PodcastDirectoryResults";
 import { usePodcastLibrarySearch, type PodcastDirectoryCandidate } from "@/hooks/usePodcastLibrarySearch";
@@ -22,7 +23,6 @@ import {
 } from "@/lib/podcasts/client";
 import {
   deletePodcastDownload,
-  getPodcastDownload,
   listPodcastDownloads,
   savePodcastDownload,
   type PodcastDownload,
@@ -30,12 +30,10 @@ import {
 import { formatPodcastTime } from "@/lib/podcasts/playback";
 import { PodcastArtwork } from "./PodcastArtwork";
 import { PodcastShowDetails } from "./PodcastShowDetails";
-import { PodcastChapters } from "./PodcastChapters";
-import { PodcastClips } from "./PodcastClips";
-import { PodcastTranscripts } from "./PodcastTranscripts";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
 const button =
   "min-h-11 rounded border px-3 text-sm hover:bg-accent disabled:opacity-50";
+const compactButton = "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded border px-2 text-xs hover:bg-accent disabled:opacity-50 pointer-coarse:min-h-11";
 export function PodcastLibrary() {
   const viewer = usePodcastViewer();
   return <PodcastViewerLibrary key={viewer ?? "signed-out"} />;
@@ -51,7 +49,6 @@ function PodcastViewerLibrary() {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [transcripts, setTranscripts] = useState<PodcastTranscript[]>([]);
   const [downloads, setDownloads] = useState<PodcastDownload[]>([]);
   const [downloadStatus, setDownloadStatus] = useState<Record<string, string>>(
     {},
@@ -120,38 +117,6 @@ function PodcastViewerLibrary() {
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [showId, feed, getOAuthSession, player.state.queue, player.state.subscriptions, downloads, searching]);
-  useEffect(() => {
-    const oauth = getOAuthSession();
-    if (!viewer || !player.episode) return;
-    let cancelled = false;
-    void (
-      oauth && navigator.onLine
-        ? podcastRequest<{ transcripts: PodcastTranscript[] }>(
-            oauth,
-            `transcript?episodeId=${encodeURIComponent(player.episode.id)}`,
-          )
-        : Promise.reject(new Error("Offline"))
-    )
-      .then((result) => {
-        if (!cancelled) setTranscripts(result.transcripts);
-      })
-      .catch(async () => {
-        if (!viewer || !player.episode) return;
-        const local = await getPodcastDownload(viewer, player.episode.id).catch(
-          () => undefined,
-        );
-        if (!cancelled)
-          setTranscripts(
-            local?.transcripts ??
-              (local?.transcript
-                ? [local.transcript]
-                : player.episode.transcripts),
-          );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [player.episode, getOAuthSession, viewer]);
   async function action(run: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -287,7 +252,10 @@ function PodcastViewerLibrary() {
       <section className="min-w-0 space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Podcasts</h1>
-          <button type="button" className={button} aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}>Add a Podcast</button>
+          <div className="flex items-center gap-2">
+            <PodcastPlaybackDefaults player={player} />
+            <button type="button" className="inline-flex min-h-7 shrink-0 items-center gap-1 rounded border px-1.5 text-xs hover:bg-accent pointer-coarse:min-h-11" aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}><Plus aria-hidden="true" className="size-3.5" />Add a Podcast</button>
+          </div>
         </header>
         <PodcastLibrarySearch
           scope={searchScope}
@@ -347,9 +315,13 @@ function PodcastViewerLibrary() {
             {error ?? player.error}
           </p>
         ) : null}
-        {selectedShow ? <PodcastShowDetails show={selectedShow} /> : <h2 className="text-lg font-semibold">{heading}</h2>}
-        {selectedShow ? <div className="space-y-2">
-          <button type="button" className={button} disabled={busy} onClick={() => void subscribe(selectedShow)}>{player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}</button>
+        {selectedShow ? <PodcastShowDetails show={selectedShow} action={
+          <button type="button" className={compactButton} disabled={busy} onClick={() => void subscribe(selectedShow)}>
+            {player.state.subscriptions.includes(selectedShow.id) ? <Minus aria-hidden="true" className="size-3.5" /> : <Plus aria-hidden="true" className="size-3.5" />}
+            {player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}
+          </button>
+        } /> : <h2 className="text-lg font-semibold">{heading}</h2>}
+        {selectedShow?.visibility === "private" ? <div className="space-y-2">
           {selectedShow.visibility === "private" ? <button type="button" className={button} disabled={busy} onClick={() => void action(async () => {
             const oauth = getOAuthSession();
             if (!oauth) return;
@@ -505,16 +477,6 @@ function PodcastViewerLibrary() {
           >
             Load More Episodes
           </button>
-        ) : null}
-        {player.episode ? (
-          <section className="space-y-5 rounded-xl border p-4">
-            <h2 className="text-lg font-semibold">
-              Now Playing: {player.episode.title}
-            </h2>
-            <PodcastChapters chapters={player.episode.chapters} position={player.position} onSeek={player.seek} />
-            <PodcastTranscripts transcripts={transcripts} />
-            {player.episode.visibility !== "private" ? <PodcastClips key={player.episode.id} episode={player.episode} /> : <p className="text-sm text-muted-foreground">Clips Are Unavailable for Private Feeds</p>}
-          </section>
         ) : null}
         {feed === "downloads" ? <p className="text-xs text-muted-foreground">Offline Audio: {(downloads.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)} MB. Save Audio exports a file to your device.</p> : null}
       </section>

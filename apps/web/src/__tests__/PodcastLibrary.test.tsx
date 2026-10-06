@@ -1,4 +1,4 @@
-import { afterEach, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
@@ -9,6 +9,14 @@ import * as offline from "@/lib/podcasts/offline";
 import { PodcastLibrary } from "@/components/Podcasts/PodcastLibrary";
 
 const restores: (() => void)[] = [];
+beforeEach(() => {
+  for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "DOMRect", "getComputedStyle"] as const) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, name);
+    const value = name === "getComputedStyle" ? window.getComputedStyle.bind(window) : window[name];
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+    restores.push(() => { if (original) Object.defineProperty(globalThis, name, original); else Reflect.deleteProperty(globalThis, name); });
+  }
+});
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 it("adds a tokenized private RSS feed without a public subscription write", async () => {
@@ -33,7 +41,11 @@ it("adds a tokenized private RSS feed without a public subscription write", asyn
   });
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
   render(<PodcastLibrary />);
-  fireEvent.click(screen.getByRole("button", { name: "Add a Podcast" }));
+  const add = screen.getByRole("button", { name: "Add a Podcast" });
+  expect(add.className).toContain("min-h-7");
+  expect(add.className).toContain("pointer-coarse:min-h-11");
+  expect(add.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  fireEvent.click(add);
   fireEvent.click(screen.getByRole("checkbox", { name: "Private Feed" }));
   const input = screen.getByLabelText("Private RSS Feed URL");
   fireEvent.change(input, { target: { value: "https://members.example/feed?token=secret" } });
@@ -83,8 +95,10 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
   const getOAuthSession = () => oauth;
   const state = { ...client.initialPodcastState(), subscriptions: ["show"] };
+  const changes: Partial<client.PodcastState>[] = [];
+  const write = spyOn(client, "writePodcastSubscription").mockResolvedValue();
   const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: "did:plc:viewer" }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
-  const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
+  const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async patch => { changes.push(patch); } });
   const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
   const show: client.PodcastShow = { id: "show", title: "Science Show", sourceKind: "rss" };
   const item = (id: string, title: string): client.PodcastEpisode => ({ id, title, showId: "show", audioUrl: "/media", publishedAt: "2026-10-05", transcripts: [] });
@@ -95,7 +109,7 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
     if (path === "search") return { shows: [show], episodes: [item("match", "Matched Science Episode")], hasMore: false } as T;
     return { episodes: [item("recent", path.includes("showId") ? "Show Episode" : "Recent Episode")] } as T;
   });
-  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore(), () => write.mockRestore());
   render(<PodcastLibrary />);
   await screen.findByText("Recent Episode");
   expect(screen.queryByRole("group", { name: "Podcast Search Scope" })).toBeNull();
@@ -113,6 +127,14 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   await screen.findByText("Show Episode");
   expect((screen.getByRole("searchbox", { name: "Search This Show" }) as HTMLInputElement).value).toBe("");
   expect(requests).toContain("episodes?showId=show");
+  const showHeader = screen.getByRole("heading", { name: show.title }).closest("header")!;
+  const unsubscribe = within(showHeader).getByRole("button", { name: "Unsubscribe" });
+  expect(screen.getAllByRole("button", { name: "Unsubscribe" })).toHaveLength(1);
+  expect(unsubscribe.className).toContain("min-h-8");
+  expect(unsubscribe.className).toContain("pointer-coarse:min-h-11");
+  fireEvent.click(unsubscribe);
+  await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, true));
+  expect(changes).toEqual([{ subscriptions: [] }]);
 });
 
 it("clears private library terms before directory search and previews before explicit subscription", async () => {
@@ -150,7 +172,12 @@ it("clears private library terms before directory search and previews before exp
   await screen.findByRole("button", { name: "Subscribe" });
   expect(requests.find(request => request.path === "resolve")?.body).toEqual({ url: show.feedUrl });
   expect(write).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Subscribe" }));
+  const showHeader = screen.getByRole("heading", { name: show.title }).closest("header")!;
+  const subscribe = within(showHeader).getByRole("button", { name: "Subscribe" });
+  expect(screen.getAllByRole("button", { name: "Subscribe" })).toHaveLength(1);
+  expect(subscribe.className).toContain("min-h-8");
+  expect(subscribe.className).toContain("pointer-coarse:min-h-11");
+  fireEvent.click(subscribe);
   await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, false));
   expect(changes).toEqual([{ subscriptions: [show.id] }]);
   const sidebar = within(screen.getByRole("complementary", { name: "Podcast Library" }));

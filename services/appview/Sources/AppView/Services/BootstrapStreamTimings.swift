@@ -2,12 +2,6 @@ import Foundation
 import GatewayCore
 import Logging
 
-/// Persisted bootstrap sidebar snapshot for stale-first AppView loads.
-struct BootstrapSidebarCacheSnapshot: Codable, Sendable {
-  let priority: PublicationSidebarResponse
-  let folderPayload: AppViewBootstrapSidebarFoldersPayload?
-}
-
 enum BootstrapStreamTimings {
   static func logPhase(
     _ logger: Logger,

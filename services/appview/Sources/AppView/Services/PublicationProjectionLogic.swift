@@ -284,6 +284,11 @@ enum PublicationProjectionLogic {
 
     for (uri, value) in records {
       let dict = value.values
+      // Podcast subscriptions stay on the viewer's PDS and in the audio catalog, but do not
+      // contribute article sidebar rows, folder membership, or article unread badges.
+      if let category = dict["category"] as? String,
+         category.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "podcast"
+      { continue }
       guard let rawUrl = (dict["feedUrl"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
             !rawUrl.isEmpty
       else { continue }

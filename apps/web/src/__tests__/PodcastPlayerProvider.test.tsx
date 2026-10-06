@@ -49,12 +49,24 @@ function Controls({ route, item = episode }: { route: string; item?: PodcastEpis
   );
 }
 const restores: (() => void)[] = [];
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Base UI queues focus work; let it finish before restoring the DOM globals.
+  await new Promise(resolve => setTimeout(resolve, 0));
   for (const restore of restores.splice(0).reverse()) restore();
   window.localStorage.clear();
 });
 function environment() {
+  for (const [name, value] of Object.entries({ requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+    restores.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
+  }
+  for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "DOMRect"] as const) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value: window[name] });
+    restores.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
+  }
   const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   restores.push(() => { if (online) Object.defineProperty(navigator, "onLine", online); else Reflect.deleteProperty(navigator, "onLine"); });
@@ -189,6 +201,59 @@ describe("Persistent podcast player", () => {
     expect(panel.classList.contains("fixed")).toBe(false);
     expect(screen.queryByRole("button", { name: "Minimize Player" })).toBeNull();
     expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
+  });
+  it("opens clip tools from the player and preserves playback on close", async () => {
+    const env = environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
+      if (path.startsWith("transcript?")) return { transcripts: [{ url: "https://publisher.test/transcript", type: "text/plain", cues: [{ startSeconds: 20, text: "A transcript cue" }] }] } as T;
+      if (path === "clips") return { clips: [] } as T;
+      return { revision: 1, state: initialPodcastState() } as T;
+    });
+    restores.push(() => request.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    const trigger = await screen.findByRole("button", { name: "Clip" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(request.mock.calls.some(call => call[1] === "clips" || call[1].startsWith("transcript?"))).toBe(false);
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Clip for Social Media" });
+    expect(dialog.textContent).toContain("Now Playing: An Episode");
+    fireEvent.click(await screen.findByRole("button", { name: /A transcript cue/ }));
+    await waitFor(() => expect(env.element.currentTime).toBe(20));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(env.element.paused).toBe(false);
+    fireEvent.click(trigger);
+    const reopened = await screen.findByRole("dialog");
+    fireEvent.keyDown(reopened, { key: "Escape", code: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+  it("shows private-feed availability without loading clip drafts", async () => {
+    environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("transcript?") ? { transcripts: [] } : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    const player: PlayerContext = { episode: { ...episode, visibility: "private" }, playing: false, position: 0, duration: 120, state: initialPodcastState(), error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {} };
+    render(<PodcastPlayerProvider><PodcastPlayerView player={player} /></PodcastPlayerProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Clip" }));
+    await screen.findByRole("dialog");
+    expect(screen.getByText("Clips Are Unavailable for Private Feeds")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Prepare Exports" })).toBeNull();
+    expect(request.mock.calls.some(call => call[1] === "clips")).toBe(false);
+  });
+  it("closes the clip dialog when the playing episode changes", async () => {
+    environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("transcript?") ? { transcripts: [] } : path === "clips" ? { clips: [] } : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    const player: PlayerContext = { episode, playing: false, position: 0, duration: 120, state: initialPodcastState(), error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {} };
+    const view = render(<PodcastPlayerProvider><PodcastPlayerView player={player} /></PodcastPlayerProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Clip" }));
+    await screen.findByRole("dialog");
+    view.rerender(<PodcastPlayerProvider><PodcastPlayerView player={{ ...player, episode: { ...episode, id: "next", title: "Next Episode" } }} /></PodcastPlayerProvider>);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Clip" }));
+    expect((await screen.findByRole("dialog")).textContent).toContain("Now Playing: Next Episode");
   });
   it("keeps arbitrary scrubbing available when chapter marks are dense", async () => {
     const env = environment();

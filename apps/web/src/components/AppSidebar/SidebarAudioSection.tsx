@@ -8,9 +8,14 @@ import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarM
 import { useOptionalPodcastPlayer } from "@/components/Podcasts/PodcastPlayerProvider";
 import { PodcastPlaybackWaveform } from "@/components/Podcasts/PodcastPlaybackWaveform";
 import { PodcastSidebarMiniPlayer } from "@/components/Podcasts/PodcastSidebarMiniPlayer";
+import { useClientHydrated } from "@/hooks/useClientHydrated";
 
 export function SidebarAudioSection({ enabled, active, onSelect }: { enabled: boolean; active: boolean; onSelect: () => void }) {
-  const player = useOptionalPodcastPlayer();
+  const restoredPlayer = useOptionalPodcastPlayer();
+  const hydrated = useClientHydrated();
+  // Cached playback can restore before this sidebar hydrates. Keep its first
+  // render identical to the server, then attach the episode's preview controls.
+  const player = hydrated ? restoredPlayer : null;
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLLIElement | null>(null);
   const triggerId = useId();

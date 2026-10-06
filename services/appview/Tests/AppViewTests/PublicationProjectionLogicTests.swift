@@ -234,6 +234,47 @@ struct PublicationProjectionLogicTests {
     #expect(rows[0].authorDid == PublicationLexicons.rssAuthorDid)
   }
 
+  @Test("podcast subscriptions stay intact but never enter article subscription projections")
+  func podcastSubscriptionsExcludedFromArticles() {
+    let records: [(uri: String, value: PdsRecordJSON)] = [
+      ("at://did:plc:viewer/app.skyreader.feed.subscription/audio", PdsRecordJSON(values: [
+        "feedUrl": "https://audio.example/feed.xml", "sourceType": "rss", "category": "podcast", "title": "Audio Show",
+      ])),
+      ("at://did:plc:viewer/app.skyreader.feed.subscription/article", PdsRecordJSON(values: [
+        "feedUrl": "https://news.example/feed.xml", "sourceType": "rss", "title": "Podcast News Articles",
+      ])),
+      ("at://did:plc:viewer/app.skyreader.feed.subscription/spaced", PdsRecordJSON(values: [
+        "feedUrl": "https://second.example/feed.xml", "sourceType": "rss", "category": " Podcast ",
+      ])),
+    ]
+    let rows = PublicationProjectionLogic.skyreaderRows(from: records)
+    let subscribed = PublicationProjectionLogic.mergeSubscribed(graphSubscribed: [], rssRows: rows, graphOrphanRows: [])
+    #expect(subscribed.count == 1)
+    #expect(subscribed.first?.title == "Podcast News Articles")
+    #expect(subscribed.first?.subscriptionPublicationId == records[1].uri)
+    #expect(records.count == 3)
+    #expect(records[0].value.values["category"] as? String == "podcast")
+    #expect(records[0].value.values["feedUrl"] as? String == "https://audio.example/feed.xml")
+    #expect(PublicationProjectionLogic.skyreaderRows(from: [records[0], records[2]]).isEmpty)
+  }
+
+  @Test("an explicit article subscription to a mixed feed remains visible alongside a podcast subscription")
+  func mixedFeedArticleSubscriptionPreserved() {
+    let feed = "https://mixed.example/feed.xml"
+    let podcast = (uri: "at://did:plc:viewer/app.skyreader.feed.subscription/podcast", value: PdsRecordJSON(values: [
+      "feedUrl": feed, "sourceType": "rss", "category": "podcast", "title": "Mixed Feed Audio",
+    ]))
+    let articles = (uri: "at://did:plc:viewer/app.skyreader.feed.subscription/articles", value: PdsRecordJSON(values: [
+      "feedUrl": feed, "sourceType": "rss", "category": "news", "title": "Mixed Feed Articles",
+    ]))
+    for records in [[podcast, articles], [articles, podcast]] {
+      let rows = PublicationProjectionLogic.skyreaderRows(from: records)
+      #expect(rows.count == 1)
+      #expect(rows.first?.subscriptionPublicationId == articles.uri)
+      #expect(rows.first?.title == "Mixed Feed Articles")
+    }
+  }
+
   @Test("rss publication id decodes normalized feed url")
   func rssPublicationIdRoundTrip() {
     let feed = "https://example.com/feed.xml"
