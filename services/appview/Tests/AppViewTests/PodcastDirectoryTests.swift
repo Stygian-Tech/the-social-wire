@@ -62,6 +62,35 @@ struct PodcastDirectoryTests {
     await #expect(throws: PodcastDirectoryError.busy) { try await search.search(PodcastSearchRequest(query: "Another", scope: "directory"), fetch: fetch) }
   }
 
+  @Test func upgradesHTTPArtworkWithoutRelaxingPublicURLValidation() throws {
+    let artworkURLs = [
+      "http://example.com/art.jpg?size=600",
+      "http://127.0.0.1/art.jpg",
+      "http://worker.railway.internal/art.jpg",
+      "http://localhost/art.jpg",
+      "http://user:secret@example.com/art.jpg",
+      "http://example.com/art.jpg#fragment",
+    ]
+    var rows = artworkURLs.enumerated().map { index, artwork in
+      ["kind": "podcast", "trackId": index + 1, "collectionName": "Public",
+       "feedUrl": "https://example.com/rss/\(index)", "artworkUrl600": artwork] as [String: Any]
+    }
+    rows.append(["kind": "podcast", "trackId": 100, "collectionName": "HTTP Feed",
+      "feedUrl": "http://example.com/rss", "artworkUrl600": "http://example.com/art.jpg"])
+    let parsed = try PodcastDirectoryParser.parse(JSONSerialization.data(withJSONObject: ["resultCount": rows.count, "results": rows]))
+    #expect(parsed.count == artworkURLs.count)
+    #expect(parsed[0].artworkUrl == "https://example.com/art.jpg?size=600")
+    #expect(parsed.dropFirst().allSatisfy { $0.artworkUrl == nil })
+  }
+
+  @Test func prefersExplicitHTTPSArtworkOverUpgradingLargerHTTPArtwork() throws {
+    let row: [String: Any] = ["kind": "podcast", "trackId": 1, "collectionName": "Public",
+      "feedUrl": "https://example.com/rss", "artworkUrl600": "http://example.com/large.jpg",
+      "artworkUrl100": "https://example.com/small.jpg", "artworkUrl60": "https://example.com/tiny.jpg"]
+    let parsed = try PodcastDirectoryParser.parse(JSONSerialization.data(withJSONObject: ["resultCount": 1, "results": [row]]))
+    #expect(parsed.first?.artworkUrl == "https://example.com/small.jpg")
+  }
+
   @Test func inputValidationPrecedesProviderAndFailuresRemainGeneric() async throws {
     let search = PodcastDirectorySearch()
     let calls = Calls()
