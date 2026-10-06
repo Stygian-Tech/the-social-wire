@@ -32,6 +32,7 @@ jobs:
       appview: ${{ steps.filter.outputs.appview }}
       charybdis: ${{ steps.filter.outputs.charybdis }}
       operations: ${{ steps.filter.outputs.operations }}
+      go_packages: ${{ steps.filter.outputs.go_packages }}
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
       wire_ingest: ${{ steps.filter.outputs.wire_ingest }}
       wire_worker: ${{ steps.filter.outputs.wire_worker }}
@@ -390,6 +391,63 @@ jobs:
         run: swift test
       - name: Build Operations production image
         run: docker build --file services/operations/Dockerfile --tag the-social-wire-operations:test .
+
+  go-packages:
+    name: Repository-local Go Packages
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.go_packages == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: socialwire_go_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d socialwire_go_test"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/go/go.mod
+          cache-dependency-path: packages/go/go.sum
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.2.4"
+          skip-verify-signature: true
+      - name: Build migration image for Go integration tests
+        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-go-migrator:test .
+      - name: Apply canonical migrations to disposable Go test database
+        run: |
+          docker run --rm --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test \
+            the-social-wire-go-migrator:test
+      - name: Check canonical contracts and package inventory
+        run: |
+          python3 scripts/go/generate-contracts.py --check
+          python3 scripts/go/package-inventory.py --check
+      - name: Test Go packages and PostgreSQL fences
+        working-directory: packages/go
+        env:
+          GOWORK: "off"
+          SOCIALWIRE_GO_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
+          SOCIALWIRE_GO_WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test -race ./...
+      - name: Compare ranking and edition assembly with Swift
+        run: |
+          bash scripts/go/verify-ranking-parity.sh
+          bash scripts/go/verify-edition-parity.sh
+          bash scripts/go/verify-domain-ranking-parity.sh
 
   jetstream-ingest:
     name: Jetstream V2 Ingest
@@ -820,6 +878,7 @@ jobs:
       - appview
       - charybdis
       - operations
+      - go-packages
       - jetstream-ingest
       - wire-ingest
       - wire-worker
@@ -845,6 +904,7 @@ jobs:
           APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
           CHARYBDIS_FLAG: ${{ needs.changes.outputs.charybdis }}
           OPERATIONS_FLAG: ${{ needs.changes.outputs.operations }}
+          GO_PACKAGES_FLAG: ${{ needs.changes.outputs.go_packages }}
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
           WIRE_INGEST_FLAG: ${{ needs.changes.outputs.wire_ingest }}
           PODCAST_WORKER_FLAG: ${{ needs.changes.outputs.podcast_worker }}
@@ -864,6 +924,7 @@ jobs:
           APPVIEW_RESULT: ${{ needs.appview.result }}
           CHARYBDIS_RESULT: ${{ needs.charybdis.result }}
           OPERATIONS_RESULT: ${{ needs.operations.result }}
+          GO_PACKAGES_RESULT: ${{ needs.go-packages.result }}
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
           WIRE_INGEST_RESULT: ${{ needs.wire-ingest.result }}
           PODCAST_WORKER_RESULT: ${{ needs.podcast-worker.result }}
@@ -908,6 +969,7 @@ jobs:
           check "$APPVIEW_FLAG" "$APPVIEW_RESULT" "AppView"
           check "$CHARYBDIS_FLAG" "$CHARYBDIS_RESULT" "Charybdis"
           check "$OPERATIONS_FLAG" "$OPERATIONS_RESULT" "Operations"
+          check "$GO_PACKAGES_FLAG" "$GO_PACKAGES_RESULT" "Repository-local Go Packages"
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
           check "$WIRE_INGEST_FLAG" "$WIRE_INGEST_RESULT" "The Wire Global Ingest"
           check "$PODCAST_WORKER_FLAG" "$PODCAST_WORKER_RESULT" "Podcast Media Worker"

@@ -16,6 +16,8 @@ export function developmentPodcasts() {
         "/services/jetstream-ingest/internal/schemaready/**",
         "/services/jetstream-ingest/go.mod",
         "/services/jetstream-ingest/go.sum",
+        "/packages/go/go.mod",
+        "/packages/go/go.sum",
         "/package.json",
         "/bun.lock",
       ],

@@ -1,5 +1,6 @@
 FROM golang:1.26-bookworm AS schema-ready-builder
 WORKDIR /src/services/jetstream-ingest
+COPY packages/go/go.mod packages/go/go.sum /src/packages/go/
 COPY services/jetstream-ingest/go.mod services/jetstream-ingest/go.sum ./
 RUN go mod download
 COPY services/jetstream-ingest/cmd/schema-ready ./cmd/schema-ready

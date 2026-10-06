@@ -18,7 +18,9 @@
       "/services/jetstream-ingest/internal/schemaready/**",
       "/services/jetstream-ingest/go.mod",
       "/services/jetstream-ingest/go.sum",
-      "/railway/appview.json"
+      "/railway/appview.json",
+      "/packages/go/go.mod",
+      "/packages/go/go.sum"
     ]
   },
   "deploy": {

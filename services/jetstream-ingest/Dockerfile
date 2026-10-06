@@ -1,6 +1,7 @@
 FROM golang:1.26-bookworm AS builder
 
 WORKDIR /src/services/jetstream-ingest
+COPY packages/go/ /src/packages/go/
 COPY services/jetstream-ingest/go.mod services/jetstream-ingest/go.sum ./
 RUN go mod download
 COPY services/jetstream-ingest/ ./

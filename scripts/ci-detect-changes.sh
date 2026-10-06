@@ -94,6 +94,8 @@ filter_changed apple \
   '.github/workflows/ci.yml'
 
 filter_changed operations \
+  'packages/go/go.mod' \
+  'packages/go/go.sum' \
   'database/migrations/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
@@ -113,6 +115,8 @@ filter_changed redis \
   '.github/workflows/ci.yml'
 
 filter_changed gateway \
+  'packages/go/go.mod' \
+  'packages/go/go.sum' \
   'database/migrations/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
@@ -131,6 +135,8 @@ filter_changed gateway \
   '.github/workflows/ci.yml'
 
 filter_changed appview \
+  'packages/go/go.mod' \
+  'packages/go/go.sum' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
   'services/jetstream-ingest/go.mod' \
@@ -149,6 +155,8 @@ filter_changed appview \
   '.github/workflows/ci.yml'
 
 filter_changed charybdis \
+  'packages/go/go.mod' \
+  'packages/go/go.sum' \
   'database/migrations/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
@@ -163,6 +171,7 @@ filter_changed charybdis \
   '.github/workflows/ci.yml'
 
 filter_changed jetstream_ingest \
+  'packages/go/**' \
   'services/jetstream-ingest/**' \
   'database/migrations/**' \
   'packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/Fixtures/jetstream-v2-go-sdk-v0.2.0-events.json' \
@@ -171,12 +180,15 @@ filter_changed jetstream_ingest \
   '.github/workflows/ci.yml'
 
 filter_changed wire_ingest \
+  'packages/go/**' \
   'services/jetstream-ingest/**' \
   'database/migrations/**' \
   'railway/wire-jetstream-ingest.json' \
   '.github/workflows/ci.yml'
 
 filter_changed wire_worker \
+  'packages/go/go.mod' \
+  'packages/go/go.sum' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
   'services/jetstream-ingest/go.mod' \
@@ -194,6 +206,8 @@ filter_changed wire_worker \
   '.github/workflows/ci.yml'
 
 filter_changed indexing_worker \
+  'packages/go/go.mod' \
+  'packages/go/go.sum' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
   'services/jetstream-ingest/go.mod' \
@@ -295,6 +309,8 @@ filter_changed benchmark_tools \
   '.github/workflows/ci.yml'
 
 filter_changed podcast_worker \
+  'packages/go/go.mod' \
+  'packages/go/go.sum' \
   'services/podcast-worker/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
@@ -304,3 +320,13 @@ filter_changed podcast_worker \
   '.railway/**' \
   'package.json' \
   'bun.lock'
+filter_changed go_packages \
+  'services/*/Sources/*Core/**' \
+  'packages/go/**' \
+  'packages/swift/**' \
+  'packages/read-state/**' \
+  'packages/lexicons/**' \
+  'packages/spec/**' \
+  'scripts/go/**' \
+  'database/migrations/**' \
+  '.github/workflows/ci.yml'

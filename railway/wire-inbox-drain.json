@@ -14,7 +14,9 @@
       "/services/jetstream-ingest/internal/schemaready/**",
       "/services/jetstream-ingest/go.mod",
       "/services/jetstream-ingest/go.sum",
-      "/railway/wire-inbox-drain.json"
+      "/railway/wire-inbox-drain.json",
+      "/packages/go/go.mod",
+      "/packages/go/go.sum"
     ]
   },
   "deploy": {
