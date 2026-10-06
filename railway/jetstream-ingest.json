@@ -6,7 +6,8 @@
     "watchPatterns": [
       "/services/jetstream-ingest/**",
       "/database/migrations/**",
-      "/railway/jetstream-ingest.json"
+      "/railway/jetstream-ingest.json",
+      "/packages/go/**"
     ]
   },
   "deploy": {

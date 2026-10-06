@@ -126,6 +126,23 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("name: CI — Required");
   });
 
+  it("requires Go package parity and PostgreSQL integration checks", () => {
+    const parsed = Bun.YAML.parse(workflow) as {
+      jobs: Record<string, { needs?: string[]; steps: { run?: string; env?: Record<string, string> }[] }>;
+    };
+    const job = parsed.jobs["go-packages"];
+    expect(parsed.jobs.required.needs).toContain("go-packages");
+    const commands = job.steps.map((step) => step.run ?? "").join("\n");
+    expect(commands).toContain("go test -race ./...");
+    expect(commands).toContain("generate-contracts.py --check");
+    expect(commands).toContain("verify-ranking-parity.sh");
+    expect(commands).toContain("verify-edition-parity.sh");
+    expect(commands).toContain("verify-domain-ranking-parity.sh");
+    expect(job.steps.some((step) => step.env?.SOCIALWIRE_GO_WIRE_TEST_DATABASE_URL)).toBe(true);
+    const gate = parsed.jobs.required.steps.find((step) => step.run)!;
+    expect(gate.run).toContain('check "$GO_PACKAGES_FLAG" "$GO_PACKAGES_RESULT"');
+  });
+
   it("runs bounded benchmark tests with an isolated receipt fixture and requires success", () => {
     const parsed = Bun.YAML.parse(workflow) as {
       jobs: Record<string, {
@@ -343,6 +360,7 @@ describe("CI workflow configuration", () => {
       "appview",
       "charybdis",
       "operations",
+      "go_packages",
       "jetstream_ingest",
       "wire_ingest",
       "wire_worker",

@@ -80,6 +80,25 @@ describe("CI path detection", () => {
     expect(result.get("podcast_worker")).toBe("true");
     expect(result.get("spec")).toBe("true");
   });
+  it("checks Go packages and ingestion consumers when shared Go code changes", () => {
+    const result = detect(repositoryWithChange("packages/go/wirecore/ranker.go"), "pull_request");
+    for (const job of ["go_packages", "jetstream_ingest", "wire_ingest"]) {
+      expect(result.get(job)).toBe("true");
+    }
+  });
+
+  it("checks Go parity when a Swift worker library changes", () => {
+    const result = detect(repositoryWithChange("services/wire-worker/Sources/WireWorkerCore/WireWorkerCycle.swift"), "pull_request");
+    expect(result.get("go_packages")).toBe("true");
+  });
+
+  it("rebuilds every schema-ready consumer when the local Go module changes", () => {
+    const result = detect(repositoryWithChange("packages/go/go.mod"), "pull_request");
+    for (const job of ["gateway", "appview", "operations", "charybdis", "wire_worker", "indexing_worker", "jetstream_ingest", "wire_ingest", "podcast_worker"]) {
+      expect(result.get(job)).toBe("true");
+    }
+  });
+
   it("tests portable read-state changes in native and server consumers", () => {
     const result = detect(repositoryWithChange("packages/swift/ReadStateCore/Sources/ReadStateCore/State.swift"), "pull_request");
     for (const job of ["apple", "gateway", "appview", "charybdis", "operations", "indexing_worker"]) {

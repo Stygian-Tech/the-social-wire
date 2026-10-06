@@ -15,7 +15,9 @@
       "/services/jetstream-ingest/go.mod",
       "/services/jetstream-ingest/go.sum",
       "/database/migrations/**",
-      "/railway/operations.json"
+      "/railway/operations.json",
+      "/packages/go/go.mod",
+      "/packages/go/go.sum"
     ]
   },
   "deploy": {

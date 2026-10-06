@@ -14,7 +14,9 @@
       "/services/jetstream-ingest/go.mod",
       "/services/jetstream-ingest/go.sum",
       "/database/migrations/**",
-      "/railway/charybdis.json"
+      "/railway/charybdis.json",
+      "/packages/go/go.mod",
+      "/packages/go/go.sum"
     ]
   },
   "deploy": {

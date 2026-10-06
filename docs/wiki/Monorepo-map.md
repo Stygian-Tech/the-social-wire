@@ -48,3 +48,5 @@ The current worker topology is documented in
 - [[Deployment-and-environments]] — Railway services and environment boundaries
 - [[Operations]] — operator console, control plane, ingestion recovery, and runbooks
 - [[Testing]] — package commands and CI ownership
+
+The repository-local `packages/go` module and `scripts/go` tooling are documented in [[Go-ingestion-and-ranking]] and [[Go-package-reference]].

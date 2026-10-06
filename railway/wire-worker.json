@@ -15,7 +15,9 @@
       "/services/jetstream-ingest/internal/schemaready/**",
       "/services/jetstream-ingest/go.mod",
       "/services/jetstream-ingest/go.sum",
-      "/railway/wire-worker.json"
+      "/railway/wire-worker.json",
+      "/packages/go/go.mod",
+      "/packages/go/go.sum"
     ]
   },
   "deploy": {
