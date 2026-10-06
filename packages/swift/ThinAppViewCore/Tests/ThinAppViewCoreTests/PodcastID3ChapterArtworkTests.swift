@@ -18,8 +18,14 @@ struct PodcastID3ChapterArtworkTests {
     let description: [UInt8] = encoding == 1 ? [255, 254, 65, 0, 0, 0] : [0]
     let apic = [encoding] + Array("image/png".utf8) + [0, 3] + description + Array(picture ?? png)
     let text = frame("TIT2", [0] + Array("Chapter".utf8), version: version)
-    let body = Array("chapter\(milliseconds)".utf8) + [0] + integer(milliseconds) + integer(milliseconds + 1000)
-      + integer(0xffff_ffff) + integer(0xffff_ffff) + text + frame("APIC", apic, version: version, flags: flags)
+    var body = Array("chapter\(milliseconds)".utf8)
+    body.append(0)
+    body.append(contentsOf: integer(milliseconds))
+    body.append(contentsOf: integer(milliseconds + 1000))
+    body.append(contentsOf: integer(0xffff_ffff))
+    body.append(contentsOf: integer(0xffff_ffff))
+    body.append(contentsOf: text)
+    body.append(contentsOf: frame("APIC", apic, version: version, flags: flags))
     return frame("CHAP", body, version: version)
   }
   private func tag(_ body: [UInt8], version: UInt8 = 3, flags: UInt8 = 0) -> Data {
@@ -65,7 +71,12 @@ struct PodcastID3ChapterArtworkTests {
     #expect(PodcastID3ChapterArtworkParser.parse(tag(invalid)).isEmpty)
     #expect(PodcastID3ChapterArtworkParser.parse(tag(frame("CHAP", [1, 2, 3], version: 3))).isEmpty)
     let noDescription = [0] + Array("image/png".utf8) + [0, 3] + Array(repeating: UInt8(1), count: 30)
-    let body = [0] + integer(0) + integer(1) + integer(0) + integer(0) + frame("APIC", noDescription, version: 3)
+    var body: [UInt8] = [0]
+    body.append(contentsOf: integer(0))
+    body.append(contentsOf: integer(1))
+    body.append(contentsOf: integer(0))
+    body.append(contentsOf: integer(0))
+    body.append(contentsOf: frame("APIC", noDescription, version: 3))
     #expect(PodcastID3ChapterArtworkParser.parse(tag(frame("CHAP", body, version: 3))).isEmpty)
   }
 }
