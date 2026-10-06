@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Compass, Download, ListMusic } from "lucide-react";
+import { Clock, Download, ListMusic, Search } from "lucide-react";
 import { PodcastArtwork } from "./PodcastArtwork";
 import type { PodcastShow } from "@/lib/podcasts/client";
 import type { PodcastFeed } from "@/lib/podcasts/library";
@@ -28,7 +28,7 @@ export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, down
         {onDiscover ? <button type="button" aria-current={discoverActive ? "page" : undefined}
           onClick={onDiscover}
           className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm ${discoverActive ? "bg-accent font-medium" : "hover:bg-accent/60"}`}>
-          <Compass className="size-4 shrink-0" aria-hidden="true" /><span>Discover</span>
+          <Search className="size-4 shrink-0" aria-hidden="true" /><span>Search</span>
         </button> : null}
         {rows.map(({ id, label, Icon, count }) => (
           <button key={id} type="button" aria-current={!discoverActive && feed === id ? "page" : undefined}

@@ -2,8 +2,7 @@
 import Link from "next/link";
 import { Pause, Play } from "lucide-react";
 import type { PlayerContext } from "./PodcastPlayerProvider";
-import { activePodcastChapter, PODCAST_SPEEDS } from "@/lib/podcasts/playback";
-import { PodcastSelect } from "./PodcastSelect";
+import { activePodcastChapter } from "@/lib/podcasts/playback";
 import { PodcastArtwork } from "./PodcastArtwork";
 import { PodcastChapterTimeline } from "./PodcastChapterTimeline";
 import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
@@ -30,10 +29,6 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
       <div className="flex min-w-0 items-center gap-2"><div className="size-10 shrink-0"><PodcastArtwork src={artwork} fallbackSources={[episode.artworkUrl, episode.showArtworkUrl]} alt={artworkLabel} size={40} /></div>{title}</div>
       {transport}
       <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-center gap-x-3 gap-y-0 md:col-span-1 md:justify-end">
-        <label className="flex items-center gap-2 text-xs">Speed<PodcastSelect aria-label="Playback Speed" value={player.state.playbackSpeed} onChange={(event) => void player.changeState({ playbackSpeed: Number(event.target.value) })} className="min-h-8 rounded border bg-background px-2 py-1 pointer-coarse:min-h-11">
-          {PODCAST_SPEEDS.map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
-        </PodcastSelect></label>
-        <label className="flex min-h-8 items-center gap-2 text-xs pointer-coarse:min-h-11"><input type="checkbox" disabled={episode.visibility === "private"} checked={episode.visibility === "private" ? false : player.state.removeSilences} onChange={(event) => void player.setRemoveSilences(event.target.checked)} />Remove Silences</label>
         <PodcastClipDialog key={episode.id} player={player} episode={episode} />
         <PodcastPlaybackDefaults player={player} />
       </div>

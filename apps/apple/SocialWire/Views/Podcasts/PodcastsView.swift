@@ -13,7 +13,7 @@ struct PodcastsView: View {
             if !identity.normalizedQuery.isEmpty {
                 PodcastSearchResultsView(identity: identity, search: search)
             } else if input.scope == .discover {
-                ContentUnavailableView("Discover Podcasts", systemImage: "magnifyingglass", description: Text("Search Podcast Index by title or keyword. Select a show to preview it before subscribing. Use Add Podcast for feed URLs."))
+                ContentUnavailableView("Search Podcasts", systemImage: "magnifyingglass", description: Text("Search Podcast Index by title or keyword. Select a show to preview it before subscribing. Use Add Podcast for feed URLs."))
             } else {
                 Section("Library") {
                     ForEach(PodcastLibraryDestination.allCases) { destination in

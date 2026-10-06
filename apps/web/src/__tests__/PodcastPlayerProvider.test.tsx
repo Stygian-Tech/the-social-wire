@@ -57,7 +57,7 @@ afterEach(async () => {
   window.localStorage.clear();
 });
 function environment() {
-  for (const [name, value] of Object.entries({ requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
+  for (const [name, value] of Object.entries({ getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
     const previous = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, { configurable: true, value });
     restores.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
@@ -278,7 +278,11 @@ describe("Persistent podcast player", () => {
     render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
     await waitFor(() => expect(env.element.playbackRate).toBe(2));
-    expect((screen.getByRole("combobox", { name: "Playback Speed" }) as HTMLSelectElement).value).toBe("2");
+    expect(screen.queryByRole("combobox", { name: "Playback Speed" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "Remove Silences" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Playback Defaults" }));
+    await screen.findByRole("dialog", { name: "Playback Defaults" });
+    expect((screen.getByRole("combobox", { name: "Default Speed" }) as HTMLSelectElement).value).toBe("2");
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["0.75×", "1×", "1.25×", "1.5×", "1.75×", "2×"]);
   });
   it.each([undefined, "v1"])("does not skip old downloaded silence metadata offline (%s)", async (analysisVersion) => {
@@ -333,7 +337,10 @@ describe("Persistent podcast player", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
     await waitFor(() => expect(env.element.src).toBe("blob:private-audio"));
     expect(fetch.mock.calls.some((call) => call[1] === "/v1/podcasts/media?episodeId=episode")).toBe(true);
-    expect((screen.getByRole("checkbox", { name: "Remove Silences" }) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByRole("checkbox", { name: "Remove Silences" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Playback Defaults" }));
+    await screen.findByRole("dialog", { name: "Playback Defaults" });
+    expect(screen.getByText("Silence removal is unavailable for private feeds.")).toBeDefined();
     expect(fetch.mock.calls.some((call) => call[1].includes("analysis"))).toBe(false);
   });
   it("keeps audio across route children, seeks and changes pitch-preserving speed", async () => {
@@ -348,10 +355,14 @@ describe("Persistent podcast player", () => {
     });
     await screen.findByRole("complementary", { name: "Podcast Player" });
     expect(env.element.preservesPitch).toBe(true);
-    fireEvent.change(screen.getByRole("combobox", { name: "Playback Speed" }), {
+    fireEvent.click(screen.getByRole("button", { name: "Playback Defaults" }));
+    await screen.findByRole("dialog", { name: "Playback Defaults" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Default Speed" }), {
       target: { value: "2" },
     });
     await waitFor(() => expect(env.element.playbackRate).toBe(2));
+    fireEvent.click(screen.getByRole("button", { name: "Close Playback Defaults" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.change(screen.getByRole("slider", { name: "Seek Podcast" }), {
       target: { value: "42" },
     });

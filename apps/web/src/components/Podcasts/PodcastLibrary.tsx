@@ -207,7 +207,7 @@ function PodcastViewerLibrary() {
   const downloaded = new Set(downloads.map((item) => item.episode.id));
   const displayed = searching ? search.episodes : podcastFeedEpisodes(feed, episodes, downloadEpisodes, player.state.queue);
   const selectedShow = searchScope === "library" && feed === "show" ? shows.find((show) => show.id === showId) : undefined;
-  const heading = searchScope === "discover" ? "Discover Podcasts" : selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
+  const heading = searchScope === "discover" ? "Search Podcasts" : selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
   const selectFeed = (next: PodcastFeed, id?: string) => {
     if (searchScope === "discover") { setSearchScope("library"); setSearchQuery(""); }
     setFeed(next);
@@ -260,7 +260,7 @@ function PodcastViewerLibrary() {
         <PodcastLibrarySearch
           scope={searchScope}
           query={searchQuery}
-          label={searchScope === "discover" ? "Discover Podcasts" : feed === "downloads" ? "Search Downloaded Episodes" : feed === "show" ? "Search This Show" : "Search Your Library"}
+          label={searchScope === "discover" ? "Search Podcasts" : feed === "downloads" ? "Search Downloaded Episodes" : feed === "show" ? "Search This Show" : "Search Your Library"}
           valid={search.valid}
           loading={search.loading}
           error={search.error}

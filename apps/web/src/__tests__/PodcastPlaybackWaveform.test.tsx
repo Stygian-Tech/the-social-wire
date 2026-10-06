@@ -51,14 +51,14 @@ describe("Podcast reactive waveform", () => {
     expect(fixture.connect).toHaveBeenCalledWith(fixture.analyser);
     fixture.tick();
     const bars = view.container.querySelectorAll("span > span");
-    expect((bars[0] as HTMLElement).style.height).toBe("16px");
-    expect((bars[1] as HTMLElement).style.height).toBe("8px");
+    expect((bars[0] as HTMLElement).style.height).toBe("10px");
+    expect((bars[1] as HTMLElement).style.height).toBe("5px");
     expect((bars[2] as HTMLElement).style.height).toBe("1px");
     expect(bars[0]?.className).not.toContain("podcast-waveform-indicator");
     fixture.analyser.getByteFrequencyData.mockImplementation(data => { data.fill(0); data[3] = 64; data[85] = 255; });
     fixture.tick();
-    expect((bars[0] as HTMLElement).style.height).toBe("4px");
-    expect((bars[2] as HTMLElement).style.height).toBe("16px");
+    expect((bars[0] as HTMLElement).style.height).toBe("2px");
+    expect((bars[2] as HTMLElement).style.height).toBe("10px");
     view.rerender(<PodcastPlaybackWaveform player={player(fixture.audio, false)} />);
     expect(view.container.innerHTML).toBe("");
     expect(fixture.clear).toHaveBeenCalledWith(123);
@@ -78,7 +78,7 @@ describe("Podcast reactive waveform", () => {
     const bars = view.container.querySelectorAll("span > span");
     expect(fixture.analyser.fftSize).toBe(4096);
     for (let index = 0; index < bars.length; index++) {
-      expect((bars[index] as HTMLElement).style.height).toBe(index === band ? "16px" : "1px");
+      expect((bars[index] as HTMLElement).style.height).toBe(index === band ? "10px" : "1px");
     }
   });
 
@@ -88,7 +88,7 @@ describe("Podcast reactive waveform", () => {
     const view = render(<PodcastPlaybackWaveform player={player(fixture.audio)} />);
     fixture.tick();
     const bars = view.container.querySelectorAll("span > span");
-    expect((bars[4] as HTMLElement).style.height).toBe("16px");
+    expect((bars[4] as HTMLElement).style.height).toBe("10px");
     expect((bars[3] as HTMLElement).style.height).toBe("1px");
   });
 
@@ -109,7 +109,7 @@ describe("Podcast reactive waveform", () => {
     expect(fixture.capture).toHaveBeenCalledTimes(1);
     expect(fixture.disconnect).not.toHaveBeenCalled();
     fixture.tick();
-    expect((view.container.querySelector("span > span") as HTMLElement).style.height).toBe("16px");
+    expect((view.container.querySelector("span > span") as HTMLElement).style.height).toBe("10px");
   });
 
   it("falls back safely when stream analysis fails without muting the original audio", () => {
@@ -145,7 +145,7 @@ describe("Podcast reactive waveform", () => {
     fixture.addTrack();
     expect(fixture.createMediaStreamSource).toHaveBeenCalledWith(fixture.stream);
     fixture.tick();
-    expect((view.container.querySelector("span > span") as HTMLElement).style.height).toBe("16px");
+    expect((view.container.querySelector("span > span") as HTMLElement).style.height).toBe("10px");
     expect(view.container.querySelector(".podcast-waveform-indicator")).toBeNull();
     expect(fixture.audio.muted).toBe(false);
     view.unmount();
@@ -175,7 +175,7 @@ describe("Podcast reactive waveform", () => {
     fixture.markRunning();
     fixture.tick();
     expect(view.container.querySelector(".podcast-waveform-indicator")).toBeNull();
-    expect((view.container.querySelector("span > span") as HTMLElement).style.height).toBe("16px");
+    expect((view.container.querySelector("span > span") as HTMLElement).style.height).toBe("10px");
   });
 });
 

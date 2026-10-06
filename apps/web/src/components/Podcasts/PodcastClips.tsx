@@ -12,7 +12,7 @@ import {
 } from "@/lib/podcasts/client";
 import { validateClipBounds, formatPodcastTime } from "@/lib/podcasts/playback";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
-const button = "min-h-11 rounded border px-3 text-sm hover:bg-accent";
+const button = "inline-flex min-h-8 items-center justify-center rounded border px-2.5 text-xs hover:bg-accent pointer-coarse:min-h-11";
 export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
   const viewer = usePodcastViewer();
   return <PodcastViewerClips key={`${viewer ?? "signed-out"}:${episode.id}`} episode={episode} viewer={viewer} />;
@@ -106,7 +106,7 @@ function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; view
         Select up to 10 minutes. Drafts stay private until you publish. Exports
         retain the original timing and pauses.
       </p>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">
           Start (Seconds)
           <input
