@@ -22,5 +22,6 @@ export function PodcastArtwork({ src, fallbackSources = [], alt, size = 64, clas
   </span>;
   if (source?.startsWith("/v1/podcasts/image?")) return <PodcastPrivateArtwork src={source} alt={alt} size={size} className={className} onError={advance} placeholder={placeholder} />;
   return source ? <Image unoptimized src={source} alt={alt} width={size} height={size}
+    style={{ width: size, height: size }}
     onError={advance} className={cn("shrink-0 rounded-lg object-cover", className)} /> : placeholder;
 }

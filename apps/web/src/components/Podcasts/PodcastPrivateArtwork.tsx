@@ -30,5 +30,6 @@ export function PodcastPrivateArtwork({ src, alt, size, className, onError, plac
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [src, viewer, key, getOAuthSession, onError]);
   return image?.key === key ? <Image unoptimized src={image.url} alt={alt} width={size} height={size}
+    style={{ width: size, height: size }}
     onError={onError} className={cn("shrink-0 rounded-lg object-cover", className)} /> : placeholder;
 }

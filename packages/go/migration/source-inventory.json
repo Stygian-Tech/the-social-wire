@@ -1028,8 +1028,8 @@
         },
         {
           "path": "packages/swift/GatewayCore/Sources/GatewayCore/Services/PublicMediaFetcher.swift",
-          "sha256": "b5faa646d6bb5f3dc129b7308adc44119ed28fc1cb3b3479523b5553505339d3",
-          "lines": 149,
+          "sha256": "35ad5c31bd22e28c4ee70dbbf218918dd10379192f6bd002c5869f902d3a6ecd",
+          "lines": 151,
           "publicDeclarations": [
             "public enum PublicMediaFetcher {",
             "public static func stream(url: String, httpClient: HTTPClient, range: String?) async throws -> (",
@@ -4753,6 +4753,30 @@
           ]
         },
         {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastID3ChapterArtwork.swift",
+          "sha256": "6da0fcd7ee934143e8168da219eb597f34cdc58418590e9794c57ae4173e8f5e",
+          "lines": 13,
+          "publicDeclarations": [
+            "public struct PodcastID3ChapterArtwork: Sendable, Equatable {",
+            "public let startSeconds: Double",
+            "public let data: Data",
+            "public let mimeType: String",
+            "public init(startSeconds: Double, data: Data, mimeType: String) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastID3ChapterArtworkParser.swift",
+          "sha256": "61649ef11f0529c114e9e1eb36b711fb280345c9aa406144adca38892a91c334",
+          "lines": 102,
+          "publicDeclarations": [
+            "public enum PodcastID3ChapterArtworkParser {",
+            "public static let maximumTagBytes = 4 * 1024 * 1024",
+            "public static let maximumImageBytes = 1024 * 1024",
+            "public static func tagByteCount(header: Data) -> Int? {",
+            "public static func parse(_ data: Data) -> [PodcastID3ChapterArtwork] {"
+          ]
+        },
+        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastImage.swift",
           "sha256": "e368cc2785975d3fdfc2ad259b7461c0df941eef237c404437d9075daf991d47",
           "lines": 19,
@@ -6232,6 +6256,7 @@
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSReadStateVerifiedRecordCacheTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSReconciliationScopeTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSRepositoryRecoveryTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastID3ChapterArtworkTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastMetadataTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastPrivateCatalogTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastPrivateStorageTests.swift",

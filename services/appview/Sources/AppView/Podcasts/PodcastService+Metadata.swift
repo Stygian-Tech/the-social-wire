@@ -4,7 +4,7 @@ import ThinAppViewCore
 
 extension PodcastService {
   /// Resolve only the requested page, with at most eight bounded source requests in flight.
-  func enrich(_ episodes: [PodcastEpisode], viewer: String?, persist: Bool = true) async -> [PodcastEpisode] {
+  func enrich(_ episodes: [PodcastEpisode], viewer: String?, persist: Bool = true, embeddedArtwork: Bool = false) async -> [PodcastEpisode] {
     var output = episodes
     let deadline = ContinuousClock.now.advanced(by: .seconds(10))
     for offset in stride(from: 0, to: min(episodes.count, 100), by: 8) {
@@ -23,6 +23,12 @@ extension PodcastService {
                 ? (try? await self.store.privateShow(viewer: viewer ?? "", id: episode.showId))
                 : (try? await self.store.show(id: episode.showId))
               episode.showArtworkUrl = show?.artworkUrl
+            }
+            // Fetch embedded images only for the selected episode, never every library row.
+            if embeddedArtwork, !episode.chapters.isEmpty,
+              episode.chapters.contains(where: { $0.artworkUrl == nil }),
+              let images = try? await PodcastEmbeddedChapterArtwork.shared.artwork(episode: episode, viewer: viewer, http: self.http) {
+              episode = PodcastEmbeddedChapterArtwork.enrich(episode: episode, images: images)
             }
             if persist, episode != original { try? await self.store.updateMetadata(episode: episode, viewer: viewer) }
             return (index, episode)

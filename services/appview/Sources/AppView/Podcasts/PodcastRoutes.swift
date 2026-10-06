@@ -49,7 +49,7 @@ struct PodcastRoutes {
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       if let id = request.uri.queryParameters.get("episodeId") {
         guard let episode = try await service.episode(id: id, viewer: auth.did) else { throw HTTPError(.notFound) }
-        return try Self.episodesResponse(await service.enrich([episode], viewer: auth.did).map(service.visibleEpisode), limit: 2)
+        return try Self.episodesResponse(await service.enrich([episode], viewer: auth.did, embeddedArtwork: true).map(service.visibleEpisode), limit: 2)
       }
       let limit = max(1, min(Int(request.uri.queryParameters.get("limit") ?? "50") ?? 50, 100))
       let cursor = request.uri.queryParameters.get("cursor")
