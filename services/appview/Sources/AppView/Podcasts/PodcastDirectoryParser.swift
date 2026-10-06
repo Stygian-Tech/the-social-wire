@@ -20,10 +20,20 @@ enum PodcastDirectoryParser {
       let identifier = (row["trackId"] as? NSNumber)?.int64Value ?? (row["collectionId"] as? NSNumber)?.int64Value ?? 0
       let id = identifier > 0 ? String(identifier) : SHA256.hash(data: Data(feed.utf8)).map { String(format: "%02x", $0) }.joined()
       guard identifiers.insert(id).inserted else { return nil }
-      let artwork = ["artworkUrl600", "artworkUrl100", "artworkUrl60"].compactMap { safePublicURL(row[$0] as? String) }.first
+      let artworkFields = ["artworkUrl600", "artworkUrl100", "artworkUrl60"].compactMap { row[$0] as? String }
+      let artwork = artworkFields.compactMap(safePublicURL).first
+        ?? artworkFields.compactMap(httpsArtworkURL).first
       return PodcastDirectoryCandidate(id: id, title: String(name.prefix(512)),
         description: (row["description"] as? String).map { String($0.prefix(4096)) }, artworkUrl: artwork, feedUrl: feed)
     }.prefix(50))
+  }
+
+  // Directory records can retain HTTP artwork even when the publisher serves it over HTTPS.
+  // Prefer an explicit HTTPS variant before upgrading an older artwork URL.
+  private static func httpsArtworkURL(_ raw: String) -> String? {
+    guard var url = URLComponents(string: raw), url.scheme?.lowercased() == "http" else { return nil }
+    url.scheme = "https"
+    return safePublicURL(url.string)
   }
 
   static func safePublicURL(_ raw: String?) -> String? {

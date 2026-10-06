@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import Image from "next/image";
 import { Headphones } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { podcastArtworkFallback } from "@/lib/podcasts/artwork";
 import { PodcastPrivateArtwork } from "./PodcastPrivateArtwork";
 
 export function PodcastArtwork({ src, fallbackSources = [], alt, size = 64, className }: {
@@ -11,7 +12,9 @@ export function PodcastArtwork({ src, fallbackSources = [], alt, size = 64, clas
 }) {
   const [failed, setFailed] = useState({ source: src, index: 0 });
   const index = failed.source === src ? failed.index : 0;
-  const source = [src, ...fallbackSources].filter((value): value is string => !!value)[index];
+  const sources = [src, ...fallbackSources].filter((value): value is string => !!value)
+    .flatMap(value => [value, podcastArtworkFallback(value)].filter((item): item is string => !!item));
+  const source = [...new Set(sources)][index];
   const advance = useCallback(() => setFailed({ source: src, index: index + 1 }), [src, index]);
   const placeholder = <span role={alt ? "img" : undefined} aria-label={alt || undefined}
     style={{ width: size, height: size }} className={cn("flex shrink-0 items-center justify-center rounded-lg bg-muted", className)}>

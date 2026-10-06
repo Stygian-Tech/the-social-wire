@@ -8,6 +8,17 @@ import * as gateway from "@/lib/socialWireGatewayClient";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 const restores: (() => void)[] = [];
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
+it("retries Transistor publisher artwork before using the placeholder and resets for another show", () => {
+  const original = "https://img-upload-production.transistor.fm/show/48255/1704319857-artwork.jpg";
+  const cdn = `https://img.transistorcdn.com/signature/mb:500000/${btoa(original).replace(/=+$/, "")}.jpg`;
+  const view = render(<PodcastArtwork src={cdn} alt="Primary Technology" />);
+  fireEvent.error(screen.getByRole("img", { name: "Primary Technology" }));
+  expect(screen.getByRole("img", { name: "Primary Technology" }).getAttribute("src")).toBe(original);
+  fireEvent.error(screen.getByRole("img", { name: "Primary Technology" }));
+  expect(screen.getByRole("img", { name: "Primary Technology" }).getAttribute("src")).toBeNull();
+  view.rerender(<PodcastArtwork src="https://example.com/new.jpg" alt="Other Show" />);
+  expect(screen.getByRole("img", { name: "Other Show" }).getAttribute("src")).toBe("https://example.com/new.jpg");
+});
 it("shows publisher artwork and available host photos without inventing missing hosts", () => {
   const view = render(<PodcastShowDetails show={{ id:"show",title:"Test Show",sourceKind:"rss",artworkUrl:"https://example.com/show.jpg",hosts:[{name:"Sam",imageUrl:"https://example.com/sam.jpg"},{name:"Jo"}] }} />);
   expect(screen.getByRole("img",{name:"Test Show Artwork"}).getAttribute("src")).toBe("https://example.com/show.jpg");
