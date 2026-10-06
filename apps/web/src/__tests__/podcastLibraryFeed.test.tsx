@@ -46,21 +46,21 @@ describe("Podcast library feed selection", () => {
   });
 });
 
-it("opens Discover from the podcast sidebar without selecting a library feed", () => {
+it("opens Search from the podcast sidebar without selecting a library feed", () => {
   const calls: string[] = [];
   render(<PodcastLibrarySidebar feed="recent" showId={null} shows={[]} subscriptions={[]} downloadCount={0} queueCount={0} discoverActive={false} onDiscover={() => calls.push("discover")} onSelect={feed => calls.push(feed)} />);
-  fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   expect(calls).toEqual(["discover"]);
   fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
   expect(calls).toEqual(["discover", "downloads"]);
 });
 
-it("marks Discover as the only active sidebar destination even with a retained feed or show selection", () => {
+it("marks Search as the only active sidebar destination even with a retained feed or show selection", () => {
   const shows = [{ id: "owned", title: "My Show", sourceKind: "rss" as const }];
   const props = { showId: "owned", shows, subscriptions: ["owned"], downloadCount: 1, queueCount: 1, onDiscover: () => {}, onSelect: () => {} };
   const view = render(<PodcastLibrarySidebar {...props} feed="recent" discoverActive />);
   expect(view.container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
-  expect(screen.getByRole("button", { name: "Discover" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "Search" }).getAttribute("aria-current")).toBe("page");
   expect(screen.getByRole("button", { name: "Recently Added" }).getAttribute("aria-current")).toBeNull();
   view.rerender(<PodcastLibrarySidebar {...props} feed="show" discoverActive />);
   expect(view.container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
@@ -68,5 +68,5 @@ it("marks Discover as the only active sidebar destination even with a retained f
   view.rerender(<PodcastLibrarySidebar {...props} feed="show" discoverActive={false} />);
   expect(view.container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
   expect(screen.getByRole("button", { name: "My Show" }).getAttribute("aria-current")).toBe("page");
-  expect(screen.getByRole("button", { name: "Discover" }).getAttribute("aria-current")).toBeNull();
+  expect(screen.getByRole("button", { name: "Search" }).getAttribute("aria-current")).toBeNull();
 });

@@ -20,7 +20,7 @@ export function PodcastLibrarySearch({ scope, query, label, valid, loading, erro
   const searching = !!query.trim();
   return (
     <div className="space-y-2">
-      {scope === "discover" ? <p className="text-xs text-muted-foreground">Discover Public Podcasts with <a className="underline" href="https://podcastindex.org" target="_blank" rel="noreferrer">Podcast Index</a>. Only searches entered here are sent to the directory.</p> : null}
+      {scope === "discover" ? <p className="text-xs text-muted-foreground">Search Public Podcasts with <a className="underline" href="https://podcastindex.org" target="_blank" rel="noreferrer">Podcast Index</a>. Only searches entered here are sent to the directory.</p> : null}
       <label htmlFor="podcast-library-search" className="block text-sm font-medium">{label}</label>
       <div className="flex min-w-0 gap-2">
         <input

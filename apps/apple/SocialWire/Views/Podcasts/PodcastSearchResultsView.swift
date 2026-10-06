@@ -22,7 +22,7 @@ struct PodcastSearchResultsView: View {
                             }
                         }
                     }
-                } header: { Text("Discover") } footer: {
+                } header: { Text("Search") } footer: {
                     Link("Results from Podcast Index", destination: URL(string: "https://podcastindex.org")!)
                 }
             }

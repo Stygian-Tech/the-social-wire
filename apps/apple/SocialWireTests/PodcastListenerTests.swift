@@ -166,8 +166,9 @@ struct PodcastListenerTests {
         #expect(!model.loading)
     }
 
-    @Test("Switching to Discover clears private library queries atomically")
+    @Test("Switching to Search clears private library queries atomically")
     func discoveryScopePrivacy() {
+        #expect(PodcastSearchScope.discover.title == "Search")
         let library = PodcastSearchInput(query: "private subscriber episode", scope: .library)
         let directory = library.selecting(.discover)
         #expect(directory.query.isEmpty)

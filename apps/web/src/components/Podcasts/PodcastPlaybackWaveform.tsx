@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { PlayerContext } from "./PodcastPlayerProvider";
 
 const restingLevels = [0.3, 0.6, 0.9, 0.5, 0.75];
+const visualSensitivity = 0.6;
 type CapturableAudio = HTMLAudioElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
 
 export function PodcastPlaybackWaveform({ player }: { player: PlayerContext }) {
@@ -92,6 +93,6 @@ export function PodcastPlaybackWaveform({ player }: { player: PlayerContext }) {
   return <span aria-hidden="true" className="flex h-4 w-5 shrink-0 items-center justify-center gap-0.5 text-primary">
     {levels.map((level, index) => <span key={index}
       className={`w-0.5 rounded-full bg-current transition-[height] duration-100 ${analyzing ? "" : "podcast-waveform-indicator motion-reduce:animate-none"}`}
-      style={{ height: `${Math.round(level * 16)}px`, animationDelay: `${-index * 170}ms` }} />)}
+      style={{ height: `${Math.max(1, Math.round(level * 16 * visualSensitivity))}px`, animationDelay: `${-index * 170}ms` }} />)}
   </span>;
 }
