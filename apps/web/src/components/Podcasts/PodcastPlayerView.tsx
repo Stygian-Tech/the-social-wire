@@ -6,6 +6,7 @@ import { activePodcastChapter, PODCAST_SPEEDS } from "@/lib/podcasts/playback";
 import { PodcastSelect } from "./PodcastSelect";
 import { PodcastArtwork } from "./PodcastArtwork";
 import { PodcastChapterTimeline } from "./PodcastChapterTimeline";
+import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
 
 export function PodcastPlayerView({ player }: { player: PlayerContext }) {
   const episode = player.episode;
@@ -32,6 +33,7 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
           {PODCAST_SPEEDS.map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
         </PodcastSelect></label>
         <label className="flex min-h-8 items-center gap-2 text-xs pointer-coarse:min-h-11"><input type="checkbox" disabled={episode.visibility === "private"} checked={episode.visibility === "private" ? false : player.state.removeSilences} onChange={(event) => void player.setRemoveSilences(event.target.checked)} />Remove Silences</label>
+        <PodcastPlaybackDefaults player={player} />
       </div>
       <div className="col-span-2 min-w-0 md:col-span-3"><PodcastChapterTimeline chapters={episode.chapters ?? []} artworkSources={[episode.artworkUrl, episode.showArtworkUrl]} position={player.position} duration={player.duration || episode.durationSeconds || 0} seek={player.seek} /></div>
       {episode.visibility !== "private" && player.state.removeSilences && player.silence?.status !== "complete" ? <p className="col-span-2 text-xs md:col-span-3" role="status">Silence Analysis: {player.silence?.status ?? "Pending"}{player.silence?.status === "failed" || player.silence?.status === "unavailable" ? <button type="button" className="ml-2 min-h-9 underline" onClick={() => void player.setRemoveSilences(true)}>Retry Analysis</button> : null}</p> : null}

@@ -55,6 +55,11 @@ afterEach(() => {
   window.localStorage.clear();
 });
 function environment() {
+  for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "DOMRect"] as const) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value: window[name] });
+    restores.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
+  }
   const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   restores.push(() => { if (online) Object.defineProperty(navigator, "onLine", online); else Reflect.deleteProperty(navigator, "onLine"); });
