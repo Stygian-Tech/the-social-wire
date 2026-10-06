@@ -80,3 +80,24 @@ it("retains catalog derivations during header typing and refreshes them when cat
  expect(observed.at(-1)).not.toBe(original);
  expect(observed.at(-1)?.[0]?.searchAliases).toEqual(["Pool"]);
 });
+
+it("reports catalog transport failures without treating an empty selection list as a failed interests request", () => {
+ const state={signedIn:true,viewerDID:"did:plc:empty-sports-interests",items:[],selections:[],selectionsLoading:false,selectionsError:null,saving:false,saveSelection:async()=>undefined,catalog:{data:undefined,isPending:false,error:new Error("Catalog response exceeds transport limit")},feed:{hasNextPage:false},isLoading:false,error:null} as unknown as ReturnType<typeof Hooks.useSportsFeed>;
+ const feed=spyOn(Hooks,"useSportsFeed").mockReturnValue(state);
+ const customize=spyOn(Customize,"SportsCustomize").mockImplementation(()=><></>);
+ const prefs=spyOn(Preferences,"useFeedDisplayPreferences").mockReturnValue({preferences:DEFAULT_FEED_DISPLAY_PREFERENCES,setHideSportsScores:()=>{},isLoading:false,isPending:false,error:null} as unknown as ReturnType<typeof Preferences.useFeedDisplayPreferences>);
+ restores.push(()=>feed.mockRestore(),()=>customize.mockRestore(),()=>prefs.mockRestore());
+ const view=render(<SportsExperience />);
+ expect(screen.getByRole("alert").textContent).toBe("Feed choices could not load. Try Refresh.");
+ expect(screen.getByText("Sports catalog could not load. Try Refresh.")).toBeTruthy();
+ expect(screen.queryByText("Your sports interests could not load. Try Refresh.")).toBeNull();
+ feed.mockReturnValue({...state,catalog:{...state.catalog,data:{enabled:true,available:true,eventsEnabled:false,version:"test",entities:[],feeds:[]},error:null}} as unknown as ReturnType<typeof Hooks.useSportsFeed>);
+ view.rerender(<SportsExperience />);
+ expect(screen.queryByRole("alert")).toBeNull();
+ expect(screen.queryByRole("status")).toBeNull();
+ expect(screen.getByText(/Follow sports, leagues, teams/)).toBeTruthy();
+ feed.mockReturnValue({...state,catalog:{...state.catalog,data:{enabled:true,available:true,eventsEnabled:false,version:"test",entities:[],feeds:[]},error:null},selectionsError:new Error("PDS selections failed")} as unknown as ReturnType<typeof Hooks.useSportsFeed>);
+ view.rerender(<SportsExperience />);
+ expect(screen.getByText("Your sports interests could not load. Try Refresh.")).toBeTruthy();
+ expect(screen.queryByText(/Follow sports, leagues, teams/)).toBeNull();
+});

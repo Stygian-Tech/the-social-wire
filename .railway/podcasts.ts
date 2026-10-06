@@ -16,6 +16,9 @@ export function developmentPodcasts() {
         "/services/jetstream-ingest/internal/schemaready/**",
         "/services/jetstream-ingest/go.mod",
         "/services/jetstream-ingest/go.sum",
+        // Shared module metadata participates in the schema-gate image build.
+        "/packages/go/go.mod",
+        "/packages/go/go.sum",
         "/package.json",
         "/bun.lock",
       ],

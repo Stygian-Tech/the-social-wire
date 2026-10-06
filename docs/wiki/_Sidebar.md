@@ -22,6 +22,9 @@
 - [[Lexicons]]
 - [[Database]]
 - [[Redis]]
+- [[Go-ingestion-and-ranking]]
+- [[Go-package-reference]]
+- [[Go-verification-and-deployment]]
 - [[Testing]]
 - [[Contributing]]
 

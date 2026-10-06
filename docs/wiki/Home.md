@@ -22,6 +22,7 @@ The Social Wire is a reader for publications on the [standard.site](https://stan
 - [[Thin-AppView]] and [[ThinAppViewCore]] — indexed read path and shared Swift package
 - [[Lexicons]] and [[Database]] — portable ATProto records and rebuildable server data
 - [[Redis]] — optional disposable cache and coordination layer
+- [[Go-ingestion-and-ranking]], [[Go-package-reference]], and [[Go-verification-and-deployment]] — repository-local Go migration contracts, source reference, and rollout evidence
 - [[Testing]] and [[Contributing]] — verification and contribution workflow
 
 ## What lives where
