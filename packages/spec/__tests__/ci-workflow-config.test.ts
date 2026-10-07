@@ -398,6 +398,17 @@ describe("CI workflow configuration", () => {
     expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(4);
   });
 
+  it("tests migrated Go entry points within the existing required gate", () => {
+    expect(workflow).toContain("Test migrated Go service entry points");
+    expect(workflow).toContain("for service in gateway appview operations; do");
+    expect(workflow).toContain('cd "services/$service"');
+    expect(workflow).toContain("go test -race -p 1 ./...");
+    expect(pathFilters).toContain("'services/*/go.mod'");
+    expect(pathFilters).toContain("'services/*/go.sum'");
+    expect(pathFilters).toContain("'services/*/cmd/**'");
+    expect(pathFilters).toContain("'services/*/internal/**'");
+  });
+
   it("uses the same service names in path detection", () => {
     for (const filter of [
       "web",

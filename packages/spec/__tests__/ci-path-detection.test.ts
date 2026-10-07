@@ -87,6 +87,13 @@ describe("CI path detection", () => {
     }
   });
 
+  it("tests migrated service entry points and local module dependencies", () => {
+    for (const path of ["services/operations/cmd/operations/main.go", "services/operations/go.mod", "services/appview/internal/topics/routes.go", "services/gateway/go.sum"]) {
+      const result = detect(repositoryWithChange(path), "pull_request");
+      expect(result.get("go_packages")).toBe("true");
+    }
+  });
+
   it("checks Go runtime parity when a worker library changes", () => {
     const result = detect(repositoryWithChange("packages/go/wireworkercore/cycle.go"), "pull_request");
     expect(result.get("go_packages")).toBe("true");

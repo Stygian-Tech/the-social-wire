@@ -284,6 +284,10 @@ filter_changed podcast_worker \
   'package.json' \
   'bun.lock'
 filter_changed go_packages \
+  'services/*/go.mod' \
+  'services/*/go.sum' \
+  'services/*/cmd/**' \
+  'services/*/internal/**' \
   'services/*/Sources/*Core/**' \
   'packages/go/**' \
   'packages/swift/**' \

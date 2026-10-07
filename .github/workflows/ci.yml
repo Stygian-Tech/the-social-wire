@@ -366,7 +366,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: packages/go/go.mod
-          cache-dependency-path: packages/go/go.sum
+          cache-dependency-path: |
+            packages/go/go.sum
+            services/gateway/go.sum
+            services/appview/go.sum
+            services/operations/go.sum
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -393,6 +397,21 @@ jobs:
           test -z "$(gofmt -l .)"
           go vet ./...
           go test -race -p 1 ./...
+      - name: Test migrated Go service entry points
+        env:
+          GOWORK: "off"
+          SOCIALWIRE_GO_GATEWAY_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
+          SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
+          SOCIALWIRE_GO_OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
+        run: |
+          for service in gateway appview operations; do
+            (
+              cd "services/$service"
+              test -z "$(gofmt -l .)"
+              go vet ./...
+              go test -race -p 1 ./...
+            )
+          done
       - name: Compare ranking and edition assembly with Swift
         run: |
           bash scripts/go/verify-ranking-parity.sh
