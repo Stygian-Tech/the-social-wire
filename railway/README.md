@@ -9,18 +9,16 @@ are managed by the scoped Infrastructure as Code partial in
 `/.railway/railway.ts`. Keep service build roots at `/` so Docker and Railpack
 builds can access shared monorepo packages.
 
+The standalone Swift Charybdis, Wire Worker and Inbox Drain source selectors are retired. Projection Pool and Coordinator use the Go Indexing Worker image through the scoped IaC partial; source retirement does not delete hosted services.
+
 | Railway Service | Config File |
 | --- | --- |
 | Web | `/railway/web.json` |
 | Operations Web | `/railway/operations-web.json` |
 | Gateway | `/railway/gateway.json` |
 | App View | `/railway/appview.json` |
-| Charybdis | `/railway/charybdis.json` |
 | Jetstream V2 Ingest | `/railway/jetstream-ingest.json` |
 | The Wire Global Ingest | `/railway/wire-jetstream-ingest.json` |
-| The Wire Worker | `/railway/wire-worker.json` |
-| The Wire Inbox Drain | `/railway/wire-inbox-drain.json` |
-| The Wire Fresh Inbox Drain | `/railway/wire-fresh-inbox-drain.json` |
 | The Wire Corpus Edge | `/railway/wire-corpus-edge.json` |
 | Ops | `/railway/operations.json` |
 | Database Migrator | `/railway/database-migrator.json` |

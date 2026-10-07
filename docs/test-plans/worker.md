@@ -1,78 +1,32 @@
-# Charybdis test plan
+# Go indexing worker test plan
 
-**Package:** `services/appview-worker`  
-**Shared library:** `packages/swift/ThinAppViewCore`  
-**CI:** `charybdis`
-
-The source directory, executable product, and `appview-worker` telemetry identity remain stable while Railway names the deployed service Charybdis.
+**Runtime:** `services/indexing-worker`, `packages/go/appviewworkercore`, `packages/go/wireworkercore`
+**CI:** `indexing-worker`, `go-packages`
 
 ## Commands
 
 ```bash
-# Shared core (tested first in the CI job)
-cd packages/swift/ThinAppViewCore
-swift test
-
-# Live inbox store semantics against an explicitly disposable Postgres database
-THIN_APPVIEW_TEST_DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/thin_appview_test?sslmode=disable' \
-  swift test --filter PostgresJetstreamInboxIntegrationTests
-
-# Worker CLI + wiring
-cd services/appview-worker
-swift test
-swift build   # compile check
+(cd services/indexing-worker && go test -race ./... && go build ./cmd/indexing-worker)
+(cd packages/go && go test -race -p 1 ./...)
 ```
 
-## Test layout
+PostgreSQL cases require canonically migrated disposable databases and explicit `SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL`, `SOCIALWIRE_GO_WIRE_TEST_DATABASE_URL`, and topic/runtime-specific test variables. The Go CI gate provisions these databases; local tests skip integrations without explicit targets.
 
-```
-services/appview-worker/Tests/AppViewWorkerTests/
-  AppViewWorkerSmokeTests.swift
-
-packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/
-  ThinAppViewIndexerTests.swift
-  AppViewProjectionCacheTests.swift
-  …
-  Fixtures/                  # static commit JSON (no live firehose)
-```
+Coverage includes FIFO claim/apply/ack, lease renewal/takeover, stale authority rejection, repository recovery, cache invalidation, bounded telemetry, ranking/materialization, independent lane restart, standby readiness and joined shutdown. Durable Operations recovery retains diagnostic verification requirements.
 
 ## ThinAppViewCore
 
-The worker executable delegates to `ThinAppViewWorkerRuntime` from ThinAppViewCore. Core tests cover:
+Retained Swift API/store contracts run in the `shared-swift` CI gate:
 
-- `RenderFieldExtractor` — publication/entry field extraction
-- `SQLiteThinAppViewStore` — indexing, unread filtering
-- `ThinAppViewIndexer` — fixture commit → `IndexedContentItem`
-- retired Tap compatibility, repository restoration, and Jetstream cursor policies
-- Skyreader RSS parsing, stable identity, ingestion, and polling
-- `AppViewProjectionCacheStore` — sidebar/unread snapshot caches
-- `ThinAppViewQuerySupport` — pagination SQL
-- `PostgresJetstreamInboxIntegrationTests` — concurrent `SKIP LOCKED` claims,
-  per-DID FIFO, lease takeover/fencing, terminal-prefix watermarks, and pool
-  pressure with 32 logical claimers on 16 connections
+```bash
+(cd packages/swift/ThinAppViewCore && swift test)
+```
 
-Postgres store tests are integration-level. SQLite remains covered directly in
-package tests, but the current Charybdis entry point rejects `APP_ENV=local`
-through its shared Operations environment guard. Runnable service integration
-uses `APP_ENV=dev` with an isolated disposable Postgres database. The guarded
-Postgres suite runs automatically in the Charybdis CI job and skips locally
-unless `THIN_APPVIEW_TEST_DATABASE_URL` is explicitly set.
+Tests retain render extraction, SQLite/Postgres indexing, RSS parser/identity, cache snapshots, pagination, read-state lifecycle, inbox SQL fencing and watermarks. `THIN_APPVIEW_TEST_DATABASE_URL` enables isolated PostgreSQL store tests. Worker transport/runtime tests are replaced by the Go conformance suite; retained shared API tests must continue to pass.
 
-## Worker tests
+## Live acceptance
 
-- CLI argument parsing (`AppViewWorkerCommand`)
-- Env loading for `ENABLE_THIN_APPVIEW`, relay URL, TTL vars, proactive backfill
-- Runtime bootstrap with in-memory SQLite (no network)
-
-## Manual verification (ingestion)
-
-The worker has no HTTP surface. Verify via gateway/AppView routes:
-
-1. Apply migrations to an isolated disposable Postgres database, then start AppView and Charybdis with the same `DATABASE_URL` (see the root README).
-2. Enroll `authorDids` and/or `feedUrls` with `app.thesocialwire.appview.enrollSources` (or its `/v1/appview/enroll` compatibility route), then leave Charybdis running for Jetstream V1/V2 and RSS poll ingestion.
-3. Use Bruno `services/gateway/bruno/AppView/` or `services/appview/bruno/` to confirm timeline rows appear.
-
-## Related
+After exact-head CI and the exact Development deployment, verify both lane readiness, Coordinator ownership/standby, durable content projection and authenticated reader behavior. Use existing Gateway/AppView Bruno requests and the retained worker verification collection. A healthy listener alone is insufficient. Production promotion and rollback remain separate release actions.
 
 - [AppView test plan](./appview.md)
 - [Thin AppView architecture](../architecture/appview.md)

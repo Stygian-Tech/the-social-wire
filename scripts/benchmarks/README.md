@@ -1,5 +1,7 @@
 # Operations Telemetry Overhead Benchmark
 
+
+Swift worker references below describe historical reproduction from a preserved Git export (for example `f05429ff06c852a0645b7e70d1809b2052b61892`). Current worker execution uses `services/indexing-worker` and repository-local Go packages; do not run historical Swift commands from the current checkout.
 Run equivalent Gateway or AppView deployments with telemetry disabled and enabled, then compare the same authenticated route:
 
 ```sh

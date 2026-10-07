@@ -32,7 +32,11 @@ esac
 # matrix so the aggregate gate cannot go green with an untested CI change.
 if [ "$MATCH_ALL" = "0" ] && ! git diff --quiet "$BASE" "$HEAD" -- \
   '.github/workflows/ci.yml' \
-  'scripts/ci-detect-changes.sh'; then
+  '.github/workflows/validated-merge.yml' \
+  'scripts/ci' \
+  'scripts/ci-detect-changes.sh' \
+  'scripts/ci-prepare-postgres.sh' \
+  '.github/actions/prepare-postgres'; then
   MATCH_ALL=1
 fi
 
@@ -93,73 +97,23 @@ filter_changed apple \
   'packages/swift/ReadStateCore/**' \
   '.github/workflows/ci.yml'
 
-filter_changed operations \
-  'database/migrations/**' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/operations/**' \
-  'packages/swift/GatewayCore/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'packages/swift/OperationsCore/**' \
-  'railway/operations.json' \
-  '.github/workflows/ci.yml'
+# Retained Swift package contracts remain independent from retired service runtimes.
+# Shared Go hosts and their schema gates are checked once by go_packages below.
 
 filter_changed redis \
   'packages/swift/SocialWireRedis/**' \
   '.github/workflows/ci.yml'
 
-filter_changed gateway \
+filter_changed shared_swift \
   'database/migrations/**' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/gateway/**' \
   'packages/swift/GatewayCore/**' \
+  'packages/swift/OperationsCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
   'packages/swift/FinanceCore/**' \
   'packages/swift/SportsCore/**' \
-  'railway/gateway.json' \
-  '.github/workflows/ci.yml'
-
-filter_changed appview \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/appview/**' \
-  'database/migrations/**' \
-  'packages/swift/GatewayCore/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
-  'railway/appview.json' \
-  '.github/workflows/ci.yml'
-
-filter_changed charybdis \
-  'database/migrations/**' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/appview-worker/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'railway/charybdis.json' \
   '.github/workflows/ci.yml'
 
 filter_changed jetstream_ingest \
@@ -178,22 +132,7 @@ filter_changed wire_ingest \
   'railway/wire-jetstream-ingest.json' \
   '.github/workflows/ci.yml'
 
-filter_changed wire_worker \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/wire-worker/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'database/migrations/**' \
-  'railway/wire-worker.json' \
-  'railway/wire-inbox-drain.json' \
-  'railway/wire-fresh-inbox-drain.json' \
-  '.github/workflows/ci.yml'
+
 
 filter_changed indexing_worker \
   'packages/go/**' \
@@ -202,25 +141,13 @@ filter_changed indexing_worker \
   'services/jetstream-ingest/go.mod' \
   'services/jetstream-ingest/go.sum' \
   'services/indexing-worker/**' \
-  'services/appview-worker/**' \
-  'services/wire-worker/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
   'database/migrations/**' \
   '.railway/**' \
   '.github/workflows/ci.yml'
 
 filter_changed wire_corpus_edge \
   'services/wire-corpus-edge/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
+  'packages/go/**' \
   'database/migrations/**' \
   'scripts/verify-wire-corpus-serving.sql' \
   'railway/wire-corpus-edge.json' \
@@ -278,7 +205,6 @@ filter_changed spec \
   'packages/swift/WireCore/**' \
   'packages/swift/FinanceCore/**' \
   'packages/swift/SportsCore/**' \
-  'services/wire-worker/**' \
   'services/wire-corpus-edge/**' \
   'scripts/apply-database-migrations.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
@@ -298,6 +224,18 @@ filter_changed benchmark_tools \
   '.github/workflows/ci.yml'
 
 filter_changed go_packages \
+  'services/gateway/**' \
+  'services/appview/**' \
+  'services/operations/**' \
+  'services/wire-corpus-edge/**' \
+  'railway/gateway.json' \
+  'railway/appview.json' \
+  'railway/operations.json' \
+  'railway/wire-corpus-edge.json' \
+  'services/*/go.mod' \
+  'services/*/go.sum' \
+  'services/*/cmd/**' \
+  'services/*/internal/**' \
   'services/*/Sources/*Core/**' \
   'packages/go/**' \
   'packages/swift/**' \

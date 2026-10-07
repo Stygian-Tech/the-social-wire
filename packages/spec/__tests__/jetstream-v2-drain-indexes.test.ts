@@ -139,7 +139,7 @@ describe("Jetstream V2 rolling-drain query indexes", () => {
     );
   });
 
-  it("keeps migration verification centralized while wiring guarded Swift Postgres tests", () => {
+  it("keeps migration verification centralized with guarded API and Go Postgres tests", () => {
     for (const indexName of [
       "idx_appview_ingestion_inbox_ready",
       "idx_appview_ingestion_inbox_expired_lease",
@@ -158,18 +158,31 @@ describe("Jetstream V2 rolling-drain query indexes", () => {
     expect(liveVerification).toContain(
       "Exercise the corresponding representative reconciliation claim shape",
     );
-    const charybdisJob = workflow.slice(
-      workflow.indexOf("  charybdis:"),
-      workflow.indexOf("\n  operations:"),
+    const sharedSwiftJob = workflow.slice(
+      workflow.indexOf("\n  shared-swift:"),
+      workflow.indexOf("\n  go-packages:"),
+    );
+    const goJob = workflow.slice(
+      workflow.indexOf("\n  go-packages:"),
+      workflow.indexOf("\n  jetstream-ingest:"),
     );
     const databaseJob = workflow.slice(
       workflow.indexOf("  database-migrator:"),
       workflow.indexOf("\n  lexicons:"),
     );
-    expect(charybdisJob).toContain("postgres:17-alpine");
-    expect(charybdisJob).toContain("POSTGRES_DB: thin_appview_test");
-    expect(charybdisJob).toContain("THIN_APPVIEW_TEST_DATABASE_URL:");
-    expect(charybdisJob).not.toContain("the-social-wire-database-migrator:test");
+    expect(sharedSwiftJob).toContain("postgres:17-alpine");
+    expect(sharedSwiftJob).toContain("POSTGRES_DB: socialwire_shared_test");
+    expect(sharedSwiftJob).toContain("THIN_APPVIEW_TEST_DATABASE_URL:");
+    expect(sharedSwiftJob).toContain("working-directory: packages/swift/ThinAppViewCore");
+    expect(sharedSwiftJob).toContain("Apply database migrations for AppView integration tests");
+    expect(goJob).toContain("postgres:17-alpine");
+    expect(goJob).toContain("POSTGRES_DB: socialwire_go_test");
+    expect(goJob).toContain("SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL:");
+    expect(goJob).toContain("Apply canonical migrations to disposable Go test database");
+    expect(goJob).toContain("go test -race -p 1 ./...");
+    expect(goJob).toContain("Test migrated Go service entry points");
+    expect(goJob).toContain("for service in gateway appview operations wire-corpus-edge");
+    expect(goJob).toContain("SOCIALWIRE_GO_OPERATIONS_TEST_DATABASE_URL:");
     expect(databaseJob).toContain("Verify Jetstream V2 drain indexes and query plans");
     expect(databaseJob).toContain("verify-jetstream-v2-drain-indexes.sql");
   });

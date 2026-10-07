@@ -23,6 +23,7 @@ The Social Wire is a reader for publications on the [standard.site](https://stan
 - [[Lexicons]] and [[Database]] — portable ATProto records and rebuildable server data
 - [[Redis]] — optional disposable cache and coordination layer
 - [[Testing]] and [[Contributing]] — verification and contribution workflow
+- [[Go-verification-and-deployment]] — Go runtime checks and selective releases
 
 ## What lives where
 

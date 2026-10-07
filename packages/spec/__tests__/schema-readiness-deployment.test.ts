@@ -10,8 +10,6 @@ const images = {
   appview: "AppView",
   gateway: "Gateway",
   operations: "Operations",
-  "appview-worker": "AppViewWorker",
-  "wire-worker": "WireWorker",
 };
 
 describe("schema readiness deployment contract", () => {
@@ -21,14 +19,16 @@ describe("schema readiness deployment contract", () => {
       const entrypoint = JSON.parse(dockerfile.match(/^ENTRYPOINT (.+)$/m)![1]);
       expect(entrypoint[0]).toBe("/usr/local/bin/schema-ready");
       expect(entrypoint.slice(-2)).toEqual(["--", `/usr/local/bin/${executable}`]);
-      expect(entrypoint.includes("--allow-local-sqlite")).toBe(["gateway", "appview"].includes(service));
+      // Every deployed Go consumer requires PostgreSQL; local SQLite is a retained
+      // Swift package test backend, never a service-image startup bypass.
+      expect(entrypoint.includes("--allow-local-sqlite")).toBe(false);
       expect(dockerfile).toContain("COPY database/migrations /src/database/migrations");
       expect(dockerfile).toContain("--generate-manifest /src/database/migrations");
       expect(dockerfile).toContain("/etc/socialwire/required-migrations.txt");
     });
   }
 
-  for (const service of ["gateway", "appview", "operations", "charybdis", "jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "wire-inbox-drain", "wire-fresh-inbox-drain"]) {
+  for (const service of ["gateway", "appview", "operations", "jetstream-ingest", "wire-jetstream-ingest"]) {
     it(`${service} rebuilds on schema/gate changes without bypassing the entrypoint`, () => {
       const config = JSON.parse(read(`railway/${service}.json`));
       expect(config.deploy.startCommand).toBeUndefined();
@@ -39,6 +39,26 @@ describe("schema readiness deployment contract", () => {
       expect(config.deploy.healthcheckTimeout).toBeGreaterThan(90);
     });
   }
+
+  it("keeps both consolidated Go classes on the schema-gated image", () => {
+    const iac = read(".railway/railway.ts");
+    const build = iac.slice(iac.indexOf("const indexingBuild"), iac.indexOf("const longRunningDeploy"));
+    const deploy = iac.slice(iac.indexOf("const longRunningDeploy"), iac.indexOf("export default"));
+    expect(build).toContain('dockerfilePath: "/services/indexing-worker/Dockerfile"');
+    for (const path of ["/services/indexing-worker/**", "/packages/go/**", "/database/migrations/**",
+      "/services/jetstream-ingest/cmd/schema-ready/**", "/services/jetstream-ingest/internal/schemaready/**",
+      "/services/jetstream-ingest/go.mod", "/services/jetstream-ingest/go.sum"]) {
+      expect(build).toContain(`"${path}"`);
+    }
+    expect(iac.match(/build: indexingBuild/g)).toHaveLength(2);
+    expect(iac.match(/deploy: longRunningDeploy/g)).toHaveLength(3);
+    expect(deploy).toContain('healthcheckPath: "/startupz"');
+    expect(Number(deploy.match(/healthcheckTimeout: (\d+)/)?.[1])).toBeGreaterThan(90);
+    const dockerfile = read("services/indexing-worker/Dockerfile");
+    expect(dockerfile).toContain("FROM golang:");
+    expect(dockerfile).toContain("COPY packages/go /src/packages/go");
+    expect(dockerfile).toContain("./cmd/indexing-worker");
+  });
 
   it("keeps the consolidated IaC entrypoint and rebuild dependencies", () => {
     const iac = read(".railway/railway.ts");

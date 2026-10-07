@@ -30,12 +30,12 @@ const qualityIndexMigration = readFileSync(
 const generationStore = readFileSync(
   join(
     import.meta.dir,
-    "../../../services/wire-worker/Sources/WireWorkerCore/PostgresWireGenerationStore.swift",
+    "../../../packages/go/wireworkercore/generation_store.go",
   ),
   "utf8",
 );
 const corpusStore = readFileSync(
-  join(import.meta.dir, "../../../services/wire-corpus-edge/Sources/WireCorpusEdge/PostgresWireCorpusStore.swift"),
+  join(import.meta.dir, "../../../packages/go/corpuscore/postgres_edition.go"),
   "utf8",
 );
 

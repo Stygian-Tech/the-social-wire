@@ -1,5 +1,7 @@
 # Synthetic Ranking Capacity Fixture
 
+
+Swift worker references below describe historical reproduction from a preserved Git export (for example `f05429ff06c852a0645b7e70d1809b2052b61892`). Current worker execution uses `services/indexing-worker` and repository-local Go packages; do not run historical Swift commands from the current checkout.
 `WireRankingCapacityTests.swift` exercises the real PostgreSQL rollup refresh,
 candidate query, ranker, generation commit, and edition projection over 5,000
 invented stories and 25,000 invented share events. It is a separate capacity

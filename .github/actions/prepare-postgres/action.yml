@@ -1,0 +1,52 @@
+name: Prepare PostgreSQL integration database
+description: Apply canonical migrations directly to an isolated CI database without a deployment image.
+inputs:
+  database-url:
+    description: Disposable CI PostgreSQL database URL
+    required: true
+  postgres-container:
+    description: Optional CI service container to preload and verify pg_stat_statements
+    default: ""
+  verify-idempotence:
+    description: Apply the migration runner twice to verify idempotence
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Install PostgreSQL client
+      shell: bash
+      run: |
+        if ! command -v psql >/dev/null; then
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+        fi
+    - name: Preload telemetry statement statistics
+      if: inputs.postgres-container != ''
+      shell: bash
+      env:
+        POSTGRES_CONTAINER: ${{ inputs.postgres-container }}
+      run: |
+        set -euo pipefail
+        docker exec "$POSTGRES_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+          -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'"
+        docker restart "$POSTGRES_CONTAINER"
+        for attempt in $(seq 1 30); do
+          if docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d postgres; then
+            exit 0
+          fi
+          sleep 1
+        done
+        docker logs "$POSTGRES_CONTAINER"
+        exit 1
+    - name: Apply canonical migrations
+      shell: bash
+      env:
+        DATABASE_URL: ${{ inputs.database-url }}
+        VERIFY_IDEMPOTENCE: ${{ inputs.verify-idempotence }}
+      run: bash scripts/ci-prepare-postgres.sh
+    - name: Verify telemetry statement statistics
+      if: inputs.postgres-container != ''
+      shell: bash
+      env:
+        DATABASE_URL: ${{ inputs.database-url }}
+      run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM pg_stat_statements'

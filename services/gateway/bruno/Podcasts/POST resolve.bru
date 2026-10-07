@@ -1,0 +1,22 @@
+meta {
+  name: POST Podcast resolve
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/podcasts/resolve
+  body: json
+  auth: none
+}
+
+body:json {
+{
+  "url": "https://example.com/podcast.xml"
+}
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

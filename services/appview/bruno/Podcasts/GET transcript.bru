@@ -1,0 +1,16 @@
+meta {
+  name: GET Podcast transcript
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/podcasts/transcript?episodeId={{podcastEpisodeId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

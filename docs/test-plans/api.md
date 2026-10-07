@@ -1,35 +1,35 @@
 # Gateway test plan
 
 **Package:** `services/gateway`  
-**Runner:** Swift Testing (`swift test`)  
-**CI:** `gateway`
+**Runner:** Go (`go test -race -p 1 ./...`)\
+**CI:** `go-packages`
 
 ## Commands
 
 ```bash
 cd services/gateway
-swift test
+go test -race -p 1 ./...
 ```
 
 ## Test layout
 
 ```
-services/gateway/Tests/GatewayTests/
-  GatewaySmokeTests.swift
-  HTTPRouteContractTests.swift
-  PreferenceSyncServiceTests.swift
-  SQLiteCacheTests.swift
+services/gateway/internal/gateway/
+  route_inventory_test.go
+  proxy_contract_test.go
+  preferences_test.go
+  postgres_test.go
 ```
 
-GatewayCore tests live in `packages/swift/GatewayCore/Tests/` (DPoP, internal trust, OAuth policy).
+Go authentication tests live in `packages/go/gatewaycore/` (DPoP, internal trust, OAuth policy). Shared Swift GatewayCore tests remain for native clients.
 
 ## Auth matrix (manual + automated)
 
 | Case | Expected | Test |
 |------|----------|------|
-| No `Authorization` on protected `/xrpc/*` or `/v1/*` | 401 | GatewayCore middleware tests |
-| Missing / invalid DPoP | 401 | GatewayCore middleware tests |
-| Valid Bearer + DPoP | 200 on protected routes | `HTTPRouteContractTests` |
+| No `Authorization` on protected `/xrpc/*` or `/v1/*` | 401 | Go GatewayCore auth tests |
+| Missing / invalid DPoP | 401 | Go GatewayCore auth tests |
+| Valid Bearer + DPoP | 200 on protected routes | Go Gateway auth-flow and proxy tests |
 
 ## Bruno (manual HTTP)
 

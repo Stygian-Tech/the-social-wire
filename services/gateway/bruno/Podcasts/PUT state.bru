@@ -1,0 +1,30 @@
+meta {
+  name: PUT Podcast state
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{baseUrl}}/v1/podcasts/state
+  body: json
+  auth: none
+}
+
+body:json {
+{
+  "expectedRevision": 0,
+  "state": {
+    "subscriptions": [],
+    "queue": [],
+    "progress": {},
+    "playbackSpeed": 1,
+    "removeSilences": false,
+    "manualLinks": []
+  }
+}
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

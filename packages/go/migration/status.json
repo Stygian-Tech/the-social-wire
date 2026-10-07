@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "overallStatus": "in_progress",
-  "serviceActivation": "development_verified_production_pending",
+  "serviceActivation": "development_release_pending",
   "packages": [
     {
       "name": "financecore",
@@ -12,11 +12,11 @@
         "preference fingerprints",
         "ranking analysis models",
         "article resolver and topic evidence",
-        "reviewed catalogs and named feed identities"
+        "reviewed catalogs and named feed identities",
+        "provider serving contracts and bounded serving models"
       ],
       "remaining": [
-        "provider serving contracts",
-        "cursors and remaining serving models"
+        "Extended differential coverage beyond migrated service routes"
       ]
     },
     {
@@ -24,13 +24,14 @@
       "status": "partial",
       "implemented": [
         "go-jose compact JWS inspection and token ath hashing (no authentication)",
-        "public DNS admission and special-use address policy"
+        "public DNS admission and special-use address policy",
+        "issuer-bound OAuth and DPoP verification",
+        "internal Gateway/AppView trust",
+        "bounded DID/PDS discovery and repository clients",
+        "feature-gated OAuth metadata"
       ],
       "remaining": [
-        "issuer-bound OAuth and DPoP verification adapters",
-        "gateway/appview internal trust",
-        "repo discovery and PDS clients",
-        "OAuth metadata and remaining service contracts"
+        "Shared library coverage beyond the retired service runtime"
       ]
     },
     {
@@ -52,10 +53,11 @@
         "PostgreSQL fenced role leases",
         "transactional publication fence",
         "lease supervisor cancellation and teardown",
-        "bounded lease renewal retry and observation events"
+        "bounded lease renewal retry and observation events",
+        "Operations API stores, idempotency, telemetry, retention and runtime health evidence"
       ],
       "remaining": [
-        "remaining Operations service stores and APIs"
+        "Shared library coverage beyond the retired service runtime"
       ]
     },
     {
@@ -78,11 +80,11 @@
         "v2 original-intent hashes and device receipt chains",
         "strict v2 closed-shape loading",
         "v1 extension retention",
-        "bounded generation loading and original-record CID verification"
+        "bounded generation loading and original-record CID verification",
+        "manifest activation, merge/compaction, fenced durable projection and PDS export confirmation"
       ],
       "remaining": [
-        "v2 merge/compaction and manifest publication",
-        "client sync/outbox/GC implementations"
+        "Client sync/outbox/GC implementation outside migrated service runtime"
       ]
     },
     {
@@ -92,11 +94,11 @@
         "key namespace and identifier hashing",
         "gobreaker circuit breaker (three consecutive failures, one probe, fixed five-second cooldown)",
         "generic cache envelope and freshness/TTL behavior",
-        "go-redis command transport and cache envelope round-trip/expiry coverage"
+        "go-redis command transport and cache envelope round-trip/expiry coverage",
+        "runtime TLS/deadline configuration and specialized disposable cache adapters"
       ],
       "remaining": [
-        "production Redis TLS/deadline configuration",
-        "ranking/lease/read-state caches and specialized clients"
+        "Shared library differential coverage beyond migrated service adapters"
       ]
     },
     {
@@ -122,11 +124,11 @@
         "membership timestamp compatibility",
         "ranking analysis models",
         "article resolver and entity index",
-        "reviewed catalogs and provider response parsing"
+        "reviewed catalogs and provider response parsing",
+        "provider serving contracts and bounded serving models"
       ],
       "remaining": [
-        "provider serving contracts",
-        "cursors and remaining serving models"
+        "Extended differential coverage beyond migrated service routes"
       ]
     },
     {
@@ -139,10 +141,13 @@
         "transactional inbox claims, acknowledgements and repository recovery",
         "RSS identities, conditional polling, PDS backfill and lifecycle cleanup",
         "content, selection, counters and projection cache stores",
-        "public HTTP/DID/PDS resolution with bounded transport"
+        "public HTTP/DID/PDS resolution with bounded transport",
+        "serving stores and routes",
+        "podcast parser, listener protocol, owner-scoped store and clip jobs",
+        "first-page and unread caches with Redis outage fallback"
       ],
       "remaining": [
-        "remaining serving models"
+        "Shared library coverage beyond the retired service runtime"
       ]
     },
     {
@@ -157,11 +162,11 @@
         "Wire/Circle signed cursors",
         "URL canonicalization",
         "commercial/base-content classification",
-        "corpus service request signing"
+        "corpus service request signing",
+        "corpus serving models, bounded transport and signed cursors"
       ],
       "remaining": [
-        "remaining corpus/serving models and transport bounds",
-        "full cursor/canonicalization/trust/Circle differential coverage"
+        "Extended differential coverage beyond migrated service routes"
       ]
     }
   ],
@@ -173,12 +178,12 @@
     "financeSportsRanking": "45 actual Swift/Go snapshots; identical ranked IDs",
     "generationPublication": "canonical PostgreSQL schema; metadata projection equality, baseline/external candidates, atomic regional editions, stale fence rollback, shadow pointer isolation and retention",
     "libraryAdoption": "regressions for fractional feed dates, chronological ordering, JSON Feed, HTML comments/entities, stale circuit completions, Redis transport expiry, canonical DAG-CBOR bounds and exact protocol integers",
-    "runtimePorts": "Canonical PostgreSQL race/conformance and actual Swift parity passed on Development; Production candidate requires its own exact-head CI and hosted handoff acceptance."
+    "runtimePorts": "Canonical PostgreSQL race/vet, 110 Swift/Go ranking and edition fixtures, 231 specification tests and actual host admission/readiness/shutdown checks; hosted acceptance pending."
   },
   "remainingServices": [
-    "Production candidate exact-head CI and fenced runtime handoff acceptance",
-    "Retained Gateway/AppView/Operations serving APIs remain Swift",
-    "Production Swift worker source retirement follows separate source promotion scope"
+    "Exact-head required CI and Development deployment acceptance",
+    "Selective main-based backend candidate validation and Production deployment acceptance",
+    "Branch preservation and cleanup after releases"
   ],
   "serviceLibraries": [
     {
@@ -196,7 +201,7 @@
         "host configuration and joined lane lifecycle"
       ],
       "remaining": [
-        "Production candidate exact-head CI and runtime acceptance"
+        "exact-head CI and Development runtime acceptance"
       ]
     },
     {
@@ -207,7 +212,7 @@
         "fenced Operations replay, diagnostic reconciliation and durable controls"
       ],
       "remaining": [
-        "Production candidate exact-head CI and runtime acceptance"
+        "exact-head CI and Development runtime acceptance"
       ]
     },
     {
@@ -218,7 +223,7 @@
         "reserved authority capacity, health probes and bounded shutdown"
       ],
       "remaining": [
-        "Production candidate exact-head CI and runtime acceptance"
+        "exact-head CI and Development runtime acceptance"
       ]
     },
     {
@@ -229,8 +234,30 @@
         "rights-gated provider refresh with bounded retry and cache retention"
       ],
       "remaining": [
-        "Production candidate exact-head CI and runtime acceptance"
+        "exact-head CI and Development runtime acceptance"
       ]
+    }
+  ],
+  "runtimeServices": [
+    {
+      "name": "gateway",
+      "status": "implemented_pending_activation",
+      "verification": "Canonical PostgreSQL race tests, executable admission/readiness/shutdown checks and Linux Go compilation passed; exact-head hosted CI and deployment acceptance pending."
+    },
+    {
+      "name": "appview",
+      "status": "implemented_pending_activation",
+      "verification": "Canonical PostgreSQL race tests, executable admission/readiness/shutdown checks and Linux Go compilation passed; exact-head hosted CI and deployment acceptance pending."
+    },
+    {
+      "name": "operations",
+      "status": "implemented_pending_activation",
+      "verification": "Canonical PostgreSQL race tests, executable admission/readiness/shutdown checks and Linux Go compilation passed; exact-head hosted CI and deployment acceptance pending."
+    },
+    {
+      "name": "wire-corpus-edge",
+      "status": "implemented_pending_activation",
+      "verification": "Canonical PostgreSQL race tests, executable admission/readiness/shutdown checks and Linux Go compilation passed; exact-head hosted CI and deployment acceptance pending."
     }
   ]
 }

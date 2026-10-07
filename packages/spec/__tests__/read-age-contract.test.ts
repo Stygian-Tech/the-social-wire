@@ -51,11 +51,11 @@ describe("calendar-day feed read contracts", () => {
     const existing = document.paths["/v1/appview/mark-all-read"].post.requestBody.content["application/json"].schema;
     expect(existing.required).toEqual(["scope"]);
     expect(existing.properties.before).toBeUndefined();
-    const gateway = readFileSync(join(root, "services/gateway/Sources/Gateway/Routes/AppViewProxyRoutes.swift"), "utf8");
+    const gateway = readFileSync(join(root, "services/gateway/internal/gateway/routes.go"), "utf8");
     for (const [name, method] of [["getReadAgeOptions", "get"], ["markReadBefore", "post"]]) {
       const path = `/xrpc/app.thesocialwire.appview.${name}`;
-      expect(gateway).toContain(`group.${method}("${path}")`);
-      expect(gateway).toContain(`path: "${path}"`);
+      expect(gateway).toContain(`Method: "${method.toUpperCase()}", Path: "${path}"`);
+      expect(gateway).toContain(`Target: "${path}", UpstreamMethod: "${method.toUpperCase()}"`);
       for (const service of ["gateway", "appview"]) {
         const bruno = readFileSync(join(root, `services/${service}/bruno/XRPC/app.thesocialwire.appview.${name}.bru`), "utf8");
         expect(bruno).toContain(`${method} {`);

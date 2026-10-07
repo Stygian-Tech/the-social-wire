@@ -14,6 +14,7 @@ require (
 	github.com/multiformats/go-multibase v0.3.0
 	github.com/pb33f/libopenapi v0.41.2
 	github.com/redis/go-redis/v9 v9.23.0
+	github.com/rivo/uniseg v0.4.7
 	github.com/sony/gobreaker/v2 v2.4.0
 	golang.org/x/net v0.59.0
 	golang.org/x/sync v0.23.0
