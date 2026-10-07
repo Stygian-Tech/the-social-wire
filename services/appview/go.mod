@@ -3,7 +3,10 @@ module github.com/stygian-tech/the-social-wire/services/appview
 go 1.26.6
 
 require (
+	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/jackc/pgx/v5 v5.7.6
+	github.com/redis/go-redis/v9 v9.23.0
+	github.com/rivo/uniseg v0.4.7
 	github.com/stygian-tech/the-social-wire/packages/go v0.0.0
 )
 
@@ -42,11 +45,10 @@ require (
 	github.com/multiformats/go-varint v0.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/polydawn/refmt v0.90.0 // indirect
-	github.com/redis/go-redis/v9 v9.23.0 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect

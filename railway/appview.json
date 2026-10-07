@@ -5,22 +5,13 @@
     "dockerfilePath": "/services/appview/Dockerfile",
     "watchPatterns": [
       "/services/appview/**",
-      "/packages/swift/GatewayCore/**",
-      "/packages/swift/ThinAppViewCore/**",
-      "/packages/swift/ReadStateCore/**",
-      "/packages/swift/OperationsCore/**",
-      "/packages/swift/SocialWireRedis/**",
-      "/packages/swift/WireCore/**",
-      "/packages/swift/FinanceCore/**",
-      "/packages/swift/SportsCore/**",
+      "/packages/go/**",
       "/database/migrations/**",
       "/services/jetstream-ingest/cmd/schema-ready/**",
       "/services/jetstream-ingest/internal/schemaready/**",
       "/services/jetstream-ingest/go.mod",
       "/services/jetstream-ingest/go.sum",
-      "/railway/appview.json",
-      "/packages/go/go.mod",
-      "/packages/go/go.sum"
+      "/railway/appview.json"
     ]
   },
   "deploy": {
