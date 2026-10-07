@@ -22,7 +22,7 @@ func TestPostgresDurableAuditAndOrderedChangeLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	store, err := NewPostgresStore(pool, "dev")
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestPostgresServiceEvidenceRevalidatesDurableCoordinatorFence(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)

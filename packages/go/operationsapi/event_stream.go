@@ -22,6 +22,17 @@ func ErrorStatus(err error) int {
 	if errors.As(err, &h) {
 		return h.Status
 	}
+	for _, conflict := range []error{ErrVersionConflict, ErrInvalidTransition, ErrIdempotencyConflict, ErrOverlappingBackfill, ErrBackfillScopeChanged, ErrBackfillFingerprint, ErrLeaseConflict, ErrEnvironmentMismatch} {
+		if errors.Is(err, conflict) {
+			return 409
+		}
+	}
+	if errors.Is(err, ErrNotFound) {
+		return 404
+	}
+	if errors.Is(err, ErrInvalidProgress) || errors.Is(err, ErrInvalidPaginationCursor) {
+		return 400
+	}
 	return http.StatusInternalServerError
 }
 func EventCursor(query, lastEventID string, queryPresent bool) (*int64, error) {
