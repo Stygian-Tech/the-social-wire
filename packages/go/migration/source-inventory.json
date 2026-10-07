@@ -11368,15 +11368,19 @@
         },
         {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "9859f28e3fe7e7c340338fb4cd83075f996e7d2d92e632c2b184fd56d1c6a652"
+          "sha256": "4754075843bef61c1c966501922c3f1da22a4c7c095845cda48c8e8690ce324f"
         },
         {
           "path": "packages/spec/__tests__/ci-postgres-preparation.test.ts",
           "sha256": "3c8bd5d3cd42cd28aff5e5ea5be5ec5707308fb049faaf4155cec41292876397"
         },
         {
+          "path": "packages/spec/__tests__/ci-validated-merge-workflow.test.ts",
+          "sha256": "337c2b0bccea3b41147e315646f177d00f1b41df7369ac0cdac7d32b5960fa9b"
+        },
+        {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "bb694ef27805d41643e76b1be615e3b01a8b01ca2e04d36afd9050ea29ca706e"
+          "sha256": "147ab836a065aa2f6b94250a3820cdec52f5d8c4f6e59e652b6c25f932be6454"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",

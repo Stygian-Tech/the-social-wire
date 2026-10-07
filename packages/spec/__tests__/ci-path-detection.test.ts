@@ -248,7 +248,9 @@ describe("CI path detection", () => {
     expect(unrelated.get("benchmark_tools")).toBe("false");
   });
 
-  for (const path of ["scripts/ci-prepare-postgres.sh", ".github/actions/prepare-postgres/action.yml"]) {
+  for (const path of ["scripts/ci-prepare-postgres.sh",
+    "scripts/ci/validated-merge.mjs",
+    ".github/workflows/validated-merge.yml", ".github/actions/prepare-postgres/action.yml"]) {
     it(`runs the full matrix when shared PostgreSQL preparation changes: ${path}`, () => {
       const output = detect(repositoryWithChange(path), "pull_request");
       expect(output.size).toBe(15);

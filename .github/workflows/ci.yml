@@ -43,6 +43,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Record immutable PR verification context
+        run: node scripts/ci/validated-merge.mjs --receipt
+      - name: Test validated merge evidence
+        run: node --test scripts/ci/validated-merge.test.mjs
       - name: Detect changed paths
         id: filter
         env:
