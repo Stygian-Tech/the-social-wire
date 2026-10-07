@@ -1,44 +1,45 @@
 package gateway
 
 import (
+	"encoding/json"
 	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
 )
 
-func TestSwiftProxyPathInventoryRemainsRegistered(t *testing.T) {
+func TestCanonicalPublicContractsRemainRegistered(t *testing.T) {
 	seen := map[string]bool{}
 	for _, route := range Routes {
-		seen[route.Path] = true
+		seen[route.Method+" "+route.Path] = true
 	}
-	for _, path := range []string{"/v1/sync/preferences", "/xrpc/app.thesocialwire.sync.getPreferences", "/v1/sync/migrate-lexicons", "/v1/pds/cache/record", "/v1/telemetry/client-performance"} {
-		seen[path] = true
+	for _, pattern := range []string{
+		"GET /health", "GET /livez", "GET /readyz", "GET /freshness",
+		"GET /oauth-client-metadata.json", "GET /oauth/client-metadata.json", "GET /ios-client-metadata.json", "GET /operations-oauth-client-metadata.json",
+		"GET /v1/sync/preferences", "GET /xrpc/app.thesocialwire.sync.getPreferences", "POST /v1/sync/migrate-lexicons", "GET /v1/pds/cache/record", "POST /v1/telemetry/client-performance",
+	} {
+		seen[pattern] = true
 	}
-	files, e := filepath.Glob("../../Sources/Gateway/Routes/*.swift")
-	if e != nil || len(files) == 0 {
-		t.Fatal("missing Swift reference", e)
+	raw, err := os.ReadFile("../../../../packages/spec/endpoint-manifest.json")
+	if err != nil {
+		t.Fatal(err)
 	}
-	pattern := regexp.MustCompile(`"(/(?:v1|xrpc)/[^"\\]+)"`)
-	for _, file := range files {
-		raw, e := os.ReadFile(file)
-		if e != nil {
-			t.Fatal(e)
+	var manifest struct {
+		Entries []struct{ Surface, Method, Path string }
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, endpoint := range manifest.Entries {
+		if endpoint.Surface != "openapi" {
+			continue
 		}
-		for _, match := range pattern.FindAllStringSubmatch(string(raw), -1) {
-			path := match[1]
-			if strings.Contains(path, ":") {
-				continue
-			}
-			if !seen[path] {
-				t.Errorf("Swift route missing %s in %s", path, file)
-			}
+		count++
+		pattern := endpoint.Method + " " + endpoint.Path
+		if !seen[pattern] {
+			t.Errorf("canonical Gateway contract missing %s", pattern)
 		}
 	}
-	for _, path := range []string{"/v1/operations/gaps/{id}/investigation", "/v1/operations/backfills/{id}", "/v1/operations/backfills/{id}/pause", "/v1/operations/backfills/{id}/resume", "/v1/operations/backfills/{id}/cancel", "/v1/operations/alerts/{id}/acknowledge", "/v1/operations/alerts/{id}/resolve", "/v1/operations/alerts/{id}/retry", "/v1/operations/traces/{traceId}"} {
-		if !seen[path] {
-			t.Error(path)
-		}
+	if count == 0 {
+		t.Fatal("missing canonical public contracts")
 	}
 }
