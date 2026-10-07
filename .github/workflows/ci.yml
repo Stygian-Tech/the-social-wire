@@ -380,6 +380,19 @@ jobs:
         uses: ./.github/actions/prepare-postgres
         with:
           database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test
+      - name: Select branch-scoped podcast integration coverage
+        run: |
+          set -euo pipefail
+          public=database/migrations/20261005010000_podcast_listener.sql
+          private=database/migrations/20261006010000_private_podcast_subscriptions.sql
+          if [[ -f "$public" && -f "$private" ]]; then
+            echo 'SOCIALWIRE_GO_PODCAST_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable' >> "$GITHUB_ENV"
+          elif [[ ! -f "$public" && ! -f "$private" ]]; then
+            echo 'SOCIALWIRE_GO_PODCAST_TEST_DATABASE_URL=' >> "$GITHUB_ENV"
+          else
+            echo 'Podcast integration schema is incomplete' >&2
+            exit 1
+          fi
       - name: Check canonical contracts and package inventory
         run: |
           python3 scripts/go/generate-contracts.py --check

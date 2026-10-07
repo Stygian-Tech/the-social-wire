@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
 const repositoryRoot = join(import.meta.dir, "../../..");
@@ -151,6 +152,28 @@ describe("CI workflow configuration", () => {
     }
     const gate = parsed.jobs.required.steps.find((step) => step.run)!;
     expect(gate.run).toContain('check "$GO_PACKAGES_FLAG" "$GO_PACKAGES_RESULT"');
+  });
+
+  it("enables podcast integration only for a complete branch-scoped schema", () => {
+    const parsed = Bun.YAML.parse(workflow) as { jobs: Record<string, { steps: { name?: string; run?: string }[] }> };
+    const step = parsed.jobs["go-packages"].steps.find(item => item.name === "Select branch-scoped podcast integration coverage")!;
+    expect(step.run).toBeDefined();
+    for (const count of [0, 1, 2]) {
+      const root = mkdtempSync(join(tmpdir(), "tsw-ci-podcast-schema-"));
+      try {
+        mkdirSync(join(root, "database/migrations"), { recursive: true });
+        const files = ["20261005010000_podcast_listener.sql", "20261006010000_private_podcast_subscriptions.sql"];
+        for (const file of files.slice(0, count)) writeFileSync(join(root, "database/migrations", file), "");
+        const envFile = join(root, "environment");
+        writeFileSync(envFile, "");
+        const run = spawnSync("bash", ["-c", step.run!], { cwd: root, env: { ...process.env, GITHUB_ENV: envFile }, encoding: "utf8" });
+        expect(run.status).toBe(count === 1 ? 1 : 0);
+        const output = readFileSync(envFile, "utf8");
+        if (count === 2) expect(output).toContain("SOCIALWIRE_GO_PODCAST_TEST_DATABASE_URL=postgresql://");
+        if (count === 0) expect(output).toBe("SOCIALWIRE_GO_PODCAST_TEST_DATABASE_URL=\n");
+        if (count === 1) expect(output).toBe("");
+      } finally { rmSync(root, { recursive: true, force: true }); }
+    }
   });
 
   it("runs bounded benchmark tests with an isolated receipt fixture and requires success", () => {
