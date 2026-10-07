@@ -41,7 +41,7 @@ func (f *fakeRepository) ResolvePDS(context.Context, string) (string, error) {
 }
 func fixtureService(t *testing.T) (*Service, string, *fakeRepository) {
 	t.Helper()
-	dsn := os.Getenv("SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL")
+	dsn := os.Getenv("SOCIALWIRE_GO_PODCAST_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("requires isolated canonical Postgres")
 	}

@@ -19,7 +19,7 @@ import (
 
 func fixtureStore(t *testing.T) (*Store, string) {
 	t.Helper()
-	dsn := os.Getenv("SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL")
+	dsn := os.Getenv("SOCIALWIRE_GO_PODCAST_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("requires isolated canonical PostgreSQL")
 	}
