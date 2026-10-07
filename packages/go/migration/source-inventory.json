@@ -3984,11 +3984,56 @@
       }
     ]
   },
+  "extractedSwiftPackages": {
+    "schemaVersion": 1,
+    "packages": [
+      {
+        "name": "OperationsCore",
+        "repository": "https://github.com/Stygian-Tech/operations-core.git",
+        "revision": "a3b7bb328189a423f3e2d2fdd1dcfd4022faddc1"
+      },
+      {
+        "name": "SocialWireRedis",
+        "repository": "https://github.com/Stygian-Tech/social-wire-redis.git",
+        "revision": "313305b98919ac8075313044b6d867c13650a329"
+      },
+      {
+        "name": "WireCore",
+        "repository": "https://github.com/Stygian-Tech/wire-core.git",
+        "revision": "a37340974f2d26d92faa70bfb048ab0681017b28"
+      },
+      {
+        "name": "FinanceCore",
+        "repository": "https://github.com/Stygian-Tech/finance-core.git",
+        "revision": "0509d93c44d2958622471e2a452317407e699cc2"
+      },
+      {
+        "name": "SportsCore",
+        "repository": "https://github.com/Stygian-Tech/sports-core.git",
+        "revision": "dab4c7a598265077260feee6589fc09903731084"
+      },
+      {
+        "name": "ThinAppViewCore",
+        "repository": "https://github.com/Stygian-Tech/thin-app-view-core.git",
+        "revision": "3e09f9654961e65e0abf42f554622c9ebb77108d"
+      },
+      {
+        "name": "GatewayCore",
+        "repository": "https://github.com/Stygian-Tech/gateway-core.git",
+        "revision": "b9b2ccef62b5caa62af101e3458eceaddef16ae0"
+      }
+    ]
+  },
   "schemaVersion": 1,
   "description": "Source inventory; implementation and parity must be tracked separately.",
   "packages": [
     {
       "name": "FinanceCore",
+      "extracted": {
+        "name": "FinanceCore",
+        "repository": "https://github.com/Stygian-Tech/finance-core.git",
+        "revision": "0509d93c44d2958622471e2a452317407e699cc2"
+      },
       "source": "packages/swift/FinanceCore",
       "target": "packages/go/financecore",
       "sources": [
@@ -4445,6 +4490,11 @@
     },
     {
       "name": "GatewayCore",
+      "extracted": {
+        "name": "GatewayCore",
+        "repository": "https://github.com/Stygian-Tech/gateway-core.git",
+        "revision": "b9b2ccef62b5caa62af101e3458eceaddef16ae0"
+      },
       "source": "packages/swift/GatewayCore",
       "target": "packages/go/gatewaycore",
       "sources": [
@@ -5081,6 +5131,11 @@
     },
     {
       "name": "OperationsCore",
+      "extracted": {
+        "name": "OperationsCore",
+        "repository": "https://github.com/Stygian-Tech/operations-core.git",
+        "revision": "a3b7bb328189a423f3e2d2fdd1dcfd4022faddc1"
+      },
       "source": "packages/swift/OperationsCore",
       "target": "packages/go/operationscore",
       "sources": [
@@ -7032,6 +7087,11 @@
     },
     {
       "name": "SocialWireRedis",
+      "extracted": {
+        "name": "SocialWireRedis",
+        "repository": "https://github.com/Stygian-Tech/social-wire-redis.git",
+        "revision": "313305b98919ac8075313044b6d867c13650a329"
+      },
       "source": "packages/swift/SocialWireRedis",
       "target": "packages/go/socialwireredis",
       "sources": [
@@ -7412,6 +7472,11 @@
     },
     {
       "name": "SportsCore",
+      "extracted": {
+        "name": "SportsCore",
+        "repository": "https://github.com/Stygian-Tech/sports-core.git",
+        "revision": "dab4c7a598265077260feee6589fc09903731084"
+      },
       "source": "packages/swift/SportsCore",
       "target": "packages/go/sportscore",
       "sources": [
@@ -8130,6 +8195,11 @@
     },
     {
       "name": "ThinAppViewCore",
+      "extracted": {
+        "name": "ThinAppViewCore",
+        "repository": "https://github.com/Stygian-Tech/thin-app-view-core.git",
+        "revision": "3e09f9654961e65e0abf42f554622c9ebb77108d"
+      },
       "source": "packages/swift/ThinAppViewCore",
       "target": "packages/go/thinappviewcore",
       "sources": [
@@ -10035,6 +10105,11 @@
     },
     {
       "name": "WireCore",
+      "extracted": {
+        "name": "WireCore",
+        "repository": "https://github.com/Stygian-Tech/wire-core.git",
+        "revision": "a37340974f2d26d92faa70bfb048ab0681017b28"
+      },
       "source": "packages/swift/WireCore",
       "target": "packages/go/wirecore",
       "sources": [
@@ -11594,7 +11669,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "b82ca5b58e7536a81f6f998cd41d2c007763adaaed3810800d2aadf799ba05f0"
+          "sha256": "88dbf2bf9c039ac496797468d205925e50429ceab59cbdb9d52543a28a3c7bd6"
         },
         {
           "path": "packages/spec/__tests__/ci-postgres-preparation.test.ts",
@@ -11606,7 +11681,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "a159f72fae7991187f4d26cad064a1e25acaec364bb12bac34befd97626b119a"
+          "sha256": "a0d389f69f3db379f3233b9cabafb57e46fe76c40f7db23385c73a09400770e2"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",

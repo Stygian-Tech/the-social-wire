@@ -40,7 +40,7 @@ func TestOfficialSDKJSONMatchesSwiftGoldenFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixturePath := filepath.Join("..", "..", "..", "..", "packages", "swift", "ThinAppViewCore", "Tests", "ThinAppViewCoreTests", "Fixtures", "jetstream-v2-go-sdk-v0.2.0-events.json")
+	fixturePath := filepath.Join("testdata", "jetstream-v2-go-sdk-v0.2.0-events.json")
 	fixture, err := os.ReadFile(fixturePath)
 	if err != nil {
 		t.Fatal(err)
