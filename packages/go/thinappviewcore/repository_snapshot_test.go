@@ -387,3 +387,37 @@ func TestRepositorySnapshotRejectsSigningKeyRotationDuringRead(t *testing.T) {
 		t.Fatal("snapshot accepted after signing key changed")
 	}
 }
+
+func TestRepositorySnapshotRejectsSharedTreeBeforeRecursiveWalk(t *testing.T) {
+	f := newSnapshotFixture(t, 1)
+	// A shared empty subtree has no leaf callbacks of its own. It must be
+	// rejected during bounded block discovery, not deferred to the final walk.
+	empty, err := cbor.Marshal(map[string]any{"e": []any{}, "l": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyCID := cbor.ComputeCID(cbor.CodecDagCBOR, empty)
+	f.blocks[emptyCID.String()] = car.Block{CID: emptyCID, Data: empty}
+	value := cbor.ComputeCID(cbor.CodecDagCBOR, []byte("not fetched"))
+	root, err := cbor.Marshal(map[string]any{"l": emptyCID, "e": []any{map[string]any{"p": int64(0), "k": []byte("site.standard.document/key000"), "v": value, "t": emptyCID}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootCID := cbor.ComputeCID(cbor.CodecDagCBOR, root)
+	f.blocks[rootCID.String()] = car.Block{CID: rootCID, Data: root}
+	f.commit.Data = rootCID
+	if err := f.commit.Sign(f.key); err != nil {
+		t.Fatal(err)
+	}
+	f.replaceCommit(t)
+	result, err := f.reader().Read(context.Background(), snapshotFixtureDID, []string{"site.standard.document"})
+	if err == nil || err.Error() != "repository snapshot repeated tree reference" || len(result.Records) != 0 {
+		t.Fatal("shared tree was not rejected during discovery", err)
+	}
+	if f.requested[emptyCID.String()] || f.requested[value.String()] {
+		t.Fatal("reader fetched descendants after discovering graph sharing")
+	}
+	if f.calls["/xrpc/com.atproto.sync.getBlocks"] != 2 {
+		t.Fatal("shared tree caused extra block requests")
+	}
+}

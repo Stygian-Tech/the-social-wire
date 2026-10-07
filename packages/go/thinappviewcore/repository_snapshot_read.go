@@ -186,7 +186,23 @@ func (s *snapshotRead) loadTree(ctx context.Context, base, did string, root cbor
 		depth int
 	}
 	queue := []node{{root, 0}}
-	seen := map[string]bool{}
+	seen := map[string]bool{root.String(): true}
+	enqueue := func(cid cbor.CID, depth int) error {
+		// Canonical MST nodes contain absolute key ranges and form a tree.
+		// Reject graph sharing before a recursive library walk can expand it.
+		if seen[cid.String()] {
+			return snapshotError("repeated tree reference")
+		}
+		if depth > s.reader.MaximumDepth {
+			return snapshotError("depth limit exceeded")
+		}
+		seen[cid.String()] = true
+		queue = append(queue, node{cid, depth})
+		if len(seen) > s.reader.MaximumBlocks {
+			return snapshotError("block limit exceeded")
+		}
+		return nil
+	}
 	for len(queue) > 0 {
 		if ctx.Err() != nil {
 			return snapshotError("cancelled")
@@ -194,21 +210,16 @@ func (s *snapshotRead) loadTree(ctx context.Context, base, did string, root cbor
 		batch := queue[:min(50, len(queue))]
 		queue = queue[len(batch):]
 		needed := []cbor.CID{}
-		unseen := []node{}
 		for _, item := range batch {
 			if item.depth > s.reader.MaximumDepth {
 				return snapshotError("depth limit exceeded")
 			}
-			if !seen[item.cid.String()] {
-				seen[item.cid.String()] = true
-				needed = append(needed, item.cid)
-				unseen = append(unseen, item)
-			}
+			needed = append(needed, item.cid)
 		}
 		if err := s.fetchBlocks(ctx, base, did, needed); err != nil {
 			return err
 		}
-		for _, item := range unseen {
+		for _, item := range batch {
 			raw, err := s.store.GetBlock(item.cid)
 			if err != nil {
 				return snapshotError("missing tree block")
@@ -218,11 +229,15 @@ func (s *snapshotRead) loadTree(ctx context.Context, base, did string, root cbor
 				return snapshotError("invalid tree block")
 			}
 			if decoded.Left.HasVal() {
-				queue = append(queue, node{decoded.Left.Val(), item.depth + 1})
+				if err := enqueue(decoded.Left.Val(), item.depth+1); err != nil {
+					return err
+				}
 			}
 			for _, entry := range decoded.Entries {
 				if entry.Right.HasVal() {
-					queue = append(queue, node{entry.Right.Val(), item.depth + 1})
+					if err := enqueue(entry.Right.Val(), item.depth+1); err != nil {
+						return err
+					}
 				}
 			}
 			if len(queue) > s.reader.MaximumBlocks {
