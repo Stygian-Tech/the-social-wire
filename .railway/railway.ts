@@ -219,9 +219,8 @@ const indexingBuild = {
     "/services/jetstream-ingest/internal/schemaready/**",
     "/services/jetstream-ingest/go.mod",
     "/services/jetstream-ingest/go.sum",
-    // Shared module metadata participates in the schema-gate image build.
-    "/packages/go/go.mod",
-    "/packages/go/go.sum",
+    // Runtime packages and schema-gate module metadata both affect the image.
+    "/packages/go/**",
     "/services/appview-worker/**",
     "/services/wire-worker/**",
     "/packages/swift/ThinAppViewCore/**",
