@@ -19,6 +19,7 @@ COPY packages/go /src/packages/go
 COPY services/indexing-worker/cmd ./cmd
 COPY services/indexing-worker/internal ./internal
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/IndexingWorker ./cmd/indexing-worker
+RUN cd /src/packages/go && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/retry-reconciliation ./cmd/retry-reconciliation
 
 FROM debian:bookworm-slim
 RUN apt-get update \
@@ -26,6 +27,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --system --no-create-home appuser
 COPY --from=builder /out/IndexingWorker /usr/local/bin/IndexingWorker
+COPY --from=builder /out/retry-reconciliation /usr/local/bin/retry-reconciliation
 COPY --from=schema-ready-builder /out/schema-ready /usr/local/bin/schema-ready
 COPY --from=schema-ready-builder /out/required-migrations.txt /etc/socialwire/required-migrations.txt
 USER appuser

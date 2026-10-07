@@ -9,6 +9,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/publicationcore"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -130,7 +131,10 @@ func TestHostCachedBootstrapStreamsSparseCountsAndReadOverlay(t *testing.T) {
 		t.Fatal(kinds)
 	}
 	counts := events["unreadCounts"]["unreadCounts"].(map[string]any)
-	if len(counts["counts"].(map[string]any)) != 1 || fmt.Sprint(counts["replacePublicationIds"]) != "[host-bootstrap-fixture host-bootstrap-zero]" {
+	// Replacement IDs are a scope set, not the sidebar display order.
+	replacementIDs := counts["replacePublicationIds"].([]any)
+	sort.Slice(replacementIDs, func(i, j int) bool { return fmt.Sprint(replacementIDs[i]) < fmt.Sprint(replacementIDs[j]) })
+	if len(counts["counts"].(map[string]any)) != 1 || fmt.Sprint(replacementIDs) != "[host-bootstrap-fixture host-bootstrap-zero]" {
 		t.Fatal(counts)
 	}
 	data, _ := json.Marshal(events["entriesPage"])

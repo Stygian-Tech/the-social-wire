@@ -373,7 +373,7 @@ func (h *Host) processReconciliation(ctx context.Context, request thinappviewcor
 	} else {
 		slog.Warn("AppView repository recovery failed", "category", recoveryFailureCategory(err))
 		delay := InboxRetryDelay(request.AttemptCount+1, rand.Float64())
-		err = store.RetryReconciliation(ctx, request, config.InstanceID, "repository_reconciliation_incomplete", at.Add(delay), at)
+		err = store.RetryReconciliation(ctx, request, config.InstanceID, recoveryFailureCategory(err), at.Add(delay), at)
 	}
 	if err != nil {
 		slog.Warn("AppView recovery persistence failed", "error", err)
