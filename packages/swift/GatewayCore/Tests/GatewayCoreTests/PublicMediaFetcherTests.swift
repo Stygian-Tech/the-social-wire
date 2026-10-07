@@ -8,6 +8,50 @@ import Testing
 
 @Suite("Source media SSRF guards")
 struct PublicMediaFetcherTests {
+  @Test("podcast tracker chains can opt into seven redirects while the default remains bounded")
+  func trackerRedirectBudget() async throws {
+    let fetch: (String) async throws -> PublicMediaFetcher.FetchHop = { url in
+      let hop = Int(URL(string: url)!.lastPathComponent)!
+      return hop < 7 ? .redirect("https://publisher.example/\(hop + 1)") : .body(Data("ID3".utf8))
+    }
+    let body = try await PublicMediaFetcher.fetchFollowingRedirects(url: "https://publisher.example/0",
+      maximumRedirects: 10, deadline: .now.advanced(by: .seconds(1)), fetch: fetch)
+    #expect(body == Data("ID3".utf8))
+    await #expect(throws: PDSAccessTokenAttestationError.unavailable) {
+      try await PublicMediaFetcher.fetchFollowingRedirects(url: "https://publisher.example/0",
+        maximumRedirects: 5, deadline: .now.advanced(by: .seconds(1)), fetch: fetch)
+    }
+  }
+
+  @Test("extended redirects still reject unsafe targets before transport", arguments: [
+    "http://publisher.example/audio", "https://user:password@publisher.example/audio",
+    "https://127.0.0.1/audio"
+  ])
+  func unsafeRedirectTargets(target: String) async throws {
+    await #expect(throws: PDSAccessTokenAttestationError.invalid) {
+      try await PublicMediaFetcher.fetchFollowingRedirects(url: "https://publisher.example/start",
+        maximumRedirects: 10, deadline: .now.advanced(by: .seconds(1)),
+        validateURL: { URL(string: $0)?.host != "127.0.0.1" }) { current in
+          #expect(current == "https://publisher.example/start")
+          return .redirect(target)
+        }
+    }
+  }
+
+  @Test("redirect budget rejects unbounded values and loops")
+  func invalidRedirectBudget() async throws {
+    await #expect(throws: PDSAccessTokenAttestationError.invalid) {
+      try await PublicMediaFetcher.fetchFollowingRedirects(url: "https://publisher.example/start",
+        maximumRedirects: 11, deadline: .now.advanced(by: .seconds(1))) { _ in
+          Issue.record("Invalid budget must reject before transport")
+          return .body(Data())
+        }
+    }
+    await #expect(throws: PDSAccessTokenAttestationError.unavailable) {
+      try await PublicMediaFetcher.fetchFollowingRedirects(url: "https://publisher.example/start",
+        maximumRedirects: 10, deadline: .now.advanced(by: .seconds(1))) { _ in .redirect("/start") }
+    }
+  }
   @Test("metadata deadlines include a stalled response body after headers")
   func metadataBodyDeadline() async throws {
     let upstream = Router()
