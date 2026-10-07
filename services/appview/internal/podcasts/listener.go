@@ -155,7 +155,7 @@ func (s *Service) CanonicalState(ctx context.Context, state podcastcore.Listener
 	}
 	return state, nil
 }
-func progressDate(raw string) time.Time { t, _ := time.Parse(time.RFC3339Nano, raw); return t }
+func progressDate(raw string) time.Time { t, _ := podcastcore.ParseProgressDate(raw); return t }
 func (s *Service) Transcripts(ctx context.Context, episode podcastcore.Episode) ([]podcastcore.Transcript, error) {
 	result := append([]podcastcore.Transcript{}, episode.Transcripts...)
 	for i := range result {

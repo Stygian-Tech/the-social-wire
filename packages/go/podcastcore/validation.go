@@ -6,7 +6,6 @@ import (
 	"errors"
 	"math"
 	"strings"
-	"time"
 
 	"github.com/rivo/uniseg"
 )
@@ -44,7 +43,7 @@ func (s ListenerState) Validate() bool {
 		if math.IsNaN(p.PositionSeconds) || math.IsInf(p.PositionSeconds, 0) || p.PositionSeconds < 0 {
 			return false
 		}
-		if _, err := time.Parse(time.RFC3339Nano, p.UpdatedAt); err != nil {
+		if _, valid := ParseProgressDate(p.UpdatedAt); !valid {
 			return false
 		}
 	}

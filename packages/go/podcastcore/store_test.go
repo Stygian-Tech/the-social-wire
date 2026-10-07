@@ -224,3 +224,42 @@ func TestConcurrentStateCASAndAtomicClipJobs(t *testing.T) {
 		t.Fatal("cleanup not enqueued")
 	}
 }
+
+func TestPrivateMetadataRequiresOwnerAndUnchangedSource(t *testing.T) {
+	s, viewer := fixtureStore(t)
+	ctx := context.Background()
+	secret := "https://example.invalid/feed?token=private"
+	show, episodes := ScopePrivate(viewer, secret, Show{Title: "Private", SourceKind: "rss"}, []Episode{{ID: "one", Title: "Original", PublishedAt: "2026-10-05T00:00:00Z", AudioURL: secret, ChapterSourceURL: &secret, Chapters: []Chapter{{Title: "Original chapter"}}}})
+	if err := s.SavePrivateCatalog(ctx, viewer, secret, show, episodes, false); err != nil {
+		t.Fatal(err)
+	}
+	candidate := episodes[0]
+	candidate.Chapters = []Chapter{{Title: "New chapter"}}
+	candidate.ShowArtworkURL = pointer("https://example.invalid/art.png")
+	other := viewer + "-other"
+	if err := s.UpdateMetadata(ctx, candidate, &other); err != nil {
+		t.Fatal(err)
+	}
+	stale := candidate
+	stale.ChapterSourceURL = pointer("https://example.invalid/stale.json")
+	if err := s.UpdateMetadata(ctx, stale, &viewer); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.PrivateEpisode(ctx, viewer, candidate.ID)
+	if err != nil || got == nil || got.Chapters[0].Title != "Original chapter" {
+		t.Fatal("wrong owner or stale source modified metadata", got, err)
+	}
+	// Enrichment may contain a stale title, but only chapter and show-art fields merge.
+	candidate.Title = "Stale title"
+	if err := s.UpdateMetadata(ctx, candidate, &viewer); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.PrivateEpisode(ctx, viewer, candidate.ID)
+	if err != nil || got.Title != "Original" || got.AudioURL != secret || got.Chapters[0].Title != "New chapter" || got.ShowArtworkURL == nil {
+		t.Fatal("private merge changed catalog source", got, err)
+	}
+	var ciphertext string
+	if err := s.DB.QueryRowContext(ctx, `SELECT episode_data FROM podcast_private_episodes WHERE viewer_did=$1 AND id=$2`, viewer, candidate.ID).Scan(&ciphertext); err != nil || strings.Contains(ciphertext, "private") || strings.Contains(ciphertext, "New chapter") {
+		t.Fatal("metadata plaintext escaped encrypted storage", err)
+	}
+}

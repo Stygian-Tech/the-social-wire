@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -20,15 +19,12 @@ func NewStore(db *sql.DB, privateKey string) *Store {
 }
 func jsonValue(v any) (string, error) { data, err := json.Marshal(v); return string(data), err }
 func publishedDate(raw string) time.Time {
-	if strings.Contains(raw, ".") {
-		return time.Unix(0, 0).UTC()
+	if date, valid := parsePodcastDate(raw, false); valid {
+		return date
 	}
-	t, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return time.Unix(0, 0).UTC()
-	}
-	return t
+	return time.Unix(0, 0).UTC()
 }
+
 func (s *Store) Alias(ctx context.Context, alias, canonical, kind string) error {
 	_, err := s.DB.ExecContext(ctx, `INSERT INTO podcast_aliases(alias,canonical_id,entity_kind) VALUES($1,$2,$3) ON CONFLICT(alias) DO NOTHING`, alias, canonical, kind)
 	return err

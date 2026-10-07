@@ -258,7 +258,7 @@ func ParseDuration(raw *string) *float64 {
 }
 func rssDate(raw *string) string {
 	if raw != nil {
-		if _, err := time.Parse(time.RFC3339, *raw); err == nil && !strings.Contains(*raw, ".") {
+		if _, valid := parsePodcastDate(*raw, false); valid {
 			return *raw
 		}
 		for _, layout := range []string{time.RFC1123Z, "Mon, 2 Jan 2006 15:04:05 -0700", time.RFC1123} {
