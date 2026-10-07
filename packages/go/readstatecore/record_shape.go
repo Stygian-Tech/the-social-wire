@@ -13,7 +13,7 @@ func recordObject(data []byte, allowed, required []string) (map[string]json.RawM
 		return nil, ErrInvalidRecord
 	}
 	for key := range object {
-		if !slices.Contains(allowed, key) {
+		if allowed != nil && !slices.Contains(allowed, key) {
 			return nil, ErrInvalidRecord
 		}
 	}
@@ -72,6 +72,9 @@ func DecodeManifest(data []byte, viewer string) (Manifest, error) {
 	var manifest Manifest
 	if len(data) > MaximumRecordBytes {
 		return manifest, ErrSizeLimit
+	}
+	if _, err := recordObject(data, nil, []string{"$type", "version", "generation", "lastSequence"}); err != nil {
+		return manifest, err
 	}
 	if json.Unmarshal(data, &manifest) != nil {
 		return manifest, ErrInvalidRecord

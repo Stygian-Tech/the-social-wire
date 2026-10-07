@@ -64,6 +64,9 @@ func LoadRecords(ctx context.Context, manifest Manifest, viewer string, maximumC
 			}
 			accountedBytes := len(data)
 			if manifest.Version == 1 {
+				if err := validateV1RequiredShape(data); err != nil {
+					return nil, err
+				}
 				var chunk Chunk
 				if json.Unmarshal(data, &chunk) != nil {
 					return nil, ErrInvalidRecord
@@ -206,4 +209,46 @@ func validateV2Generation(generation *Generation, lastSequence int64, viewer str
 
 func sameOptional[T comparable](left, right *T) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
+}
+
+func validateV1RequiredShape(data []byte) error {
+	object, err := recordObject(data, nil, []string{"$type", "version", "operations"})
+	if err != nil {
+		return err
+	}
+	var operations []json.RawMessage
+	if json.Unmarshal(object["operations"], &operations) != nil {
+		return ErrInvalidRecord
+	}
+	for _, operation := range operations {
+		value, err := recordObject(operation, nil, []string{"actionId", "sequence", "state", "actedAt", "selection"})
+		if err != nil {
+			return err
+		}
+		if calendar := value["calendar"]; len(calendar) > 0 && string(calendar) != "null" {
+			if _, err := recordObject(calendar, nil, []string{"cutoff", "timeZone", "referenceDate"}); err != nil {
+				return err
+			}
+		}
+		if boundaries := value["boundaries"]; len(boundaries) > 0 && string(boundaries) != "null" {
+			var values []json.RawMessage
+			if json.Unmarshal(boundaries, &values) != nil {
+				return ErrInvalidRecord
+			}
+			for _, boundary := range values {
+				b, err := recordObject(boundary, nil, []string{"scope", "createdAt"})
+				if err != nil {
+					return err
+				}
+				if _, err := recordObject(b["scope"], nil, []string{"publicationId", "authorDid", "publicationSiteKeys"}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if previous := object["previous"]; len(previous) > 0 && string(previous) != "null" {
+		_, err := recordObject(previous, nil, []string{"uri", "cid"})
+		return err
+	}
+	return nil
 }

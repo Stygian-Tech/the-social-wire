@@ -19,7 +19,15 @@ import (
 // RecordCID verifies the original JSON record, including fields unknown to the
 // current reader. Receipt hashing intentionally uses a narrower value policy.
 func RecordCID(data []byte) (string, error) {
-	if len(data) > MaximumRecordBytes {
+	return RecordCIDWithLimit(data, MaximumRecordBytes)
+}
+
+// RecordCIDWithLimit retains the same canonical rules for larger public records.
+func RecordCIDWithLimit(data []byte, maximumBytes int) (string, error) {
+	if maximumBytes < 1 || maximumBytes > 1024*1024 {
+		return "", ErrSizeLimit
+	}
+	if len(data) > maximumBytes {
 		return "", ErrSizeLimit
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -36,7 +44,7 @@ func RecordCID(data []byte) (string, error) {
 		return "", ErrInvalidRecord
 	}
 	builder := basicnode.Prototype.Any.NewBuilder()
-	budget := MaximumRecordBytes
+	budget := maximumBytes
 	if err := assembleRecord(builder, value, 0, &budget); err != nil {
 		return "", err
 	}
@@ -44,7 +52,7 @@ func RecordCID(data []byte) (string, error) {
 	if err := dagcbor.Encode(builder.Build(), &encoded); err != nil {
 		return "", err
 	}
-	if encoded.Len() > MaximumRecordBytes {
+	if encoded.Len() > maximumBytes {
 		return "", ErrSizeLimit
 	}
 	result, err := (cid.Prefix{Version: 1, Codec: cid.DagCBOR, MhType: 0x12, MhLength: 32}).Sum(encoded.Bytes())
@@ -55,10 +63,14 @@ func RecordCID(data []byte) (string, error) {
 }
 
 func VerifyRecordCID(data []byte, expected string) error {
+	return VerifyRecordCIDWithLimit(data, expected, MaximumRecordBytes)
+}
+
+func VerifyRecordCIDWithLimit(data []byte, expected string, maximumBytes int) error {
 	if _, err := decodeRecordLink(expected, false); err != nil {
 		return err
 	}
-	actual, err := RecordCID(data)
+	actual, err := RecordCIDWithLimit(data, maximumBytes)
 	if err != nil {
 		return err
 	}
