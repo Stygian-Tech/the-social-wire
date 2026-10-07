@@ -33,7 +33,7 @@ func TestConfigurationPreservesReleaseGates(t *testing.T) {
 	}
 }
 func TestPaginationRejectsMalformedInputWithoutRestarting(t *testing.T) {
-	date := time.Date(2026, 10, 7, 3, 4, 5, 123000000, time.UTC)
+	date := time.Date(2026, 10, 7, 3, 4, 5, 123456789, time.UTC)
 	raw := EncodePaginationCursor(date, "a|b")
 	parsed, err := DecodePaginationCursor(raw)
 	if err != nil || !parsed.Date.Equal(date) || parsed.ID != "a|b" {

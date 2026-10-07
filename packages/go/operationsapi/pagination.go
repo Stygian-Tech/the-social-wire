@@ -15,8 +15,10 @@ type PaginationCursor struct {
 	ID   string
 }
 
+// Retain full timestamp precision: truncating to milliseconds skips same-time rows
+// when PostgreSQL stores microseconds and the next page compares timestamp plus ID.
 func EncodePaginationCursor(date time.Time, id string) string {
-	return base64.StdEncoding.EncodeToString([]byte(date.UTC().Format("2006-01-02T15:04:05.000Z") + "|" + id))
+	return base64.StdEncoding.EncodeToString([]byte(date.UTC().Format("2006-01-02T15:04:05.000000000Z") + "|" + id))
 }
 func DecodePaginationCursor(raw string) (PaginationCursor, error) {
 	if utf8.RuneCountInString(raw) > 1024 {
