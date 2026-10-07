@@ -126,7 +126,7 @@ func (s *FinanceStore) Instruments(ctx context.Context, query string, now time.T
 		}
 		return a.ID < b.ID
 	})
-	found = unique[:min(50, len(unique))]
+	found = limitFinanceSearchResults(unique)
 	s.mu.Lock()
 	if s.searchCache == nil {
 		s.searchCache = map[string]financeSearchEntry{}
@@ -145,4 +145,11 @@ func (s *FinanceStore) claimSearch(ctx context.Context, now time.Time, interval 
 		return false, nil
 	}
 	return err == nil, err
+}
+
+func limitFinanceSearchResults(items []financecore.Instrument) []financecore.Instrument {
+	// The cache must own only its displayed rows, not the full matching catalog.
+	result := make([]financecore.Instrument, min(50, len(items)))
+	copy(result, items)
+	return result
 }
