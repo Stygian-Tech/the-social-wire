@@ -5,11 +5,12 @@
     "dockerfilePath": "/services/wire-corpus-edge/Dockerfile",
     "watchPatterns": [
       "/services/wire-corpus-edge/**",
-      "/packages/swift/WireCore/**",
-      "/packages/swift/FinanceCore/**",
-      "/packages/swift/SportsCore/**",
-      "/packages/swift/SocialWireRedis/**",
+      "/packages/go/**",
       "/database/migrations/**",
+      "/services/jetstream-ingest/cmd/schema-ready/**",
+      "/services/jetstream-ingest/internal/schemaready/**",
+      "/services/jetstream-ingest/go.mod",
+      "/services/jetstream-ingest/go.sum",
       "/railway/wire-corpus-edge.json"
     ]
   },

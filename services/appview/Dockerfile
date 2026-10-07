@@ -1,5 +1,6 @@
 FROM golang:1.26-bookworm AS schema-ready-builder
 WORKDIR /src/services/jetstream-ingest
+COPY packages/go/go.mod packages/go/go.sum /src/packages/go/
 COPY services/jetstream-ingest/go.mod services/jetstream-ingest/go.sum ./
 RUN go mod download
 COPY services/jetstream-ingest/cmd/schema-ready ./cmd/schema-ready
@@ -8,61 +9,24 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/schema-ready ./cmd
 COPY database/migrations /src/database/migrations
 RUN /out/schema-ready --generate-manifest /src/database/migrations > /out/required-migrations.txt
 
-FROM swift:6.2.4-jammy AS builder
-
-WORKDIR /src
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends libsqlite3-dev libxml2-dev \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY packages/swift/SocialWireRedis/Package.swift packages/swift/SocialWireRedis/Package.resolved* packages/swift/SocialWireRedis/
-COPY packages/swift/SocialWireRedis/Sources packages/swift/SocialWireRedis/Sources
-COPY packages/swift/SocialWireRedis/Tests packages/swift/SocialWireRedis/Tests
-
-COPY packages/swift/ReadStateCore packages/swift/ReadStateCore
-
-COPY packages/swift/ThinAppViewCore/Package.swift packages/swift/ThinAppViewCore/Package.resolved* packages/swift/ThinAppViewCore/
-COPY packages/swift/ThinAppViewCore/Sources packages/swift/ThinAppViewCore/Sources
-COPY packages/swift/ThinAppViewCore/Tests packages/swift/ThinAppViewCore/Tests
-
-COPY packages/swift/GatewayCore/Package.swift packages/swift/GatewayCore/Package.resolved* packages/swift/GatewayCore/
-COPY packages/swift/GatewayCore/Sources packages/swift/GatewayCore/Sources
-COPY packages/swift/GatewayCore/Tests packages/swift/GatewayCore/Tests
-
-COPY packages/swift/OperationsCore/Package.swift packages/swift/OperationsCore/Package.resolved* packages/swift/OperationsCore/
-COPY packages/swift/OperationsCore/Sources packages/swift/OperationsCore/Sources
-COPY packages/swift/OperationsCore/Tests packages/swift/OperationsCore/Tests
-
-COPY packages/swift/FinanceCore packages/swift/FinanceCore
-COPY packages/swift/SportsCore packages/swift/SportsCore
-
-COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resolved* packages/swift/WireCore/
-COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
-COPY packages/swift/WireCore/Tests packages/swift/WireCore/Tests
-
-COPY services/appview/Package.swift services/appview/Package.resolved* services/appview/
-COPY services/appview/Sources services/appview/Sources
-COPY services/appview/Tests services/appview/Tests
-
+FROM golang:1.26-bookworm AS builder
 WORKDIR /src/services/appview
-RUN swift package resolve
-RUN swift build -c release --product AppView
+COPY packages/go/go.mod packages/go/go.sum /src/packages/go/
+COPY services/appview/go.mod services/appview/go.sum ./
+RUN go mod download
+COPY packages/go /src/packages/go
+COPY services/appview/cmd ./cmd
+COPY services/appview/internal ./internal
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/AppView ./cmd/appview
 
-FROM ubuntu:22.04
-
+FROM debian:bookworm-slim
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-    libssl3 libcurl4 libsqlite3-0 libicu70 libxml2 ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /src/services/appview/.build/release/AppView /usr/local/bin/AppView
-COPY --from=builder /usr/lib/swift/linux /usr/lib/swift/linux
-
-RUN chmod +x /usr/local/bin/AppView
-EXPOSE 8081
-RUN useradd --system --no-create-home appuser
-USER appuser
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd --system --no-create-home appuser
+COPY --from=builder /out/AppView /usr/local/bin/AppView
 COPY --from=schema-ready-builder /out/schema-ready /usr/local/bin/schema-ready
 COPY --from=schema-ready-builder /out/required-migrations.txt /etc/socialwire/required-migrations.txt
-ENTRYPOINT ["/usr/local/bin/schema-ready", "--allow-local-sqlite", "--", "/usr/local/bin/AppView"]
+USER appuser
+EXPOSE 8081
+ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "/usr/local/bin/AppView"]

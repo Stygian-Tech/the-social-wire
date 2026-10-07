@@ -1,0 +1,22 @@
+meta {
+  name: POST Podcast analysis
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/podcasts/analysis
+  body: json
+  auth: none
+}
+
+body:json {
+{
+  "episodeId": "{{podcastEpisodeId}}"
+}
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

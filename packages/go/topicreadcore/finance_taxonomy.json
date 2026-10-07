@@ -1,0 +1,299 @@
+{
+  "sectors": [
+    {
+      "id": "technology",
+      "name": "Technology",
+      "keywords": [
+        "semiconductor",
+        "software",
+        "technology"
+      ]
+    },
+    {
+      "id": "healthcare",
+      "name": "Healthcare",
+      "keywords": [
+        "pharmaceutical",
+        "healthcare",
+        "biotech"
+      ]
+    },
+    {
+      "id": "financials",
+      "name": "Financials",
+      "keywords": [
+        "bank",
+        "insurance",
+        "financial"
+      ]
+    },
+    {
+      "id": "energy",
+      "name": "Energy",
+      "keywords": [
+        "oil",
+        "energy",
+        "natural gas"
+      ]
+    },
+    {
+      "id": "materials",
+      "name": "Materials",
+      "keywords": [
+        "mining",
+        "metals",
+        "chemicals"
+      ]
+    },
+    {
+      "id": "industrials",
+      "name": "Industrials",
+      "keywords": [
+        "manufacturing",
+        "aerospace",
+        "industrial"
+      ]
+    },
+    {
+      "id": "consumer",
+      "name": "Consumer",
+      "keywords": [
+        "retail",
+        "consumer",
+        "automotive"
+      ]
+    },
+    {
+      "id": "communications",
+      "name": "Communications",
+      "keywords": [
+        "telecom",
+        "media"
+      ]
+    },
+    {
+      "id": "utilities",
+      "name": "Utilities",
+      "keywords": [
+        "utilities",
+        "electric utility"
+      ]
+    },
+    {
+      "id": "real-estate",
+      "name": "Real Estate",
+      "keywords": [
+        "real estate",
+        "housing"
+      ]
+    }
+  ],
+  "industries": [
+    {
+      "id": "pharma",
+      "name": "Pharma",
+      "keywords": [
+        "pharmaceutical",
+        "pharmaceuticals",
+        "pharma",
+        "drugmaker",
+        "drugmakers",
+        "drug company",
+        "drug companies",
+        "drug prices",
+        "drug pricing"
+      ]
+    },
+    {
+      "id": "biotech",
+      "name": "Biotech",
+      "keywords": [
+        "biotech",
+        "biotechnology"
+      ]
+    },
+    {
+      "id": "semiconductors",
+      "name": "Semiconductors",
+      "keywords": [
+        "semiconductor",
+        "semiconductors",
+        "chipmakers",
+        "chipmaker"
+      ]
+    },
+    {
+      "id": "software",
+      "name": "Software",
+      "keywords": [
+        "software"
+      ]
+    },
+    {
+      "id": "banks",
+      "name": "Banks",
+      "keywords": [
+        "bank",
+        "banks",
+        "banking"
+      ]
+    },
+    {
+      "id": "insurance",
+      "name": "Insurance",
+      "keywords": [
+        "insurance",
+        "insurer",
+        "insurers"
+      ]
+    },
+    {
+      "id": "oil-gas",
+      "name": "Oil & Gas",
+      "keywords": [
+        "crude oil",
+        "natural gas",
+        "petroleum",
+        "oil company",
+        "oil companies",
+        "oil producer",
+        "oil producers",
+        "oil industry"
+      ]
+    },
+    {
+      "id": "aerospace-defense",
+      "name": "Aerospace & Defense",
+      "keywords": [
+        "aerospace",
+        "defense contractor",
+        "defence contractor"
+      ]
+    },
+    {
+      "id": "autos",
+      "name": "Autos",
+      "keywords": [
+        "automotive",
+        "automaker",
+        "automakers",
+        "auto industry"
+      ]
+    },
+    {
+      "id": "retail",
+      "name": "Retail",
+      "keywords": [
+        "retail",
+        "retailer",
+        "retailers"
+      ]
+    },
+    {
+      "id": "telecom",
+      "name": "Telecom",
+      "keywords": [
+        "telecom",
+        "telecommunications"
+      ]
+    },
+    {
+      "id": "media",
+      "name": "Media & Entertainment",
+      "keywords": [
+        "media company",
+        "media companies",
+        "entertainment industry",
+        "streaming company",
+        "streaming companies"
+      ]
+    },
+    {
+      "id": "hardware",
+      "name": "Hardware",
+      "keywords": [
+        "computer hardware",
+        "hardware company",
+        "hardware industry"
+      ]
+    },
+    {
+      "id": "consumer-products",
+      "name": "Consumer Products",
+      "keywords": [
+        "consumer products",
+        "consumer goods"
+      ]
+    },
+    {
+      "id": "restaurants",
+      "name": "Restaurants",
+      "keywords": [
+        "restaurant industry",
+        "restaurant company",
+        "restaurant companies",
+        "restaurant chain"
+      ]
+    },
+    {
+      "id": "medical-devices",
+      "name": "Medical Devices",
+      "keywords": [
+        "medical device",
+        "medical devices"
+      ]
+    },
+    {
+      "id": "payments",
+      "name": "Payments",
+      "keywords": [
+        "payment processor",
+        "payments company",
+        "payments industry"
+      ]
+    },
+    {
+      "id": "asset-management",
+      "name": "Asset Management",
+      "keywords": [
+        "asset management",
+        "asset manager",
+        "asset managers"
+      ]
+    },
+    {
+      "id": "manufacturing",
+      "name": "Manufacturing",
+      "keywords": [
+        "manufacturing",
+        "manufacturer",
+        "manufacturers"
+      ]
+    },
+    {
+      "id": "transportation",
+      "name": "Transportation",
+      "keywords": [
+        "transportation industry",
+        "shipping company",
+        "shipping companies",
+        "airline",
+        "airlines"
+      ]
+    },
+    {
+      "id": "mining",
+      "name": "Mining & Metals",
+      "keywords": [
+        "metals",
+        "mineral mining",
+        "mining company",
+        "mining companies",
+        "gold mining",
+        "copper mining",
+        "iron ore",
+        "metal miners"
+      ]
+    }
+  ]
+}

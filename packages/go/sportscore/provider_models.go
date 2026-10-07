@@ -9,18 +9,22 @@ import (
 )
 
 type Event struct {
-	ID             string    `json:"id"`
-	CompetitionID  string    `json:"competitionID"`
-	EntityIDs      []string  `json:"entityIDs"`
-	Title          string    `json:"title"`
-	StartsAt       time.Time `json:"startsAt"`
-	StartTimeKnown bool      `json:"startTimeKnown"`
-	Status         string    `json:"status"`
-	HomeName       *string   `json:"homeName,omitempty"`
-	AwayName       *string   `json:"awayName,omitempty"`
-	HomeScore      *string   `json:"homeScore,omitempty"`
-	AwayScore      *string   `json:"awayScore,omitempty"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	decodedJSON           bool
+	startTimeKnownPresent bool
+	ID                    string    `json:"id"`
+	CompetitionID         string    `json:"competitionID"`
+	EntityIDs             []string  `json:"entityIDs"`
+	Title                 string    `json:"title"`
+	StartsAt              time.Time `json:"startsAt"`
+	StartTimeKnown        bool      `json:"startTimeKnown"`
+	Status                string    `json:"status"`
+	HomeName              *string   `json:"homeName,omitempty"`
+	AwayName              *string   `json:"awayName,omitempty"`
+	HomeAbbreviation      *string   `json:"homeAbbreviation,omitempty"`
+	AwayAbbreviation      *string   `json:"awayAbbreviation,omitempty"`
+	HomeScore             *string   `json:"homeScore,omitempty"`
+	AwayScore             *string   `json:"awayScore,omitempty"`
+	UpdatedAt             time.Time `json:"updatedAt"`
 }
 type StandingZone struct {
 	Kind      string `json:"kind"`
@@ -45,7 +49,7 @@ type StandingSnapshot struct {
 	Season        string        `json:"season"`
 	SourceURL     string        `json:"sourceURL"`
 	Status        string        `json:"status"`
-	UpdatedAt     time.Time     `json:"updatedAt"`
+	UpdatedAt     time.Time     `json:"updatedAt,omitempty"`
 	Degraded      bool          `json:"degraded"`
 	Rows          []StandingRow `json:"rows"`
 }

@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Podcast private subscriptions
+  type: http
+  seq: 21
+}
+
+delete {
+  url: {{baseUrl}}/v1/podcasts/private/subscriptions?showId={{privatePodcastShowId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
