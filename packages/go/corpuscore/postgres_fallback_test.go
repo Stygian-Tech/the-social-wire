@@ -2,8 +2,12 @@ package corpuscore
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 	"os"
@@ -50,7 +54,14 @@ func TestPostgresFallbackCircleAndViewOnlyRole(t *testing.T) {
 		}
 	}
 	execFixture(t, db, `INSERT INTO wire_signal_events(event_key,canonical_key,signal_kind,actor_key_hash,source_uri,occurred_at,expires_at,source_collection,source_action) VALUES('corpus-share',$1,'share',$2,'at://did:example:actor/app.bsky.feed.post/test',$3,$4,'app.bsky.feed.post','create')`, prefix+"00", actor, now, now.Add(time.Hour))
-	execFixture(t, db, `CREATE ROLE corpus_go_view_reader LOGIN`)
+	// The restricted login must authenticate under CI's SCRAM policy. A role
+	// without its own password can make permission checks pass on auth errors.
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		t.Fatal(err)
+	}
+	password := hex.EncodeToString(secret)
+	execFixture(t, db, fmt.Sprintf(`CREATE ROLE corpus_go_view_reader LOGIN PASSWORD '%s'`, password))
 	execFixture(t, db, `GRANT USAGE ON SCHEMA wire_serving TO corpus_go_view_reader`)
 	execFixture(t, db, `GRANT SELECT ON ALL TABLES IN SCHEMA wire_serving TO corpus_go_view_reader`)
 	config, err := pgx.ParseConfig(os.Getenv("SOCIALWIRE_GO_CORPUS_TEST_DATABASE_URL"))
@@ -58,14 +69,19 @@ func TestPostgresFallbackCircleAndViewOnlyRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	config.User = role
+	config.Password = password
 	reader := stdlib.OpenDB(*config)
 	reader.SetMaxOpenConns(1)
 	defer reader.Close()
-	if _, err := reader.Exec(`SELECT canonical_key FROM public.wire_items LIMIT 1`); err == nil {
-		t.Fatal("serving role read raw corpus")
+	if err := reader.PingContext(ctx); err != nil {
+		t.Fatal("restricted role authentication failed", err)
 	}
-	if _, err := reader.Exec(`UPDATE public.wire_items SET title='bad'`); err == nil {
-		t.Fatal("serving role wrote raw corpus")
+	for _, query := range []string{`SELECT canonical_key FROM public.wire_items LIMIT 1`, `UPDATE public.wire_items SET title='bad'`} {
+		_, err := reader.Exec(query)
+		var denied *pgconn.PgError
+		if !errors.As(err, &denied) || denied.Code != "42501" {
+			t.Fatalf("raw corpus access must fail with permission denial: %v", err)
+		}
 	}
 	store := &PostgreSQLStore{DB: reader}
 	if err := store.Ping(ctx); err != nil {
