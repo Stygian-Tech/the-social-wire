@@ -36,8 +36,9 @@ export function PodcastChapterTimeline({ chapters, artworkSources = [], duration
     <div className="flex items-center justify-between gap-3 text-xs tabular-nums text-muted-foreground"><span>{formatPodcastTime(position)}</span>
     {valid.length ? <details className="relative text-xs"><summary className="min-h-6 cursor-pointer py-1 pointer-coarse:min-h-11">Chapters ({valid.length})</summary>
       <ol className="absolute bottom-full left-1/2 z-10 mb-2 max-h-48 w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-y-auto rounded-lg border bg-background p-2 shadow-lg">{valid.map((chapter, index) => <li key={`${chapter.startSeconds}:${index}`}><button type="button"
-        onClick={() => seek(chapter.startSeconds)} className="flex min-h-11 w-full items-center gap-3 rounded px-2 text-left hover:bg-accent">
-        <span className="shrink-0 tabular-nums text-muted-foreground">{formatPodcastTime(chapter.startSeconds)}</span><span className="break-words">{chapter.title}</span>
+        onClick={() => seek(chapter.startSeconds)} className="flex min-h-11 w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-accent">
+        <PodcastArtwork src={chapter.artworkUrl ?? artworkSources.find(Boolean)} fallbackSources={artworkSources} alt="" size={32} />
+        <span className="min-w-0 flex-1 break-words">{chapter.title}</span><span className="shrink-0 tabular-nums text-muted-foreground">{formatPodcastTime(chapter.startSeconds)}</span>
       </button></li>)}</ol>
     </details> : null}
     <span>{formatPodcastTime(duration)}</span></div>
