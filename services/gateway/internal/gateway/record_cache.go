@@ -83,7 +83,11 @@ func (c *RecordCache) Put(ctx context.Context, did, scope string, v RecordSnapsh
 	return e
 }
 func (c *RecordCache) Acquire(ctx context.Context, did, scope string) (*thinappviewcore.RefreshLease, error) {
-	pool := thinappviewcore.ProjectionCache{Redis: c.Redis, Namespace: c.Namespace}
+	transport := c.Redis
+	if c.Backend != "redis" {
+		transport = nil
+	}
+	pool := thinappviewcore.ProjectionCache{Redis: transport, Namespace: c.Namespace}
 	lease, e := pool.AcquireRefreshLease(ctx, "pds", did+":"+scope, 15*time.Second)
 	if e != nil {
 		return &thinappviewcore.RefreshLease{TTL: 15 * time.Second}, nil

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
+	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,6 +21,9 @@ type Server struct {
 	evidence     Evidence
 	Preferences  *Preferences
 	Limiter      *RequestLimiter
+	Telemetry    *telemetrycore.TelemetryBuffer
+	Region       string
+	InstanceID   string
 }
 type Evidence struct {
 	Service       string     `json:"service"`
@@ -79,7 +84,8 @@ func (s *Server) Handler() http.Handler {
 	if s.Preferences != nil {
 		s.Preferences.Register(mux, auth)
 	}
-	return s.cors(mux)
+	mux.Handle("POST /v1/telemetry/client-performance", auth(http.HandlerFunc(s.performance)))
+	return s.requestTrace(s.cors(mux))
 }
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -105,8 +111,8 @@ func (s *Server) probe(ctx context.Context, base string) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	var body json.RawMessage
-	if json.NewDecoder(http.MaxBytesReader(nil, resp.Body, 4096)).Decode(&body) != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4097))
+	if err != nil || len(body) > 4096 {
 		return false
 	}
 	return resp.StatusCode >= 200 && resp.StatusCode < 300

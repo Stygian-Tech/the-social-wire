@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/alicebob/miniredis/v2 v2.39.0
+	github.com/jackc/pgx/v5 v5.7.6
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/stygian-tech/the-social-wire/packages/go v0.0.0
 )
@@ -19,6 +20,9 @@ require (
 	github.com/getsentry/sentry-go v0.46.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jcalabro/atmos v0.3.7 // indirect
 	github.com/jcalabro/gloom v0.1.0 // indirect
 	github.com/jcalabro/gt v0.0.14 // indirect
@@ -35,6 +39,7 @@ require (
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect

@@ -148,6 +148,9 @@ func (p *Preferences) fetchWithLease(ctx context.Context, a gatewaycore.AuthCont
 		return nil, e
 	}
 	raw, e := json.Marshal(record)
+	if len(record.RawJSON) > 0 {
+		raw = record.RawJSON
+	}
 	if e != nil {
 		return nil, e
 	}

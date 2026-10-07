@@ -22,9 +22,10 @@ type PDSHTTPError struct {
 func (e PDSHTTPError) Error() string { return e.Message }
 
 type RepoRecord struct {
-	URI   string                     `json:"uri"`
-	CID   string                     `json:"cid,omitempty"`
-	Value map[string]json.RawMessage `json:"value"`
+	RawJSON json.RawMessage            `json:"-"`
+	URI     string                     `json:"uri"`
+	CID     string                     `json:"cid,omitempty"`
+	Value   map[string]json.RawMessage `json:"value"`
 }
 type RepoPage struct {
 	Records []RepoRecord `json:"records"`
@@ -110,7 +111,8 @@ func (c *RepoClient) GetRecord(ctx context.Context, repo, collection, rkey, cid 
 		q.Set("cid", cid)
 	}
 	var record RepoRecord
-	e = c.publicJSON(ctx, base+"/xrpc/com.atproto.repo.getRecord?"+q.Encode(), 1048576, &record)
+	var raw json.RawMessage
+	e = c.publicJSON(ctx, base+"/xrpc/com.atproto.repo.getRecord?"+q.Encode(), 1048576, &raw)
 	if e != nil {
 		var pds PDSHTTPError
 		if errors.As(e, &pds) && pds.Status == 404 {
@@ -118,6 +120,10 @@ func (c *RepoClient) GetRecord(ctx context.Context, repo, collection, rkey, cid 
 		}
 		return nil, e
 	}
+	if json.Unmarshal(raw, &record) != nil {
+		return nil, PDSHTTPError{502, "", "PDS public response malformed"}
+	}
+	record.RawJSON = raw
 	if record.Value == nil {
 		return nil, nil
 	}

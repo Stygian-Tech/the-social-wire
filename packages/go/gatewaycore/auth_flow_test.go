@@ -236,3 +236,53 @@ func TestConcurrentPublicCacheJoinsFetch(t *testing.T) {
 		t.Fatal(calls)
 	}
 }
+
+func TestIssuerAuthorityMismatchNeverAttests(t *testing.T) {
+	now := time.Now()
+	token, _, key, pub := fixtureToken(t, now)
+	base := fixtureClient(t, pub, true, 200, `{"did":"did:plc:fixture","active":true}`)
+	original := base.Transport
+	sessionCalls := 0
+	base.Transport = fixtureTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "getSession") {
+			sessionCalls++
+		}
+		if strings.Contains(r.URL.Path, "oauth-protected-resource") {
+			return fixtureResponse(200, `{"authorization_servers":["https://other.valid"]}`), nil
+		}
+		return original.RoundTrip(r)
+	})
+	h := AuthMiddleware(AuthConfig{AttestationSecret: strings.Repeat("s", 32)}, base)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Fatal("untrusted issuer authenticated") }))
+	r := httptest.NewRequest("GET", "https://api.valid/feed", nil)
+	r.Header.Set("Authorization", "DPoP "+token)
+	r.Header.Set("DPoP", fixtureProof(t, key, token, "https://api.valid/feed", "issuer-mismatch", now))
+	r.Header.Set(SessionDPoPHeader, fixtureProof(t, key, token, "https://pds.valid/xrpc/com.atproto.server.getSession", "session", now))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 401 || sessionCalls != 0 {
+		t.Fatal(w.Code, sessionCalls)
+	}
+}
+func TestValidSignatureStillRequiresExactDPoPKeyAndKnownClient(t *testing.T) {
+	now := time.Now()
+	token, _, key, pub := fixtureToken(t, now)
+	wrong, _, wrongKey, _ := fixtureToken(t, now)
+	_ = wrong
+	for _, test := range []struct {
+		name     string
+		proofKey *ecdsa.PrivateKey
+		allowed  string
+	}{{"wrong-proof-key", wrongKey, "allowed"}, {"unknown-client", key, "other"}} {
+		t.Run(test.name, func(t *testing.T) {
+			h := AuthMiddleware(AuthConfig{RequireKnownClient: true, AllowedClientIDs: []string{test.allowed}}, fixtureClient(t, pub, false, 200, ""))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("bad binding admitted") }))
+			r := httptest.NewRequest("GET", "https://api.valid/feed", nil)
+			r.Header.Set("Authorization", "DPoP "+token)
+			r.Header.Set("DPoP", fixtureProof(t, test.proofKey, token, "https://api.valid/feed", test.name, now))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != 401 && w.Code != 403 {
+				t.Fatal(w.Code)
+			}
+		})
+	}
+}

@@ -23,7 +23,11 @@ func OptionalAuthMiddleware(config AuthConfig, client *http.Client) func(http.Ha
 func authError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": http.StatusText(status), "message": message})
+	name := map[int]string{400: "InvalidRequest", 401: "AuthRequired", 403: "Forbidden", 503: "ServiceUnavailable"}[status]
+	if name == "" {
+		name = "InternalServerError"
+	}
+	json.NewEncoder(w).Encode(map[string]string{"error": name, "message": message})
 }
 func newAuthMiddleware(config AuthConfig, client *http.Client, optional bool) func(http.Handler) http.Handler {
 	if client == nil {

@@ -11,7 +11,7 @@ func (s *Server) metadata(w http.ResponseWriter, r *http.Request) {
 	if origin == "" {
 		origin = strings.TrimSuffix(gatewayOrigin(r), "/")
 	}
-	clientOrigin := origin
+	clientOrigin := gatewayOrigin(r)
 	path := "/oauth-client-metadata.json"
 	redirect := origin + "/callback"
 	scope, kind, name := webScope, "web", "The Social Wire"
