@@ -21,7 +21,10 @@ func (c CacheStore) unread(ctx context.Context, viewer string, ids []string, at 
 		for _, id := range ids {
 			hit, e := socialwireredis.LookupValue[unreadValue](ctx, c.Redis, c.Projection.Namespace.Key("unread", nil, []string{viewer, id}), at)
 			if e != nil {
-				return counts, earliest, stale, e
+				if ctx.Err() != nil {
+					return counts, earliest, stale, ctx.Err()
+				}
+				continue
 			}
 			if hit.State == socialwireredis.Miss {
 				continue

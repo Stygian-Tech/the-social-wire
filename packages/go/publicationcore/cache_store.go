@@ -27,7 +27,8 @@ func (c CacheStore) Lookup(ctx context.Context, viewer string, at time.Time, inc
 	if c.Redis != nil {
 		hit, e := socialwireredis.LookupValue[string](ctx, c.Redis, c.Projection.Namespace.Key("sidebar", nil, []string{viewer}), at)
 		if e != nil {
-			return nil, e
+			// Redis is disposable acceleration; keep live projection available.
+			return nil, ctx.Err()
 		}
 		if hit.State == socialwireredis.Miss {
 			return nil, nil

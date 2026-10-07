@@ -60,7 +60,8 @@ func (c CacheStore) CachedPage(ctx context.Context, viewer, publication string, 
 		if c.Redis != nil {
 			hit, e := socialwireredis.LookupValue[string](ctx, c.Redis, c.Projection.Namespace.Key("firstpage", nil, []string{publication, owner}), at)
 			if e != nil {
-				return nil, e
+				// Redis is disposable acceleration; keep live projection available.
+				return nil, ctx.Err()
 			}
 			if hit.State == socialwireredis.Miss {
 				continue
