@@ -240,9 +240,9 @@ describe("CI workflow configuration", () => {
   it("pins the latest production-supported Node.js LTS in JavaScript jobs", () => {
     expect(workflow).toContain('NODE_VERSION: "24.19.0"');
     expect(workflow).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true");
-    expect(workflow.match(/uses: actions\/setup-node@v6/g)).toHaveLength(4);
+    expect(workflow.match(/uses: actions\/setup-node@v6/g)).toHaveLength(5);
     expect(workflow.match(/node-version: \$\{\{ env\.NODE_VERSION \}\}/g)).toHaveLength(
-      4,
+      5,
     );
   });
 
