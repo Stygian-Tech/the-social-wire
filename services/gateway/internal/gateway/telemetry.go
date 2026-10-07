@@ -1,14 +1,12 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"math"
 	"net/http"
 	"strings"
-	"time"
 	"unicode"
 )
 
@@ -61,39 +59,4 @@ func member(v string, values ...string) bool {
 		}
 	}
 	return false
-}
-func (s *Server) Heartbeat(ctx context.Context, instance, version string, started time.Time) {
-	for {
-		work, cancel := context.WithTimeout(ctx, 5*time.Second)
-		at := time.Now().UTC()
-		readiness, appview := "unknown", "missing"
-		if s.Config.AppViewURL != "" {
-			if s.probe(work, s.Config.AppViewURL) {
-				readiness, appview = "healthy", "ready"
-			} else {
-				readiness, appview = "degraded", "unavailable"
-			}
-		}
-		e := s.Evidence(at)
-		completeness := e.Completeness
-		pool := e.PoolReadiness
-		if e.ValidUntil == nil || e.ValidUntil.Before(at.Add(30*time.Second)) {
-			completeness = "unknown"
-			if e.CheckedAt != nil {
-				pool = "stale"
-			}
-		}
-		deps, _ := json.Marshal(map[string]any{"appview": appview, "projection_pool": pool, "ingestion_completeness": completeness, "observed_at": at.Format(time.RFC3339Nano), "valid_until": at.Add(30 * time.Second).Format(time.RFC3339Nano)})
-		if s.DB != nil {
-			_, _ = s.DB.ExecContext(work, `INSERT INTO operations_service_state(service,environment,instance_id,liveness,readiness,freshness,completeness,dependency_state,version,started_at,heartbeat_at)VALUES('gateway',$1,$2,'healthy',$3,'unknown',$4,$5::jsonb,$6,$7,$8)ON CONFLICT(service,environment,instance_id)DO UPDATE SET liveness=EXCLUDED.liveness,readiness=EXCLUDED.readiness,freshness=EXCLUDED.freshness,completeness=EXCLUDED.completeness,dependency_state=EXCLUDED.dependency_state,version=EXCLUDED.version,heartbeat_at=EXCLUDED.heartbeat_at`, s.Config.Environment, instance, readiness, completeness, string(deps), version, started, at)
-		}
-		cancel()
-		timer := time.NewTimer(15 * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
-	}
 }
