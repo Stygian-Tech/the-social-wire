@@ -163,6 +163,7 @@ filter_changed charybdis \
   '.github/workflows/ci.yml'
 
 filter_changed jetstream_ingest \
+  'packages/go/**' \
   'services/jetstream-ingest/**' \
   'database/migrations/**' \
   'packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/Fixtures/jetstream-v2-go-sdk-v0.2.0-events.json' \
@@ -171,6 +172,7 @@ filter_changed jetstream_ingest \
   '.github/workflows/ci.yml'
 
 filter_changed wire_ingest \
+  'packages/go/**' \
   'services/jetstream-ingest/**' \
   'database/migrations/**' \
   'railway/wire-jetstream-ingest.json' \
@@ -194,6 +196,7 @@ filter_changed wire_worker \
   '.github/workflows/ci.yml'
 
 filter_changed indexing_worker \
+  'packages/go/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
   'services/jetstream-ingest/go.mod' \
@@ -292,4 +295,15 @@ filter_changed docs \
 
 filter_changed benchmark_tools \
   'scripts/benchmarks/**' \
+  '.github/workflows/ci.yml'
+
+filter_changed go_packages \
+  'services/*/Sources/*Core/**' \
+  'packages/go/**' \
+  'packages/swift/**' \
+  'packages/read-state/**' \
+  'packages/lexicons/**' \
+  'packages/spec/**' \
+  'scripts/go/**' \
+  'database/migrations/**' \
   '.github/workflows/ci.yml'

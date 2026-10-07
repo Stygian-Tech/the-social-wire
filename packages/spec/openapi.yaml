@@ -1608,6 +1608,137 @@ components:
           type: boolean
           description: False when public PDS enrichment was incomplete; clients should expose retry.
 
+    SportsEntity:
+      type: object
+      required: [id, name, kind, competitionIDs, aliases, providerIDs, active]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        sportID: { type: string }
+        competitionIDs: { type: array, items: { type: string } }
+        aliases: { type: array, items: { type: string } }
+        providerIDs: { type: object, additionalProperties: { type: string } }
+        abbreviation: { type: string, minLength: 2, maxLength: 8, pattern: "^[A-Z0-9]{2,8}$" }
+        active: { type: boolean }
+    SportsFeedDefinition:
+      type: object
+      required: [id, title, kind, entityIDs, description]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        kind: { type: string }
+        entityIDs: { type: array, items: { type: string } }
+        description: { type: string }
+    SportsAvailability:
+      type: object
+      required: [enabled, available, eventsEnabled, feeds, entities, version]
+      properties:
+        enabled: { type: boolean }
+        available: { type: boolean }
+        eventsEnabled: { type: boolean }
+        feeds: { type: array, items: { $ref: "#/components/schemas/SportsFeedDefinition" } }
+        entities: { type: array, items: { $ref: "#/components/schemas/SportsEntity" } }
+        version: { type: string }
+    SportsAssociation:
+      type: object
+      required: [entityID, confidence, evidence, prominence, resolverVersion]
+      properties:
+        entityID: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        evidence: { type: array, items: { type: string } }
+        prominence: { type: integer }
+        resolverVersion: { type: string }
+    SportsItem:
+      type: object
+      required: [story, entities, associations, materiality, majorGlobal, sportIDs, competitionIDs]
+      properties:
+        story: { $ref: "#/components/schemas/WireItem" }
+        entities: { type: array, items: { $ref: "#/components/schemas/SportsEntity" } }
+        associations: { type: array, items: { $ref: "#/components/schemas/SportsAssociation" } }
+        sportIDs: { type: array, items: { type: string } }
+        competitionIDs: { type: array, items: { type: string } }
+        materiality: { type: string }
+        majorGlobal: { type: boolean }
+    SportsPage:
+      type: object
+      required: [feedId, generationId, generatedAt, expiresAt, language, preferenceRevision, source, eventsEnabled, degraded, items]
+      properties:
+        feedId: { type: string }
+        generationId: { type: string }
+        generatedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        language: { type: string }
+        preferenceRevision: { type: string, maxLength: 512 }
+        cursor: { type: string }
+        source: { type: string }
+        eventsEnabled: { type: boolean }
+        degraded: { type: boolean }
+        items: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/SportsItem" } }
+    SportsBracketSource:
+      type: object
+      required: [id, competitionID, season, title, url, reviewedAt, mode]
+      properties:
+        id: { type: string, maxLength: 128 }
+        competitionID: { type: string, maxLength: 128 }
+        season: { type: string, maxLength: 32 }
+        title: { type: string, maxLength: 256 }
+        url: { type: string, format: uri, maxLength: 2048 }
+        reviewedAt: { type: string, format: date-time }
+        mode: { type: string, enum: [external] }
+
+    SportsStandingZone:
+      type: object
+      required: [kind, label, sourceURL]
+      properties:
+        kind: { type: string, enum: [champion, promotion, playoff, relegation, qualification] }
+        label: { type: string, maxLength: 512 }
+        sourceURL: { type: string, maxLength: 2048 }
+    SportsStandingRow:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        entityID: { type: string }
+        name: { type: string, maxLength: 512 }
+        rank: { type: integer, minimum: 0 }
+        played: { type: integer, minimum: 0 }
+        won: { type: integer, minimum: 0 }
+        drawn: { type: integer, minimum: 0 }
+        lost: { type: integer, minimum: 0 }
+        points: { type: string, maxLength: 64 }
+        group: { type: string }
+        zone: { $ref: "#/components/schemas/SportsStandingZone" }
+    SportsStandingSnapshot:
+      type: object
+      required: [competitionID, season, sourceURL, status, degraded, rows]
+      properties:
+        competitionID: { type: string }
+        season: { type: string, maxLength: 32 }
+        sourceURL: { type: string, maxLength: 2048 }
+        status: { type: string, enum: [available, empty, unavailable] }
+        degraded: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+        rows: { type: array, maxItems: 3000, items: { $ref: "#/components/schemas/SportsStandingRow" } }
+    SportsEvent:
+      type: object
+      required: [id, competitionID, entityIDs, title, startsAt, status, updatedAt]
+      properties:
+        id: { type: string }
+        competitionID: { type: string }
+        entityIDs: { type: array, items: { type: string } }
+        title: { type: string }
+        startsAt: { type: string, format: date-time }
+        status: { type: string }
+        homeName: { type: string }
+        awayName: { type: string }
+        startTimeKnown: { type: boolean, description: False when the source supplies a date without a validated start time. }
+        homeAbbreviation: { type: string, maxLength: 16 }
+        awayAbbreviation: { type: string, maxLength: 16 }
+        homeScore: { type: string }
+        awayScore: { type: string }
+        updatedAt: { type: string, format: date-time }
+
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -4422,134 +4553,3 @@ tags:
     description: Authenticated, viewer-owned Semble read-later projections with public-PDS link enrichment
   - name: Operations
     description: Operator-DID-allowlisted observability and recovery control plane
-
-    SportsEntity:
-      type: object
-      required: [id, name, kind, competitionIDs, aliases, providerIDs, active]
-      properties:
-        id: { type: string }
-        name: { type: string }
-        kind: { type: string }
-        sportID: { type: string }
-        competitionIDs: { type: array, items: { type: string } }
-        aliases: { type: array, items: { type: string } }
-        providerIDs: { type: object, additionalProperties: { type: string } }
-        abbreviation: { type: string, minLength: 2, maxLength: 8, pattern: "^[A-Z0-9]{2,8}$" }
-        active: { type: boolean }
-    SportsFeedDefinition:
-      type: object
-      required: [id, title, kind, entityIDs, description]
-      properties:
-        id: { type: string }
-        title: { type: string }
-        kind: { type: string }
-        entityIDs: { type: array, items: { type: string } }
-        description: { type: string }
-    SportsAvailability:
-      type: object
-      required: [enabled, available, eventsEnabled, feeds, entities, version]
-      properties:
-        enabled: { type: boolean }
-        available: { type: boolean }
-        eventsEnabled: { type: boolean }
-        feeds: { type: array, items: { $ref: "#/components/schemas/SportsFeedDefinition" } }
-        entities: { type: array, items: { $ref: "#/components/schemas/SportsEntity" } }
-        version: { type: string }
-    SportsAssociation:
-      type: object
-      required: [entityID, confidence, evidence, prominence, resolverVersion]
-      properties:
-        entityID: { type: string }
-        confidence: { type: number, minimum: 0, maximum: 1 }
-        evidence: { type: array, items: { type: string } }
-        prominence: { type: integer }
-        resolverVersion: { type: string }
-    SportsItem:
-      type: object
-      required: [story, entities, associations, materiality, majorGlobal, sportIDs, competitionIDs]
-      properties:
-        story: { $ref: "#/components/schemas/WireItem" }
-        entities: { type: array, items: { $ref: "#/components/schemas/SportsEntity" } }
-        associations: { type: array, items: { $ref: "#/components/schemas/SportsAssociation" } }
-        sportIDs: { type: array, items: { type: string } }
-        competitionIDs: { type: array, items: { type: string } }
-        materiality: { type: string }
-        majorGlobal: { type: boolean }
-    SportsPage:
-      type: object
-      required: [feedId, generationId, generatedAt, expiresAt, language, preferenceRevision, source, eventsEnabled, degraded, items]
-      properties:
-        feedId: { type: string }
-        generationId: { type: string }
-        generatedAt: { type: string, format: date-time }
-        expiresAt: { type: string, format: date-time }
-        language: { type: string }
-        preferenceRevision: { type: string, maxLength: 512 }
-        cursor: { type: string }
-        source: { type: string }
-        eventsEnabled: { type: boolean }
-        degraded: { type: boolean }
-        items: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/SportsItem" } }
-    SportsBracketSource:
-      type: object
-      required: [id, competitionID, season, title, url, reviewedAt, mode]
-      properties:
-        id: { type: string, maxLength: 128 }
-        competitionID: { type: string, maxLength: 128 }
-        season: { type: string, maxLength: 32 }
-        title: { type: string, maxLength: 256 }
-        url: { type: string, format: uri, maxLength: 2048 }
-        reviewedAt: { type: string, format: date-time }
-        mode: { type: string, enum: [external] }
-
-    SportsStandingZone:
-      type: object
-      required: [kind, label, sourceURL]
-      properties:
-        kind: { type: string, enum: [champion, promotion, playoff, relegation, qualification] }
-        label: { type: string, maxLength: 512 }
-        sourceURL: { type: string, maxLength: 2048 }
-    SportsStandingRow:
-      type: object
-      required: [id, name]
-      properties:
-        id: { type: string }
-        entityID: { type: string }
-        name: { type: string, maxLength: 512 }
-        rank: { type: integer, minimum: 0 }
-        played: { type: integer, minimum: 0 }
-        won: { type: integer, minimum: 0 }
-        drawn: { type: integer, minimum: 0 }
-        lost: { type: integer, minimum: 0 }
-        points: { type: string, maxLength: 64 }
-        group: { type: string }
-        zone: { $ref: "#/components/schemas/SportsStandingZone" }
-    SportsStandingSnapshot:
-      type: object
-      required: [competitionID, season, sourceURL, status, degraded, rows]
-      properties:
-        competitionID: { type: string }
-        season: { type: string, maxLength: 32 }
-        sourceURL: { type: string, maxLength: 2048 }
-        status: { type: string, enum: [available, empty, unavailable] }
-        degraded: { type: boolean }
-        updatedAt: { type: string, format: date-time }
-        rows: { type: array, maxItems: 3000, items: { $ref: "#/components/schemas/SportsStandingRow" } }
-    SportsEvent:
-      type: object
-      required: [id, competitionID, entityIDs, title, startsAt, status, updatedAt]
-      properties:
-        id: { type: string }
-        competitionID: { type: string }
-        entityIDs: { type: array, items: { type: string } }
-        title: { type: string }
-        startsAt: { type: string, format: date-time }
-        status: { type: string }
-        homeName: { type: string }
-        awayName: { type: string }
-        startTimeKnown: { type: boolean, description: False when the source supplies a date without a validated start time. }
-        homeAbbreviation: { type: string, maxLength: 16 }
-        awayAbbreviation: { type: string, maxLength: 16 }
-        homeScore: { type: string }
-        awayScore: { type: string }
-        updatedAt: { type: string, format: date-time }
