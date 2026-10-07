@@ -157,21 +157,7 @@ filter_changed appview \
   'railway/appview.json' \
   '.github/workflows/ci.yml'
 
-filter_changed charybdis \
-  'packages/go/go.mod' \
-  'packages/go/go.sum' \
-  'database/migrations/**' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/appview-worker/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'railway/charybdis.json' \
-  '.github/workflows/ci.yml'
+
 
 filter_changed jetstream_ingest \
   'packages/go/**' \
@@ -189,24 +175,7 @@ filter_changed wire_ingest \
   'railway/wire-jetstream-ingest.json' \
   '.github/workflows/ci.yml'
 
-filter_changed wire_worker \
-  'packages/go/go.mod' \
-  'packages/go/go.sum' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/wire-worker/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'database/migrations/**' \
-  'railway/wire-worker.json' \
-  'railway/wire-inbox-drain.json' \
-  'railway/wire-fresh-inbox-drain.json' \
-  '.github/workflows/ci.yml'
+
 
 filter_changed indexing_worker \
   'packages/go/**' \
@@ -215,15 +184,6 @@ filter_changed indexing_worker \
   'services/jetstream-ingest/go.mod' \
   'services/jetstream-ingest/go.sum' \
   'services/indexing-worker/**' \
-  'services/appview-worker/**' \
-  'services/wire-worker/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
   'database/migrations/**' \
   '.railway/**' \
   '.github/workflows/ci.yml'
@@ -291,7 +251,6 @@ filter_changed spec \
   'packages/swift/WireCore/**' \
   'packages/swift/FinanceCore/**' \
   'packages/swift/SportsCore/**' \
-  'services/wire-worker/**' \
   'services/wire-corpus-edge/**' \
   'scripts/apply-database-migrations.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \

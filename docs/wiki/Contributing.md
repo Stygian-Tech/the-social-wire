@@ -21,7 +21,6 @@ Never work directly on `main`. If the checkout is already on an issue branch, ke
 | Operations UI | [apps/operations/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/operations/README.md) |
 | Gateway | `services/gateway` |
 | AppView | `services/appview` |
-| AppView worker core / compatibility executable | `services/appview-worker` |
 | Projection Pool / Coordinator | `services/indexing-worker` |
 | Operations service | `services/operations` |
 | Ingress Controller | [services/jetstream-ingest/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/services/jetstream-ingest/README.md) |

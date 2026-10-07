@@ -1,5 +1,7 @@
 # Isolated PostgreSQL replay comparison
 
+This harness and its Swift capacity fixture reproduce the archived worker revisions pinned in `postgres-replay.example.json`. Current Go runtime trials use `trial_replay_adapter.py` with the Go replay drain and consolidated Coordinator; retain the reviewed binary hashes and explicit disposable database scope for each trial.
+
 `postgres_replay.py` runs the **baseline then candidate sequentially** on one benchmark host and one dedicated PostgreSQL server. Each variant gets a newly created random database restored from the same SQL seed. Only its own database is removed after every child has stopped. No existing database, checkpoint, counter or replay budget is reset. Processes use identical pool/admission limits, source identity, archive bounds, HMAC material and reader rate; ranking cadence, generation retention, binaries and explicitly listed candidate migrations are the measured changes.
 
 This is a real recent archive pilot, not a synthetic performance fixture or proof of Production peak capacity. The example range was verified September 5, 2026: US-West `(25539389975,25541831042]`, segment `seg_00000005pf.jss`, checksum `13d9bc719f9bc318`, witnessed 00:21:24–02:14:19 UTC, 2,291,485 raw events and 238,296,854 compressed bytes. Provider planning with the repository's complete Wire collection list selected that exact segment. Raw archive events are not the same as admitted Wire rows. Refresh the range if it becomes stale; use archive metadata, never sequence arithmetic, to identify time boundaries.

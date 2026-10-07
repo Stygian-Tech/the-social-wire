@@ -19,12 +19,8 @@ new podcast resources do not use a legacy service config path.
 | Operations Web | `/railway/operations-web.json` |
 | Gateway | `/railway/gateway.json` |
 | App View | `/railway/appview.json` |
-| Charybdis | `/railway/charybdis.json` |
 | Jetstream V2 Ingest | `/railway/jetstream-ingest.json` |
 | The Wire Global Ingest | `/railway/wire-jetstream-ingest.json` |
-| The Wire Worker | `/railway/wire-worker.json` |
-| The Wire Inbox Drain | `/railway/wire-inbox-drain.json` |
-| The Wire Fresh Inbox Drain | `/railway/wire-fresh-inbox-drain.json` |
 | The Wire Corpus Edge | `/railway/wire-corpus-edge.json` |
 | Ops | `/railway/operations.json` |
 | Database Migrator | `/railway/database-migrator.json` |
@@ -115,3 +111,5 @@ scoped drain owns cleanup; rank does not claim inbox work, but its cleanup loop
 is otherwise unscoped. Before the scoped drain's first start, stop the historical
 producer and every unscoped drain and wait more than the 120-second inbox lease
 period. Do not run an unscoped or historical drain alongside it.
+
+The standalone Charybdis and Wire worker configs are retired. Projection Pool and Coordinator use the Go `services/indexing-worker` image and the `.railway/railway.ts` definition. Historical Swift rollback revisions remain in Git.

@@ -81,6 +81,9 @@ def inventory():
         )
     libraries = []
     for directory in sorted((ROOT / "services").glob("*/Sources/*Core")):
+        source_paths = sorted(directory.rglob("*.swift"))
+        if not source_paths:
+            continue
         libraries.append(
             {
                 "name": directory.name,
@@ -92,11 +95,14 @@ def inventory():
                         "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
                         "lines": len(source_path.read_text().splitlines()),
                     }
-                    for source_path in sorted(directory.rglob("*.swift"))
+                    for source_path in source_paths
                 ],
             }
         )
+    retired_path = ROOT / "packages/go/migration/retired-worker-sources.json"
+    retired = json.loads(retired_path.read_text()) if retired_path.exists() else None
     return {
+        **({"retiredWorkers": retired} if retired is not None else {}),
         "schemaVersion": 1,
         "description": "Source inventory; implementation and parity must be tracked separately.",
         "packages": packages,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Own real bounded Go archive intake and Swift drain; emit committed receipts only."""
+"""Own real bounded Go archive intake and Go drain; emit committed receipts only."""
 import hashlib
 import importlib.util
 import json
@@ -145,7 +145,7 @@ def child_environments(config, runtime, environment=os.environ):
     base = {k: environment[k] for k in ("PATH", "LANG", "RAILWAY_PROJECT_ID", "RAILWAY_ENVIRONMENT_ID",
             "RAILWAY_SERVICE_ID", "RAILWAY_DEPLOYMENT_ID") if k in environment}
     drain = base | {key: runtime[key] for key in DRAIN_KEYS if key in runtime}
-    drain.update(WIRE_WORKER_ROLE="drain", WIRE_FEED_MODE="shadow", WIRE_EXTERNAL_SIGNAL_MODE="off",
+    drain.update(WIRE_FEED_MODE="shadow", WIRE_EXTERNAL_SIGNAL_MODE="off",
                  PORT=str(value["drain_port"]), BIND_HOST="127.0.0.1")
     ingest = base | {key: runtime[key] for key in ("DATABASE_URL", "APP_ENV", "JETSTREAM_API_KEY")}
     ingest.update({"JETSTREAM_PIPELINE_MODE": "wire-global-v1", "JETSTREAM_HOST": ARCHIVE.removeprefix("https://"),

@@ -14,9 +14,8 @@ Automated and manual verification for every package in the monorepo.
 | GatewayCore | `cd packages/swift/GatewayCore && swift test` | `gateway` |
 | Gateway | `cd services/gateway && swift test` | `gateway` |
 | AppView | `cd services/appview && swift test` | `appview` |
-| Charybdis | `cd services/appview-worker && swift test` | `charybdis` |
-| Replicated indexing roles | `cd services/indexing-worker && swift test` | `indexing-worker` |
-| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `charybdis` |
+| Replicated indexing roles | `cd services/indexing-worker && go test -race ./...` | `indexing-worker` |
+| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `appview` |
 | OperationsCore | `cd packages/swift/OperationsCore && swift test` | `operations` |
 | Operations service | `cd services/operations && swift test` | `operations` |
 | Jetstream V2 Ingest | `(cd services/jetstream-ingest && go test ./... && go vet ./...)` | `jetstream-ingest` |

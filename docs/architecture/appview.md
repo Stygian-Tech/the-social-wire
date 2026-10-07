@@ -27,7 +27,7 @@ The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of 
 | **Ingress Controller** (`services/jetstream-ingest`) | Independently supervised AppView and Wire Jetstream lanes with fenced intake ownership |
 | **Projection Pool** (`services/indexing-worker`, `projection`) | Horizontally scaled AppView durable-inbox projection plus Wire inbox drain |
 | **Coordinator** (`services/indexing-worker`, `coordinator`) | Fenced singleton AppView RSS/backfill/retention/recovery plus Wire materialization/cleanup |
-| **Charybdis compatibility executable** (`services/appview-worker`) | Reusable AppView worker core and rollback entry point during the consolidation window |
+| **Go AppView worker** (`packages/go/appviewworkercore`) | Durable projection and Coordinator jobs through `services/indexing-worker` |
 | **`packages/swift/ThinAppViewCore`** | Shared indexing, storage, worker runtime |
 
 Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path only). Clients always call the gateway host.

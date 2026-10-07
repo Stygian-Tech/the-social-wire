@@ -221,14 +221,6 @@ const indexingBuild = {
     "/services/jetstream-ingest/go.sum",
     // Runtime packages and schema-gate module metadata both affect the image.
     "/packages/go/**",
-    "/services/appview-worker/**",
-    "/services/wire-worker/**",
-    "/packages/swift/ThinAppViewCore/**",
-    "/packages/swift/OperationsCore/**",
-    "/packages/swift/SocialWireRedis/**",
-    "/packages/swift/WireCore/**",
-    "/packages/swift/FinanceCore/**",
-    "/packages/swift/SportsCore/**",
     "/database/migrations/**",
   ],
 };

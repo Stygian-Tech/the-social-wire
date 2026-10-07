@@ -1,7 +1,8 @@
 # Go migration: ingestion and ranking
 
-Status: draft for scope review. Prepared October 5, 2026. Package scope updated
-to require repository-local Go counterparts for all shared packages.
+Status: background Go runtime implemented; worker source retirement follows exact Development acceptance. Original plan prepared October 5, 2026. Production promotion remains separate.
+
+Current runtime: `services/indexing-worker` composes `packages/go/appviewworkercore` and `wireworkercore`, with role fencing and independent lane supervision. Superseded worker-only Swift source and jobs are retired; shared Swift serving packages and domain parity oracles remain. The scope table and estimates below preserve the original migration plan. Rollback restores a previously accepted Git revision, not deleted compatibility targets.
 
 Repository baseline: `f30f99f194c5410dae255f84e76177c053758546`.
 This plan reflects inspected source and existing Linear work; live Railway

@@ -1,0 +1,29 @@
+meta {
+  name: Post AppView Enroll Backfill
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.enrollSources
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "authorDids": [
+      "{{authorDid}}"
+    ]
+  }
+}
+
+docs {
+  Run after starting Charybdis to backfill recent entries for followed authors before relying on live Jetstream ingestion.
+}
