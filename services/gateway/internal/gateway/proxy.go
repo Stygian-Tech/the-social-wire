@@ -52,6 +52,9 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	}
 	method := route.UpstreamMethod
 	timeout := 60 * time.Second
+	if route.Service == "wire" || route.Service == "circle" {
+		timeout = 30 * time.Second
+	}
 	if strings.HasSuffix(path, "appview.getFeed") {
 		timeout = 3 * time.Second
 	}
@@ -149,7 +152,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 		return
 	}
 	defer reply.Body.Close()
-	for _, h := range []string{"Content-Type", "ETag", "Cache-Control", "DPoP-Nonce", "X-Request-ID", "traceparent", "Server-Timing", "X-AppView-Feed-Source", "X-AppView-Membership-Updated-At", "Content-Range", "Accept-Ranges", "X-Content-Type-Options", "Retry-After"} {
+	for _, h := range []string{"Content-Type", "ETag", "Cache-Control", "DPoP-Nonce", "X-Request-ID", "traceparent", "Server-Timing", "X-AppView-Feed-Source", "X-AppView-Membership-Updated-At", "Content-Range", "Accept-Ranges", "X-Content-Type-Options", "Retry-After", "X-Wire-Generation", "X-Wire-Source"} {
 		if v := reply.Header.Get(h); v != "" {
 			w.Header().Set(h, v)
 		}
@@ -157,6 +160,16 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	streaming := media || strings.Contains(path, "events/stream") || strings.Contains(path, "bootstrap-stream") || (strings.HasSuffix(path, "getReadAgeOptions") && strings.Contains(r.Header.Get("Accept"), "application/x-ndjson"))
 	if media || path == "/v1/podcasts/search" {
 		w.Header().Set("Cache-Control", "private, no-store")
+	}
+	if route.Service == "wire" || route.Service == "circle" {
+		w.Header().Set("Vary", "Authorization, Accept-Language")
+		if strings.Contains(path, "Finance") || strings.Contains(path, "Sports") {
+			w.Header().Set("Cache-Control", "private, no-store")
+		} else if authenticated || method == "POST" {
+			w.Header().Set("Cache-Control", "private, max-age=0")
+		} else if w.Header().Get("Cache-Control") == "" {
+			w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+		}
 	}
 	if streaming {
 		w.WriteHeader(reply.StatusCode)
@@ -179,8 +192,12 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 			}
 		}
 	}
-	b, e := io.ReadAll(io.LimitReader(reply.Body, (8<<20)+1))
-	if e != nil || len(b) > 8<<20 {
+	maximum := 8 << 20
+	if strings.HasSuffix(path, "discovery.getSportsCatalog") || strings.HasSuffix(path, "discovery.getFeedCatalog") {
+		maximum = 32 << 20
+	}
+	b, e := io.ReadAll(io.LimitReader(reply.Body, int64(maximum)+1))
+	if e != nil || len(b) > maximum {
 		writeError(w, 502, "Invalid upstream response")
 		return
 	}

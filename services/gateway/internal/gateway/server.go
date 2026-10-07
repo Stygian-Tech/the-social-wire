@@ -17,6 +17,8 @@ type Server struct {
 	HTTP, Public *http.Client
 	mu           sync.RWMutex
 	evidence     Evidence
+	Preferences  *Preferences
+	Limiter      *RequestLimiter
 }
 type Evidence struct {
 	Service       string     `json:"service"`
@@ -38,6 +40,9 @@ func (s *Server) Handler() http.Handler {
 	auth := gatewaycore.AuthMiddleware(s.Config.Auth, s.Public)
 	optional := gatewaycore.OptionalAuthMiddleware(s.Config.Auth, s.Public)
 	proxy := &Proxy{s.Config, s.HTTP, s.Public}
+	if s.Limiter == nil {
+		s.Limiter = &RequestLimiter{}
+	}
 	for _, route := range Routes {
 		if route.Service == "circle" && !s.Config.Serves("circle") {
 			continue
@@ -46,6 +51,9 @@ func (s *Server) Handler() http.Handler {
 			continue
 		}
 		h := proxy.Handler(route)
+		if route.Service == "wire" || route.Service == "circle" {
+			h = s.Limiter.Middleware(h)
+		}
 		if route.Optional {
 			h = optional(h)
 		} else if !route.Public {
@@ -67,6 +75,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /freshness", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.Evidence(time.Now())) })
 	for _, path := range []string{"/oauth-client-metadata.json", "/oauth/client-metadata.json", "/ios-client-metadata.json", "/operations-oauth-client-metadata.json"} {
 		mux.HandleFunc("GET "+path, s.metadata)
+	}
+	if s.Preferences != nil {
+		s.Preferences.Register(mux, auth)
 	}
 	return s.cors(mux)
 }

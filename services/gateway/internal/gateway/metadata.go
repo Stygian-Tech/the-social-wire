@@ -69,8 +69,8 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			w.Header().Add("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin, If-None-Match, DPoP, X-Request-ID, traceparent, Idempotency-Key, Last-Event-ID, X-ATProto-Upstream-DPoP, X-ATProto-Session-DPoP, X-ATProto-Session-Receipt, X-ATProto-Session-Receipt-Required, X-ATProto-Upstream-DPoP-Prepared, X-Latr-Gateway-DPoP, X-Wire-Moderation-DPoP, X-Circle-Graph-DPoP")
-			w.Header().Set("Access-Control-Expose-Headers", "X-ATProto-Session-DPoP-Nonce, X-ATProto-Session-Receipt, X-ATProto-Session-Receipt-Required, X-ATProto-Upstream-DPoP-Prepared")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Origin, If-None-Match, DPoP, X-Request-ID, traceparent, Idempotency-Key, Last-Event-ID, X-ATProto-Upstream-DPoP, X-ATProto-Session-DPoP, X-ATProto-Session-Attestation-Receipt, X-ATProto-Session-Attestation-Required, X-ATProto-Upstream-DPoP-Prepared, X-Latr-Gateway-DPoP, X-Wire-Moderation-DPoP, X-Circle-Graph-DPoP")
+			w.Header().Set("Access-Control-Expose-Headers", "X-ATProto-Session-DPoP-Nonce, X-ATProto-Session-Attestation-Receipt, X-ATProto-Session-Attestation-Required, X-ATProto-Upstream-DPoP-Prepared")
 			w.Header().Set("Access-Control-Max-Age", "3600")
 		}
 		if r.Method == "OPTIONS" {
