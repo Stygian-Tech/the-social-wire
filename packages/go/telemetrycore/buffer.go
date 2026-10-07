@@ -9,13 +9,23 @@ import (
 )
 
 type SpanSample struct {
+	// ParentSpanIDValue preserves an explicitly present empty value; legacy string callers remain supported.
+	ParentSpanIDValue                                             *string
 	ID, Environment, TraceID, ParentSpanID, Service, Name, Status string
 	StartedAt, ExpiresAt                                          time.Time
 	DurationMS                                                    float64
 	Attributes                                                    map[string]string
 }
 
+type EventSample struct {
+	ID, Environment, Service, InstanceID, Name string
+	OccurredAt                                 time.Time
+	RequestID, TraceID                         *string
+	Attributes                                 map[string]string
+}
+
 type MetricSample struct {
+	Event      *EventSample
 	Span       *SpanSample
 	Name       string
 	Value      float64
@@ -90,11 +100,31 @@ func (t *TelemetryBuffer) Enqueue(sample MetricSample) bool {
 	sample.Dimensions = dimensions
 	if sample.Span != nil {
 		copy := *sample.Span
+		if copy.ParentSpanIDValue != nil {
+			value := *copy.ParentSpanIDValue
+			copy.ParentSpanIDValue = &value
+		}
 		copy.Attributes = map[string]string{}
 		for k, v := range sample.Span.Attributes {
 			copy.Attributes[k] = v
 		}
 		sample.Span = &copy
+	}
+	if sample.Event != nil {
+		copy := *sample.Event
+		copy.Attributes = map[string]string{}
+		for k, v := range sample.Event.Attributes {
+			copy.Attributes[k] = v
+		}
+		if copy.RequestID != nil {
+			v := *copy.RequestID
+			copy.RequestID = &v
+		}
+		if copy.TraceID != nil {
+			v := *copy.TraceID
+			copy.TraceID = &v
+		}
+		sample.Event = &copy
 	}
 	t.queue = append(t.queue, telemetryQueued{sample: sample, enqueued: t.clock()})
 	return true

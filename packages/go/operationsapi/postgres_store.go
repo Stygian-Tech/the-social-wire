@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"strconv"
 	"time"
 )
@@ -22,6 +23,9 @@ type PostgresStore struct {
 	DB                Database
 	Environment       string
 	FingerprintSecret string
+	TelemetryExporter interface {
+		Export(context.Context, []telemetrycore.MetricSample) error
+	}
 }
 
 func NewPostgresStore(db Database, environment string) (*PostgresStore, error) {

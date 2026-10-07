@@ -31,7 +31,19 @@ func (h *PostgresExporter) Export(ctx context.Context, samples []MetricSample) e
 	defer cancel()
 	grouped := map[string]*metricRollup{}
 	spans := []SpanSample{}
+	events := []EventSample{}
 	for _, sample := range samples {
+		if sample.Event != nil {
+			if sample.Span != nil || sample.Event.Environment != h.Environment {
+				return errors.New("invalid telemetry event")
+			}
+			events = append(events, *sample.Event)
+			continue
+		}
+		if env, ok := sample.Dimensions["environment"]; ok && env != h.Environment {
+			return errors.New("telemetry environment mismatch")
+		}
+
 		if sample.Span != nil {
 			span := *sample.Span
 			if span.Environment != h.Environment || math.IsNaN(span.DurationMS) || math.IsInf(span.DurationMS, 0) {
@@ -96,6 +108,12 @@ func (h *PostgresExporter) Export(ctx context.Context, samples []MetricSample) e
 		order = append(order, key)
 	}
 	sort.Strings(order)
+	// Pre-encode bindings before acquiring locks. Every exporter uses identities first,
+	// then shared rollup keys, with one stable order across 250-row chunks.
+	queries, err := prepareTelemetryQueries(h.Environment, events, spans, grouped, order)
+	if err != nil {
+		return err
+	}
 	tx, err := h.DB.BeginTx(budget, nil)
 	if err != nil {
 		return err
@@ -113,33 +131,9 @@ func (h *PostgresExporter) Export(ctx context.Context, samples []MetricSample) e
 	if _, err := tx.ExecContext(budget, "SET LOCAL statement_timeout='2s'"); err != nil {
 		return rollbackError(err)
 	}
-	for _, key := range order {
-		value := grouped[key]
-		if _, err := tx.ExecContext(budget, `INSERT INTO operations_metric_rollups(environment,bucket_start,metric_name,dimensions_hash,dimensions,sample_count,value_sum,value_min,value_max,histogram_buckets,expires_at)VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,'{}',$10)ON CONFLICT(environment,bucket_start,metric_name,dimensions_hash)DO UPDATE SET sample_count=operations_metric_rollups.sample_count+EXCLUDED.sample_count,value_sum=operations_metric_rollups.value_sum+EXCLUDED.value_sum,value_min=LEAST(operations_metric_rollups.value_min,EXCLUDED.value_min),value_max=GREATEST(operations_metric_rollups.value_max,EXCLUDED.value_max)`, h.Environment, value.bucket, value.name, value.hash, value.payload, value.count, value.sum, value.min, value.max, value.bucket.Add(90*24*time.Hour)); err != nil {
+	for _, query := range queries {
+		if _, err := tx.ExecContext(budget, query.sql, query.args...); err != nil {
 			return rollbackError(err)
-		}
-	}
-	for _, span := range spans {
-		attrs := map[string]string{}
-		for k, v := range span.Attributes {
-			lower := strings.ToLower(k)
-			safe := true
-			for _, token := range []string{"authorization", "dpop", "cookie", "token", "secret", "password", "record", "body"} {
-				if strings.Contains(lower, token) {
-					safe = false
-				}
-			}
-			if safe {
-				runes := []rune(v)
-				attrs[k] = string(runes[:min(256, len(runes))])
-			}
-		}
-		raw, e := json.Marshal(attrs)
-		if e != nil {
-			return rollbackError(e)
-		}
-		if _, e = tx.ExecContext(budget, `INSERT INTO operations_trace_spans(id,environment,trace_id,parent_span_id,service,name,started_at,duration_ms,status,attributes,expires_at)VALUES($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,$9,$10::jsonb,$11)ON CONFLICT(environment,id)DO NOTHING`, span.ID, span.Environment, span.TraceID, span.ParentSpanID, span.Service, span.Name, span.StartedAt, span.DurationMS, span.Status, string(raw), span.ExpiresAt); e != nil {
-			return rollbackError(e)
 		}
 	}
 	// A lost COMMIT reply is ambiguous. Never classify it as replayable contention.
