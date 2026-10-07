@@ -46,6 +46,11 @@ func (a *PDSAttestor) Attest(ctx context.Context, token, authorization, sessionP
 		return AttestationOutcome{}, ErrAuthentication
 	}
 	ch := a.group.DoChan(key, func() (any, error) {
+		lifetime, finish, open := a.Verifier.Lifetime.begin()
+		if !open {
+			return nil, ErrAuthDependency
+		}
+		defer finish()
 		a.mu.Lock()
 		if a.inFlight >= 64 {
 			a.mu.Unlock()
@@ -54,7 +59,7 @@ func (a *PDSAttestor) Attest(ctx context.Context, token, authorization, sessionP
 		a.inFlight++
 		a.mu.Unlock()
 		defer func() { a.mu.Lock(); a.inFlight--; a.mu.Unlock() }()
-		work, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		work, cancel := context.WithTimeout(lifetime, 30*time.Second)
 		defer cancel()
 		authority, e := a.Verifier.resolveAuthorityMode(work, candidate.DID, true)
 		if e != nil {

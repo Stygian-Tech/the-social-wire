@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"io"
@@ -96,26 +98,40 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 		status, code = "not_ready", 503
 	}
 	e := s.Evidence(time.Now())
-	writeJSON(w, code, map[string]any{"status": status, "service": "gateway", "dependencyState": map[string]any{"projection_pool": e.PoolReadiness, "ingestion_completeness": e.Completeness, "observed_at": e.CheckedAt, "valid_until": e.ValidUntil}})
+	state := map[string]string{"status": status, "service": "gateway", "projection_pool": e.PoolReadiness, "ingestion_completeness": e.Completeness}
+	if e.CheckedAt != nil {
+		state["ingestion_observed_at"] = e.CheckedAt.UTC().Format(time.RFC3339)
+	}
+	if e.ValidUntil != nil {
+		state["ingestion_valid_until"] = e.ValidUntil.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, code, state)
 }
 func (s *Server) probe(ctx context.Context, base string) bool {
+	status, err := s.probeStatus(ctx, base)
+	return err == nil && status >= 200 && status < 300
+}
+func (s *Server) probeStatus(ctx context.Context, base string) (int, error) {
 	if base == "" {
-		return false
+		return 0, errors.New("dependency is not configured")
 	}
-	r, e := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(base, "/")+"/readyz", nil)
-	if e != nil {
-		return false
+	r, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(base, "/")+"/readyz", nil)
+	if err != nil {
+		return 0, err
 	}
-	resp, e := s.HTTP.Do(r)
-	if e != nil {
-		return false
+	resp, err := s.HTTP.Do(r)
+	if err != nil {
+		return 0, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4097))
-	if err != nil || len(body) > 4096 {
-		return false
+	if err != nil {
+		return 0, err
 	}
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
+	if len(body) > 4096 {
+		return 0, errors.New("dependency response exceeds bound")
+	}
+	return resp.StatusCode, nil
 }
 func (s *Server) Evidence(now time.Time) Evidence {
 	s.mu.RLock()
@@ -124,7 +140,7 @@ func (s *Server) Evidence(now time.Time) Evidence {
 	if e.Service == "" {
 		e = Evidence{Service: "gateway", PoolReadiness: "not_configured", Freshness: "unknown", Completeness: "unknown"}
 	}
-	if e.ValidUntil != nil && !now.Before(*e.ValidUntil) {
+	if e.ValidUntil != nil && (!now.Before(*e.ValidUntil) || (e.CheckedAt != nil && e.CheckedAt.After(now))) {
 		e.PoolReadiness = "stale"
 		e.Completeness = "unknown"
 	}
@@ -134,18 +150,26 @@ func (s *Server) Collect(ctx context.Context) {
 	for {
 		e := Evidence{Service: "gateway", PoolReadiness: "not_configured", Freshness: "unknown", Completeness: "unknown"}
 		if s.Config.ProjectionURL != "" {
-			now := time.Now().UTC()
-			valid := now.Add(45 * time.Second)
-			e.CheckedAt, e.ValidUntil = &now, &valid
 			work, cancel := context.WithTimeout(ctx, 3*time.Second)
-			if s.probe(work, s.Config.ProjectionURL) {
-				e.PoolReadiness = "ready"
-			} else {
+			status, err := s.probeStatus(work, s.Config.ProjectionURL)
+			cancel()
+			if ctx.Err() != nil {
+				return
+			}
+			observed := time.Now().UTC()
+			valid := observed.Add(45 * time.Second)
+			e.CheckedAt, e.ValidUntil = &observed, &valid
+			if err != nil {
 				e.PoolReadiness = "unavailable"
 				e.Completeness = "degraded"
+			} else if status >= 200 && status < 300 {
+				e.PoolReadiness = "ready"
+			} else {
+				e.PoolReadiness = fmt.Sprintf("failed_http_%d", status)
+				e.Completeness = "degraded"
 			}
-			cancel()
 		}
+
 		s.mu.Lock()
 		s.evidence = e
 		s.mu.Unlock()

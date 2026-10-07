@@ -67,6 +67,7 @@ type authority struct {
 	Issuers, AuthorizationServers []string
 }
 type TokenVerifier struct {
+	Lifetime                 *AuthLifetime
 	Client                   *http.Client
 	PLCURL, SupplementalJWKS string
 	mu                       sync.Mutex
@@ -134,6 +135,11 @@ func (v *TokenVerifier) cachedFetch(ctx context.Context, target string, maximum 
 		v.mu.Unlock()
 	}()
 	ch := v.group.DoChan(target, func() (any, error) {
+		lifetime, finish, open := v.Lifetime.begin()
+		if !open {
+			return nil, ErrAuthDependency
+		}
+		defer finish()
 		v.mu.Lock()
 		current, found := v.cache[target]
 		if found && current.expires.After(time.Now()) && (!refresh || !current.expires.Equal(old.expires)) {
@@ -147,7 +153,7 @@ func (v *TokenVerifier) cachedFetch(ctx context.Context, target string, maximum 
 		v.inFlight++
 		v.mu.Unlock()
 		defer func() { v.mu.Lock(); v.inFlight--; v.mu.Unlock() }()
-		load, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		load, cancel := context.WithTimeout(lifetime, 10*time.Second)
 		defer cancel()
 		data, status, e := v.fetch(load, target, maximum)
 		if e != nil {

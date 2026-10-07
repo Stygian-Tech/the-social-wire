@@ -43,7 +43,7 @@ func ParseConfig(env map[string]string) (Config, error) {
 		return c, fmt.Errorf("invalid PDS cache backend")
 	}
 	for _, name := range []string{"WIRE", "CIRCLE", "FINANCE", "SPORTS"} {
-		v := get(name+"_FEED_MODE", "off")
+		v := strings.ToLower(get(name+"_FEED_MODE", "off"))
 		switch v {
 		case "off", "shadow", "api", "visible":
 		default:

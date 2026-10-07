@@ -52,8 +52,14 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	}
 	method := route.UpstreamMethod
 	timeout := 60 * time.Second
-	if route.Service == "wire" || route.Service == "circle" {
+	if route.Service == "wire" {
 		timeout = 30 * time.Second
+	}
+	if route.Service == "circle" {
+		timeout = 35 * time.Second
+	}
+	if path == "/v1/operations/events/stream" {
+		timeout = 300 * time.Second
 	}
 	if strings.HasSuffix(path, "appview.getFeed") {
 		timeout = 3 * time.Second
@@ -69,6 +75,12 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 		limit := int64(4 << 20)
 		if route.Service == "wire" {
 			limit = 4096
+		}
+		if route.Service == "circle" {
+			limit = 64 << 10
+		}
+		if route.Service == "operations" {
+			limit = 2 << 20
 		}
 		b, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
 		if err != nil || int64(len(b)) > limit {
@@ -87,11 +99,24 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 		return
 	}
 	out.Header.Set("Accept", "application/json")
-	if route.Streaming && (!strings.HasSuffix(path, "getReadAgeOptions") || strings.Contains(r.Header.Get("Accept"), "application/x-ndjson")) {
+	if route.Streaming && !media && (!strings.HasSuffix(path, "getReadAgeOptions") || strings.Contains(r.Header.Get("Accept"), "application/x-ndjson")) {
 		out.Header.Set("Accept", "application/x-ndjson")
+	}
+	if media {
+		out.Header.Del("Accept")
+	}
+	if path == "/v1/operations/events/stream" {
+		out.Header.Set("Accept", "text/event-stream")
 	}
 	if body != nil {
 		out.Header.Set("Content-Type", "application/json")
+	}
+	if route.Service == "latr" {
+		for _, h := range []string{"Accept", "Content-Type"} {
+			if value := strings.TrimSpace(r.Header.Get(h)); value != "" {
+				out.Header.Set(h, value)
+			}
+		}
 	}
 	if authenticated {
 		out.Header.Set("Authorization", auth.Authorization)
@@ -152,10 +177,18 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 		return
 	}
 	defer reply.Body.Close()
-	for _, h := range []string{"Content-Type", "ETag", "Cache-Control", "DPoP-Nonce", "X-Request-ID", "traceparent", "Server-Timing", "X-AppView-Feed-Source", "X-AppView-Membership-Updated-At", "Content-Range", "Accept-Ranges", "X-Content-Type-Options", "Retry-After", "X-Wire-Generation", "X-Wire-Source"} {
+	for _, h := range []string{"Content-Type", "ETag", "Cache-Control", "DPoP-Nonce", "X-Request-ID", "traceparent", "Server-Timing", "X-AppView-Feed-Source", "X-AppView-Membership-Updated-At", "Content-Range", "Accept-Ranges", "X-Content-Type-Options", "Retry-After", "X-Wire-Generation", "X-Wire-Source", "Last-Modified", "Location", "X-Accel-Buffering"} {
 		if v := reply.Header.Get(h); v != "" {
 			w.Header().Set(h, v)
 		}
+	}
+	if media {
+		if value := reply.Header.Get("Content-Length"); value != "" {
+			w.Header().Set("Content-Length", value)
+		}
+	}
+	if path == "/v1/operations/events/stream" {
+		w.Header().Set("Cache-Control", "no-cache")
 	}
 	streaming := media || strings.Contains(path, "events/stream") || strings.Contains(path, "bootstrap-stream") || (strings.HasSuffix(path, "getReadAgeOptions") && strings.Contains(r.Header.Get("Accept"), "application/x-ndjson"))
 	if media || path == "/v1/podcasts/search" {
@@ -163,7 +196,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	}
 	if route.Service == "wire" || route.Service == "circle" {
 		w.Header().Set("Vary", "Authorization, Accept-Language")
-		if strings.Contains(path, "Finance") || strings.Contains(path, "Sports") {
+		if route.Service == "circle" || strings.Contains(path, "Finance") || strings.Contains(path, "Sports") {
 			w.Header().Set("Cache-Control", "private, no-store")
 		} else if authenticated || method == "POST" {
 			w.Header().Set("Cache-Control", "private, max-age=0")

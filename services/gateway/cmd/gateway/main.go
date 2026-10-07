@@ -36,23 +36,8 @@ func run() error {
 			env[k] = v
 		}
 	}
-	// Preserve the existing serve invocation while environment remains authoritative by default.
-	for i := 1; i < len(os.Args); i++ {
-		switch os.Args[i] {
-		case "serve":
-		case "--port":
-			if i+1 < len(os.Args) {
-				i++
-				env["PORT"] = os.Args[i]
-			}
-		case "--hostname":
-			if i+1 < len(os.Args) {
-				i++
-				env["BIND_HOST"] = os.Args[i]
-			}
-		default:
-			return errors.New("unknown Gateway argument")
-		}
+	if err := parseArguments(env, os.Args[1:]); err != nil {
+		return err
 	}
 	config, e := gateway.ParseConfig(env)
 	if e != nil {
@@ -78,6 +63,8 @@ func run() error {
 	db.SetConnMaxIdleTime(30 * time.Second)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	authLifetime := gatewaycore.NewAuthLifetime(ctx)
+	config.Auth.Lifetime = authLifetime
 	check, cancel := context.WithTimeout(ctx, 5*time.Second)
 	e = db.PingContext(check)
 	cancel()
@@ -147,6 +134,9 @@ func run() error {
 	go func() { workers.Wait(); preferences.Wait(); close(joined) }()
 	select {
 	case <-joined:
+		if err := authLifetime.Close(shutdown); err != nil {
+			return errors.New("authentication shutdown did not join shared work")
+		}
 	case <-shutdown.Done():
 		slog.Error("Gateway shutdown did not join owned workers")
 		os.Exit(1)

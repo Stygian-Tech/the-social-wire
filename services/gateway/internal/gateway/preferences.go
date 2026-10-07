@@ -106,7 +106,7 @@ func (p *Preferences) serve(w http.ResponseWriter, r *http.Request, a gatewaycor
 	}
 	if v == nil {
 		if prefs {
-			writeJSON(w, 200, map[string]any{"etag": nil, "cid": nil, "revision": nil, "cachedAt": time.Now().UTC().Format(time.RFC3339Nano), "record": nil})
+			writeJSON(w, 200, map[string]any{"etag": nil, "cid": nil, "revision": nil, "cachedAt": time.Now().UTC().Format(time.RFC3339), "record": nil})
 		} else {
 			writeError(w, 500, "PDS record not found")
 		}
@@ -210,7 +210,7 @@ func (p *Preferences) respond(w http.ResponseWriter, r *http.Request, v *RecordS
 		p.fail(w, e)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"etag": v.CID, "cid": v.CID, "revision": v.CID, "cachedAt": time.UnixMilli(int64(v.CachedAt)).UTC().Format(time.RFC3339Nano), "record": record})
+	writeJSON(w, 200, map[string]any{"etag": v.CID, "cid": v.CID, "revision": v.CID, "cachedAt": time.UnixMilli(int64(v.CachedAt)).UTC().Format(time.RFC3339), "record": record})
 }
 func (p *Preferences) fail(w http.ResponseWriter, e error) {
 	var upstream gatewaycore.PDSHTTPError
