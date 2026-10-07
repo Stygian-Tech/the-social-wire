@@ -255,7 +255,6 @@ describe("CI path detection", () => {
   });
 
   for (const path of ["scripts/ci-prepare-postgres.sh",
-    "scripts/ci/validated-merge.mjs",
     ".github/workflows/validated-merge.yml", ".github/actions/prepare-postgres/action.yml"]) {
     it(`runs the full matrix when shared PostgreSQL preparation changes: ${path}`, () => {
       const output = detect(repositoryWithChange(path), "pull_request");
@@ -263,6 +262,14 @@ describe("CI path detection", () => {
       expect([...output.values()].every(value => value === "true")).toBe(true);
     });
   }
+
+  it.each(["scripts/ci/validated-merge.mjs", "scripts/ci/validated-merge.test.mjs"])("checks only verifier contracts for helper-only changes: %s", path => {
+    const output = detect(repositoryWithChange(path), "pull_request");
+    expect(output.get("spec")).toBe("true");
+    for (const [job, enabled] of output) {
+      if (job !== "spec") expect(enabled, job).toBe("false");
+    }
+  });
 
   it("runs the full matrix when the detector changes", () => {
     const result = detect(
