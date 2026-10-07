@@ -4,7 +4,7 @@ Repository-local import: `github.com/stygian-tech/the-social-wire/packages/go/wi
 
 ## Responsibilities
 
-This is a library, not a runnable Coordinator. Build a GenerationStore against canonical migrations, pass live authority for activation, and provide RefreshLabels before enabling cycles. Mode defaults off; shadow commits are inspectable but cannot change the active pointer. Each generation/edition commit is atomic, while separate languages/plans in a cycle are independent commits: an error later in the cycle does not roll back earlier successful generations. Publication takes a feed/language row lock, builds both editions, and checks the role fence before pointer changes. RankingScheduler is local cadence/readiness only, not distributed leadership.
+`Host` composes the runtime lanes used by `services/indexing-worker`. Build against canonical migrations and supply live coordinator authority for activation. Mode defaults off; shadow commits are inspectable but cannot change the active pointer. Each generation/edition commit is atomic, while separate languages/plans in a cycle are independent commits: an error later in the cycle does not roll back earlier successful generations. Publication takes a feed/language row lock, builds both editions, and checks the role fence before pointer changes. RankingScheduler is local cadence/readiness only, not distributed leadership.
 
 ## Source map
 
@@ -40,10 +40,4 @@ PostgreSQL integration cases skip locally unless their dedicated disposable-data
 
 Status: **partial**. `migration/status.json` is the machine-readable completion record.
 
-Remaining work:
-
-- inbox application and drain
-- baseline label refresh transport
-- metadata, profile, graph and recovery jobs
-- Finance/Sports projectors and materializers
-- worker host and runtime configuration
+The inbox, labels, enrichment, graph, recovery and host lanes are implemented. Exact-head CI and Development acceptance remain required before activating the Go services.
