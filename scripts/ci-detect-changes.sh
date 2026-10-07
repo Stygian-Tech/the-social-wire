@@ -33,7 +33,6 @@ esac
 if [ "$MATCH_ALL" = "0" ] && ! git diff --quiet "$BASE" "$HEAD" -- \
   '.github/workflows/ci.yml' \
   '.github/workflows/validated-merge.yml' \
-  'scripts/ci' \
   'scripts/ci-detect-changes.sh' \
   'scripts/ci-prepare-postgres.sh' \
   '.github/actions/prepare-postgres'; then
@@ -176,6 +175,7 @@ filter_changed lexicons \
   '.github/workflows/ci.yml'
 
 filter_changed spec \
+  'scripts/ci/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
   'services/*/Dockerfile' \

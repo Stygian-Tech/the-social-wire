@@ -11368,7 +11368,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "4754075843bef61c1c966501922c3f1da22a4c7c095845cda48c8e8690ce324f"
+          "sha256": "b4a5fac6e3b52ccb4fb027ac3dc5982dfedf5480369fb53d541f46f06140acfb"
         },
         {
           "path": "packages/spec/__tests__/ci-postgres-preparation.test.ts",
