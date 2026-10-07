@@ -104,16 +104,16 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 		return nil, response.StatusCode, ErrUnavailable
 	}
 	if response.StatusCode == 410 {
-		return nil, 410, ErrCursorExpired
+		return nil, 410, RemoteStatusError{410}
 	}
 	if response.StatusCode == 404 {
 		return data, 404, nil
 	}
 	if response.StatusCode != 200 {
-		return nil, response.StatusCode, ErrUnavailable
+		return nil, response.StatusCode, RemoteStatusError{response.StatusCode}
 	}
 	if contract && response.Header.Get("X-Wire-Corpus-Contract") != "3" {
-		return nil, 200, ErrContractMismatch
+		return nil, 200, RemoteVersionError{}
 	}
 	return data, 200, nil
 }
@@ -124,7 +124,7 @@ func remoteDecode[T any](ctx context.Context, s *RemoteStore, method, target str
 		return result, err
 	}
 	if status != 200 {
-		return result, ErrUnavailable
+		return result, RemoteStatusError{status}
 	}
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) || decodeContract(data, &result) != nil {
 		return result, ErrContractMismatch

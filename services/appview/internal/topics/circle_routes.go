@@ -45,7 +45,12 @@ func (r Routes) circleEdition(w http.ResponseWriter, req *http.Request) {
 	if !ok {
 		return
 	}
-	edition, err := r.Circle.Edition(req.Context(), a, req.Header.Get("X-Circle-Graph-DPoP"), topicreadcore.PrimaryLanguage(req.URL.Query().Get("lang")), req.URL.Query().Get("cursor"), r.now())
+	cursor, err := queryCursor(req)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	edition, err := r.Circle.Edition(req.Context(), a, req.Header.Get("X-Circle-Graph-DPoP"), topicreadcore.PrimaryLanguage(req.URL.Query().Get("lang")), cursor, r.now())
 	if err != nil {
 		fail(w, err)
 		return

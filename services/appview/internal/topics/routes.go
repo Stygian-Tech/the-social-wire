@@ -17,6 +17,7 @@ type CatalogProvider interface {
 	Availability(context.Context, time.Time) (any, bool, error)
 }
 type Routes struct {
+	FinanceStore    *topicreadcore.FinanceStore
 	Circle          *topicreadcore.CircleService
 	Wire            *topicreadcore.WireStore
 	Moderation      *topicreadcore.ModerationService
@@ -27,6 +28,9 @@ type Routes struct {
 }
 
 func (r Routes) Register(mux *http.ServeMux) {
+	if r.FinanceStore != nil {
+		r.registerFinance(mux)
+	}
 	if r.Circle != nil {
 		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getCircleCatalog", r.circleCatalog)
 		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getCircleEdition", r.circleEdition)
@@ -117,7 +121,12 @@ func (r Routes) feed(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	p, err := r.Wire.Feed(req.Context(), req.URL.Query().Get("cursor"), limit, req.URL.Query().Get("lang"), viewer, now)
+	cursor, err := queryCursor(req)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	p, err := r.Wire.Feed(req.Context(), cursor, limit, req.URL.Query().Get("lang"), viewer, now)
 	if err != nil {
 		fail(w, err)
 		return
@@ -192,7 +201,15 @@ func (r Routes) catalog(w http.ResponseWriter, req *http.Request) {
 	finance := any(map[string]any{"enabled": false, "available": false, "widgetsEnabled": false, "feeds": []any{}})
 	sports := any(map[string]any{"enabled": false, "available": false, "eventsEnabled": false, "feeds": []any{}, "entities": []any{}, "version": "sports-named-feeds-v2"})
 	fa, sa := false, false
-	if r.Finance != nil {
+	if r.FinanceStore != nil {
+		value, e := r.FinanceStore.Availability(req.Context(), now)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		finance = value
+		fa = value.Available
+	} else if r.Finance != nil {
 		finance, fa, err = r.Finance.Availability(req.Context(), now)
 		if err != nil {
 			fail(w, err)
