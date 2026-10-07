@@ -118,11 +118,21 @@ func (validator *PublicDNSValidator) Validate(ctx context.Context, baseURL strin
 		return "", ErrInvalidEndpoint
 	}
 	values := []string{}
-	for _, firstOctet := range addresses {
-		if !IsPublicAddress(firstOctet) {
+	ipv4Values := []string{}
+	for _, address := range addresses {
+		if !IsPublicAddress(address) {
 			return "", ErrInvalidEndpoint
 		}
-		values = append(values, firstOctet.String())
+		values = append(values, address.String())
+		if address.Is4() {
+			ipv4Values = append(ipv4Values, address.String())
+		}
+	}
+	// Hosted workers have IPv4 egress. Admit the complete answer set before
+	// selecting an address, so preferring IPv4 cannot hide a private IPv6 answer.
+	if len(ipv4Values) > 0 {
+		sort.Strings(ipv4Values)
+		return ipv4Values[0], nil
 	}
 	sort.Strings(values)
 	return values[0], nil
