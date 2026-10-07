@@ -1,24 +1,25 @@
 # AppView test plan
 
 **Package:** `services/appview`  
-**Runner:** Swift Testing (`swift test`)  
-**CI:** `appview`
+**Runner:** Go (`go test -race -p 1 ./...`)\
+**CI:** `go-packages`
 
 ## Commands
 
 ```bash
 cd services/appview
-swift test
+go test -race -p 1 ./...
 ```
 
 ## Test layout
 
 ```
-services/appview/Tests/AppViewTests/
-  AppViewSmokeTests.swift
-  BootstrapStreamSelectionTests.swift
-  PublicationProjectionLogicTests.swift
-  ThinAppViewEnrollServiceTests.swift
+services/appview/internal/
+  runtime/*_test.go
+  reader/*_test.go
+  publications/*_test.go
+  readstate/*_test.go
+  podcasts/*_test.go
 ```
 
 ## Bruno (manual HTTP)
@@ -42,14 +43,14 @@ The integration suite covers PEXPIRE round trips, independent-client lease conte
 
 ## Feature flags in tests
 
-- `ENABLE_THIN_APPVIEW=true` — Thin AppView route suites use SQLite backend
+- `ENABLE_THIN_APPVIEW=true` — the Go host requires explicit PostgreSQL `DATABASE_URL`
 
 ## Manual verification
 
 - [ ] `GET /xrpc/app.thesocialwire.publication.getSidebar` with authenticated token
 - [ ] `GET /v1/appview/bootstrap-stream` streams NDJSON events
 - [ ] AppView `getFeed`, `listEntries`, and `getEntry` XRPC queries return the documented shapes
-- [ ] Enroll `authorDids` and `feedUrls`, then confirm timelines while Charybdis is running
+- [ ] Enroll `authorDids` and `feedUrls`, then confirm timelines while Projection Pool is running
 
 ## Related
 

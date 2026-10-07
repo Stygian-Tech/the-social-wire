@@ -14,15 +14,15 @@ Automated and manual verification for every package in the monorepo.
 | GatewayCore | `cd packages/swift/GatewayCore && swift test` | `gateway` |
 | Gateway | `cd services/gateway && swift test` | `gateway` |
 | AppView | `cd services/appview && swift test` | `appview` |
-| Charybdis | `cd services/appview-worker && swift test` | `charybdis` |
-| Replicated indexing roles | `cd services/indexing-worker && swift test` | `indexing-worker` |
-| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `charybdis` |
+| Replicated indexing roles | `cd services/indexing-worker && go test -race ./...` | `indexing-worker` |
+| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `appview` |
 | OperationsCore | `cd packages/swift/OperationsCore && swift test` | `operations` |
 | Operations service | `cd services/operations && swift test` | `operations` |
 | Jetstream V2 Ingest | `(cd services/jetstream-ingest && go test ./... && go vet ./...)` | `jetstream-ingest` |
 | Database migrations | `DATABASE_URL=… bash scripts/apply-database-migrations.sh` | `database-migrator` (empty DB + idempotence) |
 | Lexicons | `cd packages/lexicons && bun test` | `lexicons` |
 | OpenAPI spec | `cd packages/spec && bun test` | `spec` |
+| Repository-local Go | `GOWORK=off go -C packages/go test -race ./...` | `go-packages` plus actual Swift differential checks and PostgreSQL 17 |
 | iOS | Xcode **Cmd+U** | `apple` |
 
 ## Per-surface plans
@@ -36,7 +36,7 @@ Automated and manual verification for every package in the monorepo.
 
 ## Test location rule
 
-Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/gateway/Tests/`, etc.). See [[Contributing]].
+Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/gateway/internal/`, etc.). See [[Contributing]].
 
 ## Full CI gate
 
@@ -56,3 +56,5 @@ baselines; percentages are non-regression floors, not whole-application claims.
 
 - [[Contributing]]
 - [CONTRIBUTING.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/CONTRIBUTING.md)
+
+Go migration evidence, database setup and bounded parity claims: [[Go-verification-and-deployment]].
