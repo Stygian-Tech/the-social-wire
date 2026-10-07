@@ -213,7 +213,10 @@ func (m *ModerationService) fetch(ctx context.Context, auth gatewaycore.AuthCont
 	return value, nil
 }
 func (m *ModerationService) fetchJSON(ctx context.Context, base, method string, query url.Values, headers http.Header) (map[string]any, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	return m.fetchJSONWithTimeout(ctx, base, method, query, headers, 5*time.Second)
+}
+func (m *ModerationService) fetchJSONWithTimeout(ctx context.Context, base, method string, query url.Values, headers http.Header, timeout time.Duration) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	target := strings.TrimRight(base, "/") + "/xrpc/" + method
 	if len(query) > 0 {

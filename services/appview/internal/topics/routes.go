@@ -17,6 +17,7 @@ type CatalogProvider interface {
 	Availability(context.Context, time.Time) (any, bool, error)
 }
 type Routes struct {
+	Circle          *topicreadcore.CircleService
 	Wire            *topicreadcore.WireStore
 	Moderation      *topicreadcore.ModerationService
 	Telemetry       *telemetrycore.TelemetryBuffer
@@ -26,6 +27,11 @@ type Routes struct {
 }
 
 func (r Routes) Register(mux *http.ServeMux) {
+	if r.Circle != nil {
+		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getCircleCatalog", r.circleCatalog)
+		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getCircleEdition", r.circleEdition)
+		mux.HandleFunc("POST /xrpc/app.thesocialwire.discovery.setCircleItemHidden", r.circleHidden)
+	}
 	if r.Wire == nil {
 		return
 	}
