@@ -209,8 +209,7 @@ filter_changed wire_worker \
   '.github/workflows/ci.yml'
 
 filter_changed indexing_worker \
-  'packages/go/go.mod' \
-  'packages/go/go.sum' \
+  'packages/go/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \
   'services/jetstream-ingest/go.mod' \

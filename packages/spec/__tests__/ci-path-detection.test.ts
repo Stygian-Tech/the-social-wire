@@ -80,9 +80,9 @@ describe("CI path detection", () => {
     expect(result.get("podcast_worker")).toBe("true");
     expect(result.get("spec")).toBe("true");
   });
-  it("checks Go packages and ingestion consumers when shared Go code changes", () => {
+  it("checks Go packages and worker images when shared Go code changes", () => {
     const result = detect(repositoryWithChange("packages/go/wirecore/ranker.go"), "pull_request");
-    for (const job of ["go_packages", "jetstream_ingest", "wire_ingest"]) {
+    for (const job of ["go_packages", "indexing_worker", "jetstream_ingest", "wire_ingest"]) {
       expect(result.get(job)).toBe("true");
     }
   });

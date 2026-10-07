@@ -5,14 +5,18 @@ go 1.26.6
 require (
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/bluesky-social/jetstream v0.2.1
+	github.com/coder/websocket v1.8.15
 	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/ipfs/go-cid v0.6.1
 	github.com/ipld/go-ipld-prime v0.24.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/mmcdole/gofeed v1.5.0
+	github.com/multiformats/go-multibase v0.3.0
 	github.com/pb33f/libopenapi v0.41.2
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/sony/gobreaker/v2 v2.4.0
 	golang.org/x/net v0.59.0
+	golang.org/x/sync v0.23.0
 	golang.org/x/text v0.42.0
 )
 
@@ -24,10 +28,8 @@ require (
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/pebble v1.1.5 // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/getsentry/sentry-go v0.46.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/ipfs/go-cid v0.6.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -44,7 +46,6 @@ require (
 	github.com/mr-tron/base58 v1.3.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multibase v0.3.0 // indirect
 	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-varint v0.1.0 // indirect
 	github.com/pb33f/go-yaml v0.1.1 // indirect
@@ -58,7 +59,6 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect
 )

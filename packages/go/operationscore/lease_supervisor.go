@@ -73,6 +73,7 @@ func (leaseSupervisor *LeaseSupervisor) runOwned(parent context.Context, lease F
 	defer cancel()
 	err := leaseSupervisor.Store.Validate(ctx, authority)
 	if err == nil {
+		leaseSupervisor.event("validated", authority, nil)
 		err = ctx.Err()
 	}
 	if err == nil && !time.Now().Before(safeDeadline()) {
@@ -113,15 +114,12 @@ func (leaseSupervisor *LeaseSupervisor) runOwned(parent context.Context, lease F
 					results <- err
 					return
 				}
-				attempt := time.Now()
 				remaining := time.Until(safeDeadline())
 				if remaining <= 0 {
 					results <- ErrAuthorityExpired
 					return
 				}
-				renewCtx, stop := context.WithTimeout(ctx, min(3*time.Second, remaining))
-				renewed, err := leaseSupervisor.Store.Renew(renewCtx, authority, leaseSupervisor.Config.LeaseDuration)
-				stop()
+				renewed, attempt, err := leaseSupervisor.renewWithRetry(ctx, authority, safeDeadline)
 				if err != nil {
 					results <- err
 					return
@@ -135,6 +133,7 @@ func (leaseSupervisor *LeaseSupervisor) runOwned(parent context.Context, lease F
 				}
 				deadline = confirmed
 				deadlineMutex.Unlock()
+				leaseSupervisor.event("renewed", authority, nil)
 				scheduled = scheduled.Add(leaseSupervisor.Config.RenewInterval)
 				if !scheduled.After(time.Now()) {
 					scheduled = time.Now().Add(leaseSupervisor.Config.RenewInterval)

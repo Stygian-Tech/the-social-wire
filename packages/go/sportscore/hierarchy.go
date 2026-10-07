@@ -58,7 +58,7 @@ func ParentIDs(catalog []Entity) map[string]map[string]bool {
 			parents[entity.ID][*entity.SportID] = true
 		}
 	}
-	ice, winter := EntityID("sport:ice-hockey"), EntityID("sport:winter-sports")
+	ice, winter := ReviewedID("sport:ice-hockey"), ReviewedID("sport:winter-sports")
 	if sports[ice] && sports[winter] {
 		if parents[ice] == nil {
 			parents[ice] = map[string]bool{}
