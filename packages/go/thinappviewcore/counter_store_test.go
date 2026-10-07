@@ -59,3 +59,54 @@ func TestCounterPreservesReadFloorOverridesAndPDSAuthority(t *testing.T) {
 		t.Fatal("failed-open PDS read authority")
 	}
 }
+
+func TestDirtyAuthorIncludesEveryScopeAndPreservesCounts(t *testing.T) {
+	db := inboxDatabase(t)
+	nonce, err := inboxLeaseToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := "dirty-viewer-" + nonce
+	author := "dirty-author-" + nonce
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM appview_unread_counters WHERE viewer_did=$1", viewer)
+		db.Exec("DELETE FROM appview_publication_scopes WHERE viewer_did=$1", viewer)
+	})
+	for _, row := range []struct {
+		pub, did string
+		count    int
+	}{
+		{"existing", author, 7}, {"new", author, -1}, {"unrelated", author + "other", 9},
+	} {
+		if _, err = db.Exec(`INSERT INTO appview_publication_scopes(viewer_did,publication_id,author_did,publication_site_urls,scope_keys)VALUES($1,$2,$3,'["https://different.example/site"]','["https://different.example/site"]')`, viewer, row.pub, row.did); err != nil {
+			t.Fatal(err)
+		}
+		if row.count >= 0 {
+			if _, err = db.Exec(`INSERT INTO appview_unread_counters(viewer_did,publication_id,unread_count,generation,accuracy,dirty,counted_at)VALUES($1,$2,$3,1,'exact',false,$4)`, viewer, row.pub, row.count, at.Add(-time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err = (CounterStore{DB: db}).DirtyAuthor(context.Background(), author, at); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		pub      string
+		count    int
+		dirty    bool
+		accuracy string
+	}{
+		{"existing", 7, true, "estimated"}, {"new", 0, true, "estimated"}, {"unrelated", 9, false, "exact"},
+	} {
+		var count int
+		var dirty bool
+		var accuracy string
+		if err = db.QueryRow(`SELECT unread_count,dirty,accuracy FROM appview_unread_counters WHERE viewer_did=$1 AND publication_id=$2`, viewer, row.pub).Scan(&count, &dirty, &accuracy); err != nil {
+			t.Fatal(err)
+		}
+		if count != row.count || dirty != row.dirty || accuracy != row.accuracy {
+			t.Fatalf("%s: %d %t %s", row.pub, count, dirty, accuracy)
+		}
+	}
+}

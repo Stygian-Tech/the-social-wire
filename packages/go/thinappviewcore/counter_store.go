@@ -69,6 +69,16 @@ func (s CounterStore) Dirty(ctx context.Context, did, site string, at time.Time)
 	}
 	return nil
 }
+
+// DirtyAuthor marks every publication scope for the author, including scopes whose
+// site keys do not match any one recovered record and scopes without a counter yet.
+func (s CounterStore) DirtyAuthor(ctx context.Context, did string, at time.Time) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO appview_unread_counters(viewer_did,publication_id,unread_count,generation,accuracy,dirty,counted_at)
+ SELECT viewer_did,publication_id,0,$2,'estimated',true,$3 FROM appview_publication_scopes WHERE author_did=$1
+ ON CONFLICT(viewer_did,publication_id) DO UPDATE SET generation=EXCLUDED.generation,accuracy='estimated',dirty=true,counted_at=EXCLUDED.counted_at`, did, int64(math.Round(float64(at.UnixNano())/1e6)), at)
+	return err
+}
+
 func (s CounterStore) Increment(ctx context.Context, item IndexedContentItem, at time.Time) error {
 	site := ""
 	if item.PublicationSite != nil {
