@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "overallStatus": "in_progress",
+  "serviceActivation": "development_verified_production_pending",
+  "packages": [
+    {
+      "name": "financecore",
+      "status": "partial",
+      "implemented": [
+        "ranking",
+        "provider-native instrument and selection identities",
+        "preference fingerprints",
+        "ranking analysis models",
+        "article resolver and topic evidence",
+        "reviewed catalogs and named feed identities"
+      ],
+      "remaining": [
+        "provider serving contracts",
+        "cursors and remaining serving models"
+      ]
+    },
+    {
+      "name": "gatewaycore",
+      "status": "partial",
+      "implemented": [
+        "go-jose compact JWS inspection and token ath hashing (no authentication)",
+        "public DNS admission and special-use address policy"
+      ],
+      "remaining": [
+        "issuer-bound OAuth and DPoP verification adapters",
+        "gateway/appview internal trust",
+        "repo discovery and PDS clients",
+        "OAuth metadata and remaining service contracts"
+      ]
+    },
+    {
+      "name": "lexicons",
+      "status": "partial",
+      "implemented": [
+        "canonical schema registry and reference lookup",
+        "generated schema drift checks"
+      ],
+      "remaining": [
+        "typed generated models",
+        "Lexicon value validation and format conformance"
+      ]
+    },
+    {
+      "name": "operationscore",
+      "status": "partial",
+      "implemented": [
+        "PostgreSQL fenced role leases",
+        "transactional publication fence",
+        "lease supervisor cancellation and teardown",
+        "bounded lease renewal retry and observation events"
+      ],
+      "remaining": [
+        "remaining Operations service stores and APIs"
+      ]
+    },
+    {
+      "name": "readstate",
+      "status": "partial",
+      "implemented": [
+        "shared protocol aliases for implemented ReadStateCore surfaces"
+      ],
+      "remaining": [
+        "repository/outbox/GC and persistence contracts",
+        "remaining TypeScript protocol conformance cases"
+      ]
+    },
+    {
+      "name": "readstatecore",
+      "status": "partial",
+      "implemented": [
+        "v1 validation and projection",
+        "IPLD DAG-CBOR canonical hashing with restricted receipt value validation",
+        "v2 original-intent hashes and device receipt chains",
+        "strict v2 closed-shape loading",
+        "v1 extension retention",
+        "bounded generation loading and original-record CID verification"
+      ],
+      "remaining": [
+        "v2 merge/compaction and manifest publication",
+        "client sync/outbox/GC implementations"
+      ]
+    },
+    {
+      "name": "socialwireredis",
+      "status": "partial",
+      "implemented": [
+        "key namespace and identifier hashing",
+        "gobreaker circuit breaker (three consecutive failures, one probe, fixed five-second cooldown)",
+        "generic cache envelope and freshness/TTL behavior",
+        "go-redis command transport and cache envelope round-trip/expiry coverage"
+      ],
+      "remaining": [
+        "production Redis TLS/deadline configuration",
+        "ranking/lease/read-state caches and specialized clients"
+      ]
+    },
+    {
+      "name": "spec",
+      "status": "partial",
+      "implemented": [
+        "canonical endpoint manifest lookup",
+        "OpenAPI data and digest",
+        "contract drift checks",
+        "libopenapi OpenAPI 3.1 document parsing and model conformance"
+      ],
+      "remaining": [
+        "remaining service/route conformance checks"
+      ]
+    },
+    {
+      "name": "sportscore",
+      "status": "partial",
+      "implemented": [
+        "ranking and follow/mute precedence",
+        "identity and preference fingerprints",
+        "sport hierarchy",
+        "membership timestamp compatibility",
+        "ranking analysis models",
+        "article resolver and entity index",
+        "reviewed catalogs and provider response parsing"
+      ],
+      "remaining": [
+        "provider serving contracts",
+        "cursors and remaining serving models"
+      ]
+    },
+    {
+      "name": "thinappviewcore",
+      "status": "partial",
+      "implemented": [
+        "official Jetstream SDK decoding with metadata validation and exact integers",
+        "gofeed RSS/Atom/JSON Feed parsing",
+        "x/net/html thumbnail extraction and feed URL normalization",
+        "transactional inbox claims, acknowledgements and repository recovery",
+        "RSS identities, conditional polling, PDS backfill and lifecycle cleanup",
+        "content, selection, counters and projection cache stores",
+        "public HTTP/DID/PDS resolution with bounded transport"
+      ],
+      "remaining": [
+        "remaining serving models"
+      ]
+    },
+    {
+      "name": "wirecore",
+      "status": "partial",
+      "implemented": [
+        "Wire and Circle ranking",
+        "diversity and regional ranking",
+        "edition assembly",
+        "actor hashing",
+        "data policies",
+        "Wire/Circle signed cursors",
+        "URL canonicalization",
+        "commercial/base-content classification",
+        "corpus service request signing"
+      ],
+      "remaining": [
+        "remaining corpus/serving models and transport bounds",
+        "full cursor/canonicalization/trust/Circle differential coverage"
+      ]
+    }
+  ],
+  "verification": {
+    "wireRanking": "30 actual Swift/Go snapshots; exact order/reasons/diagnostics, score absolute tolerance 1e-12",
+    "editionAssembly": "35 actual Swift/Go snapshots; complete JSON equality",
+    "readStateHashes": "canonical shared v2 foundation fixtures",
+    "roleLeases": "PostgreSQL 17 takeover, stale tokens, post-lock expiry and shared publication fence tests",
+    "financeSportsRanking": "45 actual Swift/Go snapshots; identical ranked IDs",
+    "generationPublication": "canonical PostgreSQL schema; metadata projection equality, baseline/external candidates, atomic regional editions, stale fence rollback, shadow pointer isolation and retention",
+    "libraryAdoption": "regressions for fractional feed dates, chronological ordering, JSON Feed, HTML comments/entities, stale circuit completions, Redis transport expiry, canonical DAG-CBOR bounds and exact protocol integers",
+    "runtimePorts": "Canonical PostgreSQL race/conformance and actual Swift parity passed on Development; Production candidate requires its own exact-head CI and hosted handoff acceptance."
+  },
+  "remainingServices": [
+    "Production candidate exact-head CI and fenced runtime handoff acceptance",
+    "Retained Gateway/AppView/Operations serving APIs remain Swift",
+    "Production Swift worker source retirement follows separate source promotion scope"
+  ],
+  "serviceLibraries": [
+    {
+      "name": "wireworkercore",
+      "status": "partial",
+      "implemented": [
+        "candidate loading and locale discovery",
+        "fenced atomic generation/edition publication",
+        "bounded generation and leaf retention",
+        "cycle activation and label freshness gates",
+        "ranking cadence and readiness scheduler",
+        "fenced inbox application, drain and dependency recovery",
+        "baseline labels, metadata/profile enrichment and graph maintenance",
+        "recommendation replay and durable cleanup",
+        "host configuration and joined lane lifecycle"
+      ],
+      "remaining": [
+        "Production candidate exact-head CI and runtime acceptance"
+      ]
+    },
+    {
+      "name": "appviewworkercore",
+      "status": "implemented_pending_activation",
+      "implemented": [
+        "AppView projection, repository reconciliation, read-state activation and coordinator jobs",
+        "fenced Operations replay, diagnostic reconciliation and durable controls"
+      ],
+      "remaining": [
+        "Production candidate exact-head CI and runtime acceptance"
+      ]
+    },
+    {
+      "name": "indexingworkercore",
+      "status": "implemented_pending_activation",
+      "implemented": [
+        "independently supervised projection/coordinator roles",
+        "reserved authority capacity, health probes and bounded shutdown"
+      ],
+      "remaining": [
+        "Production candidate exact-head CI and runtime acceptance"
+      ]
+    },
+    {
+      "name": "topicworkercore",
+      "status": "implemented_pending_activation",
+      "implemented": [
+        "Finance/Sports catalog projectors and fenced materializers",
+        "rights-gated provider refresh with bounded retry and cache retention"
+      ],
+      "remaining": [
+        "Production candidate exact-head CI and runtime acceptance"
+      ]
+    }
+  ]
+}

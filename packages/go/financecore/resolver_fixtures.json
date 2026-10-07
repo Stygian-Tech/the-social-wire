@@ -1,0 +1,2410 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_3a1bcf8223e43dac49e2c7f51ed38c6e",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "earnings",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": null,
+      "title": "Apple earnings beat forecasts"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Apple Martin reports apple pie prices"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_50a6236ccc20bd5e0d6034d337b53859",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "announcement",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": null,
+      "title": "Microsoft launches new AI company"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_2aa18b6a4ac3b19d3cb4bb2a048f4869",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": null,
+      "title": "Nvidia semiconductor supply increases"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "financials"
+        ]
+      },
+      "summary": null,
+      "title": "Bank lending costs rise"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "earnings",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Cricket team wins toss and reports revenue"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "India innings hit tons"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "energy"
+        ]
+      },
+      "summary": null,
+      "title": "Oil production falls as energy industry costs rise"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [
+          "inflation"
+        ],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Global inflation report slows growth"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [
+          "fiscal-policy"
+        ],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Fiscal policy and government budget news"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Tariffs raise import costs"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_3a1bcf8223e43dac49e2c7f51ed38c6e",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "earnings",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": null,
+      "title": "Apple stock rises after revenue growth"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.9,
+            "evidence": [
+              "contextual-ticker"
+            ],
+            "instrumentID": "fin_3a1bcf8223e43dac49e2c7f51ed38c6e",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": null,
+      "title": "$AAPL stock price increases"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.9,
+            "evidence": [
+              "contextual-ticker"
+            ],
+            "instrumentID": "fin_3a1bcf8223e43dac49e2c7f51ed38c6e",
+            "prominence": 1,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "earnings",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": null,
+      "title": "NASDAQ:AAPL earnings reporting"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "$AAPL wins cricket match"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_85b798205bc94114105c197f49c31f1b",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Gold price stock market report"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_dda633b3f5692fe2691a7009161c5f99",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Bitcoin economy expands"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Real estate market falls"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "leadership",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Meta leadership chief executive changes"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_e40f008c720ec517f895e751bd703dbd",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "merger",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "consumer"
+        ]
+      },
+      "summary": null,
+      "title": "Toyota acquisition agreement"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [
+          "inflation"
+        ],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Apple juice consumer prices inflation report"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_8ec82a1b8076c18ff79444a6fa5cd74b",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          },
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_fce995f98729bbd784451248a8d93af6",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "price-chatter",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "consumer"
+        ]
+      },
+      "summary": null,
+      "title": "Tesla price target cut"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_b166610d3554341f2934a000b18ac71d",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "consumer"
+        ]
+      },
+      "summary": null,
+      "title": "Amazon company sales rise"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_21ea4f23f8bb6647f7d6d23fa9dffb28",
+            "prominence": 0,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "communications",
+          "technology"
+        ]
+      },
+      "summary": null,
+      "title": "Netflix software sector investment grows"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "A dream holiday in South America"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [
+          "employment"
+        ],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Employment report expands"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [
+          "trade"
+        ],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Government trade deficit rises"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Inflation fantasy meme grows"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Apple is delicious"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "S&P 500 shares trade higher"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Microsoft shares increase"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Bank holiday travel"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Football salary cap sponsorship deal"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "filing",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": null,
+      "title": "Regulation filing 10-k"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "announcement",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "consumer"
+        ]
+      },
+      "summary": null,
+      "title": "Gaming company launches retail sale"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": "A delightful holiday. Second opening sentence. Microsoft earnings rise.",
+      "title": "A quiet travel guide"
+    },
+    {
+      "expected": {
+        "associations": [
+          {
+            "confidence": 0.95,
+            "evidence": [
+              "name-or-alias"
+            ],
+            "instrumentID": "fin_3a1bcf8223e43dac49e2c7f51ed38c6e",
+            "prominence": 1,
+            "resolverVersion": "finance-resolver-v3.4"
+          }
+        ],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "earnings",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": "First paragraph. Apple earnings grow.",
+      "title": "A quiet travel guide"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "reporting",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": "Travel memories. Related stories: Apple earnings increase.",
+      "title": "A quiet travel guide"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": false,
+        "macroTopics": [],
+        "materiality": "announcement",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": []
+      },
+      "summary": "Apple Martin announces a music show. Apple pie recipe.",
+      "title": "A quiet travel guide"
+    },
+    {
+      "expected": {
+        "associations": [],
+        "eligible": true,
+        "macroTopics": [],
+        "materiality": "earnings",
+        "resolverVersion": "finance-resolver-v3.4",
+        "sectorIDs": [
+          "technology"
+        ]
+      },
+      "summary": "Company sales increase. Software industry sees revenue.",
+      "title": "A quiet travel guide"
+    }
+  ],
+  "catalog": [
+    {
+      "aliases": [
+        "S&P500"
+      ],
+      "id": "fin_c492bcb5097de1aa9944fbc2b1d4c810",
+      "isActive": true,
+      "kind": "index",
+      "name": "S&P 500",
+      "providerID": "reviewed:sp500-index",
+      "sectorIDs": [],
+      "symbol": "SPX"
+    },
+    {
+      "aliases": [],
+      "currency": "USD",
+      "id": "fin_85b798205bc94114105c197f49c31f1b",
+      "isActive": true,
+      "kind": "commodity",
+      "name": "Gold",
+      "providerID": "reviewed:gold-spot-usd",
+      "sectorIDs": [],
+      "symbol": "XAU"
+    },
+    {
+      "aliases": [
+        "Nasdaq-100",
+        "NASDAQ 100"
+      ],
+      "id": "fin_fdc8cc5a20c84cbe7e4ee2226696214e",
+      "isActive": true,
+      "kind": "index",
+      "name": "Nasdaq 100",
+      "providerID": "reviewed:nasdaq100-index",
+      "sectorIDs": [],
+      "symbol": "NDX"
+    },
+    {
+      "aliases": [
+        "Dow Jones",
+        "Dow industrials"
+      ],
+      "id": "fin_514de8d2b408204a9636ae01e8626ea7",
+      "isActive": true,
+      "kind": "index",
+      "name": "Dow Jones Industrial Average",
+      "providerID": "reviewed:dow-jones-industrial-average",
+      "sectorIDs": [],
+      "symbol": "DJI"
+    },
+    {
+      "aliases": [],
+      "id": "fin_dda633b3f5692fe2691a7009161c5f99",
+      "isActive": true,
+      "kind": "crypto",
+      "name": "Bitcoin",
+      "providerID": "reviewed:bitcoin-asset",
+      "sectorIDs": [],
+      "symbol": "BTC"
+    },
+    {
+      "aliases": [],
+      "id": "fin_9dd2f3d4b707cece22c937682441e38a",
+      "isActive": true,
+      "kind": "crypto",
+      "name": "Ethereum",
+      "providerID": "reviewed:ethereum-ether-asset",
+      "sectorIDs": [],
+      "symbol": "ETH"
+    },
+    {
+      "aliases": [
+        "SPDR S&P 500 ETF"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_50d9d5187fd7c19ded0f063a77565776",
+      "isActive": true,
+      "kind": "equity",
+      "name": "SPDR S&P 500 ETF",
+      "providerID": "BBG000BDTBL9",
+      "sectorIDs": [],
+      "symbol": "SPY"
+    },
+    {
+      "aliases": [
+        "Invesco QQQ"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_4ffaf52ec1057ab753104cc40832feff",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Invesco QQQ",
+      "providerID": "BBG000BSWKH7",
+      "sectorIDs": [],
+      "symbol": "QQQ"
+    },
+    {
+      "aliases": [
+        "Vanguard S&P 500 ETF"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_bc1b552a91b0f291b59369cf95ed7603",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Vanguard S&P 500 ETF",
+      "providerID": "BBG0015VYNT4",
+      "sectorIDs": [],
+      "symbol": "VOO"
+    },
+    {
+      "aliases": [
+        "iShares Core S&P 500 ETF"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_864767f1f11bf29ab963d54bc21a12d5",
+      "isActive": true,
+      "kind": "equity",
+      "name": "iShares Core S&P 500 ETF",
+      "providerID": "BBG000BVZ4F5",
+      "sectorIDs": [],
+      "symbol": "IVV"
+    },
+    {
+      "aliases": [
+        "Microsoft",
+        "Microsoft Corp"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_50a6236ccc20bd5e0d6034d337b53859",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Microsoft",
+      "providerID": "BBG000BPH459",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "MSFT"
+    },
+    {
+      "aliases": [
+        "Amazon",
+        "Amazon.com"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b166610d3554341f2934a000b18ac71d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Amazon",
+      "providerID": "BBG000BVPV84",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "AMZN"
+    },
+    {
+      "aliases": [
+        "Alphabet",
+        "Google"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_d0af144457231a3924cc3e5294ddf62e",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Alphabet",
+      "providerID": "BBG009S39JX6",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "GOOGL"
+    },
+    {
+      "aliases": [
+        "Meta Platforms",
+        "Facebook"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_c6c14909e3db56e2ccf55c52f14f28ad",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Meta Platforms",
+      "providerID": "BBG000MM2P62",
+      "sectorIDs": [
+        "communications"
+      ],
+      "symbol": "META"
+    },
+    {
+      "aliases": [
+        "Netflix"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_21ea4f23f8bb6647f7d6d23fa9dffb28",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Netflix",
+      "providerID": "BBG000CL9VN6",
+      "sectorIDs": [
+        "communications"
+      ],
+      "symbol": "NFLX"
+    },
+    {
+      "aliases": [
+        "Nvidia"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_2aa18b6a4ac3b19d3cb4bb2a048f4869",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Nvidia",
+      "providerID": "BBG000BBJQV0",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "NVDA"
+    },
+    {
+      "aliases": [
+        "Tesla"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_fce995f98729bbd784451248a8d93af6",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Tesla",
+      "providerID": "BBG000N9MNX3",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "TSLA"
+    },
+    {
+      "aliases": [
+        "Eli Lilly",
+        "Lilly"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_d07d0396e57abf6a0af97fa86e1804d1",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Eli Lilly",
+      "providerID": "BBG000BNBDC2",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "LLY"
+    },
+    {
+      "aliases": [
+        "Pfizer"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_13baf32b5b3b3c92d22080b312387407",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Pfizer",
+      "providerID": "BBG000BR2B91",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "PFE"
+    },
+    {
+      "aliases": [
+        "Apple",
+        "Apple Inc."
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_3a1bcf8223e43dac49e2c7f51ed38c6e",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Apple",
+      "providerID": "BBG000B9Y5X2",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "AAPL"
+    },
+    {
+      "aliases": [
+        "Toyota",
+        "Toyota Motor"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_e40f008c720ec517f895e751bd703dbd",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Toyota",
+      "providerID": "BBG000BCM9N1",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "7203"
+    },
+    {
+      "aliases": [
+        "HSBC",
+        "HSBC Holdings"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_68bc2f18eb46e552b35f52c4a8eb4233",
+      "isActive": true,
+      "kind": "equity",
+      "name": "HSBC",
+      "providerID": "BBG000BS1N49",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "HSBA"
+    },
+    {
+      "aliases": [
+        "Advanced Micro Devices"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_7c47f1d3a7b325de182048969c2bade5",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Advanced Micro Devices",
+      "providerID": "BBG000BBQCY0",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "AMD"
+    },
+    {
+      "aliases": [
+        "Intel"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_3f1c1a0c57d93e204c6e7b5270024794",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Intel",
+      "providerID": "BBG000C0G1D1",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "INTC"
+    },
+    {
+      "aliases": [
+        "Broadcom"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_3e4e98c1540f9bf9d8a4e3d268f7a795",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Broadcom",
+      "providerID": "BBG00KHY5S69",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "AVGO"
+    },
+    {
+      "aliases": [
+        "Qualcomm"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_e9a6edd692c1ed5f4f2506f895858feb",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Qualcomm",
+      "providerID": "BBG000CGC1X8",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "QCOM"
+    },
+    {
+      "aliases": [
+        "Taiwan Semiconductor",
+        "TSMC"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_41f269b168e791ae910a087ddb2dec45",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Taiwan Semiconductor",
+      "providerID": "BBG000BD8ZK0",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "TSM"
+    },
+    {
+      "aliases": [
+        "Arm Holdings"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_5384263dfc410b3065648a6ac090566d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Arm Holdings",
+      "providerID": "BBG01J1GXZF0",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "ARM"
+    },
+    {
+      "aliases": [
+        "ASML"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_85386c14306786375d7415973918704d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "ASML",
+      "providerID": "BBG000K6MRN4",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "ASML"
+    },
+    {
+      "aliases": [
+        "Oracle"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_4e751ed8f3680560989265b9c1492520",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Oracle",
+      "providerID": "BBG000BQLTW7",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "ORCL"
+    },
+    {
+      "aliases": [
+        "Adobe"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_95215d6b4b80798a69682fa1e5a9bdd9",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Adobe",
+      "providerID": "BBG000BB5006",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "ADBE"
+    },
+    {
+      "aliases": [
+        "Salesforce"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_ea9363da365055fb008bef7b3bff2202",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Salesforce",
+      "providerID": "BBG000BN2DC2",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "CRM"
+    },
+    {
+      "aliases": [
+        "ServiceNow"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_ed37ac90084cedc72ca12395d33e5217",
+      "isActive": true,
+      "kind": "equity",
+      "name": "ServiceNow",
+      "providerID": "BBG000M1R011",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "NOW"
+    },
+    {
+      "aliases": [
+        "Shopify"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_fd4f3b6e2795ed80d7a13977ef27e5e5",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Shopify",
+      "providerID": "BBG008HBD923",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "SHOP"
+    },
+    {
+      "aliases": [
+        "SAP"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_38cda0e6c9df28787f56e515c4344622",
+      "isActive": true,
+      "kind": "equity",
+      "name": "SAP",
+      "providerID": "BBG000BDSLD7",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "SAP"
+    },
+    {
+      "aliases": [
+        "Palo Alto Networks"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_d3ad15c61964c0f598e98a1c1f891b1e",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Palo Alto Networks",
+      "providerID": "BBG0014GJCT9",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "PANW"
+    },
+    {
+      "aliases": [
+        "CrowdStrike"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_8ac5ce8eb0057251a788873ecab7a1be",
+      "isActive": true,
+      "kind": "equity",
+      "name": "CrowdStrike",
+      "providerID": "BBG00BLYKS03",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "CRWD"
+    },
+    {
+      "aliases": [
+        "Palantir"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_7c5498ad29be9ba67d1b99488bc01771",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Palantir",
+      "providerID": "BBG000N7QR55",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "PLTR"
+    },
+    {
+      "aliases": [
+        "Snowflake"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_13d0451ab83e5c318ed454c4b0f2d16f",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Snowflake",
+      "providerID": "BBG007DHGNJ4",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "SNOW"
+    },
+    {
+      "aliases": [
+        "IBM",
+        "International Business Machines"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_397d77f8de2081011c7ba656ca0be3cd",
+      "isActive": true,
+      "kind": "equity",
+      "name": "IBM",
+      "providerID": "BBG000BLNNH6",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "IBM"
+    },
+    {
+      "aliases": [
+        "Cisco"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_ff777f07b4361da829b8616cd5324558",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Cisco",
+      "providerID": "BBG000C3J3C9",
+      "sectorIDs": [
+        "technology"
+      ],
+      "symbol": "CSCO"
+    },
+    {
+      "aliases": [
+        "Walt Disney",
+        "Disney"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_5ba2c8fe3104b658dc15db0919f914b2",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Walt Disney",
+      "providerID": "BBG000BH4R78",
+      "sectorIDs": [
+        "communications"
+      ],
+      "symbol": "DIS"
+    },
+    {
+      "aliases": [
+        "Comcast"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_91862b7535380b2eaa9249f6b510ce85",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Comcast",
+      "providerID": "BBG000BFT2L4",
+      "sectorIDs": [
+        "communications"
+      ],
+      "symbol": "CMCSA"
+    },
+    {
+      "aliases": [
+        "Walmart"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_5c7351d9703dcc4d74e3f391358e208b",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Walmart",
+      "providerID": "BBG000BWXBC2",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "WMT"
+    },
+    {
+      "aliases": [
+        "Costco"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_e0491e177d3c5a3adbb5ea6390c7221f",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Costco",
+      "providerID": "BBG000F6H8W8",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "COST"
+    },
+    {
+      "aliases": [
+        "Home Depot"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_6af4c040f6ea223b9fcce0eaa8791aab",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Home Depot",
+      "providerID": "BBG000BKZB36",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "HD"
+    },
+    {
+      "aliases": [
+        "Lowe's"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_a5e88f333a46ebbf46d93a0b06ffdb87",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Lowe's",
+      "providerID": "BBG000BNDN65",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "LOW"
+    },
+    {
+      "aliases": [
+        "Target"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_8ec82a1b8076c18ff79444a6fa5cd74b",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Target",
+      "providerID": "BBG000H8TVT2",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "TGT"
+    },
+    {
+      "aliases": [
+        "General Motors"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_fd9f85284416633b3ce15552e75cde33",
+      "isActive": true,
+      "kind": "equity",
+      "name": "General Motors",
+      "providerID": "BBG000NDYB67",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "GM"
+    },
+    {
+      "aliases": [
+        "Ford Motor"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_0536182f3f52dfc31b61cfe0643e3faa",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Ford Motor",
+      "providerID": "BBG000BQPC32",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "F"
+    },
+    {
+      "aliases": [
+        "Procter & Gamble"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_44d3f07e8021c5c6e1cc86ac8c158518",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Procter & Gamble",
+      "providerID": "BBG000BR2TH3",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "PG"
+    },
+    {
+      "aliases": [
+        "Coca-Cola"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_23a3515b4a9ed389b60228f4d88fe5fd",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Coca-Cola",
+      "providerID": "BBG000BMX289",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "KO"
+    },
+    {
+      "aliases": [
+        "PepsiCo"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_1d6d729147293ca5e591d1f08c74adc7",
+      "isActive": true,
+      "kind": "equity",
+      "name": "PepsiCo",
+      "providerID": "BBG000DH7JK6",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "PEP"
+    },
+    {
+      "aliases": [
+        "Nike"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b3a66e42a7497250d4e3edb4cc37c7fa",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Nike",
+      "providerID": "BBG000C5HS04",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "NKE"
+    },
+    {
+      "aliases": [
+        "McDonald's"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_90618ffda2baa16b56f27dde3d72da5d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "McDonald's",
+      "providerID": "BBG000BNSZP1",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "MCD"
+    },
+    {
+      "aliases": [
+        "Starbucks"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_f0d84b5282ac04d129ff8d46ae3c2f82",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Starbucks",
+      "providerID": "BBG000CTQBF3",
+      "sectorIDs": [
+        "consumer"
+      ],
+      "symbol": "SBUX"
+    },
+    {
+      "aliases": [
+        "AbbVie"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_dcd190b55ebc254bee81f095b5e67ff2",
+      "isActive": true,
+      "kind": "equity",
+      "name": "AbbVie",
+      "providerID": "BBG0025Y4RY4",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "ABBV"
+    },
+    {
+      "aliases": [
+        "Merck"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_9ef652041db328c087ee340ef31ffe0d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Merck",
+      "providerID": "BBG000BPD168",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "MRK"
+    },
+    {
+      "aliases": [
+        "Bristol Myers Squibb"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_57522d4d0d33f1ec8840b5d8e98999e6",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Bristol Myers Squibb",
+      "providerID": "BBG000DQLV23",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "BMY"
+    },
+    {
+      "aliases": [
+        "Novo Nordisk"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_2b4fee4574f7222c21350252a3634c74",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Novo Nordisk",
+      "providerID": "BBG000BQBKR3",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "NVO"
+    },
+    {
+      "aliases": [
+        "AstraZeneca"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_53460ae48cbb1a438a86603d33f5ddcd",
+      "isActive": true,
+      "kind": "equity",
+      "name": "AstraZeneca",
+      "providerID": "BBG000D3MHB4",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "AZN"
+    },
+    {
+      "aliases": [
+        "Novartis"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_2d53b2ee802ec836837330145f86cacc",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Novartis",
+      "providerID": "BBG000LYF3S8",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "NVS"
+    },
+    {
+      "aliases": [
+        "Amgen"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_1203ea02f28dcc5cefcb7324ef4278f6",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Amgen",
+      "providerID": "BBG000BBS2Y0",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "AMGN"
+    },
+    {
+      "aliases": [
+        "Gilead Sciences",
+        "Gilead"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_842d53379a43d93689fe2dd2825aeeb1",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Gilead Sciences",
+      "providerID": "BBG000CKGBP2",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "GILD"
+    },
+    {
+      "aliases": [
+        "Medtronic"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_81820762ef6a1d2c017ddc4ff642d62f",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Medtronic",
+      "providerID": "BBG000BNWG87",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "MDT"
+    },
+    {
+      "aliases": [
+        "Abbott Laboratories",
+        "Abbott"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_a3b7321878018835d79561aa9e041cfc",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Abbott Laboratories",
+      "providerID": "BBG000B9ZXB4",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "ABT"
+    },
+    {
+      "aliases": [
+        "Intuitive Surgical"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_e9728c44cd1408d6e2ccad0f34aa5a3d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Intuitive Surgical",
+      "providerID": "BBG000BJPDZ1",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "ISRG"
+    },
+    {
+      "aliases": [
+        "Thermo Fisher Scientific"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_27557b62324837495020dd5d43ad53d5",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Thermo Fisher Scientific",
+      "providerID": "BBG000BVDLH9",
+      "sectorIDs": [
+        "healthcare"
+      ],
+      "symbol": "TMO"
+    },
+    {
+      "aliases": [
+        "JPMorgan Chase",
+        "JPMorgan"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_8076032be282727d0195f05c420013ea",
+      "isActive": true,
+      "kind": "equity",
+      "name": "JPMorgan Chase",
+      "providerID": "BBG000DMBXR2",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "JPM"
+    },
+    {
+      "aliases": [
+        "Bank of America"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b46a3d58906d11badeca08018b3e762a",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Bank of America",
+      "providerID": "BBG000BCTLF6",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "BAC"
+    },
+    {
+      "aliases": [
+        "Wells Fargo"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_a8613871c70260dc77db0f8e57b21c3f",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Wells Fargo",
+      "providerID": "BBG000BWQFY7",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "WFC"
+    },
+    {
+      "aliases": [
+        "Citigroup"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_68a934718ec31773b0057a25b3463912",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Citigroup",
+      "providerID": "BBG000FY4S11",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "C"
+    },
+    {
+      "aliases": [
+        "Goldman Sachs"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_522d4b0d336421c02e1b63eec619b311",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Goldman Sachs",
+      "providerID": "BBG000C6CFJ5",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "GS"
+    },
+    {
+      "aliases": [
+        "Morgan Stanley"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_75f71b68574386e0dcf182d6f798b168",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Morgan Stanley",
+      "providerID": "BBG000BLZRJ2",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "MS"
+    },
+    {
+      "aliases": [
+        "UBS Group"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_ac50728347585499a27d92cb06013974",
+      "isActive": true,
+      "kind": "equity",
+      "name": "UBS Group",
+      "providerID": "BBG007DJM539",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "UBS"
+    },
+    {
+      "aliases": [
+        "Visa"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_2a0c60c01e182ff95001c7c1bd4fe145",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Visa",
+      "providerID": "BBG000PSKYX7",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "V"
+    },
+    {
+      "aliases": [
+        "Mastercard"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b591dc5000c0b603b9d660de5f8d58df",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Mastercard",
+      "providerID": "BBG000F1ZSQ2",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "MA"
+    },
+    {
+      "aliases": [
+        "American Express"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_9095f5ada4d978797e2534e40124be26",
+      "isActive": true,
+      "kind": "equity",
+      "name": "American Express",
+      "providerID": "BBG000BCQZS4",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "AXP"
+    },
+    {
+      "aliases": [
+        "PayPal"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_c506241123df5785d82d58d7dc513485",
+      "isActive": true,
+      "kind": "equity",
+      "name": "PayPal",
+      "providerID": "BBG0077VNXV6",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "PYPL"
+    },
+    {
+      "aliases": [
+        "Chubb"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_76f1fb2241797ef33e4aa004471bdfd6",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Chubb",
+      "providerID": "BBG000BR14K5",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "CB"
+    },
+    {
+      "aliases": [
+        "Progressive Corp"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_812613c0728a69c6f56dfe6eba419b35",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Progressive Corp",
+      "providerID": "BBG000BR37X2",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "PGR"
+    },
+    {
+      "aliases": [
+        "Allstate"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b2b0c30752fb29067642ef5ab6be74c6",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Allstate",
+      "providerID": "BBG000BVMGF2",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "ALL"
+    },
+    {
+      "aliases": [
+        "BlackRock"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_06c72ec9f68be12bdfdf30fe6bbb692d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "BlackRock",
+      "providerID": "BBG01PSW2WN4",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "BLK"
+    },
+    {
+      "aliases": [
+        "Charles Schwab"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_a6f7a83b244e6c7abd67d6353ea2ceb1",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Charles Schwab",
+      "providerID": "BBG000BSLZY7",
+      "sectorIDs": [
+        "financials"
+      ],
+      "symbol": "SCHW"
+    },
+    {
+      "aliases": [
+        "Exxon Mobil",
+        "ExxonMobil"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_530051494d8fcb348174adb9fdc6b9ac",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Exxon Mobil",
+      "providerID": "BBG023CY9MM1",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "XOM"
+    },
+    {
+      "aliases": [
+        "Chevron"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_868e24fe24d0211c41ad82daedfde23a",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Chevron",
+      "providerID": "BBG000K4ND22",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "CVX"
+    },
+    {
+      "aliases": [
+        "Shell"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_efd74abd9ee96e741124ba8fc4984588",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Shell",
+      "providerID": "BBG0147BN6G2",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "SHEL"
+    },
+    {
+      "aliases": [
+        "BP"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_4a70c04aa319dd344e1ba3b5e8f980ee",
+      "isActive": true,
+      "kind": "equity",
+      "name": "BP",
+      "providerID": "BBG000BT4FC2",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "BP"
+    },
+    {
+      "aliases": [
+        "TotalEnergies"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_ff353c21fc60aabcb97bffb3db650aaf",
+      "isActive": true,
+      "kind": "equity",
+      "name": "TotalEnergies",
+      "providerID": "BBG000JLVJ97",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "TTE"
+    },
+    {
+      "aliases": [
+        "ConocoPhillips"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_93d1a4c1e34ace8abc09e1496920063e",
+      "isActive": true,
+      "kind": "equity",
+      "name": "ConocoPhillips",
+      "providerID": "BBG000BQQH30",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "COP"
+    },
+    {
+      "aliases": [
+        "Schlumberger"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_37637ce3c6f29270c969b5ece49ff7c7",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Schlumberger",
+      "providerID": "BBG000BT41Q8",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "SLB"
+    },
+    {
+      "aliases": [
+        "EOG Resources"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_6b01457b02ce65b386056a2be27b216a",
+      "isActive": true,
+      "kind": "equity",
+      "name": "EOG Resources",
+      "providerID": "BBG000BZ9223",
+      "sectorIDs": [
+        "energy"
+      ],
+      "symbol": "EOG"
+    },
+    {
+      "aliases": [
+        "Linde"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_c383ea09b6d7fefcd51621bd6b984ac8",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Linde",
+      "providerID": "BBG01FND0CC1",
+      "sectorIDs": [
+        "materials"
+      ],
+      "symbol": "LIN"
+    },
+    {
+      "aliases": [
+        "BHP Group"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_14ca69266cc4fc52980a20253ee8f3b4",
+      "isActive": true,
+      "kind": "equity",
+      "name": "BHP Group",
+      "providerID": "BBG000BD5NZ4",
+      "sectorIDs": [
+        "materials"
+      ],
+      "symbol": "BHP"
+    },
+    {
+      "aliases": [
+        "Rio Tinto"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_eeb47737e508f3df1c6d255c4a6661fb",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Rio Tinto",
+      "providerID": "BBG000FD28T3",
+      "sectorIDs": [
+        "materials"
+      ],
+      "symbol": "RIO"
+    },
+    {
+      "aliases": [
+        "Freeport-McMoRan"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_79ab7813539c867566fcfd33502a5d65",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Freeport-McMoRan",
+      "providerID": "BBG000BJDB15",
+      "sectorIDs": [
+        "materials"
+      ],
+      "symbol": "FCX"
+    },
+    {
+      "aliases": [
+        "Newmont"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_c14a4928e3ba3888aa80b96d7511db82",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Newmont",
+      "providerID": "BBG000BPWXK1",
+      "sectorIDs": [
+        "materials"
+      ],
+      "symbol": "NEM"
+    },
+    {
+      "aliases": [
+        "Caterpillar"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_eb579f9f5bb5746ef4bfd3586a14751a",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Caterpillar",
+      "providerID": "BBG000BF0K17",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "CAT"
+    },
+    {
+      "aliases": [
+        "Deere",
+        "John Deere"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_c217d6980998a9a143426eb4023ad04c",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Deere",
+      "providerID": "BBG000BH1NH9",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "DE"
+    },
+    {
+      "aliases": [
+        "GE Aerospace"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_7ab8838d38917ad36761545eb054c76d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "GE Aerospace",
+      "providerID": "BBG000BK6MB5",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "GE"
+    },
+    {
+      "aliases": [
+        "Honeywell"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_2e7add5f808eea3ab607dcc71e9c2b6d",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Honeywell",
+      "providerID": "BBG000H556T9",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "HON"
+    },
+    {
+      "aliases": [
+        "Eaton"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_bd66f880cdea66ce1980f6179a29ffdc",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Eaton",
+      "providerID": "BBG000BJ3PD2",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "ETN"
+    },
+    {
+      "aliases": [
+        "RTX Corp",
+        "Raytheon"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_2780b295cbc23d59e0d28bc039f650cf",
+      "isActive": true,
+      "kind": "equity",
+      "name": "RTX Corp",
+      "providerID": "BBG000BW8S60",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "RTX"
+    },
+    {
+      "aliases": [
+        "Lockheed Martin"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_924858fe2d24d1526457e96f1a73f014",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Lockheed Martin",
+      "providerID": "BBG000C1BW00",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "LMT"
+    },
+    {
+      "aliases": [
+        "Boeing"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_741ad5ec200123279b0d7fc9d57ea95f",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Boeing",
+      "providerID": "BBG000BCSST7",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "BA"
+    },
+    {
+      "aliases": [
+        "United Parcel Service"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b8c28cff7e85178ee6e0d9c91c9a9066",
+      "isActive": true,
+      "kind": "equity",
+      "name": "United Parcel Service",
+      "providerID": "BBG000L9CV04",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "UPS"
+    },
+    {
+      "aliases": [
+        "Union Pacific"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b4987c296df06bdacdc0958f24e9d40a",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Union Pacific",
+      "providerID": "BBG000BW3299",
+      "sectorIDs": [
+        "industrials"
+      ],
+      "symbol": "UNP"
+    },
+    {
+      "aliases": [
+        "AT&T"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_576ca598612c7fd7613278832173cace",
+      "isActive": true,
+      "kind": "equity",
+      "name": "AT&T",
+      "providerID": "BBG000BSJK37",
+      "sectorIDs": [
+        "communications"
+      ],
+      "symbol": "T"
+    },
+    {
+      "aliases": [
+        "Verizon"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_b2b0076a6754fc0c6f2e71144f2f0d38",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Verizon",
+      "providerID": "BBG000HS77T5",
+      "sectorIDs": [
+        "communications"
+      ],
+      "symbol": "VZ"
+    },
+    {
+      "aliases": [
+        "T-Mobile US"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_798cdd7c8750fc5f8914fbe3b44227a8",
+      "isActive": true,
+      "kind": "equity",
+      "name": "T-Mobile US",
+      "providerID": "BBG000NDV1D4",
+      "sectorIDs": [
+        "communications"
+      ],
+      "symbol": "TMUS"
+    },
+    {
+      "aliases": [
+        "NextEra Energy"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_8ee2a176a01d5170103b594291353336",
+      "isActive": true,
+      "kind": "equity",
+      "name": "NextEra Energy",
+      "providerID": "BBG000BJSBJ0",
+      "sectorIDs": [
+        "utilities"
+      ],
+      "symbol": "NEE"
+    },
+    {
+      "aliases": [
+        "Duke Energy"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_4cdcbd66b69dc9841139473bd59abbb0",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Duke Energy",
+      "providerID": "BBG000BHGDH5",
+      "sectorIDs": [
+        "utilities"
+      ],
+      "symbol": "DUK"
+    },
+    {
+      "aliases": [
+        "Southern Co"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_1a390fb984e28304aee8f31bc1b3b0ea",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Southern Co",
+      "providerID": "BBG000BT9DW0",
+      "sectorIDs": [
+        "utilities"
+      ],
+      "symbol": "SO"
+    },
+    {
+      "aliases": [
+        "Prologis"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_5b1ecc0cf2576a0f63a8df671bb4d0b8",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Prologis",
+      "providerID": "BBG000B9Z0J8",
+      "sectorIDs": [
+        "real-estate"
+      ],
+      "symbol": "PLD"
+    },
+    {
+      "aliases": [
+        "American Tower"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_c50f3d1c5b275d602ad2078826f7c886",
+      "isActive": true,
+      "kind": "equity",
+      "name": "American Tower",
+      "providerID": "BBG000B9XYV2",
+      "sectorIDs": [
+        "real-estate"
+      ],
+      "symbol": "AMT"
+    },
+    {
+      "aliases": [
+        "Equinix"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_1f09d962682581d560bc83862a413bff",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Equinix",
+      "providerID": "BBG000MBDGM6",
+      "sectorIDs": [
+        "real-estate"
+      ],
+      "symbol": "EQIX"
+    },
+    {
+      "aliases": [
+        "Realty Income"
+      ],
+      "exchange": "NASDAQ",
+      "id": "fin_8cf987f467e901b7e9e2ef206176bc74",
+      "isActive": true,
+      "kind": "equity",
+      "name": "Realty Income",
+      "providerID": "BBG000DHPN63",
+      "sectorIDs": [
+        "real-estate"
+      ],
+      "symbol": "O"
+    }
+  ],
+  "reference": "FinanceResolver v3.4 actual Swift outputs"
+}
