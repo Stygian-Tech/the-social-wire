@@ -164,3 +164,17 @@ func (s *Service) Refresh(ctx context.Context, auth gatewaycore.AuthContext) (Si
 	}
 	return sidebar, e
 }
+func (s *Service) SidebarRows(viewer string, ids []string) []SidebarRow {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []SidebarRow{}
+	for _, id := range ids {
+		for _, key := range LookupKeys(id) {
+			if row, ok := s.rows[viewer][key]; ok {
+				out = append(out, row)
+				break
+			}
+		}
+	}
+	return out
+}
