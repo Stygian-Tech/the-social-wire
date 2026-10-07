@@ -184,6 +184,30 @@ describe("CI workflow configuration", () => {
     }
   });
 
+  it("fails the aggregate gate for every required check that does not succeed", () => {
+    const parsed = Bun.YAML.parse(workflow) as { jobs: Record<string, { steps: Array<{ run?: string; env?: Record<string, string> }> }> };
+    const gate = parsed.jobs.required.steps.find(step => step.run)!;
+    const baseline: Record<string, string> = { CHANGES_RESULT: "success" };
+    for (const key of Object.keys(gate.env!)) {
+      if (key.endsWith("_FLAG")) baseline[key] = "false";
+      if (key.endsWith("_RESULT") && key !== "CHANGES_RESULT") baseline[key] = "skipped";
+    }
+    for (const flag of Object.keys(baseline).filter(key => key.endsWith("_FLAG"))) {
+      const resultKey = flag.replace(/_FLAG$/, "_RESULT");
+      for (const result of ["failure", "cancelled", "skipped", "success"]) {
+        const run = spawnSync("bash", ["-c", gate.run!], {
+          env: { ...process.env, ...baseline, [flag]: "true", [resultKey]: result },
+          encoding: "utf8",
+        });
+        expect(run.status).toBe(result === "success" ? 0 : 1);
+      }
+    }
+    for (const result of ["failure", "cancelled", "skipped"]) {
+      const run = spawnSync("bash", ["-c", gate.run!], { env: { ...process.env, ...baseline, CHANGES_RESULT: result }, encoding: "utf8" });
+      expect(run.status).toBe(1);
+    }
+  });
+
   it("tests merge previews once and supports merge queues", () => {
     const triggerBlock = workflow.slice(0, workflow.indexOf("\nenv:"));
     expect(triggerBlock).toContain("pull_request:");
@@ -209,14 +233,33 @@ describe("CI workflow configuration", () => {
     );
   });
 
-  it("tests deployment-shaped artifacts and migrations", () => {
-    expect(workflow).toContain("Build Gateway production image");
-    expect(workflow).toContain("Build AppView production image");
-    expect(workflow).toContain("Build replicated indexing production image");
-    expect(workflow).toContain("Build The Wire Corpus Edge production image");
-    expect(workflow).toContain("Build Operations production image");
+  it("tests source contracts without deployment artifact builds", () => {
+    expect(workflow).not.toMatch(/bunx turbo build|next build/);
+    expect(workflow).not.toMatch(/docker build --file services\//);
+    expect(workflow).not.toContain("Build runtime image");
     expect(workflow).toContain("Apply migrations from empty and verify idempotence");
     expect(workflow).toContain("Test iOS app with coverage");
+    expect(workflow).toContain("go test -race");
+    expect(workflow).toContain("Test source entrypoint database gate");
+    // PostgreSQL process-restart images are executable integration fixtures.
+    expect(workflow).toContain("Verify PostgreSQL clean shutdown");
+    expect(workflow).toContain("Build isolated PostgreSQL restart fixture");
+  });
+
+  it("shares canonical migration preparation while keeping databases isolated", () => {
+    const parsed = Bun.YAML.parse(workflow) as { jobs: Record<string, { steps: Array<{ uses?: string; with?: Record<string, string> }> }> };
+    const databases: string[] = [];
+    for (const job of ["appview", "operations", "go-packages", "jetstream-ingest", "wire-corpus-edge", "database-migrator"]) {
+      const preparation = parsed.jobs[job].steps.filter(step => step.uses === "./.github/actions/prepare-postgres");
+      expect(preparation).toHaveLength(1);
+      databases.push(preparation[0].with!["database-url"]);
+    }
+    expect(new Set(databases).size).toBe(6);
+    const migrationStep = parsed.jobs["database-migrator"].steps.find(step => step.uses === "./.github/actions/prepare-postgres");
+    expect(migrationStep!.with!["verify-idempotence"]).toBe("true");
+    const action = readFileSync(join(repositoryRoot, ".github/actions/prepare-postgres/action.yml"), "utf8");
+    expect(action).toContain("bash scripts/ci-prepare-postgres.sh");
+    expect(action).not.toContain("docker");
   });
 
   it("leaves deployments to the platform integration", () => {

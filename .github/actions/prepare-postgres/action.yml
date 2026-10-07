@@ -1,0 +1,25 @@
+name: Prepare PostgreSQL integration database
+description: Apply canonical migrations directly to an isolated CI database without a deployment image.
+inputs:
+  database-url:
+    description: Disposable CI PostgreSQL database URL
+    required: true
+  verify-idempotence:
+    description: Apply the migration runner twice to verify idempotence
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Install PostgreSQL client
+      shell: bash
+      run: |
+        if ! command -v psql >/dev/null; then
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+        fi
+    - name: Apply canonical migrations
+      shell: bash
+      env:
+        DATABASE_URL: ${{ inputs.database-url }}
+        VERIFY_IDEMPOTENCE: ${{ inputs.verify-idempotence }}
+      run: bash scripts/ci-prepare-postgres.sh

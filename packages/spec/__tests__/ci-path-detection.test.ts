@@ -80,7 +80,7 @@ describe("CI path detection", () => {
     expect(result.get("podcast_worker")).toBe("true");
     expect(result.get("spec")).toBe("true");
   });
-  it("checks Go packages and worker images when shared Go code changes", () => {
+  it("checks Go packages and worker contracts when shared Go code changes", () => {
     const result = detect(repositoryWithChange("packages/go/wirecore/ranker.go"), "pull_request");
     for (const job of ["go_packages", "indexing_worker", "jetstream_ingest", "wire_ingest"]) {
       expect(result.get(job)).toBe("true");
@@ -92,7 +92,7 @@ describe("CI path detection", () => {
     expect(result.get("go_packages")).toBe("true");
   });
 
-  it("rebuilds every schema-ready consumer when the local Go module changes", () => {
+  it("checks every schema-ready consumer when the local Go module changes", () => {
     const result = detect(repositoryWithChange("packages/go/go.mod"), "pull_request");
     for (const job of ["gateway", "appview", "operations", "indexing_worker", "jetstream_ingest", "wire_ingest", "podcast_worker"]) {
       expect(result.get(job)).toBe("true");
@@ -127,7 +127,7 @@ describe("CI path detection", () => {
     expect(result.get("web")).toBe("false");
   });
 
-  it("checks every main-schema consumer image when its migration manifest changes", () => {
+  it("checks every main-schema consumer when its migration manifest changes", () => {
     const result = detect(
       repositoryWithChange("database/migrations/20990101000000_example.sql"),
       "pull_request",
@@ -144,7 +144,7 @@ describe("CI path detection", () => {
     expect(result.get("spec")).toBe("true");
   });
 
-  it("checks all images embedding the shared startup gate", () => {
+  it("checks all consumers embedding the shared startup gate", () => {
     const result = detect(
       repositoryWithChange("services/jetstream-ingest/internal/schemaready/gate.go"),
       "pull_request",
@@ -230,6 +230,14 @@ describe("CI path detection", () => {
     const unrelated = detect(repositoryWithChange("docs/wiki/Testing.md"), "pull_request");
     expect(unrelated.get("benchmark_tools")).toBe("false");
   });
+
+  for (const path of ["scripts/ci-prepare-postgres.sh", ".github/actions/prepare-postgres/action.yml"]) {
+    it(`runs the full matrix when shared PostgreSQL preparation changes: ${path}`, () => {
+      const output = detect(repositoryWithChange(path), "pull_request");
+      expect(output.size).toBe(18);
+      expect([...output.values()].every(value => value === "true")).toBe(true);
+    });
+  }
 
   it("runs the full matrix when the detector changes", () => {
     const result = detect(

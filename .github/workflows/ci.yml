@@ -67,6 +67,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - name: Cache Bun downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Typecheck
@@ -81,11 +86,6 @@ jobs:
         run: bun --cwd apps/web run test:coverage
         env:
           NEXT_PUBLIC_APP_ENV: test
-      - name: Build
-        run: bunx turbo build --filter=web
-        env:
-          NEXT_PUBLIC_APP_ENV: test
-          NEXT_PUBLIC_ATPROTO_CLIENT_ID: test-client
 
   operations-web:
     name: Operations Web
@@ -101,6 +101,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - name: Cache Bun downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Typecheck
@@ -109,11 +114,6 @@ jobs:
         run: bunx turbo lint --filter=operations
       - name: Test
         run: bun --cwd apps/operations run test:coverage
-      - name: Build
-        run: bunx turbo build --filter=operations
-        env:
-          APP_ENV: dev
-          NEXT_PUBLIC_OPERATIONS_DEMO_MODE: 1
 
   apple:
     name: Apple
@@ -179,8 +179,6 @@ jobs:
       - name: Test Gateway
         working-directory: services/gateway
         run: swift test
-      - name: Build Gateway production image
-        run: docker build --file services/gateway/Dockerfile --tag the-social-wire-gateway:test .
 
   redis:
     name: SocialWire Redis
@@ -232,13 +230,10 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
-      - name: Build migration image for AppView integration tests
-        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-appview-migrator:test .
       - name: Apply database migrations for AppView integration tests
-        run: |
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test \
-            the-social-wire-appview-migrator:test
+        uses: ./.github/actions/prepare-postgres
+        with:
+          database-url: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test
       - name: Cache AppView
         uses: actions/cache@v5
         with:
@@ -269,8 +264,6 @@ jobs:
         env:
           WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test?sslmode=disable
         run: swift test
-      - name: Build AppView production image
-        run: docker build --file services/appview/Dockerfile --tag the-social-wire-appview:test .
 
   operations:
     name: Operations
@@ -310,13 +303,10 @@ jobs:
           done
           docker logs "$POSTGRES_CONTAINER"
           exit 1
-      - name: Build migration image for telemetry integration tests
-        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-operations-migrator:test .
       - name: Apply telemetry database migrations
-        run: |
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test \
-            the-social-wire-operations-migrator:test
+        uses: ./.github/actions/prepare-postgres
+        with:
+          database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test
       - name: Verify statement statistics are available
         env:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
@@ -348,8 +338,6 @@ jobs:
       - name: Test Operations
         working-directory: services/operations
         run: swift test
-      - name: Build Operations production image
-        run: docker build --file services/operations/Dockerfile --tag the-social-wire-operations:test .
 
   # Real PostgreSQL transactions and actual Swift oracles verify the local Go
   # foundation; this job participates in the required aggregate branch gate.
@@ -383,13 +371,10 @@ jobs:
         with:
           swift-version: "6.2.4"
           skip-verify-signature: true
-      - name: Build migration image for Go integration tests
-        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-go-migrator:test .
       - name: Apply canonical migrations to disposable Go test database
-        run: |
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test \
-            the-social-wire-go-migrator:test
+        uses: ./.github/actions/prepare-postgres
+        with:
+          database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test
       - name: Check canonical contracts and package inventory
         run: |
           python3 scripts/go/generate-contracts.py --check
@@ -435,13 +420,10 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
-      - name: Build migration image for integration tests
-        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-database-migrator:test .
       - name: Apply database migrations
-        run: |
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_test \
-            the-social-wire-database-migrator:test
+        uses: ./.github/actions/prepare-postgres
+        with:
+          database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_test
       - uses: actions/setup-go@v6
         with:
           go-version-file: services/jetstream-ingest/go.mod
@@ -459,8 +441,6 @@ jobs:
       - name: Vet
         working-directory: services/jetstream-ingest
         run: go vet ./...
-      - name: Build image
-        run: docker build --file services/jetstream-ingest/Dockerfile --tag the-social-wire-jetstream-ingest:test .
 
   wire-ingest:
     name: The Wire Global Ingest
@@ -477,8 +457,6 @@ jobs:
       - name: Test isolated Wire pipeline contracts
         working-directory: services/jetstream-ingest
         run: go test -race ./internal/config ./internal/ingest ./internal/service -run 'Wire|PinnedJetstreamClient'
-      - name: Build shared ingest image for Wire mode
-        run: docker build --file services/jetstream-ingest/Dockerfile --tag the-social-wire-wire-ingest:test .
 
   indexing-worker:
     name: Replicated Indexing Worker
@@ -502,8 +480,6 @@ jobs:
           test -z "$(gofmt -l cmd internal)"
           go vet ./...
           go test -race ./...
-      - name: Build replicated indexing production image
-        run: docker build --file services/indexing-worker/Dockerfile --tag the-social-wire-indexing-worker:test .
 
   wire-corpus-edge:
     name: The Wire Corpus Edge
@@ -527,34 +503,22 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
-      - name: Build migration image for corpus contract tests
-        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-wire-corpus-migrator:test .
       - name: Apply database migrations
-        run: |
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
-            the-social-wire-wire-corpus-migrator:test
+        uses: ./.github/actions/prepare-postgres
+        with:
+          database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test
       - name: Verify presentation-only read contract
         run: |
-          docker run --rm --network host \
-            --volume "$PWD/scripts/verify-wire-corpus-serving.sql:/tmp/verify-wire-corpus-serving.sql:ro" \
-            --entrypoint psql \
-            the-social-wire-wire-corpus-migrator:test \
-            postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
-            -X -v ON_ERROR_STOP=1 -f /tmp/verify-wire-corpus-serving.sql
+          psql postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
+            -X -v ON_ERROR_STOP=1 -f scripts/verify-wire-corpus-serving.sql
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
       - name: Verify Corpus serving boundary rejects unreviewed payloads and scores
         env:
           CORPUS_SERVING_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/tsw_release_corpus_boundary
-          PSQL_BIN: /tmp/corpus-boundary-test-psql
+          PSQL_BIN: psql
         run: |
-          cat > "$PSQL_BIN" <<'SH'
-          #!/bin/sh
-          exec docker run --rm -i --network host --entrypoint psql the-social-wire-wire-corpus-migrator:test "$@"
-          SH
-          chmod +x "$PSQL_BIN"
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw_release_corpus_boundary TEMPLATE socialwire_wire_corpus_test'
           bun test packages/spec/__tests__/wire-corpus-serving-verifier-postgres.test.ts
@@ -567,8 +531,6 @@ jobs:
         env:
           WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test?sslmode=disable
         run: swift test
-      - name: Build The Wire Corpus Edge production image
-        run: docker build --file services/wire-corpus-edge/Dockerfile --tag the-social-wire-wire-corpus-edge:test .
 
   database-migrator:
     name: Database Migrator
@@ -598,48 +560,30 @@ jobs:
         run: |
           bash -n scripts/apply-database-migrations.sh
           bash -n scripts/verify-postgres-restore.sh
-      - name: Build image
-        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-database-migrator:test .
       - name: Apply migrations from empty and verify idempotence
-        run: |
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
-            the-social-wire-database-migrator:test
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
-            the-social-wire-database-migrator:test
+        uses: ./.github/actions/prepare-postgres
+        with:
+          database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations
+          verify-idempotence: "true"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
       - name: Verify telemetry and retention migration guards, interrupted retry, and bounded inbox diagnostics
         env:
           POSTGRES_MIGRATION_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/tsw92_telemetry_test
-          PSQL_BIN: /tmp/telemetry-test-psql
+          PSQL_BIN: psql
         run: |
-          cat > "$PSQL_BIN" <<'SH'
-          #!/bin/sh
-          exec docker run --rm -i --network host --entrypoint psql the-social-wire-database-migrator:test "$@"
-          SH
-          chmod +x "$PSQL_BIN"
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw92_telemetry_test'
           bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/operations-change-retention-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts packages/spec/__tests__/wire-ordered-signal-migration-postgres.test.ts
       - name: Verify Jetstream V2 drain indexes and query plans
         run: |
-          docker run --rm --network host \
-            --volume "$PWD/scripts/verify-jetstream-v2-drain-indexes.sql:/tmp/verify-jetstream-v2-drain-indexes.sql:ro" \
-            --entrypoint psql \
-            the-social-wire-database-migrator:test \
-            postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
-            -X -v ON_ERROR_STOP=1 -f /tmp/verify-jetstream-v2-drain-indexes.sql
+          psql postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
+            -X -v ON_ERROR_STOP=1 -f scripts/verify-jetstream-v2-drain-indexes.sql
       - name: Verify The Wire inbox claim index and query plan
         run: |
-          docker run --rm --network host \
-            --volume "$PWD/scripts/verify-wire-inbox-claim-index.sql:/tmp/verify-wire-inbox-claim-index.sql:ro" \
-            --entrypoint psql \
-            the-social-wire-database-migrator:test \
-            postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
-            -X -v ON_ERROR_STOP=1 -f /tmp/verify-wire-inbox-claim-index.sql
+          psql postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
+            -X -v ON_ERROR_STOP=1 -f scripts/verify-wire-inbox-claim-index.sql
 
   lexicons:
     name: Lexicons
@@ -655,6 +599,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - name: Cache Bun downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Test
@@ -675,6 +624,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - name: Cache Bun downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Test
@@ -755,22 +709,30 @@ jobs:
           bun-version: 1.3.14
       - name: Install media tools
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Cache Bun downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun --cwd services/podcast-worker typecheck
       - name: Test media processing and bridge identities
         run: bun --cwd services/podcast-worker test
-      - name: Build runtime image
-        run: docker build --file services/podcast-worker/Dockerfile --tag the-social-wire-podcast-worker:test .
-      - name: Smoke test runtime entrypoint and database gate
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: services/jetstream-ingest/go.mod
+          cache-dependency-path: services/jetstream-ingest/go.sum
+      - name: Test source entrypoint database gate
+        working-directory: services/jetstream-ingest
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm --entrypoint /bin/sh the-social-wire-podcast-worker:test \
-            -c 'test -x /usr/local/bin/bun && /usr/local/bin/bun --version'
+          # Compile the test subject, without constructing a deployment image.
+          go build -o "$RUNNER_TEMP/schema-ready-test" ./cmd/schema-ready
           status=0
-          output="$(docker run --rm --env APP_ENV=dev the-social-wire-podcast-worker:test 2>&1)" || status=$?
+          output="$(env -u DATABASE_URL APP_ENV=dev "$RUNNER_TEMP/schema-ready-test" -- "$(command -v bun)" "$GITHUB_WORKSPACE/services/podcast-worker/src/index.ts" 2>&1)" || status=$?
           if [[ "$status" != "1" || "$output" != *"schema readiness requires DATABASE_URL"* || "$output" == *"absolute application path"* ]]; then
             printf '%s\n' "$output"
             exit 1

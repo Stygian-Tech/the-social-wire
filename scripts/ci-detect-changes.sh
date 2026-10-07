@@ -32,7 +32,9 @@ esac
 # matrix so the aggregate gate cannot go green with an untested CI change.
 if [ "$MATCH_ALL" = "0" ] && ! git diff --quiet "$BASE" "$HEAD" -- \
   '.github/workflows/ci.yml' \
-  'scripts/ci-detect-changes.sh'; then
+  'scripts/ci-detect-changes.sh' \
+  'scripts/ci-prepare-postgres.sh' \
+  '.github/actions/prepare-postgres'; then
   MATCH_ALL=1
 fi
 
