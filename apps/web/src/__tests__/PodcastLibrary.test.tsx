@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act } from "react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
 import * as playerModule from "@/components/Podcasts/PodcastPlayerProvider";
@@ -16,8 +17,13 @@ beforeEach(() => {
     Object.defineProperty(globalThis, name, { configurable: true, value });
     restores.push(() => { if (original) Object.defineProperty(globalThis, name, original); else Reflect.deleteProperty(globalThis, name); });
   }
+  for (const [name, value] of Object.entries({ requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+    restores.push(() => { if (original) Object.defineProperty(globalThis, name, original); else Reflect.deleteProperty(globalThis, name); });
+  }
 });
-afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
+afterEach(async () => { await act(async () => { cleanup(); await new Promise(resolve => setTimeout(resolve, 0)); }); restores.splice(0).reverse().forEach(restore => restore()); });
 
 it("adds a tokenized private RSS feed without a public subscription write", async () => {
   const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
@@ -59,6 +65,31 @@ it("adds a tokenized private RSS feed without a public subscription write", asyn
   expect(screen.getByRole("complementary", { name: "Podcast Library" }).className).toContain("p-3");
   expect(screen.getByRole("button", { name: "Recently Added" }).className).toContain("min-h-8");
   expect(screen.getByRole("button", { name: "Recently Added" }).className).toContain("pointer-coarse:min-h-11");
+});
+
+it("seeks current episode notes without reloading and starts other episode notes at their selected time", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const current: client.PodcastEpisode = { id: "current", showId: "show", title: "Current Episode", audioUrl: "/current", durationSeconds: 120, publishedAt: "2026-10-05", transcripts: [], description: "0:30 Current Topic" };
+  const other = { ...current, id: "other", title: "Other Episode", audioUrl: "/other", description: "1:00 Other Topic" };
+  const played: unknown[] = [];
+  const sought: number[] = [];
+  const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
+  const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state: client.initialPodcastState(), episode: current, playing: false, position: 0, duration: 120, error: null, silence: null, play: async (item, startAt) => { played.push([item.id, startAt]); }, seek: seconds => { sought.push(seconds); }, toggle() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
+  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path === "shows" ? { shows: [] } : { episodes: [current, other] }) as T);
+  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  render(<PodcastLibrary />);
+  fireEvent.click(await screen.findByRole("button", { name: "Show Notes: Current Episode" }));
+  fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Seek to 0:30" }));
+  expect(sought).toEqual([30]);
+  expect(played).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Show Notes: Other Episode" }));
+  fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Seek to 1:00" }));
+  expect(played).toEqual([["other", 60]]);
+  expect(sought).toEqual([30]);
 });
 
 it("offers device audio saving from viewer-owned offline downloads without an OAuth session", async () => {

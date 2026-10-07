@@ -337,7 +337,10 @@ function PodcastViewerLibrary() {
         <ul className="space-y-3">
           {displayed.map((item) => (
             <li key={item.id} className="rounded-xl border p-4">
-              <PodcastEpisodeDetailsDialog episode={item} showName={showNames.get(item.showId)} />
+              <PodcastEpisodeDetailsDialog episode={item} showName={showNames.get(item.showId)} onTimecode={seconds => {
+                if (player.episode?.id === item.id) player.seek(seconds);
+                else void player.play(item, seconds);
+              }} />
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <PodcastEpisodeActionButton
                   icon={Play}
