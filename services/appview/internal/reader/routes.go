@@ -13,11 +13,14 @@ import (
 
 	"github.com/stygian-tech/the-social-wire/packages/go/appviewcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
+	"github.com/stygian-tech/the-social-wire/packages/go/listcore"
 )
 
 type Routes struct {
-	DB  *sql.DB
-	Now func() time.Time
+	DB         *sql.DB
+	Now        func() time.Time
+	ListFeed   func(context.Context, gatewaycore.AuthContext, string, string, string, int, time.Time) (*appviewcore.FeedPage, error)
+	RepairFeed func(context.Context, string) bool
 }
 
 func (a Routes) Register(mux *http.ServeMux) {
@@ -75,11 +78,11 @@ func (a Routes) feed(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	kind, id := q.Get("kind"), q.Get("id")
-	if kind != "subscribed" && kind != "following" && kind != "folder" && kind != "publication" {
+	if kind != "subscribed" && kind != "following" && kind != "folder" && kind != "publication" && kind != "list" {
 		fail(w, r, 400, "invalid_request", "Query requires a valid `kind`", false)
 		return
 	}
-	if (kind == "folder" || kind == "publication") && id == "" {
+	if (kind == "folder" || kind == "publication" || kind == "list") && id == "" {
 		fail(w, r, 400, "invalid_request", "Query requires `id` for this feed kind", false)
 		return
 	}
@@ -97,7 +100,7 @@ func (a Routes) feed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cursor := q.Get("cursor")
-	if _, present := q["cursor"]; present {
+	if _, present := q["cursor"]; present && kind != "list" {
 		if _, err := appviewcore.DecodeEntryCursor(cursor); err != nil {
 			fail(w, r, 400, "invalid_request", "Invalid `cursor`", false)
 			return
@@ -106,7 +109,31 @@ func (a Routes) feed(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	started := time.Now()
-	page, err := (appviewcore.FeedStore{DB: a.DB}).Feed(ctx, viewer.DID, kind, id, filter, cursor, limit, a.now())
+	var page *appviewcore.FeedPage
+	if kind == "list" {
+		if a.ListFeed == nil {
+			fail(w, r, 503, "feed_projection_warming", "The list projection is warming. Refresh to retry.", true)
+			return
+		}
+		page, err = a.ListFeed(ctx, viewer, id, filter, cursor, limit, a.now())
+		if errors.Is(err, listcore.ErrWarming) {
+			fail(w, r, 503, "feed_projection_warming", "The list projection is warming. Refresh to retry.", true)
+			return
+		}
+		if errors.Is(err, listcore.ErrIdentity) || errors.Is(err, listcore.ErrCursor) {
+			fail(w, r, 400, "invalid_request", "Invalid list identity or cursor.", false)
+			return
+		}
+		if errors.Is(err, listcore.ErrMissing) {
+			fail(w, r, 404, "not_found", "The list is not available to this viewer.", false)
+			return
+		}
+	} else {
+		page, err = (appviewcore.FeedStore{DB: a.DB}).Feed(ctx, viewer.DID, kind, id, filter, cursor, limit, a.now())
+		if err == nil && page == nil && a.RepairFeed != nil && a.RepairFeed(ctx, viewer.DID) {
+			page, err = (appviewcore.FeedStore{DB: a.DB}).Feed(ctx, viewer.DID, kind, id, filter, cursor, limit, a.now())
+		}
+	}
 	if err != nil {
 		databaseError(w, r, err)
 		return
