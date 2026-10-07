@@ -9,8 +9,7 @@ info:
     - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, sync cache, unbuffered proxy to AppView.
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
     - **Ingress Controller** (`services/jetstream-ingest`) — independently fenced AppView and Wire Jetstream intake lanes.
-    - **Projection Pool / Coordinator** (`services/indexing-worker`) — replicated durable-inbox projection plus fenced RSS, backfill, rank, enrichment, and cleanup jobs (health surface only).
-    - **Charybdis compatibility executable** (`services/appview-worker`) — rollback-compatible AppView worker entry point during consolidation.
+    - **Go Projection Pool / Coordinator** (`services/indexing-worker`) — replicated durable-inbox projection plus fenced RSS, backfill, rank, enrichment, and cleanup jobs (health surface only).
     - **`services/operations`** — operator-only observability and recovery control plane, proxied by Gateway.
 
     **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.

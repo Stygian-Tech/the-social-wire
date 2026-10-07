@@ -131,3 +131,52 @@ class WireRollupBenchmarkSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GoRollupSQLContractTests(unittest.TestCase):
+    def module(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("rollup_sql", HARNESS.with_name("rollup_sql.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_actual_go_sql_and_window_bindings(self):
+        import datetime
+        module = self.module()
+        root = HARNESS.parents[2]
+        statements = module.load(root)
+        at = datetime.datetime(2026, 9, 13, 12, tzinfo=datetime.timezone.utc)
+        for incremental in (False, True):
+            query = module.aggregate(statements, incremental, at)
+            self.assertTrue(query.startswith(("SELECT", "WITH")), query[:100])
+            self.assertNotIn("$1", query)
+            for hours in (0, -1, -24, -168):
+                self.assertIn((at + datetime.timedelta(hours=hours)).isoformat(), query)
+            refresh = module.refresh(statements, incremental, at)
+            self.assertIn(statements["rollupUpdateSQL"], refresh)
+            self.assertIn(statements["rollupInsertSQL"], refresh)
+            self.assertTrue(refresh.endswith("COMMIT;"))
+
+    def test_rejects_missing_constants_and_changed_runtime_bindings(self):
+        module = self.module()
+        root = HARNESS.parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            from shutil import copyfile
+            scratch = Path(directory)
+            target = scratch / "packages/go/wireworkercore"
+            target.mkdir(parents=True)
+            for name in ("signal_rollup_sql.go", "signal_rollup_store.go"):
+                copyfile(root / "packages/go/wireworkercore" / name, target / name)
+            path = target / "signal_rollup_store.go"
+            original = path.read_text()
+            path.write_text(original.replace('at.Add(-24*time.Hour)', 'at.Add(-12*time.Hour)'))
+            with self.assertRaisesRegex(ValueError, 'bind'):
+                module.load(scratch)
+            path.write_text(original)
+            path = target / "signal_rollup_sql.go"
+            path.write_text(path.read_text().replace('const rollupStageFullSQL', 'const renamedStageFullSQL'))
+            with self.assertRaisesRegex(ValueError, 'constants'):
+                module.load(scratch)
+            with self.assertRaisesRegex(ValueError, 'placeholders'):
+                module.render('SELECT $2', ['value'])

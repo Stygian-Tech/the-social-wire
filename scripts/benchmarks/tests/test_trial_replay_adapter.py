@@ -98,7 +98,8 @@ class ReplayAdapterTests(unittest.TestCase):
             self.assertEqual(ingest["JETSTREAM_BOOTSTRAP_AFTER_SEQ"], "100")
             self.assertEqual(ingest["JETSTREAM_REPLAY_BEFORE_SEQ"], "10000")
             self.assertEqual(ingest["WIRE_ADMISSION_RATE_PER_SECOND"], "2")
-            self.assertEqual(drain["WIRE_WORKER_ROLE"], "drain")
+            self.assertNotIn("WIRE_WORKER_ROLE", drain)
+            self.assertEqual(drain["WIRE_FEED_MODE"], "shadow")
             self.assertEqual(drain["WIRE_INBOX_CONCURRENCY"], "16")
             for result in (ingest, drain):
                 self.assertEqual(result["RAILWAY_SERVICE_ID"], "actual-id")

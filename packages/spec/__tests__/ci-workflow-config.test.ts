@@ -22,19 +22,25 @@ const railwayServices = [
   { service: "Operations Web", config: "operations-web", restartPolicy: "ALWAYS" },
   { service: "Gateway", config: "gateway", restartPolicy: "ALWAYS" },
   { service: "App View", config: "appview", restartPolicy: "ALWAYS" },
-  { service: "Charybdis", config: "charybdis", restartPolicy: "ALWAYS" },
   { service: "Jetstream V2 Ingest", config: "jetstream-ingest", restartPolicy: "ALWAYS" },
   { service: "The Wire Global Ingest", config: "wire-jetstream-ingest", restartPolicy: "ALWAYS" },
-  { service: "The Wire Worker", config: "wire-worker", restartPolicy: "ALWAYS" },
-  { service: "The Wire Inbox Drain", config: "wire-inbox-drain", restartPolicy: "ALWAYS" },
   { service: "The Wire Corpus Edge", config: "wire-corpus-edge", restartPolicy: "ALWAYS" },
   { service: "Ops", config: "operations", restartPolicy: "ALWAYS" },
   { service: "Database Migrator", config: "database-migrator", restartPolicy: "NEVER" },
 ] as const;
 
 describe("CI workflow configuration", () => {
+  it("retires standalone Swift worker jobs while retaining API domain tests", () => {
+    for (const name of ["charybdis", "wire-worker"]) {
+      expect(workflow).not.toContain(`  ${name}:`);
+      expect(workflow).not.toContain(`services/${name}/Package.swift`);
+    }
+    for (const path of ["packages/swift/ThinAppViewCore", "packages/swift/WireCore", "packages/swift/FinanceCore", "packages/swift/SportsCore"]) {
+      expect(workflow).toContain(path);
+    }
+  });
   it("packages and watches FinanceCore in every deployed Finance consumer", () => {
-    for (const image of ["indexing-worker", "wire-worker", "appview", "wire-corpus-edge"]) {
+    for (const image of ["indexing-worker", "appview", "wire-corpus-edge"]) {
       const dockerfile = readFileSync(join(repositoryRoot, `services/${image}/Dockerfile`), "utf8");
       const copiesWholePackage = dockerfile.includes("COPY packages/swift/FinanceCore packages/swift/FinanceCore");
       const copiesManifestAndSources = dockerfile.includes("COPY packages/swift/FinanceCore/Package.swift") &&
@@ -42,7 +48,7 @@ describe("CI workflow configuration", () => {
       const copiesGoRuntime = image === "indexing-worker" && dockerfile.includes("COPY packages/go /src/packages/go");
       expect(copiesWholePackage || copiesManifestAndSources || copiesGoRuntime).toBe(true);
     }
-    for (const configName of ["appview", "wire-worker", "wire-inbox-drain", "wire-fresh-inbox-drain", "wire-corpus-edge"]) {
+    for (const configName of ["appview", "wire-corpus-edge"]) {
       const config = JSON.parse(readFileSync(join(repositoryRoot, `railway/${configName}.json`), "utf8"));
       expect(config.build.watchPatterns).toContain("/packages/swift/FinanceCore/**");
     }
@@ -50,11 +56,11 @@ describe("CI workflow configuration", () => {
       railwayInfrastructure.indexOf("const indexingBuild"),
       railwayInfrastructure.indexOf("const longRunningDeploy"),
     );
-    expect(indexingBuild).toContain('"/packages/swift/FinanceCore/**"');
+    expect(indexingBuild).toContain('"/packages/go/**"');
   });
 
   it("packages and watches SportsCore in every deployed Sports consumer", () => {
-    for (const image of ["indexing-worker", "wire-worker", "appview", "wire-corpus-edge"]) {
+    for (const image of ["indexing-worker", "appview", "wire-corpus-edge"]) {
       const dockerfile = readFileSync(join(repositoryRoot, `services/${image}/Dockerfile`), "utf8");
       const copiesWholePackage = dockerfile.includes("COPY packages/swift/SportsCore packages/swift/SportsCore");
       const copiesManifestAndSources = dockerfile.includes("COPY packages/swift/SportsCore/Package.swift") &&
@@ -62,7 +68,7 @@ describe("CI workflow configuration", () => {
       const copiesGoRuntime = image === "indexing-worker" && dockerfile.includes("COPY packages/go /src/packages/go");
       expect(copiesWholePackage || copiesManifestAndSources || copiesGoRuntime).toBe(true);
     }
-    for (const configName of ["appview", "wire-worker", "wire-inbox-drain", "wire-fresh-inbox-drain", "wire-corpus-edge"]) {
+    for (const configName of ["appview", "wire-corpus-edge"]) {
       const config = JSON.parse(readFileSync(join(repositoryRoot, `railway/${configName}.json`), "utf8"));
       expect(config.build.watchPatterns).toContain("/packages/swift/SportsCore/**");
     }
@@ -70,7 +76,7 @@ describe("CI workflow configuration", () => {
       railwayInfrastructure.indexOf("const indexingBuild"),
       railwayInfrastructure.indexOf("const longRunningDeploy"),
     );
-    expect(indexingBuild).toContain('"/packages/swift/SportsCore/**"');
+    expect(indexingBuild).toContain('"/packages/go/**"');
   });
 
   it("keeps Finance and Sports selection ingestion in Development's explicit collection override", () => {
@@ -107,11 +113,9 @@ describe("CI workflow configuration", () => {
       "apple",
       "gateway",
       "appview",
-      "charybdis",
       "operations",
       "jetstream-ingest",
       "wire-ingest",
-      "wire-worker",
       "indexing-worker",
       "wire-corpus-edge",
       "database-migrator",
@@ -208,8 +212,6 @@ describe("CI workflow configuration", () => {
   it("tests deployment-shaped artifacts and migrations", () => {
     expect(workflow).toContain("Build Gateway production image");
     expect(workflow).toContain("Build AppView production image");
-    expect(workflow).toContain("Build Charybdis production image");
-    expect(workflow).toContain("Build The Wire worker production image");
     expect(workflow).toContain("Build replicated indexing production image");
     expect(workflow).toContain("Build The Wire Corpus Edge production image");
     expect(workflow).toContain("Build Operations production image");
@@ -254,7 +256,7 @@ describe("CI workflow configuration", () => {
         expect(config.build.dockerfilePath).toMatch(/^\/services\//);
       }
       expect(config.deploy?.restartPolicyType).toBe(restartPolicy);
-      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "wire-inbox-drain", "charybdis"].includes(configName)) {
+      if (["jetstream-ingest", "wire-jetstream-ingest"].includes(configName)) {
         expect(config.deploy?.healthcheckPath).toBe("/startupz");
       }
       expect(deploymentReadme).toContain(
@@ -263,9 +265,7 @@ describe("CI workflow configuration", () => {
 
       const filterName = configName === "wire-jetstream-ingest"
           ? "wire_ingest"
-          : configName === "wire-inbox-drain"
-            ? "wire_worker"
-            : configName.replaceAll("-", "_");
+          : configName.replaceAll("-", "_");
       const filter = pathFilters
         .split("\n\n")
         .find((block) =>
@@ -362,12 +362,10 @@ describe("CI workflow configuration", () => {
       "apple",
       "gateway",
       "appview",
-      "charybdis",
       "operations",
       "go_packages",
       "jetstream_ingest",
       "wire_ingest",
-      "wire_worker",
       "indexing_worker",
       "wire_corpus_edge",
       "database_migrator",

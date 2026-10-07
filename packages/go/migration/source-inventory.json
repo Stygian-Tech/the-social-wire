@@ -1,4 +1,2365 @@
 {
+  "retiredWorkers": {
+    "sourceRevision": "f05429ff06c852a0645b7e70d1809b2052b61892",
+    "replacement": "services/indexing-worker",
+    "serviceLibraries": [
+      {
+        "name": "AppViewWorkerCore",
+        "source": "services/appview-worker/Sources/AppViewWorkerCore",
+        "target": "packages/go/appviewworkercore",
+        "files": [
+          {
+            "path": "services/appview-worker/Sources/AppViewWorkerCore/AppViewWorkerHost.swift",
+            "sha256": "498a860d2d01f1440a308fbd2d92b9ab955d2dfe161ecde96e2283ce74cb77be",
+            "lines": 242
+          },
+          {
+            "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerHealthServer.swift",
+            "sha256": "35238efbed8f3e58f57a2756360cdcf155f779b43918ab74b7ece2ad7b87666d",
+            "lines": 217
+          },
+          {
+            "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessDiagnostics.swift",
+            "sha256": "e18d726debc3b520bb63d784719fe5e12db2178a187881bd6426c14edbc68e8a",
+            "lines": 87
+          },
+          {
+            "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessFailure.swift",
+            "sha256": "11fef8b6e598500f3e6b58b2cb34738931d753736a6f1a77095b3abc0ddc5ade",
+            "lines": 4
+          },
+          {
+            "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessProbe.swift",
+            "sha256": "6af1acd2e9e838a9da0c3f22c3bcfd7f4014501b68e8907d870699617f310e39",
+            "lines": 91
+          }
+        ]
+      },
+      {
+        "name": "IndexingWorkerCore",
+        "source": "services/indexing-worker/Sources/IndexingWorkerCore",
+        "target": "packages/go/indexingworkercore",
+        "files": [
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerComponentSupervisor.swift",
+            "sha256": "246f70fe72ff2724688f775935ab1c5153906884d5af57950ba698b95c98c82e",
+            "lines": 35
+          },
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerConfig.swift",
+            "sha256": "2eccb02e47fc576a690aa60581b6f5073060991c139d63262243769b162a0a67",
+            "lines": 132
+          },
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerControlDatabase.swift",
+            "sha256": "cb797f557a2b27f33931b00386761952e9647137058df4537eb524076d231b8e",
+            "lines": 38
+          },
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerHealthServer.swift",
+            "sha256": "2aab865387357e7e93570285da08936f042df02179b274dba3c53eb7f516b5d1",
+            "lines": 169
+          },
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerLaneState.swift",
+            "sha256": "b115a5c78e08873204f79abba6d6a6d50a608b0b8696862c79ebd8c735e7ed5d",
+            "lines": 76
+          },
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerLocalHealthProbe.swift",
+            "sha256": "107921f33825fc4bb183a6da98105bf3b4ec7b0e16435e7279d290677222d8e5",
+            "lines": 23
+          },
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerRuntime.swift",
+            "sha256": "e8be139fbb5e8ccd1f6f8f9cd3322ed7c6a82ec5e1aff1007d93d1638898c88a",
+            "lines": 289
+          },
+          {
+            "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerShutdownWatchdog.swift",
+            "sha256": "c5e22978a7cf082f12499efdc51f737c3ff1b42006ed8c4f12d5094ada1042d4",
+            "lines": 21
+          }
+        ]
+      },
+      {
+        "name": "WireWorkerCore",
+        "source": "services/wire-worker/Sources/WireWorkerCore",
+        "target": "packages/go/wireworkercore",
+        "files": [
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/FinanceArticleProjectionRuntime.swift",
+            "sha256": "09dd7510f58c94dbe06101688cb5f2a7c08f2179001f2cd4fa1bb303d0bd556e",
+            "lines": 22
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/FinanceCandidateQuality.swift",
+            "sha256": "68295e08083b531c595d6a9701c52f2b2b144e0754fb64a5f214f259472344d1",
+            "lines": 31
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/FinanceProjectionCatalog.swift",
+            "sha256": "86cb5710b8ea5bc4fa3ca272814139d68cdc47d89464ff62c31b707e0247576c",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireLabelQueryClient.swift",
+            "sha256": "17cda7bc118057b4ee0ee03d5a748dee89228f73b8044990b5b120ef5119d30f",
+            "lines": 65
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireLinkMetadataClient.swift",
+            "sha256": "04487749a23b08071c46bc9515f56290791335d776f8616351053a63c17933e9",
+            "lines": 132
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWirePublicRecordVerifier.swift",
+            "sha256": "1e701a04bd862199a2ae8274e6b87ca5cedd905644fbd7b4a2ee4b1fe4388ac9",
+            "lines": 122
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWirePublicationQueryClient.swift",
+            "sha256": "9b45c1205f1411a1892725b50eb3e67cb3ba53c2661c7be3a10bb5b462f90a25",
+            "lines": 190
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireTalkedAccountProfileClient.swift",
+            "sha256": "da1db2435a806cf72342a90d8e91849f966aa2ebec2de6b550f180ec934e40e8",
+            "lines": 76
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/LiveWirePublicRecordHTTPTransport.swift",
+            "sha256": "4ab8668f1e69d8fc82e01be2a24f785c0843c6fd677f7feef8a3da123d96977d",
+            "lines": 81
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceArticleProjector.swift",
+            "sha256": "c6aea82f63e9c29c90d9288ac656e47951a3e2f6893e8314b81323ecb74df40c",
+            "lines": 107
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceCatalogReader.swift",
+            "sha256": "96d7664f0adc8e2d5bd8fdd4c5edac725511201a5dfd961bca724efb177a8a0a",
+            "lines": 34
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceMaterializer.swift",
+            "sha256": "815c44afa134bbe6685a19fcd2687edf3d852da7b1751da298a14de2dc2e0eca",
+            "lines": 246
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsArticleProjector.swift",
+            "sha256": "9f10ee151862c606909ce03a1b609f539ead31daced6aa70ecb28909f651105a",
+            "lines": 130
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsCatalogReader.swift",
+            "sha256": "b3622cfac84742241f9fe13b310d4d3772e17ccf717daf401fa52864813ce9c1",
+            "lines": 14
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsMaterializer.swift",
+            "sha256": "bb76aa7d5d1fb972e131f98097befeabfbd50b82334c21df3683551b1c9be1a2",
+            "lines": 220
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsProviderRefresh.swift",
+            "sha256": "59917ec399fd6e490b6145b3582f7a1f8e9c1c29ce71a7f7d01903e2c22709dc",
+            "lines": 195
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireBaselineLabelStore.swift",
+            "sha256": "f0fda12349697dd6553b59e8dd4fc2afe7db100ee2a3a7a2d6438617e4dfd1a9",
+            "lines": 133
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireCandidateQuery.swift",
+            "sha256": "5f6b59e16057012a5e15dd74eafd53a1c66992cb2b19317a32b86e1f2d18e28e",
+            "lines": 128
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireConfig.swift",
+            "sha256": "54cd7b22f1bdffb362dff7d1c8b0ccace63fa1f7ec83ca16fc31ccc7ef40fb3a",
+            "lines": 54
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireDependencyGuard.swift",
+            "sha256": "2dcd15e46e40c2e8d46a1f38677eb6fa83c7050f772aef853d9a891012ae0fd4",
+            "lines": 36
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireDependencyRecoveryStore.swift",
+            "sha256": "e2ea6506da629a6a5b06e9e1d88034f40d7492c1a98ddffd6688ef279b31a977",
+            "lines": 273
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireGenerationStore.swift",
+            "sha256": "f1b1306720b6e995fcdea820e31978f53b7a2954c5d1d35b2173e783d35108a7",
+            "lines": 644
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireInboxProcessor.swift",
+            "sha256": "29220c22e6bca7c01546ac858902df40584c6de48d59acb126c152d3d5b69a1b",
+            "lines": 2391
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Health.swift",
+            "sha256": "74be27d30480408b08b001a10a7dd5ccb3d8d8e7adb2b1b300b9784733bed49b",
+            "lines": 53
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+PriorityClaim.swift",
+            "sha256": "663133d31d487e81be3ead03ae9a8064143c6c64f3ad171c619081cbe1775790",
+            "lines": 93
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Repair.swift",
+            "sha256": "ea0727eac9d81c58507526b52cab01f7d5e4ab90e2619b436d3e1faa84f7066a",
+            "lines": 82
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Scheduling.swift",
+            "sha256": "a43b4bfcfd64c38b34476fc70880b692de02315cfbad3d3bf901f6df5debd79f",
+            "lines": 158
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore.swift",
+            "sha256": "7d065167e7c5d913453420ee10d13b81a4eb5656ea711dcc95b442f6703c634b",
+            "lines": 423
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWirePublicationMetadataStore.swift",
+            "sha256": "9d474910491f3bc0f18bc370bbbcab09b7d0e8e7d9a08fe070d4920d89f9fe61",
+            "lines": 84
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWirePublicationSignalRecovery.swift",
+            "sha256": "b13bc37939b74696d52a9814a4431651188e1642c12205cd9bb0d2b600f44a74",
+            "lines": 145
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireQueryMemory.swift",
+            "sha256": "3d493ec8520f708b1fc7942e657525e69a7dd841cc1ea014e215c17003ace096",
+            "lines": 54
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRecommendationJournal+Backlog.swift",
+            "sha256": "288316e0c401a861737a0aead21192c8e4c7a7a0c6bb1203071a3ea71534f248",
+            "lines": 37
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRecommendationJournal.swift",
+            "sha256": "a3de774e4e98fe0b5200aa590f0574926bf48e26ae6f3ab3db792cc1148c2164",
+            "lines": 587
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRepositoryClaims.swift",
+            "sha256": "c0fdf3ec69319f3307e2e9c291b9b755f0c5fa51339da7ac39f831b4eb7acb2f",
+            "lines": 215
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore+Incremental.swift",
+            "sha256": "c4f8f92ffa5e418e681a2c360c3d8a689d4f979d723489c7100cf34d473c4e4d",
+            "lines": 258
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore.swift",
+            "sha256": "88baaca4fe5301b89f5fd64161589b5e52e0e301e3de3050bf8d2d86c839b811",
+            "lines": 456
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireStandardRecordFence.swift",
+            "sha256": "57ad8e0606cbc17aeca534729c035a0c06f50e634f38a9d5da21c3522ef035e5",
+            "lines": 135
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireTalkedAccountMentionStore.swift",
+            "sha256": "d265ebf8b7e685b0aa4790ea74705bf6db2f11fd2cd5fc0659e33800559127b3",
+            "lines": 149
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireTalkedAccountProfileStore.swift",
+            "sha256": "1cc2298f37ad98d09d1a738a0baf690267293661df6d916e5b4e1bafd0d01d99",
+            "lines": 89
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/RedisWirePublicationCache.swift",
+            "sha256": "312a16848a372bb8e722cc6ef0223eae7acfea49db3e00e064da9fd7746f51a5",
+            "lines": 103
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/SportsArticleProjectionRuntime.swift",
+            "sha256": "126b25f549260a8649b8ba69f743cab25872e29455c04ecbd7d2cf45cdd58234",
+            "lines": 22
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/SportsCandidateQuality.swift",
+            "sha256": "529931eed9769cc4f020b81213201dcf2c808785b3b765786594c0a3f0ad5cb7",
+            "lines": 30
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/SportsCatalogRefreshPolicy.swift",
+            "sha256": "39f8edc5f7391d2204ba1073b521a573b22eda5f39be5bd2aecc048b37ff152e",
+            "lines": 25
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/SportsProjectionCatalog.swift",
+            "sha256": "bd7f1563bc4bfa7d5661920db91fea607c1c2c8cfae11d1358f531b1ec7cd671",
+            "lines": 6
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/SportsProviderRefreshPolicy.swift",
+            "sha256": "de5d6fc830d707520ab140ec93155c211e1d272517a84a2ac4f562c10fc87e6f",
+            "lines": 35
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/SportsProviderRuntime.swift",
+            "sha256": "c3b0406d9b36b94a63db8160fd631efc461a5fd2391fd7ea3f8ec625e6526b3d",
+            "lines": 14
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/SportsReviewedCatalogMerge.swift",
+            "sha256": "adbf4f7b1552947fa8a52890edc2539dfb2d4a66b7acf9e75f9b076a6abf0a39",
+            "lines": 12
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabel.swift",
+            "sha256": "f6428dec1767ef8d7b56f8f2cb17549ecd409ab8441bb8f43538fea777c810e4",
+            "lines": 10
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelRefresher.swift",
+            "sha256": "487970e5b6ceff79a98e6d1dfc71407a2fe7663178f2fc253d67aad7818a0bd5",
+            "lines": 205
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelRefreshing.swift",
+            "sha256": "6aa39bb06d90ead1c8662e7219be06d98b733e78711b9d300060105d7a6f7b8b",
+            "lines": 5
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelStore.swift",
+            "sha256": "3cf7102d61165f09af30da92e8864644eeff32a7cfc74fc6242b49097dce166a",
+            "lines": 17
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelTarget.swift",
+            "sha256": "da3d671311e45467bbbb3de34a0c0a1e6c4c319307638c3bbddfed28f25a0fe8",
+            "lines": 5
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireBlobURLResolving.swift",
+            "sha256": "6a1f23676f925cf55c12d758a22b4349d3264fc8378db55b4cc72a5bf4f5703e",
+            "lines": 3
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireCacheExpiry.swift",
+            "sha256": "b81590e5d680ba20e178f6ac8193bf9c8e7b38b3ae7b366a2465b019b126b227",
+            "lines": 10
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireDNSResolverAdmission.swift",
+            "sha256": "7e9adb1e06333ea4932b323ad11081be76becf938c5fdbcaa8d40b88676bf187",
+            "lines": 21
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireDNSResolving.swift",
+            "sha256": "624b41f0a716a454e61776f97acc2691b3e7dcc1745f7a4157b9a65b1c22126e",
+            "lines": 3
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireDeclaredLanguageValidator.swift",
+            "sha256": "8821e8e8bfad071c44a021ad5ebd2a0b4e733d66bdfb32258c5753961ac899a3",
+            "lines": 110
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireDisposableCacheMaintenanceRuntime.swift",
+            "sha256": "961af213a8dbc47d1b8b4f002166db2fc68e6ca27d947aaf42ecf0bed601cf60",
+            "lines": 35
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireEditionModuleItemRecord.swift",
+            "sha256": "e573f73a8806d82bdbc5e9216a06cb6e6f4aad0a4300afaceff4afa267b49774",
+            "lines": 5
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireEditionModuleRecord.swift",
+            "sha256": "175e95839436b4dce67577bfd5e83da460fc25d846cbe9bbe56de6beb949ad73",
+            "lines": 12
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireEmbeddedCardMetadata.swift",
+            "sha256": "7ca7bbf2eee85a23e087c9ec76ce86fea716b9219e63cf7c245e2a2ce535b59e",
+            "lines": 61
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireEnrichmentHealthRuntime.swift",
+            "sha256": "9a9f90d0135f51125474118a6f8341932d00b31f79b4fa1867f254a8284c3995",
+            "lines": 54
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireEnrichmentHealthSnapshot.swift",
+            "sha256": "a443047ba00044c6eb84278c9110ff656d046bbedf1be5dd69d4bfc9224cec70",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireExternalSignalMode.swift",
+            "sha256": "d83273a9066efa3284659922716eab607e83a3a11743d4e1ecdd384a0559c076",
+            "lines": 26
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireExternalSignalRecord.swift",
+            "sha256": "203610c86e62112e4aed4bb37d6059ca7f97781fa8dc9fac352419c90fd7cbd2",
+            "lines": 232
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireFeedMode.swift",
+            "sha256": "0fe78517c815541c60df263345b94c6c9226b9923eb195c481b767a68f11012d",
+            "lines": 6
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationCommit.swift",
+            "sha256": "6bdd307b62f1c041b305b2d2cd27877bc8b7cb5ef80faf5debdf2e1907a26d0f",
+            "lines": 13
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationSchedule.swift",
+            "sha256": "201e2419c31ec9f0dcaf5a9b946e78ca627d2f83ff9ca6130de73fe4154052fc",
+            "lines": 5
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationStore.swift",
+            "sha256": "9ed29b527ef013e35e4739b98b44e2c7f4fef2981754ab68b0addd0751f93671",
+            "lines": 34
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintaining.swift",
+            "sha256": "647995e5702fa55fa32fd7b078836b1b471e8d98ab2a966d306b66f6d52635c6",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintenanceRuntime.swift",
+            "sha256": "3b7fe1aea3301498e51c50354782a7b8510e3444483eabf4797e360a7d1b55e1",
+            "lines": 60
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintenanceScheduler.swift",
+            "sha256": "bf1a2d380793a4e099de46c1cb6dbce5419d1696a18482e2c211b75a2f355559",
+            "lines": 59
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireHealthResponseBuilder.swift",
+            "sha256": "a028b1cfe0a04993b04a7bb24abdc4adbd1997fec42ddf6c821074dfc5b6670c",
+            "lines": 41
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireHealthServer.swift",
+            "sha256": "47f64e806377e1a58b4bed63797b01ff2d3c5f85af982cf0774076016a569e7e",
+            "lines": 99
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxBacklogHealth.swift",
+            "sha256": "0b8e5bc5aa3b6c02252cb7a6c3f6b9f559a272981e7b9f5a9724b3f79d576a0a",
+            "lines": 11
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxCleanupRuntime.swift",
+            "sha256": "4eb05586ecd68a266c651dc0215d86c8ce818c440c572efd56c6263ac68848f3",
+            "lines": 47
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainBatchMetrics.swift",
+            "sha256": "61623cb124e07785c4f3f9bace46737de3b86b50b69f4c6b3d88a7f9f309a83d",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainClock.swift",
+            "sha256": "92efd8c9680cc87e1b01394328573da290511102fd408806d39ce54bb8f81352",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainRuntime.swift",
+            "sha256": "93249da5b24662932f36ddf32f0f9ddca06e89f088b1a79ca11f307ec12c2a9a",
+            "lines": 65
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainSleeping.swift",
+            "sha256": "78bd4c09cdaf9c53532bc3a2a211db385456171db76032ce1a611404edd8e46c",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryReport.swift",
+            "sha256": "1685287342c16f73df4b73440ad89e4ef6eb12a4dd50bd56d13a5a792ff491bb",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryRuntime.swift",
+            "sha256": "ef2a7d4365ccfaf18c00fe277280995e895c498cfb7da092c366987a38597fdb",
+            "lines": 55
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryState.swift",
+            "sha256": "f8c0b4274cdba180d554afc6a5dfc8adafe862a79411698da99341ba9fe76096",
+            "lines": 37
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxEvent.swift",
+            "sha256": "d6dd317dbb98f3edd08e7db98636d0c60fd2141ee5ca949af945b7aa9befb44a",
+            "lines": 32
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxEventOutcome.swift",
+            "sha256": "3e97958ad99159e7118dfc2b0b6005c7a26423b6f5014a34b4655bf0581373ab",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxProcessing.swift",
+            "sha256": "711b3fb5c9527700ffbf337c51a53122222efb165105eed394c787a116683ca2",
+            "lines": 32
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepository.swift",
+            "sha256": "a287fbdffef264b773a214c7eff895bd9bad73a27c6140b2553b4c41cb809ec4",
+            "lines": 5
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepositoryDrainRuntime.swift",
+            "sha256": "6e63a7ffc79db806967b59dfdc0cde40515b0fb9c922966477aaaec1d2d084b8",
+            "lines": 135
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepositoryProcessing.swift",
+            "sha256": "bf54efa3848e549b4d50879037731215c54837b30224729c2e230865f32341dc",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxSourceScope.swift",
+            "sha256": "40a7822831a064fbbdaee4bd8929151b2aa876f3406dac33efab350192859c14",
+            "lines": 4
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxWorkBatch.swift",
+            "sha256": "d165e19fd8dca9f4ad7e00a65d272318ff0534d632e147b590ba544298a6432c",
+            "lines": 5
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQueryError.swift",
+            "sha256": "8bea0c6372a9db9a900438acdfafecc785aeb1101bac4f6a052b15f75089f385",
+            "lines": 10
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQueryPage.swift",
+            "sha256": "032ae29b5a34ddfca62004d404565ca4a0b24778e44e9cc37f94578e982d7e8c",
+            "lines": 13
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQuerying.swift",
+            "sha256": "ebb498162d2fa8f9bfd7489f75a985cd876d299615f5a841eb70dd91b50f3857",
+            "lines": 7
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelerEndpoint.swift",
+            "sha256": "b4f0dd14bbaafe7e166bd8ab8f942f7a8eeb9a93a819c859dc60521ec054cc98",
+            "lines": 39
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadata.swift",
+            "sha256": "aeae0d40f2e1870875af864b8db74d24564f7f61a662003639f3ae7be584ec27",
+            "lines": 55
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataEnricher.swift",
+            "sha256": "04ad7684b419c9c9624f70faa84d10c6ff14b93c14dd4168aa7a1b283f0bbdd6",
+            "lines": 114
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetchResult.swift",
+            "sha256": "49c444b76770659a4db1574ab4e40838e2d174b92530414e313b03d36ba242a7",
+            "lines": 4
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetchTimeout.swift",
+            "sha256": "196837c5dbc0b852de9b4feb629b267a239c7dfabf32c7953b4c112321a22442",
+            "lines": 1
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetching.swift",
+            "sha256": "6170ce7bd34d275aa11f050e6e16765ea7ed7af1fa0ae073a16ee94424bb353c",
+            "lines": 3
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataQueryError.swift",
+            "sha256": "7683024a62531e28726bb2c9fdcbb34613d7e0026449d197a6e27ca4646f95a4",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataStoring.swift",
+            "sha256": "cf3ebf098f5084113abdcc2a18c641e6927bef36d4a8992fa6a1b3a9b66cd4f4",
+            "lines": 53
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataTarget.swift",
+            "sha256": "2ae606af46d2425a6cc469406f5f6c5a50e7b888f2331532054ec056fb0da2a0",
+            "lines": 20
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataEnrichmentRuntime.swift",
+            "sha256": "baff16fafc764ce67a0b79f8024804e2509ba0f50268efd69883d184c58068a7",
+            "lines": 59
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataMaintenanceRuntime.swift",
+            "sha256": "c864b49fd0391abe778ec0d4426490c411408abab532d78b7d72e9109d2bf7e9",
+            "lines": 95
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPriorityClaimPacing.swift",
+            "sha256": "a6ed54c70daa1407c72d9ef2971a6c80f98404e71eb6292aac22210cdce4f0fb",
+            "lines": 26
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPruneCursor.swift",
+            "sha256": "3e7a131cbe527164c279b7ebb4ff24ac6917c9865cc6f0561b0d526747186284",
+            "lines": 59
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPruneQuery.swift",
+            "sha256": "ee41842f7db69606d493316ddb82b9d1ce5a33339f8b43dc41c3ec52cf773a5a",
+            "lines": 72
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataRepairPacing.swift",
+            "sha256": "65de0d0b13835c4e925038d03a075515505e3365458da16d6d45ea8cbcf1ed79",
+            "lines": 36
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataRepairProgress.swift",
+            "sha256": "e3a4884c438747328da0c003a3571afb3f8c82c7834f0bc154fa8901cb6c3b80",
+            "lines": 5
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataSchedulingConfiguration.swift",
+            "sha256": "d4b3b265852f03000442b8adcdd028420b85862ac7a13005325420f3fed0315a",
+            "lines": 16
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireOpenGraphParser.swift",
+            "sha256": "1b295e24fa928eb8bd5e6afd6909f85b23b54e11e665ae18348b5fa6b9226c8d",
+            "lines": 354
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePostLinkExtractor.swift",
+            "sha256": "8192cec816a8a0f9fd0e941b3574d2c5e8d6796bc61dc54b41029175b77ded79",
+            "lines": 45
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicDNSResolver.swift",
+            "sha256": "a547667519feaf6c132c6dc2b68861569c4ec68f8fed86eda76ac97ac5c7275b",
+            "lines": 201
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicEndpointValidator.swift",
+            "sha256": "553fda28e6526e66419391f75c81e39d5e97de2005096a92ac12aac9b3284441",
+            "lines": 50
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordAddressCapture.swift",
+            "sha256": "2ef820e23ef59325a00ccf74a1f8653b92a83525ce6ce8aef1b35c402875fb46",
+            "lines": 20
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordAddressFallback.swift",
+            "sha256": "b0fc0c81fc78fe5a5c58459d24cf36e3cad402a6164d676178d15348f09479c1",
+            "lines": 45
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordHTTPResponse.swift",
+            "sha256": "5737a851d98da4a292294c9e08674579ae649f660ca5ee44ee527e241d82c36c",
+            "lines": 6
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordHTTPTransport.swift",
+            "sha256": "f6949b921069f987d029b297cbf03dbd79273efdda27b0a3f70aca3fc0591879",
+            "lines": 6
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordObservation.swift",
+            "sha256": "c286c1f3e47123e2d56f27716fd8e69ac4089dd9e08403f26219665f68d009a1",
+            "lines": 11
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordQueryError.swift",
+            "sha256": "6dccf2462112b4c4ddcc5423d7ed017b881a92fc4003e58223225ecf5375bebc",
+            "lines": 10
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordReference.swift",
+            "sha256": "224cba5eee42d40d155127681e3492c88b42c2ce4b4dd0e9a3347160847049eb",
+            "lines": 72
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordVerification.swift",
+            "sha256": "92dc3a21751455e9ccade34e13dbfc23ce9983488d529da09359ec9a3f44f720",
+            "lines": 6
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordVerifying.swift",
+            "sha256": "d123acd9cc365cead9a98cf8fe88bf8f2209576177b970925957456a4e813eff",
+            "lines": 3
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCache.swift",
+            "sha256": "a46572a4567a65369f090cf766e2cd56073dc312bae8fa5c485ffd717863587d",
+            "lines": 18
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCacheRuntime.swift",
+            "sha256": "02e0010c1c2bc632db75ee9b7b30a3b55edc0410a1284d42f31ac4795858171f",
+            "lines": 38
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCacheTelemetry.swift",
+            "sha256": "7d6bba612b71f570380836fc3c24238976c2b422047a9a1f4843993703bc5e40",
+            "lines": 29
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationHTTPTransport.swift",
+            "sha256": "cfaece4a564082ecc1ac53c3ae0f47faca070fa669c7f8f8ffa4d8a9f5114bcd",
+            "lines": 15
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationMetadata.swift",
+            "sha256": "4dd0b492994d27a2b17ec4263ee341449b6e53e80adba3057e09938295d93a6a",
+            "lines": 37
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationMetadataStoring.swift",
+            "sha256": "e7e8c8be1b7dc9ddb31625d520770a4142fc45b2ab78d6659b93af380c9baf12",
+            "lines": 15
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationQueryError.swift",
+            "sha256": "874f929b3f457b253aa8daa243b7b5e4d01f0631757fa251502312eb6899e4d7",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationQuerying.swift",
+            "sha256": "3cd756f233b64ba3911e2313932f545ba09a54c911896bf5c82d372f1b2997af",
+            "lines": 3
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationReference.swift",
+            "sha256": "3672d4021b939a87c037f45d6ba921671bb01f1d1523af3588da06871848650e",
+            "lines": 32
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationResolver.swift",
+            "sha256": "6f2d4208670e0785d298a12348a76fc93eba573492e5170621c8001b0f9a34a2",
+            "lines": 126
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationResolving.swift",
+            "sha256": "49f4ff8be2309bdd4a1b782f3e16a7714fa13ee3f14fbac796316f28e9fdc070",
+            "lines": 14
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationSignalRecoveryRuntime.swift",
+            "sha256": "4bb336174fd82a7932edf34d7c405001887cf20c85caa9c87544925ff0926614",
+            "lines": 21
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRankingScheduler.swift",
+            "sha256": "3da1483e440276f1fb48002250dd9e68dbf1051bf486b72bba6c37be8c5001d2",
+            "lines": 54
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationBacklog.swift",
+            "sha256": "fd6033d10d93a6eaa9e2c0a6aa5669bc2c4d9e158b0286d792e5493f5aaeec71",
+            "lines": 7
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationCounts.swift",
+            "sha256": "770f3b93614153f94ffe4aba534d028301a180fd4273dd7be5da9f1bc7469ec9",
+            "lines": 15
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationJob.swift",
+            "sha256": "0567784cc4a6a002d1d381d24f7d71dc4ae16b7fca0356e64b647e7515df8acc",
+            "lines": 19
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationRuntime.swift",
+            "sha256": "60821b068f93d025919b2b9a6edd3a2aae46e089384a69ff37f36c523e9aad92",
+            "lines": 47
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrator.swift",
+            "sha256": "ed98e1d385257389929c0f04ec526422735b15cd12e599377093446fac3fa291",
+            "lines": 191
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecovering.swift",
+            "sha256": "87422aa92f38c6e23d6fae1f61e67b2ae780983b9058e7931f8e32d59923da13",
+            "lines": 10
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryCounts.swift",
+            "sha256": "d03e2854fc71311aef9d365fba12c58f808b5df291449d18681c94590df358d2",
+            "lines": 7
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryCursor.swift",
+            "sha256": "198db6840ea38b6fa801c01effb09cfe286d28f011c5174d623a9b876092ad1e",
+            "lines": 15
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryRuntime.swift",
+            "sha256": "853d19228888273a153eb5739fca9b58fd6f99d44983b3711a44d7467c682ce0",
+            "lines": 57
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireResolvedStandardSiteDocument.swift",
+            "sha256": "da893f6ed680b225f216720cd6cc576e5207203c2d3b50bc867381d99821ca04",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireSignalRollupRefreshError.swift",
+            "sha256": "318035e119d2657808278b0be8a5684003bf64d0de713bbdaa1c699649f7c8dd",
+            "lines": 3
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteDocumentError.swift",
+            "sha256": "ce8b866ae4bbae9f34aaaa01e2ae5fef2c6f321cadd253a9d60b6a5b1f6b4978",
+            "lines": 6
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteDocumentResolver.swift",
+            "sha256": "d3c3105ff1be937e15d0abc2966a8382380c360c168da1aa460002528895f00a",
+            "lines": 125
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteRecordImage.swift",
+            "sha256": "7176f142363622d4eb91f456cce88f22ba4c7d6e7c3ebfa5a3b104dcad725e61",
+            "lines": 62
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteURL.swift",
+            "sha256": "e4ed9149315891c03caa83d5b729e175da3fd3af803338747b974c3756f0006a",
+            "lines": 38
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountMentionExtractor.swift",
+            "sha256": "a7e7fc2aedf470baa2c86d241bdbc267ffe799a9442d7b9caa8066a298bb28d4",
+            "lines": 47
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountMentionStoring.swift",
+            "sha256": "fdf47ce60231e7e2c21148a885049e2265894be5b9d23798f985b2443832501a",
+            "lines": 16
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfile.swift",
+            "sha256": "c86ad18f8166d760854ca1129713d6360f7d8ab1932fc164668fdc86adb140df",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfileEnricher.swift",
+            "sha256": "0e771820ea4ebbf255f63c160c39690ca8c5a695b9bdee709edab753552135f4",
+            "lines": 45
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfileRefreshing.swift",
+            "sha256": "762e45aecd38097303cb19db34b2ce54050794912161ec772d2b28761736555b",
+            "lines": 11
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireVerifiedPublicRecord.swift",
+            "sha256": "4bd2995f5cc919b036685c6ebbca0c317daf458aebb5bd3cdd97a619bbe8a559",
+            "lines": 15
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerConfig.swift",
+            "sha256": "828f11e122d3a2490321e0ecf538556db4024eaad9c565e51aa464882dde8bd8",
+            "lines": 227
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerConfigError.swift",
+            "sha256": "0fafeb968b38855d30397df532579333ed2a1f51b0ba2df2601b49d1cef14133",
+            "lines": 14
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerCycle.swift",
+            "sha256": "37a11c1e5f013c70e580a16c2197b2c8db9f4be422730cb3ce854828e89fc4ff",
+            "lines": 83
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerCycleOutcome.swift",
+            "sha256": "d3a901ba4ae21500c32a4aab8f71f7ae4f9caf6d6f95b729d784a71af1d8f8ef",
+            "lines": 6
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerHealthState.swift",
+            "sha256": "15cafed40b663790bc94da1f5c7e932d02195c30b00a1866ad894c0247a69e43",
+            "lines": 125
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerHost.swift",
+            "sha256": "75540242456276cb7ff69436b5c1220ca4f8a17ff9d29a5e39dc1e01c39c3a7b",
+            "lines": 346
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerLifetime.swift",
+            "sha256": "66a92f97cc3ef10828c2129b1e5057ab6d608cce88337476626cbfab5fa07c9a",
+            "lines": 45
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRole.swift",
+            "sha256": "3013458ef29a46144c016e7341f868f40c878cf36aaf3d0ece18d7a2498070e3",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRuntime.swift",
+            "sha256": "cfbe8c06f2cde1c046d31ca7852102928e95cba9913f30227fd6759142e02513",
+            "lines": 114
+          },
+          {
+            "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRuntimePlan.swift",
+            "sha256": "3cee23e962a62607856ed629e76408da36f668197a3bda6eaafcbc9f1317592f",
+            "lines": 34
+          }
+        ]
+      }
+    ],
+    "note": "Historical Swift source and test digests retained for runtime retirement provenance; shared Swift API packages remain active.",
+    "retiredServiceFiles": [
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerConfig.swift",
+        "sha256": "2eccb02e47fc576a690aa60581b6f5073060991c139d63262243769b162a0a67"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerLocalHealthProbe.swift",
+        "sha256": "107921f33825fc4bb183a6da98105bf3b4ec7b0e16435e7279d290677222d8e5"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerShutdownWatchdog.swift",
+        "sha256": "c5e22978a7cf082f12499efdc51f737c3ff1b42006ed8c4f12d5094ada1042d4"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerControlDatabase.swift",
+        "sha256": "cb797f557a2b27f33931b00386761952e9647137058df4537eb524076d231b8e"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerComponentSupervisor.swift",
+        "sha256": "246f70fe72ff2724688f775935ab1c5153906884d5af57950ba698b95c98c82e"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerHealthServer.swift",
+        "sha256": "2aab865387357e7e93570285da08936f042df02179b274dba3c53eb7f516b5d1"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerRuntime.swift",
+        "sha256": "e8be139fbb5e8ccd1f6f8f9cd3322ed7c6a82ec5e1aff1007d93d1638898c88a"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerLaneState.swift",
+        "sha256": "b115a5c78e08873204f79abba6d6a6d50a608b0b8696862c79ebd8c735e7ed5d"
+      },
+      {
+        "path": "services/indexing-worker/Sources/IndexingWorker/IndexingWorkerCommand.swift",
+        "sha256": "225722eb9a6f42f1783458055286dec46a19e9472325db3a6e8d875dbcd5032a"
+      },
+      {
+        "path": "services/indexing-worker/Tests/IndexingWorkerCoreTests/IndexingWorkerComponentSupervisorTests.swift",
+        "sha256": "8dffccd843a11b079f21f046af9b7971a6f06d5442440133a4a32b3ec64910df"
+      },
+      {
+        "path": "services/indexing-worker/Tests/IndexingWorkerCoreTests/IndexingWorkerShutdownWatchdogTests.swift",
+        "sha256": "55a07862ccb55a06d9ea1ba1623d50f1d49bb9013cad8d8249d8933d6a52954c"
+      },
+      {
+        "path": "services/indexing-worker/Tests/IndexingWorkerCoreTests/IndexingWorkerControlEvidenceTests.swift",
+        "sha256": "bfc9190dc9bf35f5013acfc08b77bf43f65cf592a15907fdee527b5cade3aaa8"
+      },
+      {
+        "path": "services/indexing-worker/Tests/IndexingWorkerCoreTests/IndexingWorkerConfigTests.swift",
+        "sha256": "7910b8b297e07f8f69a61e90ac9b820252418ed85b660b570731a7b2637c3360"
+      },
+      {
+        "path": "services/indexing-worker/Tests/IndexingWorkerCoreTests/IndexingWorkerControlDatabaseTests.swift",
+        "sha256": "06e5a56ebc91c47a253edb0370b8a64cfa1997dbbf694b779de7e1a1976562d7"
+      },
+      {
+        "path": "services/indexing-worker/Tests/IndexingWorkerCoreTests/IndexingWorkerHealthResponseTests.swift",
+        "sha256": "55bb108c77a19157b455445a18835dc57ad85b8236728683884d066ba941db58"
+      },
+      {
+        "path": "services/indexing-worker/Package.swift",
+        "sha256": "ed4c8c36bccaec46fd204c4a68758ba48d6f17bed33e79520550e596bc5255cd"
+      },
+      {
+        "path": "services/indexing-worker/Package.resolved",
+        "sha256": "71f5532a949c07964633a6e052db3bfe8d2dca2a4f439efb6e3a17dceae4e910"
+      },
+      {
+        "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessProbe.swift",
+        "sha256": "6af1acd2e9e838a9da0c3f22c3bcfd7f4014501b68e8907d870699617f310e39"
+      },
+      {
+        "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerHealthServer.swift",
+        "sha256": "35238efbed8f3e58f57a2756360cdcf155f779b43918ab74b7ece2ad7b87666d"
+      },
+      {
+        "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessFailure.swift",
+        "sha256": "11fef8b6e598500f3e6b58b2cb34738931d753736a6f1a77095b3abc0ddc5ade"
+      },
+      {
+        "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessDiagnostics.swift",
+        "sha256": "e18d726debc3b520bb63d784719fe5e12db2178a187881bd6426c14edbc68e8a"
+      },
+      {
+        "path": "services/appview-worker/Sources/AppViewWorkerCore/AppViewWorkerHost.swift",
+        "sha256": "498a860d2d01f1440a308fbd2d92b9ab955d2dfe161ecde96e2283ce74cb77be"
+      },
+      {
+        "path": "services/appview-worker/Sources/AppViewWorker/AppViewWorkerCommand.swift",
+        "sha256": "fbff471e2dc3131d80a864c95a7a88a3d7f73af5e1130c39a82e50fc47197a35"
+      },
+      {
+        "path": "services/appview-worker/Tests/AppViewWorkerTests/AppViewWorkerSmokeTests.swift",
+        "sha256": "9626da24336f33bb7059457d8f5cc84b1782f10ca70f295f887a823b685c52ea"
+      },
+      {
+        "path": "services/appview-worker/Tests/AppViewWorkerTests/WorkerHealthServerTests.swift",
+        "sha256": "36ceb4dee19df2339093e228f2028c649da24d50ac76cbbc1c1cbd4866909d3d"
+      },
+      {
+        "path": "services/appview-worker/Package.swift",
+        "sha256": "f2c43e06fb94cd394f49a7ba4dc96cb695f4c43b2b9e9074d72b35be146fec14"
+      },
+      {
+        "path": "services/appview-worker/Package.resolved",
+        "sha256": "94e16c46a77c3adfe437e17336e06153e1b9bcf575e1a40b435a927ce1ef7a42"
+      },
+      {
+        "path": "services/appview-worker/Dockerfile",
+        "sha256": "fa0ffead3ae127d85aa4b464890ebaac9d9a8f72b6b4447d5092bfe98598d2a2"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsProviderRefresh.swift",
+        "sha256": "59917ec399fd6e490b6145b3582f7a1f8e9c1c29ce71a7f7d01903e2c22709dc"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelRefreshing.swift",
+        "sha256": "6aa39bb06d90ead1c8662e7219be06d98b733e78711b9d300060105d7a6f7b8b"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerCycleOutcome.swift",
+        "sha256": "d3a901ba4ae21500c32a4aab8f71f7ae4f9caf6d6f95b729d784a71af1d8f8ef"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceMaterializer.swift",
+        "sha256": "815c44afa134bbe6685a19fcd2687edf3d852da7b1751da298a14de2dc2e0eca"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/FinanceCandidateQuality.swift",
+        "sha256": "68295e08083b531c595d6a9701c52f2b2b144e0754fb64a5f214f259472344d1"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordAddressFallback.swift",
+        "sha256": "b0fc0c81fc78fe5a5c58459d24cf36e3cad402a6164d676178d15348f09479c1"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore.swift",
+        "sha256": "7d065167e7c5d913453420ee10d13b81a4eb5656ea711dcc95b442f6703c634b"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainBatchMetrics.swift",
+        "sha256": "61623cb124e07785c4f3f9bace46737de3b86b50b69f4c6b3d88a7f9f309a83d"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/SportsProviderRefreshPolicy.swift",
+        "sha256": "de5d6fc830d707520ab140ec93155c211e1d272517a84a2ac4f562c10fc87e6f"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetching.swift",
+        "sha256": "6170ce7bd34d275aa11f050e6e16765ea7ed7af1fa0ae073a16ee94424bb353c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/SportsArticleProjectionRuntime.swift",
+        "sha256": "126b25f549260a8649b8ba69f743cab25872e29455c04ecbd7d2cf45cdd58234"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireDNSResolving.swift",
+        "sha256": "624b41f0a716a454e61776f97acc2691b3e7dcc1745f7a4157b9a65b1c22126e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireSignalRollupRefreshError.swift",
+        "sha256": "318035e119d2657808278b0be8a5684003bf64d0de713bbdaa1c699649f7c8dd"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsArticleProjector.swift",
+        "sha256": "9f10ee151862c606909ce03a1b609f539ead31daced6aa70ecb28909f651105a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabel.swift",
+        "sha256": "f6428dec1767ef8d7b56f8f2cb17549ecd409ab8441bb8f43538fea777c810e4"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireVerifiedPublicRecord.swift",
+        "sha256": "4bd2995f5cc919b036685c6ebbca0c317daf458aebb5bd3cdd97a619bbe8a559"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataMaintenanceRuntime.swift",
+        "sha256": "c864b49fd0391abe778ec0d4426490c411408abab532d78b7d72e9109d2bf7e9"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryRuntime.swift",
+        "sha256": "853d19228888273a153eb5739fca9b58fd6f99d44983b3711a44d7467c682ce0"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationResolver.swift",
+        "sha256": "6f2d4208670e0785d298a12348a76fc93eba573492e5170621c8001b0f9a34a2"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationQuerying.swift",
+        "sha256": "3cd756f233b64ba3911e2313932f545ba09a54c911896bf5c82d372f1b2997af"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPruneQuery.swift",
+        "sha256": "ee41842f7db69606d493316ddb82b9d1ce5a33339f8b43dc41c3ec52cf773a5a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationQueryError.swift",
+        "sha256": "874f929b3f457b253aa8daa243b7b5e4d01f0631757fa251502312eb6899e4d7"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataRepairPacing.swift",
+        "sha256": "65de0d0b13835c4e925038d03a075515505e3365458da16d6d45ea8cbcf1ed79"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecovering.swift",
+        "sha256": "87422aa92f38c6e23d6fae1f61e67b2ae780983b9058e7931f8e32d59923da13"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/SportsProjectionCatalog.swift",
+        "sha256": "bd7f1563bc4bfa7d5661920db91fea607c1c2c8cfae11d1358f531b1ec7cd671"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataEnrichmentRuntime.swift",
+        "sha256": "baff16fafc764ce67a0b79f8024804e2509ba0f50268efd69883d184c58068a7"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/SportsCandidateQuality.swift",
+        "sha256": "529931eed9769cc4f020b81213201dcf2c808785b3b765786594c0a3f0ad5cb7"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Repair.swift",
+        "sha256": "ea0727eac9d81c58507526b52cab01f7d5e4ab90e2619b436d3e1faa84f7066a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireEditionModuleItemRecord.swift",
+        "sha256": "e573f73a8806d82bdbc5e9216a06cb6e6f4aad0a4300afaceff4afa267b49774"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireGenerationStore.swift",
+        "sha256": "f1b1306720b6e995fcdea820e31978f53b7a2954c5d1d35b2173e783d35108a7"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/SportsCatalogRefreshPolicy.swift",
+        "sha256": "39f8edc5f7391d2204ba1073b521a573b22eda5f39be5bd2aecc048b37ff152e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireTalkedAccountProfileClient.swift",
+        "sha256": "da1db2435a806cf72342a90d8e91849f966aa2ebec2de6b550f180ec934e40e8"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/FinanceProjectionCatalog.swift",
+        "sha256": "86cb5710b8ea5bc4fa3ca272814139d68cdc47d89464ff62c31b707e0247576c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireBaselineLabelStore.swift",
+        "sha256": "f0fda12349697dd6553b59e8dd4fc2afe7db100ee2a3a7a2d6438617e4dfd1a9"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataSchedulingConfiguration.swift",
+        "sha256": "d4b3b265852f03000442b8adcdd028420b85862ac7a13005325420f3fed0315a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireHealthResponseBuilder.swift",
+        "sha256": "a028b1cfe0a04993b04a7bb24abdc4adbd1997fec42ddf6c821074dfc5b6670c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireDisposableCacheMaintenanceRuntime.swift",
+        "sha256": "961af213a8dbc47d1b8b4f002166db2fc68e6ca27d947aaf42ecf0bed601cf60"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordReference.swift",
+        "sha256": "224cba5eee42d40d155127681e3492c88b42c2ce4b4dd0e9a3347160847049eb"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Health.swift",
+        "sha256": "74be27d30480408b08b001a10a7dd5ccb3d8d8e7adb2b1b300b9784733bed49b"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireLabelQueryClient.swift",
+        "sha256": "17cda7bc118057b4ee0ee03d5a748dee89228f73b8044990b5b120ef5119d30f"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountMentionExtractor.swift",
+        "sha256": "a7e7fc2aedf470baa2c86d241bdbc267ffe799a9442d7b9caa8066a298bb28d4"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/LiveWirePublicRecordHTTPTransport.swift",
+        "sha256": "4ab8668f1e69d8fc82e01be2a24f785c0843c6fd677f7feef8a3da123d96977d"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+PriorityClaim.swift",
+        "sha256": "663133d31d487e81be3ead03ae9a8064143c6c64f3ad171c619081cbe1775790"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryState.swift",
+        "sha256": "f8c0b4274cdba180d554afc6a5dfc8adafe862a79411698da99341ba9fe76096"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerLifetime.swift",
+        "sha256": "66a92f97cc3ef10828c2129b1e5057ab6d608cce88337476626cbfab5fa07c9a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRole.swift",
+        "sha256": "3013458ef29a46144c016e7341f868f40c878cf36aaf3d0ece18d7a2498070e3"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireQueryMemory.swift",
+        "sha256": "3d493ec8520f708b1fc7942e657525e69a7dd841cc1ea014e215c17003ace096"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsCatalogReader.swift",
+        "sha256": "b3622cfac84742241f9fe13b310d4d3772e17ccf717daf401fa52864813ce9c1"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationJob.swift",
+        "sha256": "0567784cc4a6a002d1d381d24f7d71dc4ae16b7fca0356e64b647e7515df8acc"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireDependencyGuard.swift",
+        "sha256": "2dcd15e46e40c2e8d46a1f38677eb6fa83c7050f772aef853d9a891012ae0fd4"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteDocumentResolver.swift",
+        "sha256": "d3c3105ff1be937e15d0abc2966a8382380c360c168da1aa460002528895f00a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireConfig.swift",
+        "sha256": "54cd7b22f1bdffb362dff7d1c8b0ccace63fa1f7ec83ca16fc31ccc7ef40fb3a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePostLinkExtractor.swift",
+        "sha256": "8192cec816a8a0f9fd0e941b3574d2c5e8d6796bc61dc54b41029175b77ded79"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireInboxProcessor.swift",
+        "sha256": "29220c22e6bca7c01546ac858902df40584c6de48d59acb126c152d3d5b69a1b"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceArticleProjector.swift",
+        "sha256": "c6aea82f63e9c29c90d9288ac656e47951a3e2f6893e8314b81323ecb74df40c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/RedisWirePublicationCache.swift",
+        "sha256": "312a16848a372bb8e722cc6ef0223eae7acfea49db3e00e064da9fd7746f51a5"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelerEndpoint.swift",
+        "sha256": "b4f0dd14bbaafe7e166bd8ab8f942f7a8eeb9a93a819c859dc60521ec054cc98"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryCounts.swift",
+        "sha256": "d03e2854fc71311aef9d365fba12c58f808b5df291449d18681c94590df358d2"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWirePublicationMetadataStore.swift",
+        "sha256": "9d474910491f3bc0f18bc370bbbcab09b7d0e8e7d9a08fe070d4920d89f9fe61"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataQueryError.swift",
+        "sha256": "7683024a62531e28726bb2c9fdcbb34613d7e0026449d197a6e27ca4646f95a4"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerHealthState.swift",
+        "sha256": "15cafed40b663790bc94da1f5c7e932d02195c30b00a1866ad894c0247a69e43"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxEvent.swift",
+        "sha256": "d6dd317dbb98f3edd08e7db98636d0c60fd2141ee5ca949af945b7aa9befb44a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireTalkedAccountProfileStore.swift",
+        "sha256": "1cc2298f37ad98d09d1a738a0baf690267293661df6d916e5b4e1bafd0d01d99"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireStandardRecordFence.swift",
+        "sha256": "57ad8e0606cbc17aeca534729c035a0c06f50e634f38a9d5da21c3522ef035e5"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireHealthServer.swift",
+        "sha256": "47f64e806377e1a58b4bed63797b01ff2d3c5f85af982cf0774076016a569e7e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationSignalRecoveryRuntime.swift",
+        "sha256": "4bb336174fd82a7932edf34d7c405001887cf20c85caa9c87544925ff0926614"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetchTimeout.swift",
+        "sha256": "196837c5dbc0b852de9b4feb629b267a239c7dfabf32c7953b4c112321a22442"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireExternalSignalRecord.swift",
+        "sha256": "203610c86e62112e4aed4bb37d6059ca7f97781fa8dc9fac352419c90fd7cbd2"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQueryPage.swift",
+        "sha256": "032ae29b5a34ddfca62004d404565ca4a0b24778e44e9cc37f94578e982d7e8c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore.swift",
+        "sha256": "88baaca4fe5301b89f5fd64161589b5e52e0e301e3de3050bf8d2d86c839b811"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainRuntime.swift",
+        "sha256": "93249da5b24662932f36ddf32f0f9ddca06e89f088b1a79ca11f307ec12c2a9a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRuntimePlan.swift",
+        "sha256": "3cee23e962a62607856ed629e76408da36f668197a3bda6eaafcbc9f1317592f"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadata.swift",
+        "sha256": "aeae0d40f2e1870875af864b8db74d24564f7f61a662003639f3ae7be584ec27"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationMetadata.swift",
+        "sha256": "4dd0b492994d27a2b17ec4263ee341449b6e53e80adba3057e09938295d93a6a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfile.swift",
+        "sha256": "c86ad18f8166d760854ca1129713d6360f7d8ab1932fc164668fdc86adb140df"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/SportsProviderRuntime.swift",
+        "sha256": "c3b0406d9b36b94a63db8160fd631efc461a5fd2391fd7ea3f8ec625e6526b3d"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataRepairProgress.swift",
+        "sha256": "e3a4884c438747328da0c003a3571afb3f8c82c7834f0bc154fa8901cb6c3b80"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireCandidateQuery.swift",
+        "sha256": "5f6b59e16057012a5e15dd74eafd53a1c66992cb2b19317a32b86e1f2d18e28e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelRefresher.swift",
+        "sha256": "487970e5b6ceff79a98e6d1dfc71407a2fe7663178f2fc253d67aad7818a0bd5"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryCursor.swift",
+        "sha256": "198db6840ea38b6fa801c01effb09cfe286d28f011c5174d623a9b876092ad1e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryReport.swift",
+        "sha256": "1685287342c16f73df4b73440ad89e4ef6eb12a4dd50bd56d13a5a792ff491bb"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireFeedMode.swift",
+        "sha256": "0fe78517c815541c60df263345b94c6c9226b9923eb195c481b767a68f11012d"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataTarget.swift",
+        "sha256": "2ae606af46d2425a6cc469406f5f6c5a50e7b888f2331532054ec056fb0da2a0"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationBacklog.swift",
+        "sha256": "fd6033d10d93a6eaa9e2c0a6aa5669bc2c4d9e158b0286d792e5493f5aaeec71"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWirePublicationSignalRecovery.swift",
+        "sha256": "b13bc37939b74696d52a9814a4431651188e1642c12205cd9bb0d2b600f44a74"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCacheTelemetry.swift",
+        "sha256": "7d6bba612b71f570380836fc3c24238976c2b422047a9a1f4843993703bc5e40"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireEmbeddedCardMetadata.swift",
+        "sha256": "7ca7bbf2eee85a23e087c9ec76ce86fea716b9219e63cf7c245e2a2ce535b59e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordVerification.swift",
+        "sha256": "92dc3a21751455e9ccade34e13dbfc23ce9983488d529da09359ec9a3f44f720"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfileEnricher.swift",
+        "sha256": "0e771820ea4ebbf255f63c160c39690ca8c5a695b9bdee709edab753552135f4"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCacheRuntime.swift",
+        "sha256": "02e0010c1c2bc632db75ee9b7b30a3b55edc0410a1284d42f31ac4795858171f"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsMaterializer.swift",
+        "sha256": "bb76aa7d5d1fb972e131f98097befeabfbd50b82334c21df3683551b1c9be1a2"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteRecordImage.swift",
+        "sha256": "7176f142363622d4eb91f456cce88f22ba4c7d6e7c3ebfa5a3b104dcad725e61"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfileRefreshing.swift",
+        "sha256": "762e45aecd38097303cb19db34b2ce54050794912161ec772d2b28761736555b"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataStoring.swift",
+        "sha256": "cf3ebf098f5084113abdcc2a18c641e6927bef36d4a8992fa6a1b3a9b66cd4f4"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainClock.swift",
+        "sha256": "92efd8c9680cc87e1b01394328573da290511102fd408806d39ce54bb8f81352"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepository.swift",
+        "sha256": "a287fbdffef264b773a214c7eff895bd9bad73a27c6140b2553b4c41cb809ec4"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore+Incremental.swift",
+        "sha256": "c4f8f92ffa5e418e681a2c360c3d8a689d4f979d723489c7100cf34d473c4e4d"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicDNSResolver.swift",
+        "sha256": "a547667519feaf6c132c6dc2b68861569c4ec68f8fed86eda76ac97ac5c7275b"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxEventOutcome.swift",
+        "sha256": "3e97958ad99159e7118dfc2b0b6005c7a26423b6f5014a34b4655bf0581373ab"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordObservation.swift",
+        "sha256": "c286c1f3e47123e2d56f27716fd8e69ac4089dd9e08403f26219665f68d009a1"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireDeclaredLanguageValidator.swift",
+        "sha256": "8821e8e8bfad071c44a021ad5ebd2a0b4e733d66bdfb32258c5753961ac899a3"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteDocumentError.swift",
+        "sha256": "ce8b866ae4bbae9f34aaaa01e2ae5fef2c6f321cadd253a9d60b6a5b1f6b4978"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxBacklogHealth.swift",
+        "sha256": "0b8e5bc5aa3b6c02252cb7a6c3f6b9f559a272981e7b9f5a9724b3f79d576a0a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPriorityClaimPacing.swift",
+        "sha256": "a6ed54c70daa1407c72d9ef2971a6c80f98404e71eb6292aac22210cdce4f0fb"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxProcessing.swift",
+        "sha256": "711b3fb5c9527700ffbf337c51a53122222efb165105eed394c787a116683ca2"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireDependencyRecoveryStore.swift",
+        "sha256": "e2ea6506da629a6a5b06e9e1d88034f40d7492c1a98ddffd6688ef279b31a977"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireLinkMetadataClient.swift",
+        "sha256": "04487749a23b08071c46bc9515f56290791335d776f8616351053a63c17933e9"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteURL.swift",
+        "sha256": "e4ed9149315891c03caa83d5b729e175da3fd3af803338747b974c3756f0006a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordVerifying.swift",
+        "sha256": "d123acd9cc365cead9a98cf8fe88bf8f2209576177b970925957456a4e813eff"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWirePublicRecordVerifier.swift",
+        "sha256": "1e701a04bd862199a2ae8274e6b87ca5cedd905644fbd7b4a2ee4b1fe4388ac9"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerConfigError.swift",
+        "sha256": "0fafeb968b38855d30397df532579333ed2a1f51b0ba2df2601b49d1cef14133"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWirePublicationQueryClient.swift",
+        "sha256": "9b45c1205f1411a1892725b50eb3e67cb3ba53c2661c7be3a10bb5b462f90a25"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationRuntime.swift",
+        "sha256": "60821b068f93d025919b2b9a6edd3a2aae46e089384a69ff37f36c523e9aad92"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRepositoryClaims.swift",
+        "sha256": "c0fdf3ec69319f3307e2e9c291b9b755f0c5fa51339da7ac39f831b4eb7acb2f"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Scheduling.swift",
+        "sha256": "a43b4bfcfd64c38b34476fc70880b692de02315cfbad3d3bf901f6df5debd79f"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordHTTPResponse.swift",
+        "sha256": "5737a851d98da4a292294c9e08674579ae649f660ca5ee44ee527e241d82c36c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationReference.swift",
+        "sha256": "3672d4021b939a87c037f45d6ba921671bb01f1d1523af3588da06871848650e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxWorkBatch.swift",
+        "sha256": "d165e19fd8dca9f4ad7e00a65d272318ff0534d632e147b590ba544298a6432c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountMentionStoring.swift",
+        "sha256": "fdf47ce60231e7e2c21148a885049e2265894be5b9d23798f985b2443832501a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireBlobURLResolving.swift",
+        "sha256": "6a1f23676f925cf55c12d758a22b4349d3264fc8378db55b4cc72a5bf4f5703e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxSourceScope.swift",
+        "sha256": "40a7822831a064fbbdaee4bd8929151b2aa876f3406dac33efab350192859c14"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicEndpointValidator.swift",
+        "sha256": "553fda28e6526e66419391f75c81e39d5e97de2005096a92ac12aac9b3284441"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetchResult.swift",
+        "sha256": "49c444b76770659a4db1574ab4e40838e2d174b92530414e313b03d36ba242a7"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelStore.swift",
+        "sha256": "3cf7102d61165f09af30da92e8864644eeff32a7cfc74fc6242b49097dce166a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireOpenGraphParser.swift",
+        "sha256": "1b295e24fa928eb8bd5e6afd6909f85b23b54e11e665ae18348b5fa6b9226c8d"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireTalkedAccountMentionStore.swift",
+        "sha256": "d265ebf8b7e685b0aa4790ea74705bf6db2f11fd2cd5fc0659e33800559127b3"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQueryError.swift",
+        "sha256": "8bea0c6372a9db9a900438acdfafecc785aeb1101bac4f6a052b15f75089f385"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintaining.swift",
+        "sha256": "647995e5702fa55fa32fd7b078836b1b471e8d98ab2a966d306b66f6d52635c6"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintenanceRuntime.swift",
+        "sha256": "3b7fe1aea3301498e51c50354782a7b8510e3444483eabf4797e360a7d1b55e1"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRuntime.swift",
+        "sha256": "cfbe8c06f2cde1c046d31ca7852102928e95cba9913f30227fd6759142e02513"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepositoryDrainRuntime.swift",
+        "sha256": "6e63a7ffc79db806967b59dfdc0cde40515b0fb9c922966477aaaec1d2d084b8"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireEnrichmentHealthRuntime.swift",
+        "sha256": "9a9f90d0135f51125474118a6f8341932d00b31f79b4fa1867f254a8284c3995"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataEnricher.swift",
+        "sha256": "04ad7684b419c9c9624f70faa84d10c6ff14b93c14dd4168aa7a1b283f0bbdd6"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireExternalSignalMode.swift",
+        "sha256": "d83273a9066efa3284659922716eab607e83a3a11743d4e1ecdd384a0559c076"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationMetadataStoring.swift",
+        "sha256": "e7e8c8be1b7dc9ddb31625d520770a4142fc45b2ab78d6659b93af380c9baf12"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireCacheExpiry.swift",
+        "sha256": "b81590e5d680ba20e178f6ac8193bf9c8e7b38b3ae7b366a2465b019b126b227"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationSchedule.swift",
+        "sha256": "201e2419c31ec9f0dcaf5a9b946e78ca627d2f83ff9ca6130de73fe4154052fc"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireEnrichmentHealthSnapshot.swift",
+        "sha256": "a443047ba00044c6eb84278c9110ff656d046bbedf1be5dd69d4bfc9224cec70"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerCycle.swift",
+        "sha256": "37a11c1e5f013c70e580a16c2197b2c8db9f4be422730cb3ce854828e89fc4ff"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRecommendationJournal+Backlog.swift",
+        "sha256": "288316e0c401a861737a0aead21192c8e4c7a7a0c6bb1203071a3ea71534f248"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireDNSResolverAdmission.swift",
+        "sha256": "7e9adb1e06333ea4932b323ad11081be76becf938c5fdbcaa8d40b88676bf187"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordHTTPTransport.swift",
+        "sha256": "f6949b921069f987d029b297cbf03dbd79273efdda27b0a3f70aca3fc0591879"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireEditionModuleRecord.swift",
+        "sha256": "175e95839436b4dce67577bfd5e83da460fc25d846cbe9bbe56de6beb949ad73"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerHost.swift",
+        "sha256": "75540242456276cb7ff69436b5c1220ca4f8a17ff9d29a5e39dc1e01c39c3a7b"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/FinanceArticleProjectionRuntime.swift",
+        "sha256": "09dd7510f58c94dbe06101688cb5f2a7c08f2179001f2cd4fa1bb303d0bd556e"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrator.swift",
+        "sha256": "ed98e1d385257389929c0f04ec526422735b15cd12e599377093446fac3fa291"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordAddressCapture.swift",
+        "sha256": "2ef820e23ef59325a00ccf74a1f8653b92a83525ce6ce8aef1b35c402875fb46"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepositoryProcessing.swift",
+        "sha256": "bf54efa3848e549b4d50879037731215c54837b30224729c2e230865f32341dc"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationHTTPTransport.swift",
+        "sha256": "cfaece4a564082ecc1ac53c3ae0f47faca070fa669c7f8f8ffa4d8a9f5114bcd"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/SportsReviewedCatalogMerge.swift",
+        "sha256": "adbf4f7b1552947fa8a52890edc2539dfb2d4a66b7acf9e75f9b076a6abf0a39"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationCounts.swift",
+        "sha256": "770f3b93614153f94ffe4aba534d028301a180fd4273dd7be5da9f1bc7469ec9"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceCatalogReader.swift",
+        "sha256": "96d7664f0adc8e2d5bd8fdd4c5edac725511201a5dfd961bca724efb177a8a0a"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCache.swift",
+        "sha256": "a46572a4567a65369f090cf766e2cd56073dc312bae8fa5c485ffd717863587d"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxCleanupRuntime.swift",
+        "sha256": "4eb05586ecd68a266c651dc0215d86c8ce818c440c572efd56c6263ac68848f3"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryRuntime.swift",
+        "sha256": "ef2a7d4365ccfaf18c00fe277280995e895c498cfb7da092c366987a38597fdb"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPruneCursor.swift",
+        "sha256": "3e7a131cbe527164c279b7ebb4ff24ac6917c9865cc6f0561b0d526747186284"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordQueryError.swift",
+        "sha256": "6dccf2462112b4c4ddcc5423d7ed017b881a92fc4003e58223225ecf5375bebc"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationCommit.swift",
+        "sha256": "6bdd307b62f1c041b305b2d2cd27877bc8b7cb5ef80faf5debdf2e1907a26d0f"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainSleeping.swift",
+        "sha256": "78bd4c09cdaf9c53532bc3a2a211db385456171db76032ce1a611404edd8e46c"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRecommendationJournal.swift",
+        "sha256": "a3de774e4e98fe0b5200aa590f0574926bf48e26ae6f3ab3db792cc1148c2164"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerConfig.swift",
+        "sha256": "828f11e122d3a2490321e0ecf538556db4024eaad9c565e51aa464882dde8bd8"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireRankingScheduler.swift",
+        "sha256": "3da1483e440276f1fb48002250dd9e68dbf1051bf486b72bba6c37be8c5001d2"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationResolving.swift",
+        "sha256": "49f4ff8be2309bdd4a1b782f3e16a7714fa13ee3f14fbac796316f28e9fdc070"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQuerying.swift",
+        "sha256": "ebb498162d2fa8f9bfd7489f75a985cd876d299615f5a841eb70dd91b50f3857"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelTarget.swift",
+        "sha256": "da3d671311e45467bbbb3de34a0c0a1e6c4c319307638c3bbddfed28f25a0fe8"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintenanceScheduler.swift",
+        "sha256": "bf1a2d380793a4e099de46c1cb6dbce5419d1696a18482e2c211b75a2f355559"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationStore.swift",
+        "sha256": "9ed29b527ef013e35e4739b98b44e2c7f4fef2981754ab68b0addd0751f93671"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorkerCore/WireResolvedStandardSiteDocument.swift",
+        "sha256": "da893f6ed680b225f216720cd6cc576e5207203c2d3b50bc867381d99821ca04"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorker/WireWorkerCommand.swift",
+        "sha256": "77af308e7568df54ff7c83dce0dd7c4073b8e66563dd2092d6263668df18dbce"
+      },
+      {
+        "path": "services/wire-worker/Sources/WireWorker/RailwaySeverityLogHandler.swift",
+        "sha256": "40704b40b2e8d6907c72d82576f5793c98b8ab771e234bc634384f17525c6b5b"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/RepositoryDrainTestSleeper.swift",
+        "sha256": "ab35b00c1017dcd52add7426a215942d87c28176ea8df3a399b34390e44ff8fc"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/SportsProviderPostgresTests.swift",
+        "sha256": "f7f50d32564b8b5f11cd5cbd8e6cbc447a9612cabe2fe33924e31cb7387bf6c8"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataSchedulingProjectionTests.swift",
+        "sha256": "ac404a1f457f37a06b42bcf5e6bda2d43191ed7074bf72dfc68d8161d9b63e0b"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/PublicationInvalidationObserver.swift",
+        "sha256": "9dd1ce2f8adfb1738fff2cd794fdc59b8b39464b2436e85aed74a6266fcde933"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRollupTopologyLockIntegrationTests.swift",
+        "sha256": "20701d0ec18d46e70593312218c33c053bfc3268dec687bcd790f41251fca4a5"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/HTTPWireLinkMetadataClientTests.swift",
+        "sha256": "288a2235e1b8486e8fe43c9eee15de7a38cbb9591ed5f868e246a0cf104c13eb"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireWorkerCycleTests.swift",
+        "sha256": "09f474f2eef6ce62f2c4da9bf157eb79fd5b9ecc45c68ebe1446092c1e256bf4"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataClaimDeadlineIntegrationTests.swift",
+        "sha256": "36af0e4a05b9de07c0e31c9114fd911e43d280ab2e18af15a0b7a951341671dc"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireEnrichmentHealthTestFixture.swift",
+        "sha256": "fd0f332903c4ca000c8f80cbd0df6992450c4fe785c3e7e1e62546327c1c24a5"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireSignalPartitionConcurrencyTests.swift",
+        "sha256": "07c876dc70aa47f9f24e47861e4fbad95443376cc2d13b5b1bb8a51563425932"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationHydrationFixture.swift",
+        "sha256": "d01debd62352cad050ef1dae72a0b4ab4d1dc72f02927564a8bbceb133ac06c5"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePostgresIntegrationTests.swift",
+        "sha256": "1c3a2443d18eb94c3bd1a3244d03374737455cff2116ebc094103ea6318297b4"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicationSignalRecoveryTests.swift",
+        "sha256": "fdf927ade8ab624469d694bdb758d360a3f8a5f78787be0e5847354c54f3ece3"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireSourceVersionFixture.swift",
+        "sha256": "975c9b9e9edc4829ffa5d05ccad9a2fd0836155dd3f183d9441774a9958976fd"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireGraphMaintenanceRuntimeTests.swift",
+        "sha256": "04405610ebece3628a401168105226d119d36dcac1ebdfd41fe5a12dd5f9e21f"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRankingSchedulerTests.swift",
+        "sha256": "724b50bdd4c700b4cab1fd96bf75d083b52bda9f2ddf7d778c222981f1980c1c"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireGraphMaintenanceSchedulerTests.swift",
+        "sha256": "ac3ec3fb84950b6195f98382064914e8f5f5b09fb141f3858716c16e06f7d9ca"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireCandidateQueryTests.swift",
+        "sha256": "20975eaeddd26a2d45386558ad58c9563d213e79cb16fc4bcc9f681b3723d06f"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireDependencyRecoveryStoreTests.swift",
+        "sha256": "c5c89d3867271ccd6751e07917cf55d83482775652deef19c4496e9dfce193a8"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMentionPruneIntegrationTests.swift",
+        "sha256": "57804915f392a6f99b2a0bd2a24cd464aa190eac66179c3014e849213c88e673"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireEnrichmentCancellationTests.swift",
+        "sha256": "6fc719ec776d65b385c3ce56f0971256cc798ccae370cba7e57960fab65f88ad"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataPruneIntegrationTests.swift",
+        "sha256": "dc709e4e1d8aa21b750cc439261db7aeecb6e0ed8cef7a1188dd48049ba62d88"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRollupIntegrationFixture.swift",
+        "sha256": "dab02d6fa6d24ae504ec6b0c27686bef41a07409997ac2e948a7a29e6d006731"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicDNSResolverTests.swift",
+        "sha256": "71cca4f760f7c975306bd914159ce2e36352c91d5b39fb38a73b21646a4786b6"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireHealthResponseBuilderTests.swift",
+        "sha256": "331495295e1a1f8c8c74e7dee24259f5be91bc35d9e8f9af84247f28c333f154"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireEnrichmentHealthIntegrationTests.swift",
+        "sha256": "69d079a7a9025073958af240a1c5a619ec70874da7a927a01a53dfbe0a83a8e3"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicationResolverTests.swift",
+        "sha256": "68bee58bbd5aba6eefcafc477d5a88ef469b47d30ee6e8b39d5fe4ea63aa712b"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataSchedulingConfigurationTests.swift",
+        "sha256": "f809dfd72ac296ffe0e048f8942082021a75ccb2aadb2bbfe5475d11a99663ce"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireOpenGraphParserTests.swift",
+        "sha256": "954932fd86e378c53d63badbd6966b836b1de8ddaf79873945cd27768e98c3c1"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRollupIntegrationFixture+SignalMutation.swift",
+        "sha256": "42650000cfcf167b8d4b8cd6af6a7919697d60fb1f0ed1c259a2bd194b6421c8"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataPruneCursorTests.swift",
+        "sha256": "88dad89c86e716783ba679f2f864d14e9d014fbe173b4f6e8eb8ccb6fc399e00"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxRepositoryContinuationTests.swift",
+        "sha256": "3bce29dceed733d256985f48cf04cc68b93bf484aa16dc0ed8e652fc90d8e24d"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireCandidateSelectionIntegrationTests.swift",
+        "sha256": "f28c6cfb48ea4f6e2c395b03119dee0677da768a1a26b2af03e89dcaa5ee5528"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationHydrationIntegrationTests.swift",
+        "sha256": "0f6bdc6e99c1eaee16044df26200c58cfd34cdb6eff4784d3fb7601cf8895a3d"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationRecoveryRuntimeTests.swift",
+        "sha256": "2ef8d4940cb28d62b9fb423ed0eafd59a34421a93c238676465f730ba0413658"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireBaselineLabelRefresherTests.swift",
+        "sha256": "3ab3582ab804a375c726e105e3d5fe456ef92402c68cb65689a0dbf9e9984503"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireWorkerLifetimeTests.swift",
+        "sha256": "60ca449b9e65b5bab4209e09bad7d2f344233b55c0540f191e3d4826347812fc"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireExpiredPublicationReplayTests.swift",
+        "sha256": "5e538ed458d87ced222eed75ae0bad47a4619debd486bf736bb0a301192ed9a5"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/RedisWirePublicationCacheIntegrationTests.swift",
+        "sha256": "88b1c64ac07896f83889970dc74987dd5ecb95d1806d2f2b53a88caa197a4c47"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/RepositoryDrainFixture.swift",
+        "sha256": "021c1c1b1ca334c842b9073c9d8dac8176c9789f3e0033c5881fc1e7935eca62"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/FinanceIndependentModeTests.swift",
+        "sha256": "14913bedfe4f5e69ce8c2aeaceff30fbb3c92a2be8dffea585b08779ee5d542c"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicationSharedCacheTests.swift",
+        "sha256": "0022fc930000b9dc25a03c96eb9f6e0d492655c6a376da4513002e01b68b2c90"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePDSSnapshotIntegrationTests.swift",
+        "sha256": "8714d80881e3ce36c5c456d08cd042d2d7643ec16d50f91fc32259e6a1be0ab9"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxCancellationIntegrationTests.swift",
+        "sha256": "bd3e96e0757ddfe762725ea359bde024b8e5be3fe3b92ce29b4744fe185934f1"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireEmbeddedMetadataWriteIntegrationTests.swift",
+        "sha256": "c7154917b0179927f8d7e99674e57815d6a6cb01608d62a72f76cfae10fdb083"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataClaimPacingTests.swift",
+        "sha256": "a1f6bd6dc53899f81903fb9c41a24b720b73e5a0f2433582e809be2692d69913"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataRepairAuthorityTests.swift",
+        "sha256": "018afbeb4f28a736bb1ef9c6f5800c8393371c6085afb1a384669d7d00819129"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataRepairPacingTests.swift",
+        "sha256": "0014f99c30f05973be9d2fc825f4009913a601cbc5b118675b9e8a3aa7c46a85"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/HTTPWireTalkedAccountProfileClientTests.swift",
+        "sha256": "56c5d819959d6c540b81c5d1000863d1e4baf43ec967e941a2b5f8ef90f7c4f0"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireSignalPartitionTestFixture.swift",
+        "sha256": "8e6e3bf1c038e19835467fc0ccbbbcbe235ce33c22edbf054f204bbfe6404c0f"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireWorkerConfigTests.swift",
+        "sha256": "f0f8e9651932e08acccede17df00e56e597514fa422cf41c339774448da73bc4"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRankingReadinessTests.swift",
+        "sha256": "098254a060b65c0ab0119508061a5d2d6f7e203ced387d0f1b56783b52440974"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRollupAcknowledgmentConcurrencyTests.swift",
+        "sha256": "21acfa8803456d92c1481788c70734d990e9699c16f84a7dcc3dd680b8520890"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireIncrementalRollupIntegrationTests.swift",
+        "sha256": "3a62277e8980f30d073907dce7facff1b05b40ea22304017538294c2f0b68152"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/SportsProviderRefreshPolicyTests.swift",
+        "sha256": "afc49a23702505b91927b2cbeb36e649453cfb324c15a7a66beff306510e4278"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireDeclaredLanguageValidatorTests.swift",
+        "sha256": "196f37d3e7c2cf31f9d704dfedadbdce6bfb63eb2006b0ae34bd4ae082f80568"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicationRollbackGate.swift",
+        "sha256": "826def8e3801214b7545c12b10dd26c36617852fc5bad1c649125f54e8e7c00a"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePostLinkExtractorTests.swift",
+        "sha256": "b4cadd59fb17591a70489032a24b060ed0beb66fabdc5bc1ce19a05d36193dcd"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireOrderedSignalMutationTests.swift",
+        "sha256": "3e20e4ee8a2659314e0062dd0278672beb023d8df0b3551a78eb54cdcc8cc566"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxRepositoryDrainRuntimeTests.swift",
+        "sha256": "c97480f39640850940e028ce7dec493871b175df5dfcb8387d26abb9cb60f1e9"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireItemRefreshIntegrationTests.swift",
+        "sha256": "67ac39f319fc30b2845d844db11eaf4be01c03dff2f7c9adc0f44b88a022f02b"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/SportsCatalogRefreshPolicyTests.swift",
+        "sha256": "fae8482dfe4cb7f0e69901dd23fc4fc5125710a08edaaa77c20a951838422640"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationJournalIntegrationTests.swift",
+        "sha256": "c472cf138c1cec2294ed38216255942267acdec5580693538bbbac4065519876"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/SportsCatalogCoordinatorLifecycleTests.swift",
+        "sha256": "352934ef1b8d0aab6ed9e2534fa3d4edd1f88d5f983d3ad287ab64f46d14a8a1"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/FinanceArticleProjectionPostgresTests.swift",
+        "sha256": "7dfd9b0b9b4c704584a3a52af2f185e501baf04040a14185775eb31cd5844b21"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxCleanupRuntimeTests.swift",
+        "sha256": "1691c02439ea5e7e35d4920f3fc66b10c293da3584c83a058c32f4a2b7b6d7fa"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxMultipleGenerationClaimsTests.swift",
+        "sha256": "26e250ba51a602d11ead3338865fa201a94acbbea77e6453805806e06326b3d6"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxDeepRepositoryTests.swift",
+        "sha256": "8f24c94866242d06a003737e5a2fccdc29953b291c439144ae763ddcbe0d34d3"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxProcessingPolicyTests.swift",
+        "sha256": "5233d431b13a462f393c0f15565650578bf504abb54c6bf6ed46e8248925077a"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireHydrationVerifierFixture.swift",
+        "sha256": "67fb8a37e8965941641d080a8455470a67588bb3ed4cce6d617c67b549887f68"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/HTTPWirePublicationQueryClientTests.swift",
+        "sha256": "071d514f8d51983f5813dc1e4cfead35a6526b8e9adb65969d69182d668694ae"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxDrainTelemetryTests.swift",
+        "sha256": "c12030eca77700bc30b619215fe8f9d536eebe8b7120e756c6d07322fafcfcdb"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireStandardSiteRecordImageTests.swift",
+        "sha256": "66b579d5ab08fc38cbe17a887feaedf9b7db14edbd22848bc0e71e131878aca5"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/FinanceIndependentCandidateTests.swift",
+        "sha256": "036ffcaf22ebad06b221c8ae55fdf95216f718725410b3619b7a2bf4d310f9a1"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataLeaseIntegrationTests.swift",
+        "sha256": "036307b30f28c38327662cd74d091b8b5299bc979d737ce56499f49ed8ae58f5"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireDependencyHydrationConfigTests.swift",
+        "sha256": "20e5ef7555a610469bc8ceaf4ab82b3dacc890ed2b5966fd3d82f93cf8f3fdd7"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePDSSnapshotOrderingTests.swift",
+        "sha256": "927f7f75ba66c34ed53907003b9f4dd0ceb3005cd2b3965b4d1266f9b8eca26c"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireQueryMemoryIntegrationTests.swift",
+        "sha256": "0a64259956e74b8b3bd9e3bbb64f115b457ec8f33a4368ffbbbfe8de24d420ff"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataSchedulingTests.swift",
+        "sha256": "33be9005f675f448ee7ff8f47db59966f0ab99608823203b94947dbb76687907"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/PostgresWireConfigTests.swift",
+        "sha256": "07ecf671839c2e68ae11b9af9298121962a4f9ebc951a9ecc6578ef3b23bc2ac"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireWorkerSchedulingTests.swift",
+        "sha256": "aaad258af694ddca28026f94253a7edd46665246064b32e98fe06b12580e332f"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireWorkerRuntimePlanTests.swift",
+        "sha256": "3c860501c78e02720a4ad2809b676f2053e47ed4259585230a17190aa1402146"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/SportsIndependentModeTests.swift",
+        "sha256": "d07b369645a4d8095d2b2a09acbc6f7f8c1c8775dcfa510ae255fe49ebac37ae"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/FinanceProjectionRuntimeTests.swift",
+        "sha256": "3e269e17efeaa1bfdcc5f33c207bdd66b0bec1086fdc5a47dfd6f88f7895d13c"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMigrationContractTests.swift",
+        "sha256": "4f9f19dd71b3aae4f2024f7902368a364d0d8236f0027e0312d6d5c214465433"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireDisposableCacheMaintenanceRuntimeTests.swift",
+        "sha256": "15136758a7972ae0cd71d82c3045ff87381436f9cd1a747c82bb377120e04c69"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireGenerationPersistenceTests.swift",
+        "sha256": "57ae659aa8905361107dd3cfd815d66b2c453d1ef415ded9fc717506ff025f6c"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireEnrichmentHealthRuntimeTests.swift",
+        "sha256": "55bdbf3dcf4987419ac09a2735ec8f18e103be3dc23f1c5ee1ef5f7289364d03"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataWorkIndexIntegrationTests.swift",
+        "sha256": "8e80c2723ac406910ac93a01dcd7e201b8e5ac4f2114d5c0de46ad499d30c3f8"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMalformedPublicationTransactionTests.swift",
+        "sha256": "ec717263406ffe06e110c9e0f39ed4ae5c477ad5bdf3793da3805b1d03fd64e8"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationJournalFixture.swift",
+        "sha256": "74341e5b3dea6dc2d2fbc30bea2e5b1d1b862348862c99b97c0be3e289959f7d"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/SportsProjectionCatalogTests.swift",
+        "sha256": "54e5428d301530be39f78fc04e201d850296aff2ff24cbd17d846fdf2d3244e5"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireCacheExpiryTests.swift",
+        "sha256": "af9e3f25679ad79b9749339f3c430fa061101ac9055e857d2bd665409d33bab6"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePayloadNormalizationFailureTests.swift",
+        "sha256": "417e484f7e31c93254173067d794d7848a8dcf90652439e5ec96049ad2e5c431"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/FinanceCatalogPostgresTests.swift",
+        "sha256": "beecfc245606564377a0ed761fc0aa5dc1878fd74f0d3a85d4414c980a42ea30"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRollupSnapshotIntegrationTests.swift",
+        "sha256": "65c5e0747b3a109dce1f75626dd2cc8a2e285b91a75c0ee736629d44e671c4b9"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireStandardSiteDocumentResolverTests.swift",
+        "sha256": "cbe4cbcacf4cce57b8dc8c5c470993651599d4f9cfa7105092692283590c051a"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireExternalSignalRecordTests.swift",
+        "sha256": "2051b012875ba82a7d406ca4e88659a04e70b14fdfbda7010a11490400a6c005"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireExternalSignalRollupContractTests.swift",
+        "sha256": "99de2cb7c02c11c2adba6e24f7205f846618094508d51ab8978c61b89669f8ff"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireEmbeddedCardMetadataTests.swift",
+        "sha256": "e67fae40db6e1255c6262636cb96703fe448c01a4e3772707f8f9ce790a2bbe7"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationJournalLifecycleTests.swift",
+        "sha256": "e23d8f54bf89106dcd9d35883e58e54c3401d199f1e45761f2e49eb8631704a6"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataRepairCacheRaceTests.swift",
+        "sha256": "269df6896fb3b9c8a561a0a3b6e7c012ec28b0f6648fb883f4ea7855525cff66"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRankingRuntimeTests.swift",
+        "sha256": "c2afc670d84aeafcdfd0e9c1935ff80ec94669d0c1b61998a7f3d6bd712ab8ed"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/SportsArticleProjectionPostgresTests.swift",
+        "sha256": "09ff7f388aea45e1faf843d2ba6400129f09e7d9d52094c23d4dae5ac7f13961"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireInboxDrainRuntimeTests.swift",
+        "sha256": "dcc1adbb83efa69c0a0dd6c5a6c54392f896400f0052519d599aa2fde5ddf0ff"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicationRecoveryFixture.swift",
+        "sha256": "552c391713112ab39777c1cbbdd1d1b64b807595165e740a82b3dd09053a72c6"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireSignalRollupIntegrationTests.swift",
+        "sha256": "a48369f75dcc9c4c185eba38826e34b58c9d433e749b900c6af5537671d638fd"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireTalkedAccountMentionExtractorTests.swift",
+        "sha256": "4e74ee811635237880dc54da7c7613f3f30a556217257e04fec4428026cb654e"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireMetadataRepairIntegrationTests.swift",
+        "sha256": "333128d947e03edc3e28cb86e35b38cdca1e82d184d8469856269abea83f9f97"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/HTTPWirePublicRecordVerifierTests.swift",
+        "sha256": "ada710e0819c6aaf642b39bb0287d86fc02b96645a27c3c1c8e36329c4dfc8b3"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicationFailureClassificationTests.swift",
+        "sha256": "dc170663d650dabb6854d501384392d01e37bb56406afc2af64a72c0b7d8cb29"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationHydrationRaceTests.swift",
+        "sha256": "4e1d65826ece9d742574fd63d3c4673bf3b26fbbaaa747c30f21134640d5e516"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireRecommendationJournalRolloutTests.swift",
+        "sha256": "670df709e354198554988346a106da6c1b4407183c80cb652affc6f6b5f94f01"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WireIncrementalRollupBatchIntegrationTests.swift",
+        "sha256": "cae1d6031dba03150b80835dfcf45f6f6bb1055470c36fd590008aa1908b451a"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/WirePublicRecordAddressFallbackTests.swift",
+        "sha256": "ccebcee16f5c828f006c3f92ef542f6b19a999c2c307f7b3ce4c830cbb58b7f0"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/Fixtures/site-standard-document.json",
+        "sha256": "88539d6e3327be390fa6ed229946a5f02ce6dce76d006a3efcdc8b303a2dec3c"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/Fixtures/README.md",
+        "sha256": "213954c92b1d6a475bf63e9d96a83c1554fae52e6c13774852e63f5b582e9835"
+      },
+      {
+        "path": "services/wire-worker/Tests/WireWorkerTests/Fixtures/site-standard-publication.json",
+        "sha256": "33b1d757509f402726fa5f1fafc96ac55f7e06fcf750588e809de7b17858ab9b"
+      },
+      {
+        "path": "services/wire-worker/Package.swift",
+        "sha256": "8e73767b0926ee29d0ff879e1a850a43abec1e2147f919021e520dee2435777a"
+      },
+      {
+        "path": "services/wire-worker/Package.resolved",
+        "sha256": "c1b8418b0509dbbce68e599f87725c60cf8a52715df737c4730f24d07370df81"
+      },
+      {
+        "path": "services/wire-worker/Dockerfile",
+        "sha256": "89c39d40729b3dff49bf8432fb9f2492ed0944b440e6bb62e425a3987f562505"
+      }
+    ],
+    "retiredSharedWorkerFiles": [
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/BoundedSequentialMessagePump.swift",
+        "sha256": "f9f05ab992b30cd368e12725d53c9af9aa0f43bdf6e2714734c2d64c26f429eb"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseLinuxWebSocket.swift",
+        "sha256": "09ed0122e1b2258f6fabdc6eed1f40a843b89e6821318b60df5f0a3539d2de7f"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseSubscriber.swift",
+        "sha256": "2f01730da919b22ac3f14b7d9e21e3026aa800be65b4a38e8a7b37eba7c20bc6"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseSubscriberURLSessionTransport.swift",
+        "sha256": "098d255fadde0e14ec13f307466168b55cc85fedf8c3ddb3b60681fa07c56241"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamEndpointPool.swift",
+        "sha256": "3e677f0abc2d58c82d988393b330e6df4e3a3ebaa754f2fbee3dac6bb9b1a39b"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamInboxProjectionWorker.swift",
+        "sha256": "90299e8f88067ebda76d0e00b1c388c1e28af4356e89705365b14184fd7d4fcd"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReconnectBackoff.swift",
+        "sha256": "6aad49dbb514f8cb1377ea69af04c33746500ff4f52d999086805d4e48399615"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReconnectProgressGate.swift",
+        "sha256": "096643ba78192a77bbbd66510df769c399c5f6da9d97ba99e04595d488838c75"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReplayEnvelopePolicy.swift",
+        "sha256": "7f0c5ac3242678e08ef839c3d4c59c6d13e7d01a413c1922e5e85c9cfcec66e9"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReplayProgressMonitor.swift",
+        "sha256": "35ee70a5056221831860cca207764813834df0272007f07935ed92980858f109"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/LegacyJetstreamAuthorityLease.swift",
+        "sha256": "9eefc8992716cea48304c0658eb8aaa50ab6f1b88aee859485b76bfb66827b3b"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapChannelTransport.swift",
+        "sha256": "47dc445046fa069ceb9512ad11cb92bc2b189ed858498ba83f44d134607d0d23"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapConsumer.swift",
+        "sha256": "685defd62d8f4f415a49f4797dca320f415c17b1fad2d8436c1306136e18e1fa"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapConsumerConfiguration.swift",
+        "sha256": "2d7c09717080704812a075eac077b0de67b53ab5a94a6ef21387a0ef7d4a6b3a"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapMessageRetry.swift",
+        "sha256": "92643ce9cf6997bff546b29d33eac54369cba30ac149461b0e97d177a69a888f"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapRepositoryRestorer.swift",
+        "sha256": "5dd536b11e27b9cc66ae979e908464f914022844ebc270595bfebbbb7bfc6824"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapRepositoryTracker.swift",
+        "sha256": "e4539dbc1fd7ce4a4b1382a11582ad61f58ccd8e3f02d8bcff93478c201fac60"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProactiveBackfillJob.swift",
+        "sha256": "ff180dcf3c1c5fc3ab61e9dabbd34d03c55d7558fe11b177f00230b4284ea4e0"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProjectionRepairJob.swift",
+        "sha256": "7b2a4ae60e17d4785effc7fd6710d9e523288506b3a7fa1d203298da05b46133"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewRecoveryJobRunner.swift",
+        "sha256": "dce6ddf2bf1e0e605fb07d13b19b12c5ba1cabe7b0b1324e229d5d51bf28d696"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewRssFeedPollJob.swift",
+        "sha256": "f9ae5fbf2d1cc954663f9b40a34f9b42d6edbcd877f7b9d3a8976e1581bbaed0"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewTtlCleanupJob.swift",
+        "sha256": "95093207482859b5564fdd9454b426050b24901faf20bffa69a920d9e0ed4e95"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewWorkerRole.swift",
+        "sha256": "fb1241ffc4d3df77e6a70e92d186f53c23e7df9c632aa461c21e8d764d0332a5"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewWorkerRuntime.swift",
+        "sha256": "1e4331e015f5eb9c79d2c6c3c71aeecd73e0f707254b06d8ecb1b50ee673d6ae"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/WebSocketHeartbeatSupport.swift",
+        "sha256": "c73a6e14e82ed5bce5789c5b13fd2b8dda20030bfdb44494f8af6059f3eac008"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/FirehoseLinuxWebSocketTests.swift",
+        "sha256": "ecb97070b5918e5d67742711b50c8cbb48ecd5d4697fd86c20655374ad3b974b"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamCursorTests.swift",
+        "sha256": "4de725cff0148f8f617cd5e8353cb955eb9c5f0fe130fc016ad2af90aced6547"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamEndpointPoolTests.swift",
+        "sha256": "ecbde00b56619882005cc4502ac18b0801e978da00e110827240694d355a4981"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamInboxProjectionWorkerTests.swift",
+        "sha256": "6c05009fe92567bfd34efcc46c8bb085e5a0ea76c13c81b14d12a572c29895ca"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/LegacyJetstreamAuthorityLeaseTests.swift",
+        "sha256": "9502e6b6380b6f08f382b7cb5884ea12a331c7ab26e360055380b198f023abc3"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapConsumerTests.swift",
+        "sha256": "02239b21e78cdb89060243565f7193fa06826ac85b4ac4f61b8dc0fdd257487e"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapMessageRetryTests.swift",
+        "sha256": "b92b4341a6031303befbfeba53cb44080b71c48d38d5c6fbdfc35f067f402da2"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapPDSRepositoryRestorerTests.swift",
+        "sha256": "a999c1c43d544192ea4a1e54f09a81fe1a448cec1d5cb98a050435abeb5d7c02"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapRepositoryTrackerTests.swift",
+        "sha256": "da501f3db2801a2f1fce548a94e68c13623b3c9f559987ee354dddbb5a52ad06"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewTtlCleanupJobTests.swift",
+        "sha256": "79aeae5b0bff340f60cdba7bed343205157bf1893811821b0e899239978b45a8"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewWorkerRuntimePlanTests.swift",
+        "sha256": "586b70190dabd0778c783ae3b3ef4858f9068210dd6b04e1268bb28eb8a9468a"
+      },
+      {
+        "path": "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/WebSocketHeartbeatSupportTests.swift",
+        "sha256": "d7be1b8a49b37b9b99558d2c7c8bb53f560977e656070f9d99e255a5ed0d75a0"
+      }
+    ]
+  },
   "schemaVersion": 1,
   "description": "Source inventory; implementation and parity must be tracked separately.",
   "packages": [
@@ -4340,18 +6701,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/BoundedSequentialMessagePump.swift",
-          "sha256": "f9f05ab992b30cd368e12725d53c9af9aa0f43bdf6e2714734c2d64c26f429eb",
-          "lines": 131,
-          "publicDeclarations": [
-            "public struct BoundedQueueObservation: Sendable, Equatable {",
-            "public let depth: Int",
-            "public let capacity: Int",
-            "public let dropped: Int64",
-            "public init(depth: Int, capacity: Int, dropped: Int64) {"
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/DatabaseBackend.swift",
           "sha256": "96a4fc2694bb3095ce6b098286720dafbc193de4915dec694e13042c79a44d2e",
           "lines": 47,
@@ -4387,29 +6736,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseLinuxWebSocket.swift",
-          "sha256": "09ed0122e1b2258f6fabdc6eed1f40a843b89e6821318b60df5f0a3539d2de7f",
-          "lines": 167,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseSubscriber.swift",
-          "sha256": "2f01730da919b22ac3f14b7d9e21e3026aa800be65b4a38e8a7b37eba7c20bc6",
-          "lines": 764,
-          "publicDeclarations": [
-            "public enum JetstreamCursor {",
-            "public static func parse(_ value: Any?) -> Int64? {",
-            "public static func resumeCursor(",
-            "public static func url(_ raw: String, cursor: Int64?) throws -> String {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseSubscriberURLSessionTransport.swift",
-          "sha256": "098d255fadde0e14ec13f307466168b55cc85fedf8c3ddb3b60681fa07c56241",
-          "lines": 67,
-          "publicDeclarations": []
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/HTTPResponseBodyDrain.swift",
           "sha256": "81d8220057016536f1abafdb02ac3d828b5141609549674d60925bc1dff62ace",
           "lines": 20,
@@ -4423,48 +6749,6 @@
             "public enum HtmlTextDecoder {",
             "public static func decodePlainText(_ raw: String) -> String {"
           ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamEndpointPool.swift",
-          "sha256": "3e677f0abc2d58c82d988393b330e6df4e3a3ebaa754f2fbee3dac6bb9b1a39b",
-          "lines": 39,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamInboxProjectionWorker.swift",
-          "sha256": "90299e8f88067ebda76d0e00b1c388c1e28af4356e89705365b14184fd7d4fcd",
-          "lines": 793,
-          "publicDeclarations": [
-            "public final class JetstreamInboxProjectionWorker: Sendable {",
-            "public init(",
-            "public func runForever() async {",
-            "public func drainOnce(at now: Date = Date()) async throws -> Int {",
-            "public enum JetstreamInboxProjectionError: Error, Sendable, Equatable {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReconnectBackoff.swift",
-          "sha256": "6aad49dbb514f8cb1377ea69af04c33746500ff4f52d999086805d4e48399615",
-          "lines": 17,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReconnectProgressGate.swift",
-          "sha256": "096643ba78192a77bbbd66510df769c399c5f6da9d97ba99e04595d488838c75",
-          "lines": 36,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReplayEnvelopePolicy.swift",
-          "sha256": "7f0c5ac3242678e08ef839c3d4c59c6d13e7d01a413c1922e5e85c9cfcec66e9",
-          "lines": 35,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReplayProgressMonitor.swift",
-          "sha256": "35ee70a5056221831860cca207764813834df0272007f07935ed92980858f109",
-          "lines": 58,
-          "publicDeclarations": []
         },
         {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamV2ProjectionEvent.swift",
@@ -4503,12 +6787,6 @@
             "public enum JetstreamV2ProjectionEventParser {",
             "public static func parse("
           ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/LegacyJetstreamAuthorityLease.swift",
-          "sha256": "9eefc8992716cea48304c0658eb8aaa50ab6f1b88aee859485b76bfb66827b3b",
-          "lines": 83,
-          "publicDeclarations": []
         },
         {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/LivePDSReadStateRecordFetcher.swift",
@@ -5610,46 +7888,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapChannelTransport.swift",
-          "sha256": "47dc445046fa069ceb9512ad11cb92bc2b189ed858498ba83f44d134607d0d23",
-          "lines": 270,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapConsumer.swift",
-          "sha256": "685defd62d8f4f415a49f4797dca320f415c17b1fad2d8436c1306136e18e1fa",
-          "lines": 523,
-          "publicDeclarations": [
-            "public actor TapConsumer {",
-            "public init(",
-            "public func runForever() async {",
-            "public func process("
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapConsumerConfiguration.swift",
-          "sha256": "2d7c09717080704812a075eac077b0de67b53ab5a94a6ef21387a0ef7d4a6b3a",
-          "lines": 140,
-          "publicDeclarations": [
-            "public enum TapConsumerMode: String, Sendable, Equatable {",
-            "public enum TapConsumerConfigurationError: Error, CustomStringConvertible, Equatable, Sendable {",
-            "public var description: String {",
-            "public struct TapConsumerConfiguration: Sendable, Equatable {",
-            "public static let registeredCollections = [",
-            "public let mode: TapConsumerMode",
-            "public let environment: String",
-            "public let baseURL: URL",
-            "public let channelURL: URL",
-            "public let adminPassword: String",
-            "public let collections: [String]",
-            "public let queueCapacity: Int",
-            "public let repoSyncIntervalSeconds: TimeInterval",
-            "public let repoSyncLimit: Int",
-            "public init(",
-            "public static func fromEnvironment("
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapEvent.swift",
           "sha256": "b4559abc081c5a91a24860018d032ff436d34a29fdd7c5ed0f6d8d69f46ee272",
           "lines": 161,
@@ -5678,48 +7916,6 @@
             "public var description: String {",
             "public enum TapEventParser {",
             "public static func parse(_ text: String) throws -> TapEvent {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapMessageRetry.swift",
-          "sha256": "92643ce9cf6997bff546b29d33eac54369cba30ac149461b0e97d177a69a888f",
-          "lines": 25,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapRepositoryRestorer.swift",
-          "sha256": "5dd536b11e27b9cc66ae979e908464f914022844ebc270595bfebbbb7bfc6824",
-          "lines": 135,
-          "publicDeclarations": [
-            "public protocol TapRepositoryRestorer: Sendable {",
-            "public func restoreCurrentRepository(repoDid: String, recovery: PDSRepositoryRecoveryContext)",
-            "public struct TapPDSRepositoryRestorer: TapRepositoryRestorer, Sendable {",
-            "public init(",
-            "public func restoreCurrentRepository(repoDid: String) async throws",
-            "public func restoreCurrentRepository(repoDid: String, recovery context: PDSRepositoryRecoveryContext)",
-            "public enum TapRepositoryRestorationError: Error, Sendable {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapRepositoryTracker.swift",
-          "sha256": "e4539dbc1fd7ce4a4b1382a11582ad61f58ccd8e3f02d8bcff93478c201fac60",
-          "lines": 188,
-          "publicDeclarations": [
-            "public protocol TapRepositoryAdminClient: Sendable {",
-            "public struct HTTPTapRepositoryAdminClient: TapRepositoryAdminClient, Sendable {",
-            "public init(httpClient: HTTPClient, baseURL: URL, adminPassword: String) {",
-            "public func addRepositories(_ dids: [String]) async throws {",
-            "public func removeRepositories(_ dids: [String]) async throws {",
-            "public actor TapRepositoryTracker {",
-            "public init(",
-            "public init(",
-            "public func runForever() async {",
-            "public func runOnce() async throws -> TapRepositoryReconciliationResult {",
-            "public struct TapRepositoryReconciliationResult: Sendable, Equatable {",
-            "public let desiredCount: Int",
-            "public let added: [String]",
-            "public let removed: [String]",
-            "public enum TapRepositoryTrackerError: Error, Equatable {"
           ]
         },
         {
@@ -6070,25 +8266,9 @@
           "publicDeclarations": []
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProactiveBackfillJob.swift",
-          "sha256": "ff180dcf3c1c5fc3ab61e9dabbd34d03c55d7558fe11b177f00230b4284ea4e0",
-          "lines": 87,
-          "publicDeclarations": [
-            "public struct ThinAppViewProactiveBackfillJob: Sendable {",
-            "public init(",
-            "public func runForever() async {"
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProjectionCacheWarmer.swift",
           "sha256": "e196dde871cee5c6d7a2554402121ac12f9c199e4c0edb8ff6a4ab37605453d3",
           "lines": 76,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProjectionRepairJob.swift",
-          "sha256": "7b2a4ae60e17d4785effc7fd6710d9e523288506b3a7fa1d203298da05b46133",
-          "lines": 126,
           "publicDeclarations": []
         },
         {
@@ -6107,22 +8287,6 @@
             "public static func decode(_ cursor: String) -> (createdAt: Date, uri: String)? {",
             "public enum ThinAppViewQuerySupport {",
             "public enum ThinAppViewStoreError: Error {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewRecoveryJobRunner.swift",
-          "sha256": "dce6ddf2bf1e0e605fb07d13b19b12c5ba1cabe7b0b1324e229d5d51bf28d696",
-          "lines": 641,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewRssFeedPollJob.swift",
-          "sha256": "f9ae5fbf2d1cc954663f9b40a34f9b42d6edbcd877f7b9d3a8976e1581bbaed0",
-          "lines": 53,
-          "publicDeclarations": [
-            "public struct ThinAppViewRssFeedPollJob: Sendable {",
-            "public init(",
-            "public func runForever() async {"
           ]
         },
         {
@@ -6158,42 +8322,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewTtlCleanupJob.swift",
-          "sha256": "95093207482859b5564fdd9454b426050b24901faf20bffa69a920d9e0ed4e95",
-          "lines": 143,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewWorkerRole.swift",
-          "sha256": "fb1241ffc4d3df77e6a70e92d186f53c23e7df9c632aa461c21e8d764d0332a5",
-          "lines": 52,
-          "publicDeclarations": [
-            "public enum ThinAppViewWorkerRole: String, CaseIterable, Sendable, Equatable {",
-            "public struct ThinAppViewWorkerRuntimePlan: Sendable, Equatable {",
-            "public let runsLegacySubscriber: Bool",
-            "public let runsInboxProjection: Bool",
-            "public let runsProjectionRepair: Bool",
-            "public let runsTapConsumer: Bool",
-            "public let runsTtlCleanup: Bool",
-            "public let runsProactiveBackfill: Bool",
-            "public let runsRecovery: Bool",
-            "public let runsRssPolling: Bool",
-            "public let runsTelemetry: Bool",
-            "public let runsHeartbeat: Bool",
-            "public init(role: ThinAppViewWorkerRole) {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewWorkerRuntime.swift",
-          "sha256": "1e4331e015f5eb9c79d2c6c3c71aeecd73e0f707254b06d8ecb1b50ee673d6ae",
-          "lines": 667,
-          "publicDeclarations": [
-            "public enum ThinAppViewWorkerRuntime {",
-            "public static func run(",
-            "public enum ThinAppViewWorkerRuntimeError: Error, Sendable, Equatable {"
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/UnreadReadMutationEntry.swift",
           "sha256": "fb6b52251ed44434dc80ca68475d6842525fc2c87f3cd369ced1cc3b62f7fed6",
           "lines": 17,
@@ -6222,12 +8350,6 @@
           "sha256": "65ca54d54fa457687de990cd63edbf1feeed9196e65dd1900ecf29270f5d2c7b",
           "lines": 62,
           "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/WebSocketHeartbeatSupport.swift",
-          "sha256": "c73a6e14e82ed5bce5789c5b13fd2b8dda20030bfdb44494f8af6059f3eac008",
-          "lines": 88,
-          "publicDeclarations": []
         }
       ],
       "tests": [
@@ -6237,13 +8359,9 @@
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/BatchReadMarksTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/DatabaseBackendTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/FinanceSelectionTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/FirehoseLinuxWebSocketTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/HtmlTextDecoderTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamCursorTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamEndpointPoolTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamInboxProjectionWorkerTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamV2ProjectionEventTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/LegacyJetstreamAuthorityLeaseTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/OperationsGapPersistenceTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/OperationsHeartbeatJobTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSBoundarySelectionPostgresIntegrationTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSDiagnosticNetworkSafetyTests.swift",
@@ -6283,19 +8401,12 @@
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/RssFeedThumbnailExtractorTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/RssHtmlBodyFormatterTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/SportsSelectionTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapConsumerTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapMessageRetryTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapPDSRepositoryRestorerTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapRepositoryTrackerTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewEnrollBackfillTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewEntryPaginationTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewIndexerTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewTtlCleanupJobTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewWorkerRuntimePlanTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/UnreadMutationQueryTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/UnreadReadMutationScopeTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/WebSocketHeartbeatSupportTests.swift"
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/UnreadReadMutationScopeTests.swift"
       ]
     },
     {
@@ -7855,11 +9966,11 @@
         },
         {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "704b77925a4ffd1b237d7d4a9a72ab181c84dc9dac32c53414a55161a960c9a7"
+          "sha256": "d687a01540eef23453490e6b02288e932cb296498bbffa6841cbbb4086b56f53"
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "809c3c51efbd8542a0783aa4c97920d671e5dba3368e1c7a2968628c4d913769"
+          "sha256": "cb22359bf4e72a331f16947b90a4ac61520e9e36cc70301100250c27d29f0c7a"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",
@@ -7871,7 +9982,7 @@
         },
         {
           "path": "packages/spec/__tests__/client-xrpc-transport.test.ts",
-          "sha256": "03ce5693567a3e26184069c09d9c390265c9e203eb0a4c4ee3107367a18895fb"
+          "sha256": "dfef1915ce3008e3b9c4dd285cf659b27432599b123dbbae6c46b5aa2ace05b2"
         },
         {
           "path": "packages/spec/__tests__/coverage-inventory.test.ts",
@@ -7891,7 +10002,7 @@
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-drain-indexes.test.ts",
-          "sha256": "7e06be20850f26c2572a9cebf7a437c037036ef95cbc0113371708e4abcdece2"
+          "sha256": "7f7c5f2737d06b3481c0d241d9cdbb2992556a5a745eec45353a7a585b7f7b0c"
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-durability-migration.test.ts",
@@ -7947,7 +10058,7 @@
         },
         {
           "path": "packages/spec/__tests__/schema-readiness-deployment.test.ts",
-          "sha256": "81c483463a030dd82a06f81ba01e177f542e1f408e809e8e6efb7ff143299dd7"
+          "sha256": "7cdcbf31ac114e9cb2dddead384d8fc2b88a0121d115627c9995ba1b7b0d895b"
         },
         {
           "path": "packages/spec/__tests__/sports-public-contract.test.ts",
@@ -7987,7 +10098,7 @@
         },
         {
           "path": "packages/spec/__tests__/wire-edition-migration.test.ts",
-          "sha256": "aec59e51eceb0961fc43eb29c7a4b5714941fb30cb1532a2e83c75d321b9343f"
+          "sha256": "3abf4430ef4443b60e751e5f5366f6b211269a0e184e5c3b58dcaa68b990bc7e"
         },
         {
           "path": "packages/spec/__tests__/wire-feed-quality-migration.test.ts",
@@ -8015,7 +10126,7 @@
         },
         {
           "path": "packages/spec/__tests__/wire-work-index-migration.test.ts",
-          "sha256": "969562e9eff379f79feb4408c5a900d0443710abfc903458a2a771db28e27a33"
+          "sha256": "3b2e75bc567088c57e2ce24195891f7b730ed0ad8b774f479aa813b1af90b11b"
         },
         {
           "path": "packages/spec/endpoint-manifest.json",
@@ -8023,7 +10134,7 @@
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "23a712cb9da7c2dfeea215eb021525e5dbb47ad18c962664c4e17c6838a1a361"
+          "sha256": "51fd972966e88309f9db47b801f295a10c99f84654f82fea3cf65b1612c123c8"
         },
         {
           "path": "packages/spec/package.json",
@@ -8032,932 +10143,5 @@
       ]
     }
   ],
-  "serviceLibraries": [
-    {
-      "name": "AppViewWorkerCore",
-      "source": "services/appview-worker/Sources/AppViewWorkerCore",
-      "target": "packages/go/appviewworkercore",
-      "files": [
-        {
-          "path": "services/appview-worker/Sources/AppViewWorkerCore/AppViewWorkerHost.swift",
-          "sha256": "498a860d2d01f1440a308fbd2d92b9ab955d2dfe161ecde96e2283ce74cb77be",
-          "lines": 242
-        },
-        {
-          "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerHealthServer.swift",
-          "sha256": "35238efbed8f3e58f57a2756360cdcf155f779b43918ab74b7ece2ad7b87666d",
-          "lines": 217
-        },
-        {
-          "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessDiagnostics.swift",
-          "sha256": "e18d726debc3b520bb63d784719fe5e12db2178a187881bd6426c14edbc68e8a",
-          "lines": 87
-        },
-        {
-          "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessFailure.swift",
-          "sha256": "11fef8b6e598500f3e6b58b2cb34738931d753736a6f1a77095b3abc0ddc5ade",
-          "lines": 4
-        },
-        {
-          "path": "services/appview-worker/Sources/AppViewWorkerCore/WorkerReadinessProbe.swift",
-          "sha256": "6af1acd2e9e838a9da0c3f22c3bcfd7f4014501b68e8907d870699617f310e39",
-          "lines": 91
-        }
-      ]
-    },
-    {
-      "name": "IndexingWorkerCore",
-      "source": "services/indexing-worker/Sources/IndexingWorkerCore",
-      "target": "packages/go/indexingworkercore",
-      "files": [
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerComponentSupervisor.swift",
-          "sha256": "246f70fe72ff2724688f775935ab1c5153906884d5af57950ba698b95c98c82e",
-          "lines": 35
-        },
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerConfig.swift",
-          "sha256": "2eccb02e47fc576a690aa60581b6f5073060991c139d63262243769b162a0a67",
-          "lines": 132
-        },
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerControlDatabase.swift",
-          "sha256": "cb797f557a2b27f33931b00386761952e9647137058df4537eb524076d231b8e",
-          "lines": 38
-        },
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerHealthServer.swift",
-          "sha256": "2aab865387357e7e93570285da08936f042df02179b274dba3c53eb7f516b5d1",
-          "lines": 169
-        },
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerLaneState.swift",
-          "sha256": "b115a5c78e08873204f79abba6d6a6d50a608b0b8696862c79ebd8c735e7ed5d",
-          "lines": 76
-        },
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerLocalHealthProbe.swift",
-          "sha256": "107921f33825fc4bb183a6da98105bf3b4ec7b0e16435e7279d290677222d8e5",
-          "lines": 23
-        },
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerRuntime.swift",
-          "sha256": "e8be139fbb5e8ccd1f6f8f9cd3322ed7c6a82ec5e1aff1007d93d1638898c88a",
-          "lines": 289
-        },
-        {
-          "path": "services/indexing-worker/Sources/IndexingWorkerCore/IndexingWorkerShutdownWatchdog.swift",
-          "sha256": "c5e22978a7cf082f12499efdc51f737c3ff1b42006ed8c4f12d5094ada1042d4",
-          "lines": 21
-        }
-      ]
-    },
-    {
-      "name": "WireWorkerCore",
-      "source": "services/wire-worker/Sources/WireWorkerCore",
-      "target": "packages/go/wireworkercore",
-      "files": [
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/FinanceArticleProjectionRuntime.swift",
-          "sha256": "09dd7510f58c94dbe06101688cb5f2a7c08f2179001f2cd4fa1bb303d0bd556e",
-          "lines": 22
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/FinanceCandidateQuality.swift",
-          "sha256": "68295e08083b531c595d6a9701c52f2b2b144e0754fb64a5f214f259472344d1",
-          "lines": 31
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/FinanceProjectionCatalog.swift",
-          "sha256": "86cb5710b8ea5bc4fa3ca272814139d68cdc47d89464ff62c31b707e0247576c",
-          "lines": 8
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireLabelQueryClient.swift",
-          "sha256": "17cda7bc118057b4ee0ee03d5a748dee89228f73b8044990b5b120ef5119d30f",
-          "lines": 65
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireLinkMetadataClient.swift",
-          "sha256": "04487749a23b08071c46bc9515f56290791335d776f8616351053a63c17933e9",
-          "lines": 132
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWirePublicRecordVerifier.swift",
-          "sha256": "1e701a04bd862199a2ae8274e6b87ca5cedd905644fbd7b4a2ee4b1fe4388ac9",
-          "lines": 122
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWirePublicationQueryClient.swift",
-          "sha256": "9b45c1205f1411a1892725b50eb3e67cb3ba53c2661c7be3a10bb5b462f90a25",
-          "lines": 190
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/HTTPWireTalkedAccountProfileClient.swift",
-          "sha256": "da1db2435a806cf72342a90d8e91849f966aa2ebec2de6b550f180ec934e40e8",
-          "lines": 76
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/LiveWirePublicRecordHTTPTransport.swift",
-          "sha256": "4ab8668f1e69d8fc82e01be2a24f785c0843c6fd677f7feef8a3da123d96977d",
-          "lines": 81
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceArticleProjector.swift",
-          "sha256": "c6aea82f63e9c29c90d9288ac656e47951a3e2f6893e8314b81323ecb74df40c",
-          "lines": 107
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceCatalogReader.swift",
-          "sha256": "96d7664f0adc8e2d5bd8fdd4c5edac725511201a5dfd961bca724efb177a8a0a",
-          "lines": 34
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresFinanceMaterializer.swift",
-          "sha256": "815c44afa134bbe6685a19fcd2687edf3d852da7b1751da298a14de2dc2e0eca",
-          "lines": 246
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsArticleProjector.swift",
-          "sha256": "9f10ee151862c606909ce03a1b609f539ead31daced6aa70ecb28909f651105a",
-          "lines": 130
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsCatalogReader.swift",
-          "sha256": "b3622cfac84742241f9fe13b310d4d3772e17ccf717daf401fa52864813ce9c1",
-          "lines": 14
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsMaterializer.swift",
-          "sha256": "bb76aa7d5d1fb972e131f98097befeabfbd50b82334c21df3683551b1c9be1a2",
-          "lines": 220
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresSportsProviderRefresh.swift",
-          "sha256": "59917ec399fd6e490b6145b3582f7a1f8e9c1c29ce71a7f7d01903e2c22709dc",
-          "lines": 195
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireBaselineLabelStore.swift",
-          "sha256": "f0fda12349697dd6553b59e8dd4fc2afe7db100ee2a3a7a2d6438617e4dfd1a9",
-          "lines": 133
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireCandidateQuery.swift",
-          "sha256": "5f6b59e16057012a5e15dd74eafd53a1c66992cb2b19317a32b86e1f2d18e28e",
-          "lines": 128
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireConfig.swift",
-          "sha256": "54cd7b22f1bdffb362dff7d1c8b0ccace63fa1f7ec83ca16fc31ccc7ef40fb3a",
-          "lines": 54
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireDependencyGuard.swift",
-          "sha256": "2dcd15e46e40c2e8d46a1f38677eb6fa83c7050f772aef853d9a891012ae0fd4",
-          "lines": 36
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireDependencyRecoveryStore.swift",
-          "sha256": "e2ea6506da629a6a5b06e9e1d88034f40d7492c1a98ddffd6688ef279b31a977",
-          "lines": 273
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireGenerationStore.swift",
-          "sha256": "f1b1306720b6e995fcdea820e31978f53b7a2954c5d1d35b2173e783d35108a7",
-          "lines": 644
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireInboxProcessor.swift",
-          "sha256": "29220c22e6bca7c01546ac858902df40584c6de48d59acb126c152d3d5b69a1b",
-          "lines": 2391
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Health.swift",
-          "sha256": "74be27d30480408b08b001a10a7dd5ccb3d8d8e7adb2b1b300b9784733bed49b",
-          "lines": 53
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+PriorityClaim.swift",
-          "sha256": "663133d31d487e81be3ead03ae9a8064143c6c64f3ad171c619081cbe1775790",
-          "lines": 93
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Repair.swift",
-          "sha256": "ea0727eac9d81c58507526b52cab01f7d5e4ab90e2619b436d3e1faa84f7066a",
-          "lines": 82
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore+Scheduling.swift",
-          "sha256": "a43b4bfcfd64c38b34476fc70880b692de02315cfbad3d3bf901f6df5debd79f",
-          "lines": 158
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore.swift",
-          "sha256": "7d065167e7c5d913453420ee10d13b81a4eb5656ea711dcc95b442f6703c634b",
-          "lines": 423
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWirePublicationMetadataStore.swift",
-          "sha256": "9d474910491f3bc0f18bc370bbbcab09b7d0e8e7d9a08fe070d4920d89f9fe61",
-          "lines": 84
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWirePublicationSignalRecovery.swift",
-          "sha256": "b13bc37939b74696d52a9814a4431651188e1642c12205cd9bb0d2b600f44a74",
-          "lines": 145
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireQueryMemory.swift",
-          "sha256": "3d493ec8520f708b1fc7942e657525e69a7dd841cc1ea014e215c17003ace096",
-          "lines": 54
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRecommendationJournal+Backlog.swift",
-          "sha256": "288316e0c401a861737a0aead21192c8e4c7a7a0c6bb1203071a3ea71534f248",
-          "lines": 37
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRecommendationJournal.swift",
-          "sha256": "a3de774e4e98fe0b5200aa590f0574926bf48e26ae6f3ab3db792cc1148c2164",
-          "lines": 587
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireRepositoryClaims.swift",
-          "sha256": "c0fdf3ec69319f3307e2e9c291b9b755f0c5fa51339da7ac39f831b4eb7acb2f",
-          "lines": 215
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore+Incremental.swift",
-          "sha256": "c4f8f92ffa5e418e681a2c360c3d8a689d4f979d723489c7100cf34d473c4e4d",
-          "lines": 258
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore.swift",
-          "sha256": "88baaca4fe5301b89f5fd64161589b5e52e0e301e3de3050bf8d2d86c839b811",
-          "lines": 456
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireStandardRecordFence.swift",
-          "sha256": "57ad8e0606cbc17aeca534729c035a0c06f50e634f38a9d5da21c3522ef035e5",
-          "lines": 135
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireTalkedAccountMentionStore.swift",
-          "sha256": "d265ebf8b7e685b0aa4790ea74705bf6db2f11fd2cd5fc0659e33800559127b3",
-          "lines": 149
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/PostgresWireTalkedAccountProfileStore.swift",
-          "sha256": "1cc2298f37ad98d09d1a738a0baf690267293661df6d916e5b4e1bafd0d01d99",
-          "lines": 89
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/RedisWirePublicationCache.swift",
-          "sha256": "312a16848a372bb8e722cc6ef0223eae7acfea49db3e00e064da9fd7746f51a5",
-          "lines": 103
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/SportsArticleProjectionRuntime.swift",
-          "sha256": "126b25f549260a8649b8ba69f743cab25872e29455c04ecbd7d2cf45cdd58234",
-          "lines": 22
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/SportsCandidateQuality.swift",
-          "sha256": "529931eed9769cc4f020b81213201dcf2c808785b3b765786594c0a3f0ad5cb7",
-          "lines": 30
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/SportsCatalogRefreshPolicy.swift",
-          "sha256": "39f8edc5f7391d2204ba1073b521a573b22eda5f39be5bd2aecc048b37ff152e",
-          "lines": 25
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/SportsProjectionCatalog.swift",
-          "sha256": "bd7f1563bc4bfa7d5661920db91fea607c1c2c8cfae11d1358f531b1ec7cd671",
-          "lines": 6
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/SportsProviderRefreshPolicy.swift",
-          "sha256": "de5d6fc830d707520ab140ec93155c211e1d272517a84a2ac4f562c10fc87e6f",
-          "lines": 35
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/SportsProviderRuntime.swift",
-          "sha256": "c3b0406d9b36b94a63db8160fd631efc461a5fd2391fd7ea3f8ec625e6526b3d",
-          "lines": 14
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/SportsReviewedCatalogMerge.swift",
-          "sha256": "adbf4f7b1552947fa8a52890edc2539dfb2d4a66b7acf9e75f9b076a6abf0a39",
-          "lines": 12
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabel.swift",
-          "sha256": "f6428dec1767ef8d7b56f8f2cb17549ecd409ab8441bb8f43538fea777c810e4",
-          "lines": 10
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelRefresher.swift",
-          "sha256": "487970e5b6ceff79a98e6d1dfc71407a2fe7663178f2fc253d67aad7818a0bd5",
-          "lines": 205
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelRefreshing.swift",
-          "sha256": "6aa39bb06d90ead1c8662e7219be06d98b733e78711b9d300060105d7a6f7b8b",
-          "lines": 5
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelStore.swift",
-          "sha256": "3cf7102d61165f09af30da92e8864644eeff32a7cfc74fc6242b49097dce166a",
-          "lines": 17
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireBaselineLabelTarget.swift",
-          "sha256": "da3d671311e45467bbbb3de34a0c0a1e6c4c319307638c3bbddfed28f25a0fe8",
-          "lines": 5
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireBlobURLResolving.swift",
-          "sha256": "6a1f23676f925cf55c12d758a22b4349d3264fc8378db55b4cc72a5bf4f5703e",
-          "lines": 3
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireCacheExpiry.swift",
-          "sha256": "b81590e5d680ba20e178f6ac8193bf9c8e7b38b3ae7b366a2465b019b126b227",
-          "lines": 10
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireDNSResolverAdmission.swift",
-          "sha256": "7e9adb1e06333ea4932b323ad11081be76becf938c5fdbcaa8d40b88676bf187",
-          "lines": 21
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireDNSResolving.swift",
-          "sha256": "624b41f0a716a454e61776f97acc2691b3e7dcc1745f7a4157b9a65b1c22126e",
-          "lines": 3
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireDeclaredLanguageValidator.swift",
-          "sha256": "8821e8e8bfad071c44a021ad5ebd2a0b4e733d66bdfb32258c5753961ac899a3",
-          "lines": 110
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireDisposableCacheMaintenanceRuntime.swift",
-          "sha256": "961af213a8dbc47d1b8b4f002166db2fc68e6ca27d947aaf42ecf0bed601cf60",
-          "lines": 35
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireEditionModuleItemRecord.swift",
-          "sha256": "e573f73a8806d82bdbc5e9216a06cb6e6f4aad0a4300afaceff4afa267b49774",
-          "lines": 5
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireEditionModuleRecord.swift",
-          "sha256": "175e95839436b4dce67577bfd5e83da460fc25d846cbe9bbe56de6beb949ad73",
-          "lines": 12
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireEmbeddedCardMetadata.swift",
-          "sha256": "7ca7bbf2eee85a23e087c9ec76ce86fea716b9219e63cf7c245e2a2ce535b59e",
-          "lines": 61
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireEnrichmentHealthRuntime.swift",
-          "sha256": "9a9f90d0135f51125474118a6f8341932d00b31f79b4fa1867f254a8284c3995",
-          "lines": 54
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireEnrichmentHealthSnapshot.swift",
-          "sha256": "a443047ba00044c6eb84278c9110ff656d046bbedf1be5dd69d4bfc9224cec70",
-          "lines": 9
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireExternalSignalMode.swift",
-          "sha256": "d83273a9066efa3284659922716eab607e83a3a11743d4e1ecdd384a0559c076",
-          "lines": 26
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireExternalSignalRecord.swift",
-          "sha256": "203610c86e62112e4aed4bb37d6059ca7f97781fa8dc9fac352419c90fd7cbd2",
-          "lines": 232
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireFeedMode.swift",
-          "sha256": "0fe78517c815541c60df263345b94c6c9226b9923eb195c481b767a68f11012d",
-          "lines": 6
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationCommit.swift",
-          "sha256": "6bdd307b62f1c041b305b2d2cd27877bc8b7cb5ef80faf5debdf2e1907a26d0f",
-          "lines": 13
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationSchedule.swift",
-          "sha256": "201e2419c31ec9f0dcaf5a9b946e78ca627d2f83ff9ca6130de73fe4154052fc",
-          "lines": 5
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireGenerationStore.swift",
-          "sha256": "9ed29b527ef013e35e4739b98b44e2c7f4fef2981754ab68b0addd0751f93671",
-          "lines": 34
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintaining.swift",
-          "sha256": "647995e5702fa55fa32fd7b078836b1b471e8d98ab2a966d306b66f6d52635c6",
-          "lines": 8
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintenanceRuntime.swift",
-          "sha256": "3b7fe1aea3301498e51c50354782a7b8510e3444483eabf4797e360a7d1b55e1",
-          "lines": 60
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireGraphMaintenanceScheduler.swift",
-          "sha256": "bf1a2d380793a4e099de46c1cb6dbce5419d1696a18482e2c211b75a2f355559",
-          "lines": 59
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireHealthResponseBuilder.swift",
-          "sha256": "a028b1cfe0a04993b04a7bb24abdc4adbd1997fec42ddf6c821074dfc5b6670c",
-          "lines": 41
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireHealthServer.swift",
-          "sha256": "47f64e806377e1a58b4bed63797b01ff2d3c5f85af982cf0774076016a569e7e",
-          "lines": 99
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxBacklogHealth.swift",
-          "sha256": "0b8e5bc5aa3b6c02252cb7a6c3f6b9f559a272981e7b9f5a9724b3f79d576a0a",
-          "lines": 11
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxCleanupRuntime.swift",
-          "sha256": "4eb05586ecd68a266c651dc0215d86c8ce818c440c572efd56c6263ac68848f3",
-          "lines": 47
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainBatchMetrics.swift",
-          "sha256": "61623cb124e07785c4f3f9bace46737de3b86b50b69f4c6b3d88a7f9f309a83d",
-          "lines": 9
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainClock.swift",
-          "sha256": "92efd8c9680cc87e1b01394328573da290511102fd408806d39ce54bb8f81352",
-          "lines": 9
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainRuntime.swift",
-          "sha256": "93249da5b24662932f36ddf32f0f9ddca06e89f088b1a79ca11f307ec12c2a9a",
-          "lines": 65
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainSleeping.swift",
-          "sha256": "78bd4c09cdaf9c53532bc3a2a211db385456171db76032ce1a611404edd8e46c",
-          "lines": 9
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryReport.swift",
-          "sha256": "1685287342c16f73df4b73440ad89e4ef6eb12a4dd50bd56d13a5a792ff491bb",
-          "lines": 9
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryRuntime.swift",
-          "sha256": "ef2a7d4365ccfaf18c00fe277280995e895c498cfb7da092c366987a38597fdb",
-          "lines": 55
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxDrainTelemetryState.swift",
-          "sha256": "f8c0b4274cdba180d554afc6a5dfc8adafe862a79411698da99341ba9fe76096",
-          "lines": 37
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxEvent.swift",
-          "sha256": "d6dd317dbb98f3edd08e7db98636d0c60fd2141ee5ca949af945b7aa9befb44a",
-          "lines": 32
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxEventOutcome.swift",
-          "sha256": "3e97958ad99159e7118dfc2b0b6005c7a26423b6f5014a34b4655bf0581373ab",
-          "lines": 9
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxProcessing.swift",
-          "sha256": "711b3fb5c9527700ffbf337c51a53122222efb165105eed394c787a116683ca2",
-          "lines": 32
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepository.swift",
-          "sha256": "a287fbdffef264b773a214c7eff895bd9bad73a27c6140b2553b4c41cb809ec4",
-          "lines": 5
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepositoryDrainRuntime.swift",
-          "sha256": "6e63a7ffc79db806967b59dfdc0cde40515b0fb9c922966477aaaec1d2d084b8",
-          "lines": 135
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxRepositoryProcessing.swift",
-          "sha256": "bf54efa3848e549b4d50879037731215c54837b30224729c2e230865f32341dc",
-          "lines": 8
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxSourceScope.swift",
-          "sha256": "40a7822831a064fbbdaee4bd8929151b2aa876f3406dac33efab350192859c14",
-          "lines": 4
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireInboxWorkBatch.swift",
-          "sha256": "d165e19fd8dca9f4ad7e00a65d272318ff0534d632e147b590ba544298a6432c",
-          "lines": 5
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQueryError.swift",
-          "sha256": "8bea0c6372a9db9a900438acdfafecc785aeb1101bac4f6a052b15f75089f385",
-          "lines": 10
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQueryPage.swift",
-          "sha256": "032ae29b5a34ddfca62004d404565ca4a0b24778e44e9cc37f94578e982d7e8c",
-          "lines": 13
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelQuerying.swift",
-          "sha256": "ebb498162d2fa8f9bfd7489f75a985cd876d299615f5a841eb70dd91b50f3857",
-          "lines": 7
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLabelerEndpoint.swift",
-          "sha256": "b4f0dd14bbaafe7e166bd8ab8f942f7a8eeb9a93a819c859dc60521ec054cc98",
-          "lines": 39
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadata.swift",
-          "sha256": "aeae0d40f2e1870875af864b8db74d24564f7f61a662003639f3ae7be584ec27",
-          "lines": 55
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataEnricher.swift",
-          "sha256": "04ad7684b419c9c9624f70faa84d10c6ff14b93c14dd4168aa7a1b283f0bbdd6",
-          "lines": 114
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetchResult.swift",
-          "sha256": "49c444b76770659a4db1574ab4e40838e2d174b92530414e313b03d36ba242a7",
-          "lines": 4
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetchTimeout.swift",
-          "sha256": "196837c5dbc0b852de9b4feb629b267a239c7dfabf32c7953b4c112321a22442",
-          "lines": 1
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataFetching.swift",
-          "sha256": "6170ce7bd34d275aa11f050e6e16765ea7ed7af1fa0ae073a16ee94424bb353c",
-          "lines": 3
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataQueryError.swift",
-          "sha256": "7683024a62531e28726bb2c9fdcbb34613d7e0026449d197a6e27ca4646f95a4",
-          "lines": 8
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataStoring.swift",
-          "sha256": "cf3ebf098f5084113abdcc2a18c641e6927bef36d4a8992fa6a1b3a9b66cd4f4",
-          "lines": 53
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireLinkMetadataTarget.swift",
-          "sha256": "2ae606af46d2425a6cc469406f5f6c5a50e7b888f2331532054ec056fb0da2a0",
-          "lines": 20
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataEnrichmentRuntime.swift",
-          "sha256": "baff16fafc764ce67a0b79f8024804e2509ba0f50268efd69883d184c58068a7",
-          "lines": 59
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataMaintenanceRuntime.swift",
-          "sha256": "c864b49fd0391abe778ec0d4426490c411408abab532d78b7d72e9109d2bf7e9",
-          "lines": 95
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPriorityClaimPacing.swift",
-          "sha256": "a6ed54c70daa1407c72d9ef2971a6c80f98404e71eb6292aac22210cdce4f0fb",
-          "lines": 26
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPruneCursor.swift",
-          "sha256": "3e7a131cbe527164c279b7ebb4ff24ac6917c9865cc6f0561b0d526747186284",
-          "lines": 59
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataPruneQuery.swift",
-          "sha256": "ee41842f7db69606d493316ddb82b9d1ce5a33339f8b43dc41c3ec52cf773a5a",
-          "lines": 72
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataRepairPacing.swift",
-          "sha256": "65de0d0b13835c4e925038d03a075515505e3365458da16d6d45ea8cbcf1ed79",
-          "lines": 36
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataRepairProgress.swift",
-          "sha256": "e3a4884c438747328da0c003a3571afb3f8c82c7834f0bc154fa8901cb6c3b80",
-          "lines": 5
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireMetadataSchedulingConfiguration.swift",
-          "sha256": "d4b3b265852f03000442b8adcdd028420b85862ac7a13005325420f3fed0315a",
-          "lines": 16
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireOpenGraphParser.swift",
-          "sha256": "1b295e24fa928eb8bd5e6afd6909f85b23b54e11e665ae18348b5fa6b9226c8d",
-          "lines": 354
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePostLinkExtractor.swift",
-          "sha256": "8192cec816a8a0f9fd0e941b3574d2c5e8d6796bc61dc54b41029175b77ded79",
-          "lines": 45
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicDNSResolver.swift",
-          "sha256": "a547667519feaf6c132c6dc2b68861569c4ec68f8fed86eda76ac97ac5c7275b",
-          "lines": 201
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicEndpointValidator.swift",
-          "sha256": "553fda28e6526e66419391f75c81e39d5e97de2005096a92ac12aac9b3284441",
-          "lines": 50
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordAddressCapture.swift",
-          "sha256": "2ef820e23ef59325a00ccf74a1f8653b92a83525ce6ce8aef1b35c402875fb46",
-          "lines": 20
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordAddressFallback.swift",
-          "sha256": "b0fc0c81fc78fe5a5c58459d24cf36e3cad402a6164d676178d15348f09479c1",
-          "lines": 45
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordHTTPResponse.swift",
-          "sha256": "5737a851d98da4a292294c9e08674579ae649f660ca5ee44ee527e241d82c36c",
-          "lines": 6
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordHTTPTransport.swift",
-          "sha256": "f6949b921069f987d029b297cbf03dbd79273efdda27b0a3f70aca3fc0591879",
-          "lines": 6
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordObservation.swift",
-          "sha256": "c286c1f3e47123e2d56f27716fd8e69ac4089dd9e08403f26219665f68d009a1",
-          "lines": 11
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordQueryError.swift",
-          "sha256": "6dccf2462112b4c4ddcc5423d7ed017b881a92fc4003e58223225ecf5375bebc",
-          "lines": 10
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordReference.swift",
-          "sha256": "224cba5eee42d40d155127681e3492c88b42c2ce4b4dd0e9a3347160847049eb",
-          "lines": 72
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordVerification.swift",
-          "sha256": "92dc3a21751455e9ccade34e13dbfc23ce9983488d529da09359ec9a3f44f720",
-          "lines": 6
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicRecordVerifying.swift",
-          "sha256": "d123acd9cc365cead9a98cf8fe88bf8f2209576177b970925957456a4e813eff",
-          "lines": 3
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCache.swift",
-          "sha256": "a46572a4567a65369f090cf766e2cd56073dc312bae8fa5c485ffd717863587d",
-          "lines": 18
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCacheRuntime.swift",
-          "sha256": "02e0010c1c2bc632db75ee9b7b30a3b55edc0410a1284d42f31ac4795858171f",
-          "lines": 38
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationCacheTelemetry.swift",
-          "sha256": "7d6bba612b71f570380836fc3c24238976c2b422047a9a1f4843993703bc5e40",
-          "lines": 29
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationHTTPTransport.swift",
-          "sha256": "cfaece4a564082ecc1ac53c3ae0f47faca070fa669c7f8f8ffa4d8a9f5114bcd",
-          "lines": 15
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationMetadata.swift",
-          "sha256": "4dd0b492994d27a2b17ec4263ee341449b6e53e80adba3057e09938295d93a6a",
-          "lines": 37
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationMetadataStoring.swift",
-          "sha256": "e7e8c8be1b7dc9ddb31625d520770a4142fc45b2ab78d6659b93af380c9baf12",
-          "lines": 15
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationQueryError.swift",
-          "sha256": "874f929b3f457b253aa8daa243b7b5e4d01f0631757fa251502312eb6899e4d7",
-          "lines": 8
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationQuerying.swift",
-          "sha256": "3cd756f233b64ba3911e2313932f545ba09a54c911896bf5c82d372f1b2997af",
-          "lines": 3
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationReference.swift",
-          "sha256": "3672d4021b939a87c037f45d6ba921671bb01f1d1523af3588da06871848650e",
-          "lines": 32
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationResolver.swift",
-          "sha256": "6f2d4208670e0785d298a12348a76fc93eba573492e5170621c8001b0f9a34a2",
-          "lines": 126
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationResolving.swift",
-          "sha256": "49f4ff8be2309bdd4a1b782f3e16a7714fa13ee3f14fbac796316f28e9fdc070",
-          "lines": 14
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WirePublicationSignalRecoveryRuntime.swift",
-          "sha256": "4bb336174fd82a7932edf34d7c405001887cf20c85caa9c87544925ff0926614",
-          "lines": 21
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRankingScheduler.swift",
-          "sha256": "3da1483e440276f1fb48002250dd9e68dbf1051bf486b72bba6c37be8c5001d2",
-          "lines": 54
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationBacklog.swift",
-          "sha256": "fd6033d10d93a6eaa9e2c0a6aa5669bc2c4d9e158b0286d792e5493f5aaeec71",
-          "lines": 7
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationCounts.swift",
-          "sha256": "770f3b93614153f94ffe4aba534d028301a180fd4273dd7be5da9f1bc7469ec9",
-          "lines": 15
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationJob.swift",
-          "sha256": "0567784cc4a6a002d1d381d24f7d71dc4ae16b7fca0356e64b647e7515df8acc",
-          "lines": 19
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrationRuntime.swift",
-          "sha256": "60821b068f93d025919b2b9a6edd3a2aae46e089384a69ff37f36c523e9aad92",
-          "lines": 47
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationHydrator.swift",
-          "sha256": "ed98e1d385257389929c0f04ec526422735b15cd12e599377093446fac3fa291",
-          "lines": 191
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecovering.swift",
-          "sha256": "87422aa92f38c6e23d6fae1f61e67b2ae780983b9058e7931f8e32d59923da13",
-          "lines": 10
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryCounts.swift",
-          "sha256": "d03e2854fc71311aef9d365fba12c58f808b5df291449d18681c94590df358d2",
-          "lines": 7
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryCursor.swift",
-          "sha256": "198db6840ea38b6fa801c01effb09cfe286d28f011c5174d623a9b876092ad1e",
-          "lines": 15
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireRecommendationRecoveryRuntime.swift",
-          "sha256": "853d19228888273a153eb5739fca9b58fd6f99d44983b3711a44d7467c682ce0",
-          "lines": 57
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireResolvedStandardSiteDocument.swift",
-          "sha256": "da893f6ed680b225f216720cd6cc576e5207203c2d3b50bc867381d99821ca04",
-          "lines": 8
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireSignalRollupRefreshError.swift",
-          "sha256": "318035e119d2657808278b0be8a5684003bf64d0de713bbdaa1c699649f7c8dd",
-          "lines": 3
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteDocumentError.swift",
-          "sha256": "ce8b866ae4bbae9f34aaaa01e2ae5fef2c6f321cadd253a9d60b6a5b1f6b4978",
-          "lines": 6
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteDocumentResolver.swift",
-          "sha256": "d3c3105ff1be937e15d0abc2966a8382380c360c168da1aa460002528895f00a",
-          "lines": 125
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteRecordImage.swift",
-          "sha256": "7176f142363622d4eb91f456cce88f22ba4c7d6e7c3ebfa5a3b104dcad725e61",
-          "lines": 62
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireStandardSiteURL.swift",
-          "sha256": "e4ed9149315891c03caa83d5b729e175da3fd3af803338747b974c3756f0006a",
-          "lines": 38
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountMentionExtractor.swift",
-          "sha256": "a7e7fc2aedf470baa2c86d241bdbc267ffe799a9442d7b9caa8066a298bb28d4",
-          "lines": 47
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountMentionStoring.swift",
-          "sha256": "fdf47ce60231e7e2c21148a885049e2265894be5b9d23798f985b2443832501a",
-          "lines": 16
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfile.swift",
-          "sha256": "c86ad18f8166d760854ca1129713d6360f7d8ab1932fc164668fdc86adb140df",
-          "lines": 9
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfileEnricher.swift",
-          "sha256": "0e771820ea4ebbf255f63c160c39690ca8c5a695b9bdee709edab753552135f4",
-          "lines": 45
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireTalkedAccountProfileRefreshing.swift",
-          "sha256": "762e45aecd38097303cb19db34b2ce54050794912161ec772d2b28761736555b",
-          "lines": 11
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireVerifiedPublicRecord.swift",
-          "sha256": "4bd2995f5cc919b036685c6ebbca0c317daf458aebb5bd3cdd97a619bbe8a559",
-          "lines": 15
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerConfig.swift",
-          "sha256": "828f11e122d3a2490321e0ecf538556db4024eaad9c565e51aa464882dde8bd8",
-          "lines": 227
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerConfigError.swift",
-          "sha256": "0fafeb968b38855d30397df532579333ed2a1f51b0ba2df2601b49d1cef14133",
-          "lines": 14
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerCycle.swift",
-          "sha256": "37a11c1e5f013c70e580a16c2197b2c8db9f4be422730cb3ce854828e89fc4ff",
-          "lines": 83
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerCycleOutcome.swift",
-          "sha256": "d3a901ba4ae21500c32a4aab8f71f7ae4f9caf6d6f95b729d784a71af1d8f8ef",
-          "lines": 6
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerHealthState.swift",
-          "sha256": "15cafed40b663790bc94da1f5c7e932d02195c30b00a1866ad894c0247a69e43",
-          "lines": 125
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerHost.swift",
-          "sha256": "75540242456276cb7ff69436b5c1220ca4f8a17ff9d29a5e39dc1e01c39c3a7b",
-          "lines": 346
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerLifetime.swift",
-          "sha256": "66a92f97cc3ef10828c2129b1e5057ab6d608cce88337476626cbfab5fa07c9a",
-          "lines": 45
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRole.swift",
-          "sha256": "3013458ef29a46144c016e7341f868f40c878cf36aaf3d0ece18d7a2498070e3",
-          "lines": 8
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRuntime.swift",
-          "sha256": "cfbe8c06f2cde1c046d31ca7852102928e95cba9913f30227fd6759142e02513",
-          "lines": 114
-        },
-        {
-          "path": "services/wire-worker/Sources/WireWorkerCore/WireWorkerRuntimePlan.swift",
-          "sha256": "3cee23e962a62607856ed629e76408da36f668197a3bda6eaafcbc9f1317592f",
-          "lines": 34
-        }
-      ]
-    }
-  ]
+  "serviceLibraries": []
 }

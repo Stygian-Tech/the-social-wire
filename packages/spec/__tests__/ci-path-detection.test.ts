@@ -87,21 +87,21 @@ describe("CI path detection", () => {
     }
   });
 
-  it("checks Go parity when a Swift worker library changes", () => {
-    const result = detect(repositoryWithChange("services/wire-worker/Sources/WireWorkerCore/WireWorkerCycle.swift"), "pull_request");
+  it("checks Go runtime parity when a worker library changes", () => {
+    const result = detect(repositoryWithChange("packages/go/wireworkercore/cycle.go"), "pull_request");
     expect(result.get("go_packages")).toBe("true");
   });
 
   it("rebuilds every schema-ready consumer when the local Go module changes", () => {
     const result = detect(repositoryWithChange("packages/go/go.mod"), "pull_request");
-    for (const job of ["gateway", "appview", "operations", "charybdis", "wire_worker", "indexing_worker", "jetstream_ingest", "wire_ingest", "podcast_worker"]) {
+    for (const job of ["gateway", "appview", "operations", "indexing_worker", "jetstream_ingest", "wire_ingest", "podcast_worker"]) {
       expect(result.get(job)).toBe("true");
     }
   });
 
   it("tests portable read-state changes in native and server consumers", () => {
     const result = detect(repositoryWithChange("packages/swift/ReadStateCore/Sources/ReadStateCore/State.swift"), "pull_request");
-    for (const job of ["apple", "gateway", "appview", "charybdis", "operations", "indexing_worker"]) {
+    for (const job of ["apple", "gateway", "appview", "operations"]) {
       expect(result.get(job)).toBe("true");
     }
   });
@@ -132,13 +132,11 @@ describe("CI path detection", () => {
       repositoryWithChange("database/migrations/20990101000000_example.sql"),
       "pull_request",
     );
-    expect(result.get("charybdis")).toBe("true");
     expect(result.get("gateway")).toBe("true");
     expect(result.get("operations")).toBe("true");
     expect(result.get("appview")).toBe("true");
     expect(result.get("jetstream_ingest")).toBe("true");
     expect(result.get("wire_ingest")).toBe("true");
-    expect(result.get("wire_worker")).toBe("true");
     expect(result.get("indexing_worker")).toBe("true");
     expect(result.get("wire_corpus_edge")).toBe("true");
     expect(result.get("database_migrator")).toBe("true");
@@ -151,7 +149,7 @@ describe("CI path detection", () => {
       repositoryWithChange("services/jetstream-ingest/internal/schemaready/gate.go"),
       "pull_request",
     );
-    for (const job of ["gateway", "appview", "operations", "charybdis", "jetstream_ingest", "wire_ingest", "wire_worker", "indexing_worker", "podcast_worker"]) {
+    for (const job of ["gateway", "appview", "operations", "jetstream_ingest", "wire_ingest", "indexing_worker", "podcast_worker"]) {
       expect(result.get(job)).toBe("true");
     }
     expect(result.get("wire_corpus_edge")).toBe("false");
@@ -163,8 +161,7 @@ describe("CI path detection", () => {
       "pull_request",
     );
     expect(result.get("wire_corpus_edge")).toBe("true");
-    expect(result.get("wire_worker")).toBe("true");
-    expect(result.get("indexing_worker")).toBe("true");
+    expect(result.get("appview")).toBe("true");
   });
 
   it("runs deterministic spec coverage when the migration runner changes", () => {
@@ -174,7 +171,6 @@ describe("CI path detection", () => {
     );
     expect(result.get("database_migrator")).toBe("true");
     expect(result.get("spec")).toBe("true");
-    expect(result.get("charybdis")).toBe("false");
   });
 
   it("runs both Bun coverage jobs when their shared inventory gate changes", () => {
@@ -194,18 +190,17 @@ describe("CI path detection", () => {
     );
     expect(result.get("jetstream_ingest")).toBe("true");
     expect(result.get("spec")).toBe("true");
-    expect(result.get("charybdis")).toBe("false");
   });
 
   it("runs the replicated worker check for either composed runtime", () => {
     const appView = detect(
-      repositoryWithChange("services/appview-worker/Sources/AppViewWorkerCore/Host.swift"),
+      repositoryWithChange("packages/go/appviewworkercore/host.go"),
       "pull_request",
     );
     expect(appView.get("indexing_worker")).toBe("true");
 
     const wire = detect(
-      repositoryWithChange("services/wire-worker/Sources/WireWorkerCore/Host.swift"),
+      repositoryWithChange("packages/go/wireworkercore/host.go"),
       "pull_request",
     );
     expect(wire.get("indexing_worker")).toBe("true");
@@ -220,7 +215,6 @@ describe("CI path detection", () => {
     );
     expect(result.get("spec")).toBe("true");
     expect(result.get("operations_web")).toBe("true");
-    expect(result.get("charybdis")).toBe("false");
   });
 
   it("runs Python benchmark safety tests when a tool or its tests change", () => {

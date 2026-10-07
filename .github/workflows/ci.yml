@@ -30,12 +30,10 @@ jobs:
       redis: ${{ steps.filter.outputs.redis }}
       gateway: ${{ steps.filter.outputs.gateway }}
       appview: ${{ steps.filter.outputs.appview }}
-      charybdis: ${{ steps.filter.outputs.charybdis }}
       operations: ${{ steps.filter.outputs.operations }}
       go_packages: ${{ steps.filter.outputs.go_packages }}
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
       wire_ingest: ${{ steps.filter.outputs.wire_ingest }}
-      wire_worker: ${{ steps.filter.outputs.wire_worker }}
       podcast_worker: ${{ steps.filter.outputs.podcast_worker }}
       indexing_worker: ${{ steps.filter.outputs.indexing_worker }}
       wire_corpus_edge: ${{ steps.filter.outputs.wire_corpus_edge }}
@@ -255,6 +253,17 @@ jobs:
       - name: Test portable read-state protocol
         working-directory: packages/swift/ReadStateCore
         run: swift test
+      - name: Test retained AppView shared contracts
+        working-directory: packages/swift/ThinAppViewCore
+        env:
+          THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test?sslmode=disable
+          PODCAST_PRIVATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test?sslmode=disable
+        run: swift test
+      - name: Test retained Wire and topic domains
+        run: |
+          (cd packages/swift/WireCore && swift test)
+          (cd packages/swift/FinanceCore && swift test)
+          (cd packages/swift/SportsCore && swift test)
       - name: Test AppView
         working-directory: services/appview
         env:
@@ -262,56 +271,6 @@ jobs:
         run: swift test
       - name: Build AppView production image
         run: docker build --file services/appview/Dockerfile --tag the-social-wire-appview:test .
-
-  charybdis:
-    name: Charybdis
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.charybdis == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: thin_appview_test
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d thin_appview_test"
-          --health-interval 2s
-          --health-timeout 2s
-          --health-retries 30
-    steps:
-      - uses: actions/checkout@v6
-      - name: Cache Charybdis packages
-        uses: actions/cache@v5
-        with:
-          path: |
-            packages/swift/ThinAppViewCore/.build
-            packages/swift/SocialWireRedis/.build
-            services/appview-worker/.build
-          key: ${{ runner.os }}-swift-charybdis-6.2.4-${{ hashFiles('services/appview-worker/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved', 'packages/swift/SocialWireRedis/Package.resolved') }}
-      - uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
-          skip-verify-signature: true
-      - name: Test ThinAppViewCore
-        working-directory: packages/swift/ThinAppViewCore
-        env:
-          THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/thin_appview_test?sslmode=disable
-        run: swift test
-      - name: Test private podcast PostgreSQL isolation
-        working-directory: packages/swift/ThinAppViewCore
-        env:
-          PODCAST_PRIVATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/thin_appview_test?sslmode=disable
-        run: swift test --skip-build --filter PostgresPrivatePodcastIntegrationTests
-      - name: Test Charybdis
-        working-directory: services/appview-worker
-        run: swift test
-      - name: Build Charybdis production image
-        run: docker build --file services/appview-worker/Dockerfile --tag the-social-wire-charybdis:test .
 
   operations:
     name: Operations
@@ -520,56 +479,6 @@ jobs:
         run: go test -race ./internal/config ./internal/ingest ./internal/service -run 'Wire|PinnedJetstreamClient'
       - name: Build shared ingest image for Wire mode
         run: docker build --file services/jetstream-ingest/Dockerfile --tag the-social-wire-wire-ingest:test .
-
-  wire-worker:
-    name: The Wire Worker
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.wire_worker == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: socialwire_wire_test
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d socialwire_wire_test"
-          --health-interval 2s
-          --health-timeout 2s
-          --health-retries 30
-    steps:
-      - uses: actions/checkout@v6
-      - name: Build migration image for integration tests
-        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-database-migrator:test .
-      - name: Apply database migrations
-        run: |
-          docker run --rm --network host \
-            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_test \
-            the-social-wire-database-migrator:test
-      - uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
-          skip-verify-signature: true
-      - name: Test The Wire algorithm
-        working-directory: packages/swift/WireCore
-        run: swift test
-      - name: Test Finance domain
-        working-directory: packages/swift/FinanceCore
-        run: swift test
-      - name: Test Sports domain
-        working-directory: packages/swift/SportsCore
-        run: swift test
-      - name: Test The Wire worker
-        working-directory: services/wire-worker
-        env:
-          WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_test?sslmode=disable
-        run: swift test
-      - name: Build The Wire worker production image
-        run: docker build --file services/wire-worker/Dockerfile --tag the-social-wire-wire-worker:test .
 
   indexing-worker:
     name: Replicated Indexing Worker
@@ -877,12 +786,10 @@ jobs:
       - redis
       - gateway
       - appview
-      - charybdis
       - operations
       - go-packages
       - jetstream-ingest
       - wire-ingest
-      - wire-worker
       - podcast-worker
       - indexing-worker
       - wire-corpus-edge
@@ -903,13 +810,11 @@ jobs:
           REDIS_FLAG: ${{ needs.changes.outputs.redis }}
           GATEWAY_FLAG: ${{ needs.changes.outputs.gateway }}
           APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
-          CHARYBDIS_FLAG: ${{ needs.changes.outputs.charybdis }}
           OPERATIONS_FLAG: ${{ needs.changes.outputs.operations }}
           GO_PACKAGES_FLAG: ${{ needs.changes.outputs.go_packages }}
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
           WIRE_INGEST_FLAG: ${{ needs.changes.outputs.wire_ingest }}
           PODCAST_WORKER_FLAG: ${{ needs.changes.outputs.podcast_worker }}
-          WIRE_WORKER_FLAG: ${{ needs.changes.outputs.wire_worker }}
           INDEXING_WORKER_FLAG: ${{ needs.changes.outputs.indexing_worker }}
           WIRE_CORPUS_EDGE_FLAG: ${{ needs.changes.outputs.wire_corpus_edge }}
           DATABASE_MIGRATOR_FLAG: ${{ needs.changes.outputs.database_migrator }}
@@ -923,13 +828,11 @@ jobs:
           REDIS_RESULT: ${{ needs.redis.result }}
           GATEWAY_RESULT: ${{ needs.gateway.result }}
           APPVIEW_RESULT: ${{ needs.appview.result }}
-          CHARYBDIS_RESULT: ${{ needs.charybdis.result }}
           OPERATIONS_RESULT: ${{ needs.operations.result }}
           GO_PACKAGES_RESULT: ${{ needs.go-packages.result }}
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
           WIRE_INGEST_RESULT: ${{ needs.wire-ingest.result }}
           PODCAST_WORKER_RESULT: ${{ needs.podcast-worker.result }}
-          WIRE_WORKER_RESULT: ${{ needs.wire-worker.result }}
           INDEXING_WORKER_RESULT: ${{ needs.indexing-worker.result }}
           WIRE_CORPUS_EDGE_RESULT: ${{ needs.wire-corpus-edge.result }}
           DATABASE_MIGRATOR_RESULT: ${{ needs.database-migrator.result }}
@@ -968,13 +871,11 @@ jobs:
           check "$REDIS_FLAG" "$REDIS_RESULT" "SocialWire Redis"
           check "$GATEWAY_FLAG" "$GATEWAY_RESULT" "Gateway"
           check "$APPVIEW_FLAG" "$APPVIEW_RESULT" "AppView"
-          check "$CHARYBDIS_FLAG" "$CHARYBDIS_RESULT" "Charybdis"
           check "$OPERATIONS_FLAG" "$OPERATIONS_RESULT" "Operations"
           check "$GO_PACKAGES_FLAG" "$GO_PACKAGES_RESULT" "Repository-local Go Packages"
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
           check "$WIRE_INGEST_FLAG" "$WIRE_INGEST_RESULT" "The Wire Global Ingest"
           check "$PODCAST_WORKER_FLAG" "$PODCAST_WORKER_RESULT" "Podcast Media Worker"
-          check "$WIRE_WORKER_FLAG" "$WIRE_WORKER_RESULT" "The Wire Worker"
           check "$INDEXING_WORKER_FLAG" "$INDEXING_WORKER_RESULT" "Replicated Indexing Worker"
           check "$WIRE_CORPUS_EDGE_FLAG" "$WIRE_CORPUS_EDGE_RESULT" "The Wire Corpus Edge"
           check "$DATABASE_MIGRATOR_FLAG" "$DATABASE_MIGRATOR_RESULT" "Database Migrator"

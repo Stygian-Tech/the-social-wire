@@ -82,58 +82,6 @@ struct PDSReconciliationScopeTests {
     #expect(budget.consumed == 5)
   }
 
-  @Test("diagnostic outcomes become normalized durable author results")
-  func durableAuthorResults() {
-    let report = PDSReconciliationReport(
-      authorScope: PDSAuthorScopeEvidence(
-        requestedAuthorDids: [aliceDid],
-        acceptedAuthorDids: [aliceDid],
-        issues: []
-      ),
-      limits: PDSReconciliationLimitsEvidence(
-        maximumAuthors: 10,
-        recordCapPerAuthor: 50,
-        maxConcurrency: 1,
-        rateLimitPerSecond: 10,
-        maxRateLimitRetries: 3
-      ),
-      authors: [
-        PDSAuthorReconciliationResult(
-          authorDid: aliceDid,
-          pdsBase: "https://pds.thesocialwire.app",
-          collections: [
-            PDSCollectionReconciliationResult(
-              collection: "site.standard.document",
-              observedCount: 3,
-              indexedCount: 2,
-              truncated: true,
-              issues: [
-                .init(kind: .malformedRecord, detail: "detail_must_not_escape"),
-                .init(kind: .recordCapReached, detail: "record_cap_per_author"),
-              ]
-            )
-          ],
-          issues: []
-        )
-      ],
-      unsupportedCollections: ["legacy.unregistered.collection"],
-      historicalDeletesProvable: false
-    )
-
-    let results = ThinAppViewRecoveryJobRunner.authorResults(report)
-    #expect(results.count == 2)
-    #expect(results[0].did == aliceDid)
-    #expect(results[0].collection == "legacy.unregistered.collection")
-    #expect(results[0].status == .unsupported)
-    #expect(results[1].discoveredCount == 3)
-    #expect(results[1].processedCount == 2)
-    #expect(results[1].failedCount == 1)
-    #expect(results[1].capped)
-    #expect(results[1].truncated)
-    #expect(results[1].status == .partial)
-    #expect(results[1].error == "malformed_record,record_cap_reached")
-    #expect(results[1].error?.contains("detail_must_not_escape") == false)
-  }
 }
 
 @Suite("PDS reconciliation rate limiting")

@@ -17,6 +17,8 @@ import statistics
 import subprocess
 import time
 
+import rollup_sql
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("command", choices=["setup", "query", "ingest", "paired"])
 parser.add_argument(
@@ -121,10 +123,7 @@ def sql(source):
 
 
 def setup():
-    source = (
-        ROOT
-        / "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore.swift"
-    ).read_text()
+    source = statements["rollupStageFullSQL"]
     columns = re.search(
         r"INSERT INTO wire_signal_rollups_next\s*\((.*?)\)", source, re.S
     ).group(1)
@@ -198,65 +197,16 @@ VACUUM ANALYZE;
     print((OUT / "setup.json").read_text())
 
 
-def interval_seconds(expression):
-    # Existing Swift expressions are signed integer constants or products.
-    factors = expression.replace("_", "").split("*")
-    result = 1
-    for factor in factors:
-        result *= int(factor.strip())
-    return result
-
-
-source = (
-    ROOT
-    / "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore.swift"
-).read_text()
-raw = re.search(
-    r'INSERT INTO wire_signal_rollups_next\s*\([^)]*\)\s*(.*?)\n\s*"""',
-    source,
-    re.S,
-).group(1)
-extra_source = (
-    ROOT
-    / "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore+Incremental.swift"
-).read_text()
-static_fragments = {}
-for name in ["incrementalSignalPrefix", "incrementalFeedbackSuffix"]:
-    match = re.search(r"static let " + name + r' = """(.*?)"""', extra_source, re.S)
-    static_fragments[name] = match.group(1) if match else ""
+statements = rollup_sql.load(ROOT)
 asof = datetime.datetime(2026, 9, 13, 12, tzinfo=datetime.timezone.utc)
 
 
 def timestamp(seconds=0):
-    return (
-        "timestamptz '" + (asof + datetime.timedelta(seconds=seconds)).isoformat() + "'"
-    )
+    return rollup_sql.timestamp(asof, seconds)
 
 
 def query(incremental):
-    q = re.sub(
-        r"\\\(asOf.addingTimeInterval\(([-0-9_ *]+)\)\)",
-        lambda m: timestamp(interval_seconds(m.group(1))),
-        raw,
-    )
-    q = q.replace(r"\(asOf)", timestamp()).replace(
-        r"\(incremental)", "true" if incremental else "false"
-    )
-    q = q.replace(
-        r"\(unescaped: keyFilter)",
-        (
-            "AND canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_keys)"
-            if incremental
-            else ""
-        ),
-    )
-    for name, fragment in static_fragments.items():
-        q = q.replace(
-            "\\(unescaped: incremental ? Self." + name + ' : "")',
-            fragment if incremental else "",
-        )
-    assert "\\(" not in q
-    return q
+    return rollup_sql.aggregate(statements, incremental, asof)
 
 
 def cpu():
@@ -439,84 +389,7 @@ def run(kind, enabled, iteration, combined=False):
 
 
 def refresh_sql(incremental):
-    """Extract the complete refresh SQL, including the actual dirty work set.
-
-    The psql harness has no Swift error handler. A PL/pgSQL exception block
-    implements the acknowledgment savepoint's exact 40001-only rollback.
-    """
-    main_queries = re.findall(r'"""(.*?)"""', source, re.S)
-    extra_queries = re.findall(r'"""(.*?)"""', extra_source, re.S)
-
-    def statement(queries, prefix):
-        return next(q for q in queries if q.strip().startswith(prefix))
-
-    def render(q):
-        q = re.sub(
-            r"\\\(asOf.addingTimeInterval\(([-0-9_ *]+)\)\)",
-            lambda m: timestamp(interval_seconds(m.group(1))), q,
-        ).replace(r"\(asOf)", timestamp())
-        q = q.replace(r"\(unescaped: deleteFilter)",
-            "AND current.canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_keys)"
-            if incremental else "")
-        if "\\(" in q:
-            raise RuntimeError("Refresh SQL contains an unsupported Swift interpolation")
-        return q.strip() + ";"
-
-    statements = ["BEGIN;"]
-    if incremental:
-        statements += ["SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;",
-            "LOCK TABLE ONLY wire_signal_events IN SHARE UPDATE EXCLUSIVE MODE NOWAIT;"]
-    statements.append("SELECT pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint);")
-    if incremental:
-        statements.append("SET LOCAL jit=off;")
-        for prefix in ["LOCK TABLE wire_signal_events", "CREATE TEMP TABLE wire_signal_rollup_refresh_state",
-                       "CREATE TEMP TABLE wire_signal_rollup_claimed", "CREATE TEMP TABLE wire_signal_rollup_keys",
-                       "INSERT INTO wire_signal_rollup_keys"]:
-            statements.append(render(statement(extra_queries, prefix)))
-        statements.append("CREATE TEMP TABLE wire_signal_rollup_batch (canonical_key text PRIMARY KEY) ON COMMIT DROP; ANALYZE wire_signal_rollup_keys;")
-    statements.append(render(statement(main_queries, "CREATE TEMP TABLE wire_signal_rollups_next")))
-    stage = statement(main_queries, "INSERT INTO wire_signal_rollups_next")
-    head = stage.split(r"\(unescaped: incremental ?")[0]
-    aggregate = query(incremental)
-    if incremental:
-        aggregate = aggregate.replace("SELECT canonical_key FROM wire_signal_rollup_keys", "SELECT canonical_key FROM wire_signal_rollup_batch")
-        statements.append("""
-DO $batch$ DECLARE after_key text; last_key text; BEGIN LOOP
-  TRUNCATE wire_signal_rollup_batch;
-  INSERT INTO wire_signal_rollup_batch SELECT canonical_key FROM wire_signal_rollup_keys
-    WHERE after_key IS NULL OR canonical_key > after_key ORDER BY canonical_key LIMIT 1000;
-  ANALYZE wire_signal_rollup_batch;
-  SELECT max(canonical_key) INTO last_key FROM wire_signal_rollup_batch;
-  EXIT WHEN last_key IS NULL;
-""" + head + aggregate + "; after_key := last_key; END LOOP; END $batch$;")
-    else:
-        statements.append(head + aggregate + ";")
-    statements.append("ALTER TABLE wire_signal_rollups_next ADD PRIMARY KEY (canonical_key); ANALYZE wire_signal_rollups_next (canonical_key); SET LOCAL work_mem='64MB';")
-    for prefix in ["UPDATE wire_signal_rollups current", "INSERT INTO wire_signal_rollups\n", "DELETE FROM wire_signal_rollups current"]:
-        statements.append(render(statement(main_queries, prefix)))
-    statements.append("SET LOCAL work_mem='4MB';")
-    if incremental:
-        statements.append("""
-DO $identity$ BEGIN
-  IF EXISTS (SELECT 1 FROM wire_signal_rollup_refresh_state
-      WHERE signature IS DISTINCT FROM wire_signal_rollup_relation_signature()) THEN
-    RAISE EXCEPTION 'source relations changed during refresh';
-  END IF;
-END $identity$;
-""")
-        # Keep source drift explicit: this harness must not silently add safe
-        # acknowledgment semantics when benchmarking an older implementation.
-        if 'SAVEPOINT wire_rollup_acknowledgment' not in extra_source:
-            raise RuntimeError("Paired refresh requires the acknowledgment savepoint implementation")
-        for prefix in ["INSERT INTO wire_signal_rollup_schedule", "DELETE FROM wire_signal_rollup_schedule",
-                       "WITH acknowledged AS MATERIALIZED", "UPDATE wire_signal_rollup_control SET last_as_of"]:
-            q = render(statement(extra_queries, prefix))
-            if prefix == "WITH acknowledged AS MATERIALIZED":
-                q = "DO $ack$ BEGIN " + q + " EXCEPTION WHEN serialization_failure THEN RAISE NOTICE 'acknowledgment deferred'; END $ack$;"
-            statements.append(q)
-    else:
-        statements.append("UPDATE wire_signal_rollup_control SET last_as_of=NULL WHERE singleton AND last_as_of IS NOT NULL;")
-    return "\n".join(statements) + "\nCOMMIT;"
+    return rollup_sql.refresh(statements, incremental, asof)
 
 
 def paired_sample(kind, enabled, number):
@@ -614,7 +487,7 @@ elif args.command == "paired":
                 rows.append(paired_sample(kind, enabled, number))
     (OUT / "paired-summary.json").write_text(json.dumps({"rows": rows, "limitations": [
         "Controlled arrival rate with synthetic single-row statements, not representative hosted replay",
-        "Full refresh SQL includes dirty and expiry selection, publication and acknowledgment; ranking and Swift transport are omitted",
+        "Full refresh SQL includes dirty and expiry selection, publication and acknowledgment; ranking and transport are omitted",
         "Minimal schema omits production foreign keys and other concurrent services",
         "One refresh per trial; the existing production cadence remains unchanged",
         "pgbench latency includes schedule lag; compare counterbalanced per-trial percentiles, not pooled transactions as independent trials",

@@ -10,64 +10,7 @@ import Testing
 
 @Suite("Resumable repository recovery")
 struct PDSRepositoryRecoveryTests {
-  @Test("large repositories resume across leases and restarts without spending failure attempts")
-  func largeRepositoryResumes() async throws {
-    let fixture = try RecoveryFixture()
-    defer { fixture.remove() }
-    try await fixture.seedOwner()
-    let transport = RecoveryTransport(did: fixture.did, count: 341)
-    var yielded = 0
-    for _ in 0..<30 {
-      // Reopening the SQLite store and restorer models loss of every process-local accumulator.
-      let store = try SQLiteThinAppViewStore(path: fixture.path, logger: fixture.logger)
-      let context = try await fixture.claim(store: store)
-      do {
-        let report = try await fixture.restorer(store: store, transport: transport)
-          .restoreCurrentRepository(repoDid: fixture.did, recovery: context)
-        #expect(report.complete)
-        #expect(!report.historicalDeletesProvable)
-        break
-      } catch PDSRepositoryRecoveryError.yielded {
-        yielded += 1
-        try await store.yieldRepositoryRecovery(context)
-      }
-    }
-    #expect(yielded > 10)
-    let state = try await fixture.currentState()
-    #expect(state.completed)
-    #expect(state.collections["site.standard.document"]?.indexedCount == 341)
-    #expect(state.collections["site.standard.entry"]?.complete == true)
-    #expect(try await fixture.scalar("SELECT attempt_count FROM appview_ingestion_inbox") == 0)
-    #expect(try await fixture.scalar("SELECT COUNT(*) FROM content_items") == 341)
-    #expect(try await fixture.scalar("SELECT COUNT(*) FROM appview_repository_recovery_records") == 0)
-    #expect(await transport.documentCursors.filter { $0 == "start" }.count == 1)
-  }
 
-  @Test("malformed pages preserve a durable cursor and cannot complete or prune")
-  func malformedPageDoesNotAdvance() async throws {
-    let fixture = try RecoveryFixture()
-    defer { fixture.remove() }
-    try await fixture.seedOwner()
-    let store = fixture.store
-    let context = try await fixture.claim(store: store)
-    try await fixture.seedContent(prefix: "lastgood", count: 1, indexedAt: "2020-01-01T00:00:00Z")
-    let transport = RecoveryTransport(did: fixture.did, count: 35, malformedOffset: 10)
-    do {
-      _ = try await fixture.restorer(store: store, transport: transport)
-        .restoreCurrentRepository(repoDid: fixture.did, recovery: context)
-      Issue.record("Malformed recovery unexpectedly completed")
-    } catch TapRepositoryRestorationError.incomplete(let report) {
-      #expect(!report.complete)
-      #expect(JetstreamInboxProjectionWorker.failureReason(
-        TapRepositoryRestorationError.incomplete(report)) ==
-        "repository_reconciliation_incomplete: malformed_record")
-    }
-    let state = try await store.loadRepositoryRecovery(context)
-    #expect(state.collections["site.standard.document"]?.cursor == "10")
-    #expect(!state.completed)
-    #expect(try await fixture.scalar("SELECT COUNT(*) FROM content_items WHERE uri LIKE '%/lastgood0'") == 1)
-    #expect(try await fixture.scalar("SELECT COUNT(*) FROM appview_repository_recovery_records") == 10)
-  }
 
   @Test("stolen leases cannot publish progress or yield the newer owner's work")
   func staleLeaseIsFenced() async throws {
@@ -122,30 +65,6 @@ struct PDSRepositoryRecoveryTests {
     #expect(try await fixture.scalar("SELECT COUNT(*) FROM content_items") == 1_102)
   }
 
-  @Test("PDS migration restarts cursor enumeration without reusing old URI evidence")
-  func endpointMigrationRestartsSnapshot() async throws {
-    let fixture = try RecoveryFixture()
-    defer { fixture.remove() }
-    try await fixture.seedOwner()
-    let context = try await fixture.claim(store: fixture.store)
-    var previous = try await fixture.store.loadRepositoryRecovery(context)
-    previous.pdsBase = "http://127.0.0.1:3000"
-    previous.collections["site.standard.document"] = .init(cursor: "999", seenCursors: ["999"],
-      observedCount: 10, indexedCount: 10, complete: false)
-    try await fixture.seedContent(prefix: "gone", count: 1, indexedAt: "2020-01-01T00:00:00Z")
-    try await fixture.store.saveRepositoryRecovery(context, state: previous,
-      observedURIs: ["at://\(fixture.did)/site.standard.document/gone0"], finish: false)
-    let transport = RecoveryTransport(did: fixture.did, count: 3, pdsBase: "http://127.0.0.1:4000")
-    let report = try await fixture.restorer(store: fixture.store, transport: transport)
-      .restoreCurrentRepository(repoDid: fixture.did, recovery: context)
-    #expect(report.complete)
-    #expect(await transport.documentCursors == ["start"])
-    let current = try await fixture.currentState()
-    #expect(current.snapshotId != previous.snapshotId)
-    #expect(current.startedAt == previous.startedAt)
-    #expect(try await fixture.scalar("SELECT COUNT(*) FROM content_items") == 3)
-    #expect(try await fixture.scalar("SELECT COUNT(*) FROM appview_repository_recovery_records") == 0)
-  }
 
   @Test("owner cleanup cascades partial snapshot observations")
   func cleanupCascades() async throws {
@@ -198,17 +117,6 @@ private struct RecoveryFixture {
       repoDid: did, requestId: nil, workerId: "worker", leaseToken: token)
   }
 
-  func restorer(store: SQLiteThinAppViewStore, transport: any PDSHTTPTransport) -> TapPDSRepositoryRestorer {
-    let config = ThinAppViewConfig.fromEnvironment([
-      "ENABLE_THIN_APPVIEW": "true", "THIN_APPVIEW_MAX_ENROLL_RECORDS_PER_AUTHOR": "25"])
-    let indexer = ThinAppViewIndexer(store: store, config: config, logger: logger,
-      publicationSiteResolver: nil)
-    let backfill = ThinAppViewEnrollBackfill(store: store, indexer: indexer,
-      httpTransport: transport, endpointPolicy: .localTesting, plcURL: "http://127.0.0.1:3000",
-      config: config, logger: logger)
-    return TapPDSRepositoryRestorer(store: store, backfill: backfill,
-      maxConcurrency: 1, rateLimitPerSecond: 10_000)
-  }
 
   func seedContent(prefix: String, count: Int, indexedAt: String) async throws {
     let did = did
@@ -233,48 +141,5 @@ private struct RecoveryFixture {
       try String.fetchOne(db, sql: "SELECT recovery_state FROM appview_ingestion_inbox")!
     }
     return try JSONDecoder().decode(PDSRepositoryRecoveryState.self, from: Data(json.utf8))
-  }
-}
-
-private actor RecoveryTransport: PDSHTTPTransport {
-  let did: String
-  let count: Int
-  let malformedOffset: Int?
-  let pdsBase: String
-  private(set) var documentCursors: [String] = []
-
-  init(did: String, count: Int, malformedOffset: Int? = nil, pdsBase: String = "http://127.0.0.1:3000") {
-    self.did = did
-    self.count = count
-    self.malformedOffset = malformedOffset
-    self.pdsBase = pdsBase
-  }
-
-  func execute(_ request: HTTPClientRequest, timeout: TimeAmount) async throws -> HTTPClientResponse {
-    let url = URLComponents(string: request.url)!
-    let json: [String: Any]
-    if !url.path.contains("listRecords") {
-      json = ["id": did, "service": [["id": "#atproto_pds", "type": "AtprotoPersonalDataServer",
-        "serviceEndpoint": pdsBase]]]
-    } else if url.queryItems?.first(where: { $0.name == "collection" })?.value == "site.standard.document" {
-      let raw = url.queryItems?.first(where: { $0.name == "cursor" })?.value
-      documentCursors.append(raw ?? "start")
-      let offset = min(count, Int(raw ?? "0") ?? 0)
-      let end = min(count, offset + 10)
-      var rows: [[String: Any]] = (offset..<end).map { index in
-        ["uri": "at://\(did)/site.standard.document/r\(index)", "cid": "cid\(index)",
-         "value": ["$type": "site.standard.document", "title": "Document \(index)",
-           "publishedAt": "2026-09-10T00:00:00Z", "content": "Body"]]
-      }
-      if offset == malformedOffset { rows[0] = ["invalid": true] }
-      var page: [String: Any] = ["records": rows]
-      if end < count { page["cursor"] = String(end) }
-      json = page
-    } else {
-      json = ["records": []]
-    }
-    let data = try JSONSerialization.data(withJSONObject: json)
-    return HTTPClientResponse(status: .ok, headers: ["Content-Type": "application/json"],
-      body: .bytes(ByteBuffer(data: data)))
   }
 }

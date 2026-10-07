@@ -203,14 +203,15 @@ describe("client XRPC transport", () => {
     expect(appleClient.match(/JSONEncoder\(\)\.encode\(EmptyXRPCInput\(\)\)/g)).toHaveLength(2);
   });
 
-  it("keeps AppView, Gateway, and Charybdis Bruno clients XRPC-first", () => {
-    const brunoSources = ["gateway", "appview", "appview-worker"].flatMap(
+  it("keeps AppView, Gateway, and moved worker verification clients XRPC-first", () => {
+    const brunoSources = ["gateway", "appview"].flatMap(
       (service) =>
         collectSourceFiles(
           join(REPO_ROOT, `services/${service}/bruno`),
           new Set([".bru"])
         )
     );
+    expect(brunoSources.some((source) => source.includes("/WorkerVerification/"))).toBe(true);
     const forbiddenPaths = [
       ...compatibilityMigrations.map(({ path }) => path),
       "/v1/publications/folders",

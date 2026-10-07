@@ -1,6 +1,6 @@
 # Wire Rollup Benchmark
 
-`wire-rollup-benchmark.py` compares the actual aggregate SQL extracted from the Swift store with its incremental form. It requires Python 3, Docker, and an explicitly named disposable PostgreSQL 18 container. Container names must start with `tsw92-`; database names must start with `tsw92_`. Do not use a shared integration-test container or a hosted database.
+`wire-rollup-benchmark.py` compares the actual aggregate SQL extracted from the Go production constants in `packages/go/wireworkercore/signal_rollup_sql.go`; `rollup_sql.py` rejects missing/reordered constants and drift in the exact runtime bind array with its incremental form. It requires Python 3, Docker, and an explicitly named disposable PostgreSQL 18 container. Container names must start with `tsw92-`; database names must start with `tsw92_`. Do not use a shared integration-test container or a hosted database.
 
 Create a fresh local container without publishing a network port:
 
@@ -37,7 +37,7 @@ at a controlled arrival rate. It alternates off/on then on/off between matched
 pairs. The selective arm claims the keys actually written during the trial,
 uses transaction-local JIT off, processes batches of at most 1,000, and publishes
 and acknowledges in the same repeatable-read transaction. A PL/pgSQL exception
-block reproduces the Swift acknowledgment savepoint's 40001-only rollback.
+block reproduces the Go acknowledgment savepoint's 40001-only rollback.
 The oracle keeps its existing isolation and JIT settings.
 
 ```sh
@@ -59,7 +59,7 @@ This fixes three limitations of the earlier `ingest` probe: subsecond samples,
 fixed off-before-on ordering, and refreshing `item-*` keys while concurrent writers
 only modified unrelated `bench-*` keys. The earlier probe remains available for
 isolated trigger costs. Neither command simulates the whole application. The
-paired probe excludes ranking, Swift transport and retries outside acknowledgment,
+paired probe excludes ranking, transport and retries outside acknowledgment,
 production foreign keys, and other services. It must not be presented as hosted
 latency acceptance or used to bypass representative replay and the soak.
 

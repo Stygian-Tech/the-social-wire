@@ -82,10 +82,10 @@ APP_ENV=dev DATABASE_URL='postgresql://…' \
   APPVIEW_BASE_URL=http://127.0.0.1:8081 \
   GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run Gateway
 
-# Terminal 3: Charybdis (optional; connects to live public ingestion by default)
-cd services/appview-worker
+# Terminal 3: Go Projection Pool (requires an explicitly configured durable inbox)
+cd services/indexing-worker
 APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true \
-  swift run AppViewWorker
+  INDEXING_WORKER_ROLE=projection THIN_APPVIEW_JETSTREAM_MODE=v2_authoritative go run ./cmd/indexing-worker
 ```
 
 Use the same disposable database for these three processes. Do not point local runs at hosted Development or Production data. Charybdis consumes external Jetstream traffic unless you explicitly configure an isolated source, so start it only when that effect is intended.
@@ -94,7 +94,7 @@ Use the same disposable database for these three processes. Do not point local r
 
 - `services/gateway/bruno/` — public Gateway, XRPC, compatibility, mutation, health, and metadata requests
 - `services/appview/bruno/` — direct AppView XRPC and compatibility routes
-- `services/appview-worker/bruno/` — post-ingestion verification notes; the worker has no HTTP API
+- `services/appview/bruno/WorkerVerification/` — post-ingestion verification through the serving API; worker listeners expose health probes
 
 ## Verification
 
@@ -103,7 +103,8 @@ Use the same disposable database for these three processes. Do not point local r
 | `redis` | `packages/swift/SocialWireRedis` with Redis integration service |
 | `gateway` | `packages/swift/GatewayCore`, `services/gateway` |
 | `appview` | `services/appview` |
-| `charybdis` | `packages/swift/ThinAppViewCore`, `services/appview-worker` |
+| `indexing-worker` | `services/indexing-worker` Go runtime and image |
+| `appview` | Retained `packages/swift/ThinAppViewCore` API contracts |
 | `operations` | `packages/swift/OperationsCore`, `services/operations` |
 | `spec` | OpenAPI contract/drift tests |
 
