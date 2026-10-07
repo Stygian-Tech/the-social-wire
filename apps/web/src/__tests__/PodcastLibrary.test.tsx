@@ -85,6 +85,7 @@ it("offers device audio saving from viewer-owned offline downloads without an OA
   }
   fireEvent.click(screen.getByRole("button", { name: "Play" }));
   fireEvent.click(screen.getByRole("button", { name: "Add to Queue" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(played).toEqual([item]);
   expect(patches).toEqual([{ queue: [item.id] }]);
   fireEvent.click(screen.getByRole("button", { name: "Save Audio" }));
@@ -115,12 +116,14 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore(), () => write.mockRestore());
   render(<PodcastLibrary />);
   await screen.findByText("Recent Episode");
+  expect(screen.getByText("Recent Episode").closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
   expect(screen.queryByRole("group", { name: "Podcast Search Scope" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Library" })).toBeNull();
   expect(screen.getAllByRole("button", { name: "Search" })).toHaveLength(1);
   const input = screen.getByRole("searchbox", { name: "Search Your Library" });
   fireEvent.change(input, { target: { value: "science" } });
   await screen.findByText("Matched Science Episode");
+  expect(screen.getByText("Matched Science Episode").closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
   expect(screen.queryByText("Recent Episode")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Clear Search" }));
   await screen.findByText("Recent Episode");
@@ -138,6 +141,46 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   fireEvent.click(unsubscribe);
   await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, true));
   expect(changes).toEqual([{ subscriptions: [] }]);
+});
+
+it("labels mixed episode cards with their podcast names across recent, downloads, and queue feeds", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const state = { ...client.initialPodcastState(), queue: ["recent", "offline"] };
+  const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
+  const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
+  const episode = (id: string, showId: string): client.PodcastEpisode => ({ id, showId, title: `${id} Episode`, audioUrl: "/media", publishedAt: "2026-10-05", transcripts: [] });
+  const recent = episode("recent", "primary");
+  const unknown = episode("unknown", "unavailable");
+  const blank = episode("blank", "blank");
+  const downloaded = episode("offline", "private");
+  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([{ episode: downloaded, downloadedAt: "2026-10-05", bytes: 10 }]);
+  const paths: string[] = [];
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
+    paths.push(path);
+    if (path === "shows") return { shows: [
+      { id: "primary", title: "Primary Technology", sourceKind: "rss" },
+      { id: "private", title: "Members Podcast", sourceKind: "private-rss", visibility: "private" },
+      { id: "blank", title: "   ", sourceKind: "rss" },
+    ] } as T;
+    return { episodes: [recent, unknown, blank] } as T;
+  });
+  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  render(<PodcastLibrary />);
+  await screen.findByText(recent.title);
+  expect(screen.getByText(recent.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Primary Technology");
+  for (const item of [unknown, blank]) {
+    expect(screen.getByText(item.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe(item.title);
+  }
+  fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
+  await screen.findByText(downloaded.title);
+  expect(screen.getByText(downloaded.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Members Podcast");
+  fireEvent.click(screen.getByRole("button", { name: /Up Next/ }));
+  await screen.findByText(recent.title);
+  expect(screen.getByText(recent.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Primary Technology");
+  expect(screen.getByText(downloaded.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Members Podcast");
+  expect(paths.filter(path => path === "shows")).toHaveLength(1);
+  expect(paths.every(path => path === "shows" || path.startsWith("episodes"))).toBe(true);
 });
 
 it("clears private library terms before directory search and previews before explicit subscription", async () => {
