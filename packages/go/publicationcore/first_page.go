@@ -8,6 +8,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/socialwireredis"
 	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
+	"math"
 	"time"
 )
 
@@ -39,7 +40,8 @@ func pageDates(value any) {
 		for key, item := range v {
 			if key == "publishedAt" || key == "feedPositionAt" {
 				if seconds, ok := item.(float64); ok {
-					v[key] = time.Unix(0, int64((seconds+978307200)*1e9)).UTC().Format(time.RFC3339Nano)
+					whole, fraction := math.Modf(seconds)
+					v[key] = time.Unix(int64(whole)+978307200, int64(math.Round(fraction*1e9))).UTC().Format(time.RFC3339Nano)
 				}
 			}
 			pageDates(item)
@@ -118,7 +120,7 @@ func (s *Service) LivePage(ctx context.Context, auth gatewaycore.AuthContext, ro
 		for i := range neutral.Entries {
 			neutral.Entries[i].IsRead = false
 		}
-		if raw, e := json.Marshal(neutral); e == nil {
+		if raw, e := EncodeFirstPage(neutral); e == nil {
 			_ = s.Cache.Projection.StoreFirstPage(ctx, auth.DID, row.PublicationID, string(raw), s.Now())
 		}
 	}
