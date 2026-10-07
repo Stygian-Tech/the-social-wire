@@ -28,7 +28,7 @@ func DecodeAccessCandidate(token string, now time.Time) (AccessToken, error) {
 	if len(token) == 0 || len(token) > 32768 {
 		return AccessToken{}, ErrAuthentication
 	}
-	raw, e := DecodePayload(token)
+	raw, e := decodeAttestationCandidatePayload(token)
 	if e != nil {
 		return AccessToken{}, ErrAuthentication
 	}
@@ -55,6 +55,39 @@ func DecodeAccessCandidate(token string, now time.Time) (AccessToken, error) {
 		json.Unmarshal(raw["aud"], &a.Audiences)
 	}
 	return a, nil
+}
+
+// decodeAttestationCandidatePayload only inspects claims. PDS-issued access
+// tokens may use an issuer-private HMAC key absent from public JWKS. Inspection
+// must not reject those tokens before authoritative discovery and active-PDS
+// attestation; signature verification remains restricted to public algorithms.
+func decodeAttestationCandidatePayload(token string) (map[string]json.RawMessage, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 || parts[2] == "" {
+		return nil, ErrMalformedJWT
+	}
+	if signature, err := Base64URLDecode(parts[2]); err != nil || len(signature) == 0 {
+		return nil, ErrMalformedJWT
+	}
+	header, err := Base64URLDecode(parts[0])
+	if err != nil {
+		return nil, ErrMalformedJWT
+	}
+	var h struct {
+		Algorithm string `json:"alg"`
+	}
+	if json.Unmarshal(header, &h) != nil || h.Algorithm == "" || strings.EqualFold(h.Algorithm, "none") {
+		return nil, ErrMalformedJWT
+	}
+	payload, err := Base64URLDecode(parts[1])
+	if err != nil {
+		return nil, ErrMalformedJWT
+	}
+	var claims map[string]json.RawMessage
+	if json.Unmarshal(payload, &claims) != nil || claims == nil {
+		return nil, ErrMalformedJWT
+	}
+	return claims, nil
 }
 
 type jsonCacheEntry struct {
