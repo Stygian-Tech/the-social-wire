@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"net/http"
 	"time"
 )
@@ -65,15 +66,9 @@ func (h *Host) heartbeat(ctx context.Context) {
 	started := time.Now().UTC()
 	for {
 		work, cancel := context.WithTimeout(ctx, 5*time.Second)
-		at := time.Now().UTC()
-		readiness, dependency := "healthy", "ready"
-		if h.DB.PingContext(work) != nil {
-			readiness, dependency = "degraded", "unavailable"
-		}
-		deps, _ := json.Marshal(map[string]string{"appview_database": dependency, "projection_freshness": "unmeasured", "projection_completeness": "unknown", "observed_at": at.Format(time.RFC3339), "valid_until": at.Add(30 * time.Second).Format(time.RFC3339)})
-		_, _ = h.DB.ExecContext(work, `INSERT INTO operations_service_state(service,environment,instance_id,liveness,readiness,freshness,completeness,dependency_state,version,started_at,heartbeat_at)VALUES('appview',$1,$2,'healthy',$3,'unknown','unknown',$4::jsonb,$5,$6,$7)ON CONFLICT(service,environment,instance_id)DO UPDATE SET liveness=EXCLUDED.liveness,readiness=EXCLUDED.readiness,freshness=EXCLUDED.freshness,completeness=EXCLUDED.completeness,dependency_state=EXCLUDED.dependency_state,version=EXCLUDED.version,heartbeat_at=EXCLUDED.heartbeat_at`, h.Config.Environment, h.Config.InstanceID, readiness, string(deps), h.Config.Version, started, at)
+		_ = h.heartbeatOnce(work, started)
 		cancel()
-		timer := time.NewTimer(15 * time.Second)
+		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -81,4 +76,24 @@ func (h *Host) heartbeat(ctx context.Context) {
 		case <-timer.C:
 		}
 	}
+}
+func (h *Host) heartbeatOnce(ctx context.Context, started time.Time) error {
+	// A failed Operations database probe leaves the previous heartbeat to expire.
+	if err := h.DB.PingContext(ctx); err != nil {
+		return err
+	}
+	at := time.Now().UTC()
+	dependencies := map[string]string{"appview_database": "ready", "projection_freshness": "unmeasured", "projection_completeness": "unknown", "operations_database": "ready", "observed_at": at.Format(time.RFC3339), "valid_until": at.Add(30 * time.Second).Format(time.RFC3339)}
+	if h.Telemetry != nil {
+		evidence := heartbeatEvidence{Dependencies: dependencies, Freshness: "unknown", Completeness: "unknown"}
+		applyTelemetryEvidence(&evidence, h.Telemetry.Snapshot(), at)
+	}
+	deps, _ := json.Marshal(dependencies)
+	_, err := h.DB.ExecContext(ctx, `INSERT INTO operations_service_state(service,environment,instance_id,liveness,readiness,freshness,completeness,dependency_state,version,started_at,heartbeat_at)VALUES('appview',$1,$2,'healthy','healthy','unknown','unknown',$3::jsonb,$4,$5,$6)ON CONFLICT(service,environment,instance_id)DO UPDATE SET liveness=EXCLUDED.liveness,readiness=EXCLUDED.readiness,freshness=EXCLUDED.freshness,completeness=EXCLUDED.completeness,dependency_state=EXCLUDED.dependency_state,version=EXCLUDED.version,heartbeat_at=EXCLUDED.heartbeat_at`, h.Config.Environment, h.Config.InstanceID, string(deps), h.Config.Version, started, at)
+	if err == nil && h.Telemetry != nil {
+		for dimension, state := range map[string]string{"liveness": "healthy", "readiness": "healthy", "freshness": "unknown", "completeness": "unknown"} {
+			h.Telemetry.Enqueue(telemetrycore.MetricSample{Name: "socialwire.service.health.samples_total", Value: 1, Dimensions: map[string]string{"service": "appview", "dimension": dimension, "state": state}, At: at})
+		}
+	}
+	return err
 }

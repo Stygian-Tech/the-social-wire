@@ -56,3 +56,12 @@ func TestCachePolicyUsesFinitePositiveSourceOverrides(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+func TestHeartbeatTelemetryLossEvidenceDoesNotInventProjectionHealth(t *testing.T) {
+	at := time.Now()
+	drop := at.Add(-time.Second)
+	e := heartbeatEvidence{Dependencies: map[string]string{}, Freshness: "unknown", Completeness: "unknown"}
+	applyTelemetryEvidence(&e, telemetrycore.TelemetrySnapshot{Capacity: 4, Dropped: 1, LastDrop: &drop, ConsecutiveFailures: 1}, at)
+	if e.Freshness != "unknown" || e.Completeness != "unknown" || e.Dependencies["telemetry_exporter"] != "degraded" || e.Dependencies["telemetry_loss_state"] != "unrecovered" {
+		t.Fatal(e)
+	}
+}
