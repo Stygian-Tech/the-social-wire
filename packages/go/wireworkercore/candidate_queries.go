@@ -32,18 +32,22 @@ const candidateQuery = `
           COALESCE(NULLIF(BTRIM(i.thumbnail_url), '') ~* '^https?://', FALSE)
             AS has_usable_thumbnail,
 
-      COALESCE(metadata.source = 'open_graph'
-            AND metadata.status IN ('fresh', 'stale')
-            AND metadata.stale_until > $2
-            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
-              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
-              metadata.icon_url) >= 2, FALSE)
-       AS has_usable_open_graph,
+          COALESCE(metadata.stale_until > $2, FALSE) AS has_usable_open_graph,
           (CASE WHEN $1 THEN r.signals_1h
                 ELSE r.baseline_signals_1h END) AS signals_1h
         FROM wire_items i
         JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
-        LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
+        LEFT JOIN (
+          SELECT canonical_key, stale_until FROM wire_link_metadata_cache
+          WHERE open_graph_qualified = TRUE
+          UNION ALL
+          SELECT canonical_key, stale_until FROM wire_link_metadata_cache metadata
+          WHERE open_graph_qualified IS NULL AND metadata.source = 'open_graph'
+            AND metadata.status IN ('fresh', 'stale')
+            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+              metadata.site_name, metadata.author_name, metadata.published_at::text,
+              metadata.icon_url) >= 2
+        ) metadata ON metadata.canonical_key = i.canonical_key
         WHERE i.eligible = TRUE AND i.expires_at > $2
           AND i.target_kind IN ('external_article', 'standard_site_document')
           AND i.commercial_class <> 'probable_ad'
@@ -128,13 +132,17 @@ const projectedCandidateQuery = `
         FROM wire_items i
         JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
         LEFT JOIN (SELECT metadata.canonical_key,
-      COALESCE(metadata.source = 'open_graph'
+          COALESCE(metadata.stale_until > $2, FALSE) AS has_usable_open_graph FROM (
+          SELECT canonical_key, stale_until FROM wire_link_metadata_cache
+          WHERE open_graph_qualified = TRUE
+          UNION ALL
+          SELECT canonical_key, stale_until FROM wire_link_metadata_cache metadata
+          WHERE open_graph_qualified IS NULL AND metadata.source = 'open_graph'
             AND metadata.status IN ('fresh', 'stale')
-            AND metadata.stale_until > $2
             AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
-              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
-              metadata.icon_url) >= 2, FALSE)
-       AS has_usable_open_graph FROM wire_link_metadata_cache metadata OFFSET 0) metadata ON metadata.canonical_key = i.canonical_key
+              metadata.site_name, metadata.author_name, metadata.published_at::text,
+              metadata.icon_url) >= 2
+        ) metadata OFFSET 0) metadata ON metadata.canonical_key = i.canonical_key
         WHERE i.eligible = TRUE AND i.expires_at > $2
           AND i.target_kind IN ('external_article', 'standard_site_document')
           AND i.commercial_class <> 'probable_ad'
@@ -192,7 +200,17 @@ const eligibleLanguagesQuery = `
       SELECT i.language_code
       FROM wire_items i
       JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
-      LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
+      LEFT JOIN (
+          SELECT canonical_key, stale_until FROM wire_link_metadata_cache
+          WHERE open_graph_qualified = TRUE
+          UNION ALL
+          SELECT canonical_key, stale_until FROM wire_link_metadata_cache metadata
+          WHERE open_graph_qualified IS NULL AND metadata.source = 'open_graph'
+            AND metadata.status IN ('fresh', 'stale')
+            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+              metadata.site_name, metadata.author_name, metadata.published_at::text,
+              metadata.icon_url) >= 2
+        ) metadata ON metadata.canonical_key = i.canonical_key
       WHERE i.eligible = TRUE AND i.expires_at > $1
         AND i.target_kind IN ('external_article', 'standard_site_document')
         AND i.commercial_class <> 'probable_ad'
@@ -201,12 +219,7 @@ const eligibleLanguagesQuery = `
         AND COALESCE(i.published_at, i.first_seen_at) >= $2
         AND (
           i.provenance ? 'standard_site'
-          OR (metadata.source = 'open_graph'
-            AND metadata.status IN ('fresh', 'stale')
-            AND metadata.stale_until > $1
-            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
-              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
-              metadata.icon_url) >= 2)
+          OR (metadata.stale_until > $1)
         )
         AND (
           (CASE WHEN $4 THEN r.shares_24h ELSE r.baseline_shares_24h END)

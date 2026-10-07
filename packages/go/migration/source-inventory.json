@@ -11769,6 +11769,10 @@
           "sha256": "3b2e75bc567088c57e2ce24195891f7b730ed0ad8b774f479aa813b1af90b11b"
         },
         {
+          "path": "packages/spec/__tests__/wire-working-set-indexes-postgres.test.ts",
+          "sha256": "49958ae1d5a887bd1436e7429a64665f0239d3a9b7cfda28b0160e88b63f122e"
+        },
+        {
           "path": "packages/spec/endpoint-manifest.json",
           "sha256": "f670bab0b2ddb7ae23d5504338c3d60e6661e2b5593c6ca5e048ef47f72cc263"
         },
