@@ -11367,8 +11367,12 @@
           "sha256": "53a688517d2bb17ee48647810e7dfcf7541d7f6a08886cdbfd3cea66221d2afe"
         },
         {
+          "path": "packages/spec/__tests__/ci-bun-installation.test.ts",
+          "sha256": "1ab2356f7c443ed4a25f62f46160d6aca8ad2966be9a6eee953b562e33435300"
+        },
+        {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "4754075843bef61c1c966501922c3f1da22a4c7c095845cda48c8e8690ce324f"
+          "sha256": "b4a5fac6e3b52ccb4fb027ac3dc5982dfedf5480369fb53d541f46f06140acfb"
         },
         {
           "path": "packages/spec/__tests__/ci-postgres-preparation.test.ts",
@@ -11405,6 +11409,10 @@
         {
           "path": "packages/spec/__tests__/endpoint-manifest.test.ts",
           "sha256": "9e29065892bae1eda832edfe9b7d92184525f7254a848bc6bd9413751e269f7d"
+        },
+        {
+          "path": "packages/spec/__tests__/ingress-go-image-dependencies.test.ts",
+          "sha256": "4719482bea5a4efb607cb0d9dd4dc05ccd9e13f04d8fae6c4d9becf48e1a54cd"
         },
         {
           "path": "packages/spec/__tests__/jetstream-bounded-snapshot-migration.test.ts",
