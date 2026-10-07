@@ -1,6 +1,6 @@
 # Go verification and deployment
 
-This guide covers the repository-local migration foundation described in [[Go-ingestion-and-ranking]]. [[Go-package-reference]] supplies the file-by-file contracts and package boundaries.
+This guide covers repository-local Go runtime verification. See [[Architecture]] for service boundaries and [[Service-API]] for the public contracts; the source inventory records the retained package contracts.
 
 ## Local checks
 

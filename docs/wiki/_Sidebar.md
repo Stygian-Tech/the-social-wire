@@ -23,6 +23,7 @@
 - [[Database]]
 - [[Redis]]
 - [[Testing]]
+- [[Go-verification-and-deployment]]
 - [[Contributing]]
 
 ### Operators
