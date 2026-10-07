@@ -24,7 +24,7 @@ actor PodcastEmbeddedChapterArtwork {
   func artwork(episode: PodcastEpisode, viewer: String?, http: HTTPClient) async throws -> [PodcastID3ChapterArtwork] {
     try await artwork(episode: episode, viewer: viewer) { url, maximumBytes, range in
       try await PublicMediaFetcher.fetch(url: url, httpClient: http, maximumBytes: maximumBytes,
-        timeout: .seconds(3), requestHeaders: [("Range", range), ("User-Agent", "TheSocialWirePodcastMetadata/1.0")], allowPartialResponse: true)
+        timeout: .seconds(8), requestHeaders: [("Range", range), ("User-Agent", "TheSocialWirePodcastMetadata/1.0")], allowPartialResponse: true, maximumRedirects: 10)
     }
   }
 

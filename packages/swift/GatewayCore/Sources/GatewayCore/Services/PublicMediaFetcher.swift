@@ -81,18 +81,16 @@ public enum PublicMediaFetcher {
     url: String, httpClient: HTTPClient, maximumBytes: Int,
     validateURL: (@Sendable (String) -> Bool)? = nil, timeout: Duration = .seconds(25),
     requestHeaders: [(String, String)] = [], requiredContentType: String? = nil,
-    allowPartialResponse: Bool = false
+    allowPartialResponse: Bool = false, maximumRedirects: Int = 5
   ) async throws
     -> Data
   {
     let deadline = ContinuousClock.now.advanced(by: timeout)
-    var current = url
-    for _ in 0..<6 {
-      guard ContinuousClock.now < deadline else { throw PDSAccessTokenAttestationError.unavailable }
-      if let validateURL, !validateURL(current) { throw PDSAccessTokenAttestationError.invalid }
-      guard let components = URLComponents(string: current), let host = components.host,
-        components.scheme == "https", components.user == nil, components.password == nil
-      else { throw PDSAccessTokenAttestationError.invalid }
+    return try await fetchFollowingRedirects(url: url, maximumRedirects: maximumRedirects,
+      deadline: deadline, validateURL: validateURL) { current in
+      guard let host = URLComponents(string: current)?.host else {
+        throw PDSAccessTokenAttestationError.invalid
+      }
       let address = try await PublicDNSAddressValidator.validatedAddress(for: current, deadline: deadline)
       var configuration = HTTPClient.Configuration()
       configuration.dnsOverride = [host: address]
@@ -107,22 +105,48 @@ public enum PublicMediaFetcher {
         for (name, value) in requestHeaders { request.headers.add(name: name, value: value) }
         let response = try await client.execute(request, timeout: .nanoseconds(nanos))
         if [301, 302, 303, 307, 308].contains(response.status.code),
-          let location = response.headers.first(name: "location"),
-          let next = URL(string: location, relativeTo: URL(string: current))?.absoluteURL
-            .absoluteString
+          let location = response.headers.first(name: "location")
         {
           try await client.shutdown()
-          current = next
-          continue
+          return .redirect(location)
         }
         guard response.status.code == 200 || (allowPartialResponse && response.status.code == 206)
         else { throw PDSAccessTokenAttestationError.unavailable }
         let body = try await collectBeforeDeadline(response, maximumBytes: maximumBytes, deadline: deadline, requiredContentType: requiredContentType)
         try await client.shutdown()
-        return body
+        return .body(body)
       } catch {
         try? await client.shutdown()
         throw error
+      }
+    }
+  }
+
+  enum FetchHop {
+    case redirect(String)
+    case body(Data)
+  }
+
+  /// Every hop retains URL policy checks and the caller's single deadline. The
+  /// transport separately validates and pins the public DNS address on each hop.
+  static func fetchFollowingRedirects(url: String, maximumRedirects: Int,
+    deadline: ContinuousClock.Instant, validateURL: (@Sendable (String) -> Bool)? = nil,
+    fetch: (String) async throws -> FetchHop) async throws -> Data {
+    guard (0...10).contains(maximumRedirects) else { throw PDSAccessTokenAttestationError.invalid }
+    var current = url
+    for hop in 0...maximumRedirects {
+      guard ContinuousClock.now < deadline else { throw PDSAccessTokenAttestationError.unavailable }
+      if let validateURL, !validateURL(current) { throw PDSAccessTokenAttestationError.invalid }
+      guard let components = URLComponents(string: current), components.host != nil,
+        components.scheme == "https", components.user == nil, components.password == nil
+      else { throw PDSAccessTokenAttestationError.invalid }
+      switch try await fetch(current) {
+      case .body(let body): return body
+      case .redirect(let location):
+        guard hop < maximumRedirects,
+          let next = URL(string: location, relativeTo: URL(string: current))?.absoluteURL.absoluteString
+        else { throw PDSAccessTokenAttestationError.unavailable }
+        current = next
       }
     }
     throw PDSAccessTokenAttestationError.unavailable

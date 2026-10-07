@@ -1028,8 +1028,8 @@
         },
         {
           "path": "packages/swift/GatewayCore/Sources/GatewayCore/Services/PublicMediaFetcher.swift",
-          "sha256": "35ad5c31bd22e28c4ee70dbbf218918dd10379192f6bd002c5869f902d3a6ecd",
-          "lines": 151,
+          "sha256": "127400d72540d119fcfe2245a2d253c07633cc799e41c26e9d59e6dc1c559217",
+          "lines": 175,
           "publicDeclarations": [
             "public enum PublicMediaFetcher {",
             "public static func stream(url: String, httpClient: HTTPClient, range: String?) async throws -> (",
