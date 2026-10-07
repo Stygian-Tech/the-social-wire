@@ -95,71 +95,24 @@ filter_changed apple \
   'packages/swift/ReadStateCore/**' \
   '.github/workflows/ci.yml'
 
-# Shared Go manifests also affect Swift images because their Go schema gate
-# resolves the local module. Keep those image checks in sync with Docker COPY.
-
-filter_changed operations \
-  'packages/go/go.mod' \
-  'packages/go/go.sum' \
-  'database/migrations/**' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/operations/**' \
-  'packages/swift/GatewayCore/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'packages/swift/OperationsCore/**' \
-  'railway/operations.json' \
-  '.github/workflows/ci.yml'
+# Retained Swift package contracts remain independent from retired service runtimes.
+# Shared Go hosts and their schema gates are checked once by go_packages below.
 
 filter_changed redis \
   'packages/swift/SocialWireRedis/**' \
   '.github/workflows/ci.yml'
 
-filter_changed gateway \
-  'packages/go/go.mod' \
-  'packages/go/go.sum' \
+filter_changed shared_swift \
   'database/migrations/**' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/gateway/**' \
   'packages/swift/GatewayCore/**' \
+  'packages/swift/OperationsCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
   'packages/swift/FinanceCore/**' \
   'packages/swift/SportsCore/**' \
-  'railway/gateway.json' \
   '.github/workflows/ci.yml'
-
-filter_changed appview \
-  'packages/go/go.mod' \
-  'packages/go/go.sum' \
-  'services/jetstream-ingest/cmd/schema-ready/**' \
-  'services/jetstream-ingest/internal/schemaready/**' \
-  'services/jetstream-ingest/go.mod' \
-  'services/jetstream-ingest/go.sum' \
-  'services/appview/**' \
-  'database/migrations/**' \
-  'packages/swift/GatewayCore/**' \
-  'packages/swift/ThinAppViewCore/**' \
-  'packages/swift/ReadStateCore/**' \
-  'packages/swift/OperationsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
-  'railway/appview.json' \
-  '.github/workflows/ci.yml'
-
-
 
 filter_changed jetstream_ingest \
   'packages/go/**' \
@@ -192,10 +145,7 @@ filter_changed indexing_worker \
 
 filter_changed wire_corpus_edge \
   'services/wire-corpus-edge/**' \
-  'packages/swift/WireCore/**' \
-  'packages/swift/FinanceCore/**' \
-  'packages/swift/SportsCore/**' \
-  'packages/swift/SocialWireRedis/**' \
+  'packages/go/**' \
   'database/migrations/**' \
   'scripts/verify-wire-corpus-serving.sql' \
   'railway/wire-corpus-edge.json' \
@@ -283,7 +233,16 @@ filter_changed podcast_worker \
   '.railway/**' \
   'package.json' \
   'bun.lock'
+
 filter_changed go_packages \
+  'services/gateway/**' \
+  'services/appview/**' \
+  'services/operations/**' \
+  'services/wire-corpus-edge/**' \
+  'railway/gateway.json' \
+  'railway/appview.json' \
+  'railway/operations.json' \
+  'railway/wire-corpus-edge.json' \
   'services/*/go.mod' \
   'services/*/go.sum' \
   'services/*/cmd/**' \

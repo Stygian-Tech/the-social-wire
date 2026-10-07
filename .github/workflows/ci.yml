@@ -28,9 +28,7 @@ jobs:
       operations_web: ${{ steps.filter.outputs.operations_web }}
       apple: ${{ steps.filter.outputs.apple }}
       redis: ${{ steps.filter.outputs.redis }}
-      gateway: ${{ steps.filter.outputs.gateway }}
-      appview: ${{ steps.filter.outputs.appview }}
-      operations: ${{ steps.filter.outputs.operations }}
+      shared_swift: ${{ steps.filter.outputs.shared_swift }}
       go_packages: ${{ steps.filter.outputs.go_packages }}
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
       wire_ingest: ${{ steps.filter.outputs.wire_ingest }}
@@ -153,33 +151,6 @@ jobs:
       - name: Report iOS coverage
         run: xcrun xccov view --report "$RUNNER_TEMP/SocialWireTests.xcresult"
 
-  gateway:
-    name: Gateway
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v6
-      - name: Cache Gateway packages
-        uses: actions/cache@v5
-        with:
-          path: |
-            packages/swift/GatewayCore/.build
-            packages/swift/SocialWireRedis/.build
-            services/gateway/.build
-          key: ${{ runner.os }}-swift-gateway-6.2.4-${{ hashFiles('services/gateway/Package.resolved', 'packages/swift/GatewayCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved', 'packages/swift/SocialWireRedis/Package.resolved') }}
-      - uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
-          skip-verify-signature: true
-      - name: Test GatewayCore
-        working-directory: packages/swift/GatewayCore
-        run: swift test
-      - name: Test Gateway
-        working-directory: services/gateway
-        run: swift test
-
   redis:
     name: SocialWire Redis
     needs: changes
@@ -208,23 +179,23 @@ jobs:
         env:
           REDIS_INTEGRATION_URL: redis://127.0.0.1:6379
 
-  appview:
-    name: AppView
+  shared-swift:
+    name: Retained Swift Contracts
     needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.appview == 'true'
+    if: needs.changes.result == 'success' && needs.changes.outputs.shared_swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: appview_wire_test
+          POSTGRES_DB: socialwire_shared_test
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d appview_wire_test"
+          --health-cmd "pg_isready -U postgres -d socialwire_shared_test"
           --health-interval 2s
           --health-timeout 2s
           --health-retries 30
@@ -233,14 +204,21 @@ jobs:
       - name: Apply database migrations for AppView integration tests
         uses: ./.github/actions/prepare-postgres
         with:
-          database-url: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test
-      - name: Cache AppView
+          database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test
+          postgres-container: ${{ job.services.postgres.id }}
+      - name: Cache retained Swift packages
         uses: actions/cache@v5
         with:
           path: |
+            packages/swift/GatewayCore/.build
+            packages/swift/ThinAppViewCore/.build
+            packages/swift/ReadStateCore/.build
+            packages/swift/OperationsCore/.build
             packages/swift/SocialWireRedis/.build
-            services/appview/.build
-          key: ${{ runner.os }}-swift-appview-6.2.4-${{ hashFiles('services/appview/Package.resolved', 'packages/swift/GatewayCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved', 'packages/swift/SocialWireRedis/Package.resolved') }}
+            packages/swift/WireCore/.build
+            packages/swift/FinanceCore/.build
+            packages/swift/SportsCore/.build
+          key: ${{ runner.os }}-swift-shared-6.2.4-${{ hashFiles('packages/swift/**/Package.resolved') }}
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -251,93 +229,28 @@ jobs:
       - name: Test retained AppView shared contracts
         working-directory: packages/swift/ThinAppViewCore
         env:
-          THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test?sslmode=disable
-          PODCAST_PRIVATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test?sslmode=disable
+          THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
+          PODCAST_PRIVATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
         run: swift test
       - name: Test retained Wire and topic domains
         run: |
           (cd packages/swift/WireCore && swift test)
           (cd packages/swift/FinanceCore && swift test)
           (cd packages/swift/SportsCore && swift test)
-      - name: Test AppView
-        working-directory: services/appview
-        env:
-          WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/appview_wire_test?sslmode=disable
+      - name: Test retained Gateway authentication contracts
+        working-directory: packages/swift/GatewayCore
         run: swift test
-
-  operations:
-    name: Operations
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.operations == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: socialwire_operations_test
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d socialwire_operations_test"
-          --health-interval 2s
-          --health-timeout 2s
-          --health-retries 30
-    steps:
-      - uses: actions/checkout@v6
-      - name: Preload statement statistics for telemetry integration tests
-        env:
-          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
-        run: |
-          docker exec "$POSTGRES_CONTAINER" psql -U postgres -d socialwire_operations_test -v ON_ERROR_STOP=1 \
-            -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'"
-          docker restart "$POSTGRES_CONTAINER"
-          for attempt in $(seq 1 30); do
-            echo "Waiting for Postgres after preload restart ($attempt/30)"
-            if docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d socialwire_operations_test; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs "$POSTGRES_CONTAINER"
-          exit 1
-      - name: Apply telemetry database migrations
-        uses: ./.github/actions/prepare-postgres
-        with:
-          database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test
-      - name: Verify statement statistics are available
-        env:
-          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
-        run: |
-          docker exec "$POSTGRES_CONTAINER" psql -U postgres -d socialwire_operations_test -v ON_ERROR_STOP=1 \
-            -c "SELECT count(*) FROM pg_stat_statements"
-      - name: Cache Operations packages
-        uses: actions/cache@v5
-        with:
-          path: |
-            packages/swift/OperationsCore/.build
-            services/operations/.build
-          key: ${{ runner.os }}-swift-operations-6.2.4-${{ hashFiles('packages/swift/OperationsCore/Package.resolved', 'services/operations/Package.resolved') }}
-      - uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
-          skip-verify-signature: true
       - name: Test OperationsCore
         working-directory: packages/swift/OperationsCore
         env:
-          OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test?sslmode=disable
+          OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
         run: swift test --skip 'PostgresRoleLeaseAuthorityTests|PostgresRoleLeaseDiagnosticIntegrationTests|PostgresRoleLeaseDiagnosticTransportTests|PostgresIngestionCensusBudgetTests'
       - name: Test lease deadlines without unrelated test load
         working-directory: packages/swift/OperationsCore
         env:
-          OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test?sslmode=disable
+          OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
         # Integration tests still exercise their own concurrent transactions.
         run: swift test --skip-build --no-parallel --filter 'PostgresRoleLeaseAuthorityTests|PostgresRoleLeaseDiagnosticIntegrationTests|PostgresRoleLeaseDiagnosticTransportTests|PostgresIngestionCensusBudgetTests'
-      - name: Test Operations
-        working-directory: services/operations
-        run: swift test
 
   # Real PostgreSQL transactions and actual Swift oracles verify the local Go
   # foundation; this job participates in the required aggregate branch gate.
@@ -346,7 +259,7 @@ jobs:
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.go_packages == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:17-alpine
@@ -380,6 +293,7 @@ jobs:
         uses: ./.github/actions/prepare-postgres
         with:
           database-url: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test
+          postgres-container: ${{ job.services.postgres.id }}
       - name: Select branch-scoped podcast integration coverage
         run: |
           set -euo pipefail
@@ -557,15 +471,6 @@ jobs:
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw_release_corpus_boundary TEMPLATE socialwire_wire_corpus_test'
           bun test packages/spec/__tests__/wire-corpus-serving-verifier-postgres.test.ts
-      - uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
-          skip-verify-signature: true
-      - name: Test The Wire Corpus Edge
-        working-directory: services/wire-corpus-edge
-        env:
-          WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test?sslmode=disable
-        run: swift test
 
   database-migrator:
     name: Database Migrator
@@ -781,9 +686,7 @@ jobs:
       - operations-web
       - apple
       - redis
-      - gateway
-      - appview
-      - operations
+      - shared-swift
       - go-packages
       - jetstream-ingest
       - wire-ingest
@@ -805,9 +708,7 @@ jobs:
           OPERATIONS_WEB_FLAG: ${{ needs.changes.outputs.operations_web }}
           APPLE_FLAG: ${{ needs.changes.outputs.apple }}
           REDIS_FLAG: ${{ needs.changes.outputs.redis }}
-          GATEWAY_FLAG: ${{ needs.changes.outputs.gateway }}
-          APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
-          OPERATIONS_FLAG: ${{ needs.changes.outputs.operations }}
+          SHARED_SWIFT_FLAG: ${{ needs.changes.outputs.shared_swift }}
           GO_PACKAGES_FLAG: ${{ needs.changes.outputs.go_packages }}
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
           WIRE_INGEST_FLAG: ${{ needs.changes.outputs.wire_ingest }}
@@ -823,9 +724,7 @@ jobs:
           OPERATIONS_WEB_RESULT: ${{ needs.operations-web.result }}
           APPLE_RESULT: ${{ needs.apple.result }}
           REDIS_RESULT: ${{ needs.redis.result }}
-          GATEWAY_RESULT: ${{ needs.gateway.result }}
-          APPVIEW_RESULT: ${{ needs.appview.result }}
-          OPERATIONS_RESULT: ${{ needs.operations.result }}
+          SHARED_SWIFT_RESULT: ${{ needs.shared-swift.result }}
           GO_PACKAGES_RESULT: ${{ needs.go-packages.result }}
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
           WIRE_INGEST_RESULT: ${{ needs.wire-ingest.result }}
@@ -866,9 +765,7 @@ jobs:
           check "$OPERATIONS_WEB_FLAG" "$OPERATIONS_WEB_RESULT" "Operations Web"
           check "$APPLE_FLAG" "$APPLE_RESULT" "Apple"
           check "$REDIS_FLAG" "$REDIS_RESULT" "SocialWire Redis"
-          check "$GATEWAY_FLAG" "$GATEWAY_RESULT" "Gateway"
-          check "$APPVIEW_FLAG" "$APPVIEW_RESULT" "AppView"
-          check "$OPERATIONS_FLAG" "$OPERATIONS_RESULT" "Operations"
+          check "$SHARED_SWIFT_FLAG" "$SHARED_SWIFT_RESULT" "Retained Swift Contracts"
           check "$GO_PACKAGES_FLAG" "$GO_PACKAGES_RESULT" "Repository-local Go Packages"
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
           check "$WIRE_INGEST_FLAG" "$WIRE_INGEST_RESULT" "The Wire Global Ingest"
