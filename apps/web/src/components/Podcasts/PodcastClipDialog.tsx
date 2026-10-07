@@ -47,7 +47,7 @@ export function PodcastClipDialog({ player, episode }: { player: PlayerContext; 
         <DialogDescription>Now Playing: {episode.title}</DialogDescription>
       </DialogHeader>
       {open ? <div className="min-w-0 space-y-5">
-        <PodcastChapters chapters={episode.chapters} position={player.position} onSeek={player.seek} />
+        <PodcastChapters chapters={episode.chapters} artworkSources={[episode.artworkUrl, episode.showArtworkUrl]} position={player.position} onSeek={player.seek} />
         <PodcastTranscripts transcripts={transcripts} />
         {episode.visibility !== "private" ? <PodcastClips episode={episode} /> : <p className="text-sm text-muted-foreground">Clips Are Unavailable for Private Feeds</p>}
       </div> : null}

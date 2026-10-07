@@ -1,6 +1,7 @@
 import { afterEach, expect, it, spyOn } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PodcastChapters } from "@/components/Podcasts/PodcastChapters";
+import { PodcastChapterTimeline } from "@/components/Podcasts/PodcastChapterTimeline";
 import { PodcastShowDetails } from "@/components/Podcasts/PodcastShowDetails";
 import { PodcastArtwork } from "@/components/Podcasts/PodcastArtwork";
 import * as auth from "@/hooks/useAuth";
@@ -37,6 +38,41 @@ it("chapter selection keeps original timestamps and follows chapter boundaries",
   expect(seeks).toEqual([90]);
   view.rerender(<PodcastChapters chapters={chapters} position={90} onSeek={time => seeks.push(time)} />);
   expect(screen.getByRole("button",{name:/Second/}).getAttribute("aria-current")).toBe("true");
+});
+it("the player chapter list shows chapter art, falls back to episode then show art, and preserves sorted seeks", () => {
+  const seeks: number[] = [];
+  render(<PodcastChapterTimeline chapters={[
+    {startSeconds:90,title:"Second"},
+    {startSeconds:0,title:"Opening",artworkUrl:"https://example.com/chapter.jpg"},
+    {startSeconds:400,title:"Outside Episode",artworkUrl:"https://example.com/outside.jpg"},
+  ]} artworkSources={["https://example.com/episode.jpg","https://example.com/show.jpg"]} duration={300} position={0} seek={time => seeks.push(time)} />);
+  fireEvent.click(screen.getByText("Chapters (2)"));
+  const list = screen.getByRole("list");
+  const buttons = within(list).getAllByRole("button");
+  expect(buttons.map(button => button.textContent)).toEqual(["Opening0:00","Second1:30"]);
+  expect(screen.queryByText("Outside Episode")).toBeNull();
+  const image = buttons[0]!.querySelector("img")!;
+  expect(image.getAttribute("src")).toBe("https://example.com/chapter.jpg");
+  expect(image.getAttribute("width")).toBe("32");
+  expect(buttons[1]!.querySelector("img")?.getAttribute("src")).toBe("https://example.com/episode.jpg");
+  fireEvent.error(image);
+  expect(buttons[0]!.querySelector("img")?.getAttribute("src")).toBe("https://example.com/episode.jpg");
+  fireEvent.error(buttons[0]!.querySelector("img")!);
+  expect(buttons[0]!.querySelector("img")?.getAttribute("src")).toBe("https://example.com/show.jpg");
+  fireEvent.click(within(list).getByRole("button",{name:/Second/}));
+  expect(seeks).toEqual([90]);
+});
+it("the dialog chapter list uses chapter artwork and shared episode or show fallbacks", () => {
+  render(<PodcastChapters chapters={[
+    {startSeconds:0,title:"Opening",artworkUrl:"https://example.com/chapter.jpg"},
+    {startSeconds:90,title:"Second"},
+  ]} artworkSources={[undefined,"https://example.com/show.jpg"]} position={0} onSeek={() => {}} />);
+  const opening = screen.getByRole("button",{name:/Opening/});
+  expect(opening.querySelector("img")?.getAttribute("src")).toBe("https://example.com/chapter.jpg");
+  fireEvent.error(opening.querySelector("img")!);
+  expect(opening.querySelector("img")?.getAttribute("src")).toBe("https://example.com/show.jpg");
+  expect(screen.getByRole("button",{name:/Second/}).querySelector("img")?.getAttribute("src")).toBe("https://example.com/show.jpg");
+  expect(opening.getAttribute("aria-current")).toBe("true");
 });
 it("private artwork uses viewer-authenticated bytes and revokes them on account changes", async () => {
   let did = "did:plc:viewer-a";
