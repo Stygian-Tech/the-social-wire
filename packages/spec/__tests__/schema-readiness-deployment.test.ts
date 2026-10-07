@@ -19,7 +19,9 @@ describe("schema readiness deployment contract", () => {
       const entrypoint = JSON.parse(dockerfile.match(/^ENTRYPOINT (.+)$/m)![1]);
       expect(entrypoint[0]).toBe("/usr/local/bin/schema-ready");
       expect(entrypoint.slice(-2)).toEqual(["--", `/usr/local/bin/${executable}`]);
-      expect(entrypoint.includes("--allow-local-sqlite")).toBe(["gateway", "appview"].includes(service));
+      // Every deployed Go consumer requires PostgreSQL; local SQLite is a retained
+      // Swift package test backend, never a service-image startup bypass.
+      expect(entrypoint.includes("--allow-local-sqlite")).toBe(false);
       expect(dockerfile).toContain("COPY database/migrations /src/database/migrations");
       expect(dockerfile).toContain("--generate-manifest /src/database/migrations");
       expect(dockerfile).toContain("/etc/socialwire/required-migrations.txt");

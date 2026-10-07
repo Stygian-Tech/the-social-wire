@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stygian-tech/the-social-wire/packages/go/financecore"
 	"github.com/stygian-tech/the-social-wire/packages/go/operationscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
@@ -21,16 +22,60 @@ func topicDB(t *testing.T) *sql.DB {
 	if url == "" {
 		t.Skip("set isolated SOCIALWIRE_GO_TOPICS_TEST_DATABASE_URL")
 	}
-	db, err := sql.Open("pgx", url)
+	config, err := pgx.ParseConfig(url)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if config.Host != "127.0.0.1" || !strings.Contains(config.Database, "test") {
+		t.Fatal("requires disposable loopback topic database")
+	}
+	for _, fallback := range config.Fallbacks {
+		if fallback.Host != "127.0.0.1" {
+			t.Fatal("requires disposable loopback topic database")
+		}
+	}
+	db := stdlib.OpenDB(*config)
 	t.Cleanup(func() { db.Close() })
 	if err := db.Ping(); err != nil {
 		t.Fatal(err)
 	}
+	// The worker publishes complete catalogs and dynamic generation IDs, so
+	// deleting only fixed fixture IDs cannot restore an empty serving baseline.
+	// All topic tests use this explicitly isolated database and run serially.
+	t.Cleanup(func() { cleanTopicFixture(t, db) })
+	cleanTopicFixture(t, db)
 	return db
 }
+func cleanTopicFixture(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, table := range []string{"finance_generations", "sports_generations", "finance_article_analysis", "sports_article_analysis", "finance_catalog_snapshots", "sports_catalog_snapshots", "finance_instruments", "sports_entities", "sports_events", "sports_standings", "sports_schedule_status", "sports_provider_refresh"} {
+		if _, err := db.Exec("DELETE FROM " + table); err != nil {
+			t.Errorf("clean isolated topic fixture %s: %v", table, err)
+		}
+	}
+	if _, err := db.Exec(`DELETE FROM wire_items WHERE canonical_key LIKE 'topic-test:%'`); err != nil {
+		t.Errorf("clean topic wire fixtures: %v", err)
+	}
+}
+
+func refreshSportsFixture(t *testing.T, db *sql.DB, worker *Worker, at time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	store := operationscore.PostgresRoleLeaseStore{DB: db, Environment: "dev"}
+	lease, err := store.Acquire(ctx, "indexing.wire-materializer", "topic-test-catalog", 30*time.Second)
+	if err != nil || lease == nil {
+		t.Fatalf("catalog fixture lease: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Release(ctx, lease.RoleLeaseAuthority); err != nil {
+			t.Errorf("release catalog fixture lease: %v", err)
+		}
+	})
+	if err := worker.RefreshCatalog(ctx, &lease.RoleLeaseAuthority, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func exec(t *testing.T, db *sql.DB, query string, args ...any) {
 	t.Helper()
 	if _, err := db.Exec(query, args...); err != nil {
@@ -52,15 +97,6 @@ func TestTopicPostgresProjectionGenerationAndFences(t *testing.T) {
 		t.Fatalf("lease %v", err)
 	}
 	t.Cleanup(func() { store.Release(ctx, lease.RoleLeaseAuthority) })
-	exec(t, db, `DELETE FROM finance_article_analysis`)
-	exec(t, db, `DELETE FROM sports_article_analysis`)
-	exec(t, db, `DELETE FROM finance_generations`)
-	exec(t, db, `DELETE FROM sports_generations`)
-	exec(t, db, `DELETE FROM finance_catalog_snapshots`)
-	exec(t, db, `DELETE FROM sports_catalog_snapshots`)
-	exec(t, db, `DELETE FROM finance_instruments`)
-	exec(t, db, `DELETE FROM sports_entities`)
-	exec(t, db, `DELETE FROM wire_items WHERE canonical_key LIKE 'topic-test:%'`)
 	if err := worker.Materialize(ctx, &lease.RoleLeaseAuthority, now); err != nil {
 		t.Fatal(err)
 	}
@@ -130,6 +166,7 @@ func TestTopicProjectorFingerprintCatalogAndAdvisoryFences(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
 	worker, _ := NewWorker(db, map[string]string{"SPORTS_FEED_MODE": "visible"})
+	refreshSportsFixture(t, db, worker, now)
 	catalog, err := worker.sportsCatalog(ctx)
 	if err != nil || catalog == nil {
 		t.Fatalf("catalog required: %v", err)
@@ -185,6 +222,7 @@ func TestTopicProjectionFailureDoesNotSkipOtherDomain(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
 	worker, _ := NewWorker(db, map[string]string{"FINANCE_FEED_MODE": "visible", "FINANCE_CATALOG_RIGHTS_CONFIRMED": "true", "SPORTS_FEED_MODE": "visible"})
+	refreshSportsFixture(t, db, worker, now)
 	// A syntactically valid JSON snapshot with the wrong model shape exercises
 	// Finance failure without disturbing the independent Sports database tables.
 	exec(t, db, `UPDATE finance_catalog_snapshots SET is_active=FALSE`)

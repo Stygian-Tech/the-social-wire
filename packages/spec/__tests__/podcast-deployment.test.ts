@@ -45,15 +45,17 @@ describe("Development podcast deployment graph", () => {
     expect(dockerfile).toContain('ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "/usr/local/bin/bun", "services/podcast-worker/src/index.ts"]');
   });
 
-  it("smoke-tests the runtime executable and real database gate after building the image", () => {
+  it("tests the source entrypoint database gate without building a deployment image", () => {
     const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
     const job = workflow.slice(workflow.indexOf("  podcast-worker:"), workflow.indexOf("  required:"));
-    expect(job).toContain("Smoke test runtime entrypoint and database gate");
-    expect(job).toContain("test -x /usr/local/bin/bun && /usr/local/bin/bun --version");
-    expect(job).toContain("--env APP_ENV=dev the-social-wire-podcast-worker:test");
+    expect(job).toContain("Test source entrypoint database gate");
+    expect(job).toContain('go build -o "$RUNNER_TEMP/schema-ready-test" ./cmd/schema-ready');
+    expect(job).toContain("env -u DATABASE_URL APP_ENV=dev");
     expect(job).toContain("schema readiness requires DATABASE_URL");
     expect(job).toContain("absolute application path");
-    expect(job.indexOf("Smoke test runtime entrypoint")).toBeGreaterThan(job.indexOf("Build runtime image"));
+    expect(job).not.toContain("docker build");
+    expect(job).toContain("bun --cwd services/podcast-worker typecheck");
+    expect(job).toContain("bun --cwd services/podcast-worker test");
   });
 
   it("does not provision or enable any podcast resource in Production", async () => {

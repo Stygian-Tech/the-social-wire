@@ -2360,6 +2360,1630 @@
       }
     ]
   },
+  "retiredServices": {
+    "sourceRevision": "8fcbaa12cc9ee25cf9df3f0d19a09155e2e4b206",
+    "services": [
+      {
+        "name": "gateway",
+        "replacement": "services/gateway/cmd",
+        "files": [
+          {
+            "path": "services/gateway/Dockerfile",
+            "sha256": "1c4fb868a34aefcfc18009834c4afcd96c5e09d218ffe5439204fa92a00c181f",
+            "lines": 62
+          },
+          {
+            "path": "services/gateway/Package.resolved",
+            "sha256": "f4f105bc1fc7dc3715ee4fd4e002cac2e69d460d4dc60b44fd6da7f28d11a60d",
+            "lines": 310
+          },
+          {
+            "path": "services/gateway/Package.swift",
+            "sha256": "1c3483605d54bca89e4829800d4e4ba330ed5c2ed22ad59ad5f4b99f34aea82c",
+            "lines": 63
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Cache/CacheStore.swift",
+            "sha256": "f6b706df334b6985149480d4fd781332ac8a3d235d8b3bc6bc6ef01d6f4a2aa8",
+            "lines": 61
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Cache/PostgresCache.swift",
+            "sha256": "4b789b81404bb4404ff3f3b1fa73c8a820cc1e464e581ea2cdd3df5e1dc2b532",
+            "lines": 65
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Cache/RedisPdsRepoRecordCacheRuntime.swift",
+            "sha256": "2a0711412307df1752872874be221a16cae57a86ff1050c95f5e6cb9b3701003",
+            "lines": 93
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Cache/RedisPdsRepoRecordCacheStore.swift",
+            "sha256": "d88b5d6741fe359bf3930681e138ca66786ad5acbe182b8ab4fe3c0e81a5d632",
+            "lines": 122
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Cache/SQLiteCache.swift",
+            "sha256": "915bc21b2fa130ee86e15cf4b599c7147b74800f1601eb3be77f5340a612ce1c",
+            "lines": 131
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Cache/UnavailablePdsRepoRecordCacheStore.swift",
+            "sha256": "794986a11487ede1c585328b5e196b1a0a2ff39f8b2d589ecea2be3d290ab676",
+            "lines": 26
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/GatewayCommand.swift",
+            "sha256": "7937688d439688926b6a31c4bb010c04dc3308a0f29092cf70dbf1ca29aea95d",
+            "lines": 250
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/GatewayRouterBuilder.swift",
+            "sha256": "0b0cdf5329f5173732951e27e588ed5b10adefb4246671ed0ca60d98e3cb2377",
+            "lines": 139
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/GatewayServiceConfig.swift",
+            "sha256": "715dc9c4048fcae1bd867d5417a92cfb6edb3dfd262f30ce9f5bea0260402362",
+            "lines": 120
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Middleware/XRPCErrorMiddleware.swift",
+            "sha256": "df9df6ae0b1a2a98167b34aade702b14dc232df027917120afeb7c5370dc77c1",
+            "lines": 54
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/AppViewProxyRoutes.swift",
+            "sha256": "bec2ba58cfa987bbc434df8e70e3b007774c8589ff2c7e2323428d863d292933",
+            "lines": 498
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/CircleProxyRoutes.swift",
+            "sha256": "1357970f2917abe2d1aee90abbb7fee171d4a85d2c496c34861921cfbe526c70",
+            "lines": 117
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/ClientPerformanceTelemetryRoutes.swift",
+            "sha256": "2beaaad2dd180037aacd79c8dbb1cb2a2f5b4f302073aa3e8c9eb372b31a66da",
+            "lines": 67
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/LatrProxyRoutes.swift",
+            "sha256": "d537fd5f16320bac0e2742ad0f58b0088ce49af4c6fa3ce3ec095ade7024f484",
+            "lines": 232
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/OperationsProxyRoutes.swift",
+            "sha256": "b3f2049d9288b2838c4c66ce7e53ba84d614854c68d8680ac822d857fc885992",
+            "lines": 262
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/PodcastMediaProxyRoutes.swift",
+            "sha256": "4ab2b3a03ae1c528034222bcd64cbb250c4bc077e8205f9feafe276ee7884f4e",
+            "lines": 68
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/SyncRoutes.swift",
+            "sha256": "ce26118ea844820cf97334f21bdf8ec918a365162c3fe04e1b2400e4697bd32b",
+            "lines": 84
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Routes/WireProxyRoutes.swift",
+            "sha256": "5093e358279a8bdef240088a6ea3bf310bbd03931d5d7f8f159aa12f9c7ca739",
+            "lines": 197
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/AppViewProxyFailure.swift",
+            "sha256": "222db166e95a28ffeedcaec54164032aedd98c1aad0f9a5d1609a50a4faacfbf",
+            "lines": 39
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/AppViewProxyRequestTrace.swift",
+            "sha256": "ae6bab4982675646c205818e8252ddf4e3d76cdded6f362a77d3745f3cee3307",
+            "lines": 74
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/GatewayDependencyHTTPProbe.swift",
+            "sha256": "1b0ebc4a2d42c297fd12cb475781f977d5ab912622c16ddb2f69ac9438e8b267",
+            "lines": 33
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/GatewayIngestionHealth.swift",
+            "sha256": "919da1aca4cfa1cfeb98342d51d8e28d756144bc84a18433f4d4cd402ae1ecea",
+            "lines": 68
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/GatewayIngestionHealthSnapshot.swift",
+            "sha256": "2c42bce21f915ae9b45300c5a65391f70d89b62a06c573d28268a5117637c5c2",
+            "lines": 33
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/GatewayReadinessProbe.swift",
+            "sha256": "cfdcb472cbd58b84ac2d61151acd20beba3743acab08db7f99a27ef38d303537",
+            "lines": 90
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/LatrIosProxyCredentials.swift",
+            "sha256": "428f93107d05c22543a0a36249ff9637512358b05cb0798301759877484a6b34",
+            "lines": 78
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/PreferenceSyncService.swift",
+            "sha256": "2f6906c79aab24ac08ad891de0b8b8b8882b051dac11dc6ac6f84f6af672e621",
+            "lines": 477
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Services/WireRequestLimiter.swift",
+            "sha256": "6ffe9c8774b8fbf8cacd4d7e0c5f8b9772821e6c0b92f18420f3fcac61acb8b7",
+            "lines": 109
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Telemetry/ClientPerformanceEvent.swift",
+            "sha256": "3222c9430f57cc5284e8d8bf6ac99e33c4014d3e0edcf5357c3b5774cb33e655",
+            "lines": 7
+          },
+          {
+            "path": "services/gateway/Sources/Gateway/Telemetry/ClientPerformanceRequest.swift",
+            "sha256": "9f42b75d1c975b5719771835520e3d32545c72d30fbf7729c409a2613483bb8f",
+            "lines": 8
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/AppViewProxyFailureTests.swift",
+            "sha256": "fed6154f85d35dc745c7f2e23e4c02ee0b9444ba7e1798e8285637c38a2958d4",
+            "lines": 226
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/AppViewProxyLogCapture.swift",
+            "sha256": "ff6033c175f52ccc348d8dfc5b9b445fe74cdc40d54dbaa58187d9eadd058ebe",
+            "lines": 30
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/FinanceProxyContractTests.swift",
+            "sha256": "31676fe9df84e170423b84bc4ea0451c8669e35f974469b57d0058fd0fc7158f",
+            "lines": 41
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/GatewayIngestionHealthTests.swift",
+            "sha256": "e725b378d93726cb855af0a1aa3a79971416eebba21f67ed5cd5c91bce238942",
+            "lines": 199
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/GatewayReadinessProbeTests.swift",
+            "sha256": "1965b9cf356cedf8fa49fdfb93565803921aeef81ba142beb3324cb5c274bd6d",
+            "lines": 105
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/GatewayServiceConfigTests.swift",
+            "sha256": "e7d7d6c6aa66cb1480223194ed7715e69b346bf164e612e32636794c6b9feeb7",
+            "lines": 73
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/GatewaySmokeTests.swift",
+            "sha256": "c6e61d1016896dd1768620d707b4f2174e14f1072d4318bd6d78b5ed5bb48cdf",
+            "lines": 6
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/HTTPRouteContractTests.swift",
+            "sha256": "99bf70aecbd13b3402bff63451d2bfcf8dddb3f20345785dd1087f87712e9c10",
+            "lines": 632
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/LatrIosProxyCredentialsTests.swift",
+            "sha256": "cfb28f7e65211823f952bafa5da8e43f1a849b572cd682156719a0c617d29f8d",
+            "lines": 35
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/LatrStateProxyTests.swift",
+            "sha256": "13d684ce7cf82c368088ddda7c5eb365bf4b5b218be6fbe8b87a8b0c484926a7",
+            "lines": 72
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/PodcastMediaProxyTests.swift",
+            "sha256": "71f5f21432437c4ff01f83460f11da7a54d5585e021e0c352f19b77f771373b7",
+            "lines": 79
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/PodcastSearchProxyTests.swift",
+            "sha256": "f56bfe6b08d2a768ddf5eea3e3aa7ab43a4d370ee69b220a780f666ec0ef20b9",
+            "lines": 55
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/PreferenceSyncServiceTests.swift",
+            "sha256": "e3fe6d45930c254c85a54a0c1010d9e0a2c58d070cb41664457847825c77ceea",
+            "lines": 129
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/ReadAgeStreamingProxyTests.swift",
+            "sha256": "b038f0f41d97c9efa595c9d3cf3b25b86981018567ffd46549e80f80ead2f9b5",
+            "lines": 103
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/SQLiteCacheTests.swift",
+            "sha256": "c640b8fb719d2f964790244b34d79e63be968e819141d5aefb7e9075b4316b3a",
+            "lines": 35
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/SportsCatalogProxySizeTests.swift",
+            "sha256": "f0dacf3608ce8e58a16910dd4176d0571da5fd122da20cf7115a90bc193d8bc0",
+            "lines": 84
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/SportsProxyContractTests.swift",
+            "sha256": "97e56c0da8e7a855bb3a3fc66f4c4129254ed937dabade84d511de7146f25ecf",
+            "lines": 58
+          },
+          {
+            "path": "services/gateway/Tests/GatewayTests/WireRequestLimiterTests.swift",
+            "sha256": "f6c56a702afb87bc1c63bb7b860705681871929b6ea092f1353baddf285c5a32",
+            "lines": 84
+          }
+        ]
+      },
+      {
+        "name": "appview",
+        "replacement": "services/appview/cmd",
+        "files": [
+          {
+            "path": "services/appview/Dockerfile",
+            "sha256": "ad7109c7b85b0b63e7dd47086ce9985d7d5d7fc867dd74c911449a0e392bf67e",
+            "lines": 70
+          },
+          {
+            "path": "services/appview/Package.resolved",
+            "sha256": "8d583338d25d81196ea9051bbcce7c57809983f530b26936638879157127f656",
+            "lines": 310
+          },
+          {
+            "path": "services/appview/Package.swift",
+            "sha256": "dd1ed784ea8aea11ada074f42a40f31872baaca7a85942f92c48204f61a4a6c9",
+            "lines": 75
+          },
+          {
+            "path": "services/appview/Sources/AppView/AppViewCommand.swift",
+            "sha256": "0e7598e28e1ab1351b75aee123718cadab3cbb729f9a1be26b1e0a22dc15fdd7",
+            "lines": 397
+          },
+          {
+            "path": "services/appview/Sources/AppView/AppViewRouterBuilder.swift",
+            "sha256": "215420ba4abeaecd41389386486c45912b34d9bc236af46653637f91f844e0c8",
+            "lines": 226
+          },
+          {
+            "path": "services/appview/Sources/AppView/AppViewServiceConfig.swift",
+            "sha256": "9f543e6f79a262aea0e25d2db9652e8fe2c2f8deca8169dad726bca691e02cdb",
+            "lines": 59
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/ATProtoCircleProfileReader.swift",
+            "sha256": "72ad8ab2a1a3031f3b4b2537dbabaef7097b19913f17911f3290047719ed8142",
+            "lines": 53
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/ATProtoCirclePublicFollowReader.swift",
+            "sha256": "5d9b243f1eba6839edfb6790a1dc3a1272de54f9cb04e921c9ab7ba01d6fe600",
+            "lines": 94
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/ATProtoCircleViewerFollowReader.swift",
+            "sha256": "1e7faaee84ee56b2ad7b3cc97f92059617b887d2c7f4f3b9d0057a662ea306b1",
+            "lines": 42
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleCandidateFetching.swift",
+            "sha256": "afb9b280e4d60c79265caefb92e08b6c23822721a6d5fd98151942e86bf49b42",
+            "lines": 12
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleCatalogResponse.swift",
+            "sha256": "3190171f8e6445052771faa7ab6144b9a2d417eadaf4e84d103916923e3b49ba",
+            "lines": 16
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleDiscoveryConfig.swift",
+            "sha256": "c5cf7c6747a3fe7e906c73b653a247c27a8a7e5ae89358d0547a0ee6fd059660",
+            "lines": 55
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleDiscoveryRoutes.swift",
+            "sha256": "82c581501940f5477d9e56d8c9b27058fce1ee8d67d740f81a5314939a8e3fe4",
+            "lines": 72
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleDiscoveryService.swift",
+            "sha256": "1c3995a08a90c7453c2ad7cf277e3a43d8fe19238136029320f85860ed08a32d",
+            "lines": 438
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleDisposableCaching.swift",
+            "sha256": "c25d7c43c9f52218593c6d4cb41bf83d1b0fbe717829bc7088fd5b88feda8367",
+            "lines": 14
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleEditionResponse.swift",
+            "sha256": "554140821851354ceca1bc8f5919817aa6d9b6cc3b72cd89eac04e77a20ab076",
+            "lines": 24
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleFollowList.swift",
+            "sha256": "ef0f6fa431614587fa937390cb5a6ba50399e81b9ed7b82e9ca1f85b562ee60c",
+            "lines": 5
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleFollowPagination.swift",
+            "sha256": "8f07562c84e0b5bb2bff73fa54305f43ec30ff1f92cd81f5034d88fc0a3c46e6",
+            "lines": 13
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphDepth.swift",
+            "sha256": "29c9a6a1829df9049d939891536e75c842915dfb60a17ad7e1a4ebea6fa4d256",
+            "lines": 4
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphMember.swift",
+            "sha256": "2d1c2b32e3274b4275012cd1e17e85ec2be0fcf4e6669d96fc358d2f2cf312d5",
+            "lines": 8
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphSnapshot.swift",
+            "sha256": "26831a2f201661d53255213759207b8cdb05e17e2d26623a4db1d69a9d84e838",
+            "lines": 16
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphSnapshotCaching.swift",
+            "sha256": "a2884a9210e17ffb089fcb6578d296fb5501574634d8cd365e2681906945d85c",
+            "lines": 11
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphSnapshotError.swift",
+            "sha256": "db7613409a0ceb92f6f6f60fe0f9f3022090df0f97494d6984e9416953c769e1",
+            "lines": 6
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphSnapshotFreshness.swift",
+            "sha256": "f0317baf2b2c58494e003096929a5649866c300aeb94acd9e93ca84ea793eb14",
+            "lines": 11
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphSnapshotResult.swift",
+            "sha256": "9433405fe3e1eed06f8a64052ee5c4bf3be45aac8c1109e57bfbd3b7acc7201e",
+            "lines": 8
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphSnapshotService.swift",
+            "sha256": "b7f20e80cd1d09dcfb2ef744516f34d2e011744d80876db18626b229e88fa5ec",
+            "lines": 264
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleGraphSnapshotSource.swift",
+            "sha256": "0695660abe79b5a97d629b90ed47e841c82297dc98f36236637081ecc43c2f29",
+            "lines": 5
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleHiddenItemRequest.swift",
+            "sha256": "95e3bc8c44a071bf6482139b09ed9218498f63b08ca45f674768e1270e5f6b43",
+            "lines": 9
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleHiddenItemResponse.swift",
+            "sha256": "65975a4cc273db54d93909603b5b823b159d13e5f5efb35dbcd06ac825736b6b",
+            "lines": 9
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CirclePrivateStateStoring.swift",
+            "sha256": "7ed4eaa17ccf385e6c9d110b76bcdc904a6267597cec6b7faba5cad88b09bf9d",
+            "lines": 24
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleProfileReading.swift",
+            "sha256": "70ecd276851de66ee83924de1eb7c96a091498966a0d36251d412a363b428280",
+            "lines": 3
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CirclePublicFollowReading.swift",
+            "sha256": "71371c401d9cbb9b6285265c3d2128e35d37b3f2a5426a7cf26d0c13e1fb3d09",
+            "lines": 5
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CirclePublicIdentity.swift",
+            "sha256": "248aa9a25f29f4003cdb6baf39d19f08fbdd66a615915e248ec19131097e57e7",
+            "lines": 11
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CirclePublicationSpotlight.swift",
+            "sha256": "a9a528caa79546ccbc5e3e318bc51dc0d985ebf83da82a83fb082e104b02d6c2",
+            "lines": 12
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleRecentActivityReading.swift",
+            "sha256": "7034b7b4a9cd902fffd9a4d775fd1182e36cbb790955ca1bfd90e53452f324c0",
+            "lines": 6
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleSharer.swift",
+            "sha256": "cc51211662e5cc802879646f271c5d52234ff5b8ba0d51d83ee12c87887f47fd",
+            "lines": 14
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleStableHash.swift",
+            "sha256": "af44eb0dd26b87d9d9fcad7edd0bf92584604c22e8b0a7f20c5bd43e1a26d3a6",
+            "lines": 11
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleStory.swift",
+            "sha256": "c00f25905c62d376fff9a8ecb060b7fb1de3804a7b5f23cea3d2921b7acdd731",
+            "lines": 25
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleStoryRail.swift",
+            "sha256": "b9e32fd3c74e95d28a9bd1a4a92bd422d7a7dffa3e701725f364ad5ae8240072",
+            "lines": 10
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/CircleViewerFollowReading.swift",
+            "sha256": "2ca5404371bb671bdaee666571a7fee74f9909792b2e0b75c949c1ae4d0028fd",
+            "lines": 4
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/InMemoryCirclePrivateStateStore.swift",
+            "sha256": "d918111e4a25bec54e1cdbfba4c4019033fa91de1f6ab16b0a573b0686ce7c01",
+            "lines": 101
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/PostgresCircleCandidateFetcher.swift",
+            "sha256": "508350e585f0a32305ced89addf3a649f9ca72a0d9a50bd6579401b1502cd87f",
+            "lines": 122
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/PostgresCirclePrivateStateStore.swift",
+            "sha256": "350e31acb10a8b7174523b2be1061d900cc755b6414a8152569b4aa1c2c93fb4",
+            "lines": 105
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/PostgresCircleRecentActivityReader.swift",
+            "sha256": "ab3836cd61d53e6ba650d2385b5fd5b53b8881f5c61e1d276daeba3da37f9913",
+            "lines": 41
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/RedisCircleDisposableCache.swift",
+            "sha256": "b8c4dcb9c311d444e993275cbc1fb3ceeacd98f30feca3dc924c3955a868a8a3",
+            "lines": 115
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/RemoteCircleCandidateFetcher.swift",
+            "sha256": "70fa57ac1fc38ea203b1fb40063604ca142158f93a97ce6c4817251a95c99269",
+            "lines": 92
+          },
+          {
+            "path": "services/appview/Sources/AppView/Circle/RemoteCircleRecentActivityReader.swift",
+            "sha256": "5b9a797bc5770a95bcd672a3b2e45dc7256a98e9eef54b06d6c88bdfdd398251",
+            "lines": 43
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceCompositionEvent.swift",
+            "sha256": "1343c63cff0a7a42694b7e5327052bd5e73d17e5b222d6b32718d5cfcb84d0b1",
+            "lines": 1
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceDiscoveryConfig.swift",
+            "sha256": "f2f8748e591eba6f5200c316194c3c07525da358387277f92c1ecdb35519d2aa",
+            "lines": 32
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceDiscoveryRoutes.swift",
+            "sha256": "58f13115200c95e7117583fa1a91f954e9a63f41ca94efb27fb62a9dca1f95ca",
+            "lines": 63
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceFeedAvailability.swift",
+            "sha256": "6c712c79e72f144e47b4ee34f3392a78024b95099fc113304334047186bc55c0",
+            "lines": 31
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceInstrumentSearchResponse.swift",
+            "sha256": "72bd4fb2da786a6259760b9aaf0b685615a73b2e87fae884a98d34dc7fee2678",
+            "lines": 2
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceSectorsResponse.swift",
+            "sha256": "49ef7ccde86382ce8cb1fa67ffa281c31440d5058ebb7a075112511f963e6d34",
+            "lines": 2
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceSelectionProjection.swift",
+            "sha256": "1ff7aee99b15fefe012a1bb9f3b6f34b36f22810e21578303bc00d408cca3a94",
+            "lines": 103
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/FinanceSnapshotRetention.swift",
+            "sha256": "f71ab73a0c66765e8b802a353b9a846acb66a01ce24b70759aba6e98c7360e5a",
+            "lines": 43
+          },
+          {
+            "path": "services/appview/Sources/AppView/Finance/PostgresFinanceFeedStore.swift",
+            "sha256": "c1957b87b68f5652352433ac1fc5138513f667f2fcd9c055cdc37f28de6daa72",
+            "lines": 332
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListCursor.swift",
+            "sha256": "a2273994804bfe7b9db0ce33d03c815607325e548238ec4bb62443f0232e3fd5",
+            "lines": 31
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListDTO.swift",
+            "sha256": "bb9e8c4abfd065318a8f913cfa4b828f86454fe8faad855b3f2ec1437c5a0a98",
+            "lines": 29
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListEnrollment.swift",
+            "sha256": "d4184b0dea5182cb362b8a57db580d0cd901bb2e17f3e332059ea59b753cc714",
+            "lines": 42
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListIdentity.swift",
+            "sha256": "c83d7a0932748572fb4efa7ff4c4d19874bac55f05aed0e24d200ac4d181b444",
+            "lines": 36
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListPublicationDTO.swift",
+            "sha256": "49d8ea6a25b16f3cecb0d54b3e531f1f017ac9fec06033a7dba2866360dd1301",
+            "lines": 15
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListReader.swift",
+            "sha256": "94f94ee9262bc1c8b39866618c394d3cbf88986fed7af5ba0afa216eeab11944",
+            "lines": 71
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListRoutes.swift",
+            "sha256": "7cf8a9bc8953449ef5d1da0cdbd93b5c3484c075ccae9a1ce22afa2312c8fb5d",
+            "lines": 30
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderListsService.swift",
+            "sha256": "57b8105f945e3ff289653f29887f961c5efbe7d43136ae9a7cb4dd6bf8d85482",
+            "lines": 295
+          },
+          {
+            "path": "services/appview/Sources/AppView/Lists/StandardReaderPreparationLimiter.swift",
+            "sha256": "b7ee765dbc8924525bfd8e075814c2f7e4f92072b2b357d57791306f7a51aa60",
+            "lines": 17
+          },
+          {
+            "path": "services/appview/Sources/AppView/Middleware/AppViewFeedErrorMiddleware.swift",
+            "sha256": "b2f4d27968e0557c778472d9abd3cbad243404ede4907f43a1727a1bfe6aba6e",
+            "lines": 78
+          },
+          {
+            "path": "services/appview/Sources/AppView/Middleware/PDSReadStateReadinessMiddleware.swift",
+            "sha256": "e365f8d497bb61de00a90bbd55d438d5f60491100dc26814373b59e267479b30",
+            "lines": 45
+          },
+          {
+            "path": "services/appview/Sources/AppView/Middleware/XRPCErrorMiddleware.swift",
+            "sha256": "b6e29861783b34b25878781520bb0d2a3b76d5cd9cd0dfcaa7220dd1127a558f",
+            "lines": 52
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/MarkReadBeforeRequest.swift",
+            "sha256": "8de2d627b848a54672510bde18bab1b9519c149d208f64d4c893ef79ddb272f9",
+            "lines": 4
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/MarkReadBeforeResponse.swift",
+            "sha256": "54f4c7de5921a4d5009a855989efbedf8cbecc3069471f1fcef6d1ecfd51db22",
+            "lines": 8
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/PDSReadStateConfirmRequest.swift",
+            "sha256": "4081a9a892759b160fe88fca9300a12cdcfbbc08e1e2683d1bf146a66e95f434",
+            "lines": 4
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/PDSReadStateExportRequest.swift",
+            "sha256": "7b4185e1736202f22c4347d1bd26150c3c248e38033c5457c71e4bf105123291",
+            "lines": 7
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/PDSReadStatePrepareRequest.swift",
+            "sha256": "fd1132d21c54b2c0853baac5fee3072a7c0f8375e25cd28126765439cfcf88c3",
+            "lines": 7
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/PDSReadStatePreparedSelection.swift",
+            "sha256": "bb629678649f3f26e74d8623820c0825931eaf09d95b85153ac8b337dc5fd0c0",
+            "lines": 13
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/ReadAgeOption.swift",
+            "sha256": "45bb6c4e921f40b08e709e9c2e7b04c241a1fd31c43f7bd834d075050b470cb6",
+            "lines": 7
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/ReadAgeOptionsResponse.swift",
+            "sha256": "ee0e5ee96771ed76ab7df275476944ac8e35d1f344e9cb59e07c5ee316c059e0",
+            "lines": 6
+          },
+          {
+            "path": "services/appview/Sources/AppView/Models/ReadAgeStreamEvent.swift",
+            "sha256": "198d350bdf47200aafa50a70b6ade32fec35d633c9ac8dbd257ae85ca6cac1c8",
+            "lines": 8
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastAssetRoutes.swift",
+            "sha256": "c533e11f11daf041461042efcd533f6ff4de1b5498d8e927ff53738531f42cd8",
+            "lines": 96
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastClipRequest.swift",
+            "sha256": "bdf8a63cfefa5121cf06bc8be6e0b49d9601cd9552788475b824a2b83aadc3de",
+            "lines": 7
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastDirectoryError.swift",
+            "sha256": "85730c8228ce1c19e0d6a2a7a9b992f95b2123892028c59e07f89dc1fe980d20",
+            "lines": 6
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastDirectoryFetcher.swift",
+            "sha256": "f90a516051ce58c59b7531ceb4012d75da1a3b87fd8bd94d099382dff77fb358",
+            "lines": 28
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastDirectoryParser.swift",
+            "sha256": "24af1ea17587a6af744671a59f15586337e38e2303f003a98ef4eeb7f6941352",
+            "lines": 49
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastDirectoryQuery.swift",
+            "sha256": "9dd79474bd08a04720a84077c2dc0dd486fc8495ea6dba1d9464c434db9206fe",
+            "lines": 23
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastDirectorySearch.swift",
+            "sha256": "ab9defd65cb4f425cca7c25c2acf8a9d894dfa23eafbbfa15987d97928b7e8e9",
+            "lines": 51
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastEmbeddedChapterArtwork.swift",
+            "sha256": "8033ae53585a1998dfdccb6a02493565feacfc7f05afa68ae246643f4bc2b4a0",
+            "lines": 78
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastEpisodeRequest.swift",
+            "sha256": "21b51e76056da9763166d4b8b891e88e2223758143f137d8200284d468b31e07",
+            "lines": 1
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastImageRoutes.swift",
+            "sha256": "9dee42320c202bfd87cf7d298f13d35cace8d5a704b7166f31494be33edcbb29",
+            "lines": 44
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastJSON.swift",
+            "sha256": "8d5fe250b148a27e15530305054c19dfb9b8b561e09c315e6589884aa332533b",
+            "lines": 19
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastJobPayload.swift",
+            "sha256": "1551790c43863bb21f2b1810b33a934abac765abb0f3c7c2f95fcd51e61d3ad3",
+            "lines": 11
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastJobRetryRequest.swift",
+            "sha256": "60d2264c3dfba28fbd57dcc33d6e156a0cb11b74f762db6e581684129447b1d3",
+            "lines": 1
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastPrivateRefreshRequest.swift",
+            "sha256": "fef2a1e220548e135a8652443b259f4eb3c405b03b06dee3fa3d586054baeb73",
+            "lines": 1
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastPrivateRoutes.swift",
+            "sha256": "658d5c0b872521a1c790c0e746bc55d366b997a414ae24e1c272cfa0afd418bc",
+            "lines": 25
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastPrivateStorageMiddleware.swift",
+            "sha256": "30824f0e028a54ab6222e3ac761de48a84ed965d4454f83c7a69a8f03fb79cef",
+            "lines": 14
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastPublishRequest.swift",
+            "sha256": "7c2dade6f40b1ca16caac6df4b85626e3ec220cdff251b1ae8a4410784556996",
+            "lines": 4
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastResolveRequest.swift",
+            "sha256": "6e2e9ce1387284a6b57d1fb3056402e1bf36d0808746d498d42b3ff63a55354d",
+            "lines": 1
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastResolveResponse.swift",
+            "sha256": "78d7b8655a06a892da2e0781692f3d1b58dcd4476fad4584b107bb433e615d04",
+            "lines": 8
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastRoutes.swift",
+            "sha256": "b4afb712edd54a865f909cc35857667a73622eaa0a171af2bca4761cdcf1738d",
+            "lines": 323
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastService+Metadata.swift",
+            "sha256": "2aceac0a738e55710e3d092490e3303a8583e14ca3589c26da98ba67abe383d4",
+            "lines": 42
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastService+Private.swift",
+            "sha256": "0d6108b6bb93a4d7becdfafb8a60377bfe18bda209af0ea4955c1c26ef5472ff",
+            "lines": 57
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastService.swift",
+            "sha256": "0c410ef41c9a006205f661ae4df97221a9b9fb17f302c0b4fcb0d4cb344fbee1",
+            "lines": 212
+          },
+          {
+            "path": "services/appview/Sources/AppView/Podcasts/PodcastStateRequest.swift",
+            "sha256": "bb22c513b6c2119a22ac9cdcc460b49d8c92ddf7618379a154b238c7bd6c3cc6",
+            "lines": 6
+          },
+          {
+            "path": "services/appview/Sources/AppView/Routes/AppViewExtendedRoutes.swift",
+            "sha256": "1e0f18d591d66c5bda9a7e54b3ddbe6562ae717bea21e9d42d201a8da72f4c0b",
+            "lines": 211
+          },
+          {
+            "path": "services/appview/Sources/AppView/Routes/AppViewReadAgeRoutes.swift",
+            "sha256": "65361d399b80047436a387b515d57f4b58f3c1c515f210a2f0c28d76f2db30d7",
+            "lines": 77
+          },
+          {
+            "path": "services/appview/Sources/AppView/Routes/BootstrapStreamRoutes.swift",
+            "sha256": "30a7cc292ac713a0c4ead17d75a4b7e124491024bc79340333bd27e0a4201a52",
+            "lines": 25
+          },
+          {
+            "path": "services/appview/Sources/AppView/Routes/PDSReadStateRoutes.swift",
+            "sha256": "187c03ccf0a66a41177233916d99d812ccad17d1e9a7dcc0c76cc46dcdead5c3",
+            "lines": 55
+          },
+          {
+            "path": "services/appview/Sources/AppView/Routes/PublicationRoutes.swift",
+            "sha256": "df3a8bc3bf6c1b8eb5495a4b6d795b77ab86e1f5fe509e688728b7506095a8e7",
+            "lines": 53
+          },
+          {
+            "path": "services/appview/Sources/AppView/Routes/ThinAppViewRoutes.swift",
+            "sha256": "7cab95eff4a7eee1feb573f34789a149c01d814e087b81ecf41f2fb7771dc59d",
+            "lines": 357
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleAtUri.swift",
+            "sha256": "7f1491463d4bef4ee94f022d6d91d7b4b2ab1126f1b9e50056f409770bb06653",
+            "lines": 45
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleProjectionConfig.swift",
+            "sha256": "ec565cfd785176a98a1db373c6854601d3ff8c00f01f9e9550e653e8b99ca92c",
+            "lines": 14
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleProjectionDTOs.swift",
+            "sha256": "0001b173faf16be1ec45aa04f84b0d41402aa533832e6b4a119d5f75e036a49a",
+            "lines": 89
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleProjectionError.swift",
+            "sha256": "3f853de4fceb22444150852d9ff677394bbdcfa177cb815d7a992d3e0dcfb078",
+            "lines": 52
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleProjectionRoutes.swift",
+            "sha256": "251d72a4d34bb9a85f9b39ca77d913784335b25e8d828d78d9841c84451c0b21",
+            "lines": 51
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleProjectionService.swift",
+            "sha256": "d276653385fe2d8109d4d41b3a304ef9aaf4933b071daecf6befcf41e239cc57",
+            "lines": 361
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleProjectionTransport.swift",
+            "sha256": "d86e2905a8d647b1ec7e6f88a27f966176868930baf33158458dd5ecb528023e",
+            "lines": 35
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SemblePublicRecordReader.swift",
+            "sha256": "5d12731de343f12c4f40a9d9f46cd64f9b593eaefedf170cde60984e2d871e7b",
+            "lines": 57
+          },
+          {
+            "path": "services/appview/Sources/AppView/Semble/SembleUpstreamDTOs.swift",
+            "sha256": "f2d42ed1a06147e934879e745e090822722a3d3a2298085e255bca31abdcc70c",
+            "lines": 128
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/BootstrapEnrollment.swift",
+            "sha256": "262cf242bfe7ade469a100c17d0ccad32c315ea7e5250683a96372ea0894f794",
+            "lines": 17
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/BootstrapEntriesPageSelection.swift",
+            "sha256": "644502d46ddf163152e01a2ac91a23ee0aedb7137132d58769c577fbd3a0db0a",
+            "lines": 39
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/BootstrapSidebarCacheSnapshot.swift",
+            "sha256": "84514f3c68b4707279a6c0f984de7af60ac8b56fdf3a83984aacd9337a878fd7",
+            "lines": 29
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/BootstrapStreamSelection.swift",
+            "sha256": "e1e4172e7d02fa250fce5757f0f2fba4f6b3b223a4c12417564d2a44e7e0aa53",
+            "lines": 53
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/BootstrapStreamService.swift",
+            "sha256": "0e8f1ab40a8242e4c1c37ec61d0f4ce88780029bb90281f5139913b3b39a09e6",
+            "lines": 838
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/BootstrapStreamTimings.swift",
+            "sha256": "4777e4d687f5d517af699fab291d6625b891d6cdc286d41156b968cbac331575",
+            "lines": 24
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/PDSReadStateService.swift",
+            "sha256": "345a86255e90c5aefe206ab77ec0fd2cfff26eaf4bcef72dd2135c10800be027",
+            "lines": 149
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/PublicationFollowDiscovery.swift",
+            "sha256": "9733a3a7e5218048d1466a90425fd2b1680884becb033c92d3ee66e681062f21",
+            "lines": 273
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/PublicationProjectionLogic.swift",
+            "sha256": "de75a1e8d8088bc288324aba076d8a779bfea22bb34b63526418b375ab67d681",
+            "lines": 366
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/PublicationProjectionService.swift",
+            "sha256": "5f618cc233d9f9350b4bba8ae544eb0d98b6a780b1a002eec3aac45783488b64",
+            "lines": 1242
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/PublicationResolveService.swift",
+            "sha256": "a858e3b1de52129d5bfb60783e254e2f8c43f883b2e4128a46915a77ef42e1e8",
+            "lines": 305
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/PublicationResolveURLLogic.swift",
+            "sha256": "498494633dfc08a421901ce385b2ff1939ed0e18cfcdef763a7d47ce6e35dfc1",
+            "lines": 11
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/ReadAgeCalendar.swift",
+            "sha256": "fdddb993967418ce600b83214e9bb88cb05734322d4b881847a475fb2701d301",
+            "lines": 36
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/ReadAgeOptionAccumulator.swift",
+            "sha256": "0d00196fd0b1b2d4e5d47c106962eade906eef1faa3e5d3e06f83cd19252501f",
+            "lines": 38
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/ReadAgeService.swift",
+            "sha256": "6ee9a1c0c7832160b2c37e1e85ad3f03b61ac74ae1a4989a8087a90994811136",
+            "lines": 161
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/ReadAgeSnapshot.swift",
+            "sha256": "1aabb02f710fc9e6fc174e4ea13e59bc7f5c63282d3dff8e7f67775f03bebc46",
+            "lines": 39
+          },
+          {
+            "path": "services/appview/Sources/AppView/Services/SidebarDiscoveryContext.swift",
+            "sha256": "afda4d1fd95dd3d2654ccd8839b9ca92370040ff93b2fc4681c6b835d347a160",
+            "lines": 21
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/PostgresSportsFeedStore.swift",
+            "sha256": "3a09cab58eb003355bc60518a74da92fb19037db8394280293f4aef3d68575df",
+            "lines": 396
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsDiscoveryConfig.swift",
+            "sha256": "2d4bb45914b3ae60c88b999d2cfb8d9a3961f2523f66c86ec75d7515ba4396f5",
+            "lines": 21
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsDiscoveryRoutes.swift",
+            "sha256": "c30c44c5c960cf3056d25a9254e06aa2a0fc4378985b2eeb853c60c356aea06a",
+            "lines": 53
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsEntitySearchResponse.swift",
+            "sha256": "85d18158b13d59c7b39c6bd053ef72e8cfa11839d80e4234ce06b50125b5caa8",
+            "lines": 3
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsEventTeamFilter.swift",
+            "sha256": "77c168251cfc9c0b200d02e6cbb4af1a7f1c741a2159f7a67c07188784c63f90",
+            "lines": 34
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsEventsResponse.swift",
+            "sha256": "9e641bc2bf9a21ae72a5a1d1d814aabe1689f635484b4ba422b1f1c8fa2b5a64",
+            "lines": 14
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsFeedAvailability.swift",
+            "sha256": "515dc07fd6d0131414e3daa7c4e296606b9662c4df4224b0601721176d6b40a6",
+            "lines": 11
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsSearchQuery.swift",
+            "sha256": "cca6ca99ae624923c5e04e342f0ab67fb6d5c6c1b9f6f0d0c9a0217877eb7d3b",
+            "lines": 22
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsSelectionProjection.swift",
+            "sha256": "b50b18112cc86760f56b45edfa5133fc08f18931d7f2f775a1cd3cd8663b1450",
+            "lines": 103
+          },
+          {
+            "path": "services/appview/Sources/AppView/Sports/SportsSnapshotRetention.swift",
+            "sha256": "b9f616e365532c41220ea1bb16bf049f2e5df2905a2e1b838f2c284f3077b8c7",
+            "lines": 43
+          },
+          {
+            "path": "services/appview/Sources/AppView/ThinAppView/AppViewFeedError.swift",
+            "sha256": "58c657f07bb172169a3a1af0e6bfd77486fa9bd87cce45f999a077151d51b57e",
+            "lines": 218
+          },
+          {
+            "path": "services/appview/Sources/AppView/ThinAppView/ThinAppViewEnrollService.swift",
+            "sha256": "f644e5239ab078eab3df5f261cc422f32c34d437c129dd42a4a4b381950a302e",
+            "lines": 76
+          },
+          {
+            "path": "services/appview/Sources/AppView/ThinAppView/ThinAppViewReadService.swift",
+            "sha256": "907c82c285f12f2a54898bff85631b9ae40cd7899551362a8867a162c38a0e57",
+            "lines": 865
+          },
+          {
+            "path": "services/appview/Sources/AppView/ThinAppView/ThinAppViewRouteTypes.swift",
+            "sha256": "4b6d41c17acb71215e490a055eaebecb403a4eda5a9ef596a499dbb5aeb43b59",
+            "lines": 10
+          },
+          {
+            "path": "services/appview/Sources/AppView/ThinAppView/ThinAppViewSkyreaderIngestionService.swift",
+            "sha256": "a63729ea4ac35903691b404dd5458db4f1dbb144ead72b7bfd38bb269b1cdb9a",
+            "lines": 90
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/HTTPWireCorpusTransport.swift",
+            "sha256": "17c8eb058460f615e4d9ae9306d677b10262e791baf6846697422dd1720b59ac",
+            "lines": 68
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/PostgresWireFeedStore.swift",
+            "sha256": "f9c38fb901b61a0c922b76d4515d74752ca884abe756b6039a06ff38d22a205f",
+            "lines": 1152
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/RemoteWireFeedStore.swift",
+            "sha256": "a1c43f144c33608262359d4c4b1488ec6cae91feb2e2f4968a186fb1274e5bea",
+            "lines": 375
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireCorpusRemoteConfig.swift",
+            "sha256": "db32d901df6986584e39f506dcc2e2bb9d6f2a81a9e5df7b53e657473595d1b5",
+            "lines": 64
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireCorpusTransport.swift",
+            "sha256": "38caddf2d281bf3812b85eb5a3d01619c2547f7aab69d30a151421a3b72335cf",
+            "lines": 12
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireCorpusTransportResponse.swift",
+            "sha256": "67f1b9d7317f9f7ef5e5df7096704105b2492fcbd256701aaa4266511489e4f2",
+            "lines": 7
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireDiscoveryConfig.swift",
+            "sha256": "1160f5e683a3489b9af69c9915eae2a1cc478744e3f40538a448e1b13df1dbf8",
+            "lines": 41
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireDiscoveryRoutes.swift",
+            "sha256": "099833e7b497a2ad8f7e4a197b6854fb350e70df4b6fe2d2f8c9b7843b36c25d",
+            "lines": 218
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireEditionResponse.swift",
+            "sha256": "660c099720d5b6b861c7d68d8c2e9ac7c8ddda8a511019ea25b9b1be979f50c7",
+            "lines": 164
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireServingError.swift",
+            "sha256": "134cddb9c3b3b8a2764d96346217fb2ce87011a37c75cc22fd6e47f0d9d3f601",
+            "lines": 38
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireViewerModerationCache.swift",
+            "sha256": "2aa44f821a22b3a389c6ee656a55d94b47c3b7e75c3910e4ef8c177bb5004e21",
+            "lines": 59
+          },
+          {
+            "path": "services/appview/Sources/AppView/Wire/WireViewerModerationService.swift",
+            "sha256": "7945f972712d810df1df96f2d2d8d2a74ad2878b0ecf2315faa71875e455a8c3",
+            "lines": 293
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/AppViewFeedErrorTests.swift",
+            "sha256": "7137c77cec264735c7610fc199cfcebc60066c7e94b10afe75d0c45ae9b68b74",
+            "lines": 263
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/AppViewFeedLogCapture.swift",
+            "sha256": "2d965206ece7b247c5b470da4e5afe410ed0f8f26935ada97b16fadf38602c0e",
+            "lines": 27
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/AppViewFeedTimingEvidenceTests.swift",
+            "sha256": "d7b78b02f5e99d44ab9a411677854053a95278dc028a610e539e5c959b3706f1",
+            "lines": 111
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/AppViewSmokeTests.swift",
+            "sha256": "d07d6a69a80da963e737b523131fb461417cd03e8f91cc9682f44d7e88e224f8",
+            "lines": 6
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/BootstrapEntriesPageSelectionTests.swift",
+            "sha256": "41631440c46d836d0f3400196b1fda0bd72b390a174b89771122d0b52d0c3917",
+            "lines": 89
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/BootstrapSidebarCacheSnapshotTests.swift",
+            "sha256": "54eb29156f7c1a3261b0c4b460524b79149ee4b47c0ad4d75280211efa51a86a",
+            "lines": 58
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/BootstrapStreamCompletionEvidenceTests.swift",
+            "sha256": "5156a34688db4e8a8182649cc23fdc5dbca567fed4546cdc6a9be62624fccaae",
+            "lines": 55
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/BootstrapStreamSelectionTests.swift",
+            "sha256": "388f92cdee5940bdb6ea0740ffb8c29b1af2350b7732d6341a20e570d4f78722",
+            "lines": 99
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/CircleCatalogVisibilityTests.swift",
+            "sha256": "814ac93e1427df6a8cf89cdfab8ee8923b1e8fb7b6b85a02c1f4f651f9061c46",
+            "lines": 35
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/CircleDiscoveryConfigTests.swift",
+            "sha256": "e996c1fa0a6b0e615e31481f9e8c023d007f6809c392003fc3c15a3220b145f4",
+            "lines": 50
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/CircleFollowPaginationTests.swift",
+            "sha256": "8b25d54f889c91db9b9d675936f44aee430bddeef6f4562cae5f34f9829b3177",
+            "lines": 47
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/CircleGraphSnapshotServiceTests.swift",
+            "sha256": "93457c097f62d272ba82dbd0818a8f80f50411576b90126577c4c4f3cd334b0a",
+            "lines": 457
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/CirclePostgresCacheIntegrationTests.swift",
+            "sha256": "04097a9c9f7b4b0599fe412ac88fb45e363b24f2c8feadd36bb31d439f136a0c",
+            "lines": 145
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/CirclePrivateStateStoreTests.swift",
+            "sha256": "39f03abbb3f3d297dc869108254fab6a765b9dcd2804f11ceda0cf2b6f7049b5",
+            "lines": 118
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/CircleRedisTestCommands.swift",
+            "sha256": "80a5a3a04c859c1c6085f1eba3f2925f0c6fb0da4cbfb501ee5faba6a56f7e1d",
+            "lines": 41
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/FinanceDiscoveryConfigTests.swift",
+            "sha256": "64bb07bddbb765b5ec529f8ba0fe6bb759dad3192cc339884dc603844f397cd4",
+            "lines": 79
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/FinancePostgresServingIntegrationTests.swift",
+            "sha256": "a136f72477560c85d47bd3cc32e410fcf8a14ca7f3c235d6d621aed51a355980",
+            "lines": 406
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/FinanceSnapshotRetentionPostgresTests.swift",
+            "sha256": "f763cbed04305dc1616761f5403bb67b545760b0366a0e1ba4abec34988bdb09",
+            "lines": 86
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PDSReadStateConfirmationCacheTests.swift",
+            "sha256": "8d3defb19bf60a84af7aa15141bca23110398ea7376cb3c6b6e281062a932a7b",
+            "lines": 106
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PDSReadStateReadinessMiddlewareTests.swift",
+            "sha256": "401e8a6f4b33222ec119f74a2dd27a2921327837e8217a32ccc3f29d67522680",
+            "lines": 58
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PodcastDirectoryTests.swift",
+            "sha256": "a83b56cc12fde8c4cd33c69884b929b81084706fe8ac87bf3c4a2c2a75da44a7",
+            "lines": 140
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PodcastEmbeddedChapterArtworkTests.swift",
+            "sha256": "5fffe8d10d31d8e88324ec761d4605109a4da365d444f88417430768dccbae79",
+            "lines": 79
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PodcastPrivateStorageMiddlewareTests.swift",
+            "sha256": "28f30a4dd8c0857d33b2a377adcc20ae50416a6e8557a32f19355cd68a0a2e6b",
+            "lines": 31
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PodcastPublicationTests.swift",
+            "sha256": "acfea99a96276af50b814b9ecc9996e8ac7711ed2bed84d3d001fb6431b25e98",
+            "lines": 44
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PublicationProjectionAggregateFeedCacheTests.swift",
+            "sha256": "0680c24ac4a18c57c647ab244a69681f9d20d687b7773b9397258d224c32eca1",
+            "lines": 249
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PublicationProjectionLogicTests.swift",
+            "sha256": "8e6efdd3f276904e832d64f4a677e54c145fc06ce8187b5de61118b050b92d55",
+            "lines": 294
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/PublicationResolveURLLogicTests.swift",
+            "sha256": "df574605088c9faaa87e178718fed6dde2b20e8400c3ab11e8e237656e88bb1f",
+            "lines": 16
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ReadAgeCalendarTests.swift",
+            "sha256": "9b0c2f18934a90063a27f2a9265d1164d4b2c430b1948a2ae610403f457960fa",
+            "lines": 92
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ReadAgeServiceTests.swift",
+            "sha256": "6d1292acde44671a3643a0e97e7dfb63e39ae650f3826e02d79276c5f823db05",
+            "lines": 285
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ReadAgeSnapshotTests.swift",
+            "sha256": "3616dbd5ab0c9e3dc965b1f7b438bc3d2182fd3d0542c17deb23c3b8eed0e16b",
+            "lines": 113
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/RedisCircleDisposableCacheTests.swift",
+            "sha256": "369786ee91b93c3f4355ebbc0eeffd69ac8b740f82c7c49bd77f46e5bda27862",
+            "lines": 132
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/RemoteCircleCandidateFetcherTests.swift",
+            "sha256": "26a4c3e3bf0e9dd825f39c87ac87b58b1709f7aaa5a11d9e1d96435844450c59",
+            "lines": 161
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/RemoteWireFeedStoreTests.swift",
+            "sha256": "e6e9b7ffe4186dceb9defa252ef7ed7d8bb4e218b708f38184d748eadf96f91e",
+            "lines": 549
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/SembleProjectionTests.swift",
+            "sha256": "b9245145ea2906cf0722bbaf1fd43022bf0b97caec062854b52ef0cf047dc883",
+            "lines": 378
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/SportsDiscoveryConfigTests.swift",
+            "sha256": "19895487ff419cad4553ae1152a98c35ff39a8e451a7201482581f46e9af9e31",
+            "lines": 22
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/SportsEventTeamFilterTests.swift",
+            "sha256": "68c3c6ff47fdb1d840882a0faf526dfc0bacd62bcff673cc7de93d1fda900bc2",
+            "lines": 34
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/SportsPostgresServingIntegrationTests.swift",
+            "sha256": "d5f0ffa451f9cb5514dc0dd29cbcc20710c1a05ce5a59eaf214233317b876113",
+            "lines": 330
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/SportsSearchQueryTests.swift",
+            "sha256": "8574b6e0c59289ae7b9ce7dd71499ca8c5c95cfc34e3d500816908863e5d46c5",
+            "lines": 31
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/StandardReaderListEnrollmentTests.swift",
+            "sha256": "148a04f5d5897b0a6595eb01a4783f0cb395a85a983c57adc9e648ea641f9502",
+            "lines": 56
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/StandardReaderListsRefreshTests.swift",
+            "sha256": "6accd81daa442792d4c5d0f647a0e53f6e24d4e281ad928bf335a2bc06ca3a0d",
+            "lines": 112
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/StandardReaderListsTests.swift",
+            "sha256": "a119eb22df03aaeee84f6d21b06d96b0f6a5fc89c008e8d2649cc9335b0df72c",
+            "lines": 192
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/Support/SkyreaderWarmingRecorder.swift",
+            "sha256": "e0f89fb90f6a6d63e1b460cda80d3e475228dbfb42bb8cad4bc5a88d9ed2c674",
+            "lines": 7
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ThinAppViewAggregateFeedTests.swift",
+            "sha256": "daebc71dbab0dde9845471619f98e575e25ef1e0e6e812fec9d34fb0be85c6a9",
+            "lines": 307
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ThinAppViewEnrollServiceTests.swift",
+            "sha256": "fa831b4894b25cd550384844cbb5185557889bf4f6c2660aff2d4ed54ad18202",
+            "lines": 145
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ThinAppViewEntryDetailTests.swift",
+            "sha256": "2d5a55177e54fb5731712544749dcccd6dad89083ca7a6b7432ffd1310480bf1",
+            "lines": 127
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ThinAppViewReadServiceCacheEvidenceTests.swift",
+            "sha256": "0ea28bc93e85075d4f3d23359df4cc97f82691239cafb0399b9daf313e9538bd",
+            "lines": 171
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/ThinAppViewSkyreaderIngestionServiceTests.swift",
+            "sha256": "7961f3480dcc385ffe9fb9d3d3276424fa02e67b6a09073dc28a06f58e8de863",
+            "lines": 115
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/WireCorpusRemoteConfigTests.swift",
+            "sha256": "e3f0c86ac7ce9180207f9f62cd3ce9e8e305f86532eb409481bd33ff58c42e0c",
+            "lines": 81
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/WireDiscoveryTests.swift",
+            "sha256": "67c9d2a0bea856301028218add34ddfa9c37da213d2efb9d37993db3165d150f",
+            "lines": 163
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/WirePayloadCacheCommands.swift",
+            "sha256": "4dfed75c03dc5ace58078037319748f5c9de7690f2746e351b4e24777fd76235",
+            "lines": 36
+          },
+          {
+            "path": "services/appview/Tests/AppViewTests/WirePostgresServingIntegrationTests.swift",
+            "sha256": "b9cef463d6d428ddecc3699914b9da534d6d828d3e17e0a4b24882f41b841f42",
+            "lines": 1273
+          }
+        ]
+      },
+      {
+        "name": "operations",
+        "replacement": "services/operations/cmd",
+        "files": [
+          {
+            "path": "services/operations/Dockerfile",
+            "sha256": "8992d98f6308b4a05a50052652286acc1f930bdc48d65c0fe9b844835a65105c",
+            "lines": 36
+          },
+          {
+            "path": "services/operations/Package.resolved",
+            "sha256": "82a8787f3ad274b6b54f9088ecfe1d30367fa83c0f584584d6d885f580066a2e",
+            "lines": 310
+          },
+          {
+            "path": "services/operations/Package.swift",
+            "sha256": "22dffa271b59e2e1f29aae047e9cb48b0fc214d8b40c8fa587a664d6a01405e4",
+            "lines": 58
+          },
+          {
+            "path": "services/operations/Sources/Operations/AlertEvaluator.swift",
+            "sha256": "61727158a8ba6a54e781a6f9d8aab5951410f8a575bdc63ce9cdb988722f4140",
+            "lines": 490
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsCapabilityResolver.swift",
+            "sha256": "c81da256147274c073cce1ac86c36b2c9d05d17020952a00ac9518e077fd882e",
+            "lines": 153
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsCommand.swift",
+            "sha256": "246fda84311b4da89ed23d51e68c9386c3209a7eedf6f101de17bf45268d42dd",
+            "lines": 190
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsDatabaseCostCollector.swift",
+            "sha256": "2c14ac12f422c1061d648a7be09353f569b1c19607a7d8bc2919360d48e30a3b",
+            "lines": 58
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsEvidenceChangeMonitor.swift",
+            "sha256": "8ccc747d07a92c695c4c1aca1f1727b7ad575b10cc1cb2302389a5dcdc58fd16",
+            "lines": 122
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsMutationAuditScope.swift",
+            "sha256": "ba99e10088151234d6d0d41e168ece33ec4c9ce80634652da734992971e0f9be",
+            "lines": 74
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsRetentionJob.swift",
+            "sha256": "079a3436aad92547c0fa61c75a9118dfc95e2bdd410ba1fb0cacd0c9b9af81b1",
+            "lines": 105
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsRouterBuilder.swift",
+            "sha256": "ed82454b4bfed406aa4ce9d1c1a342d3dff8589e1737318db594e99036ac30fa",
+            "lines": 52
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsRoutes.swift",
+            "sha256": "0e66b624b44a7366fbb2b4c350d03cfe3abd748e7ac3c1557900e4183f902959",
+            "lines": 996
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsServiceConfig.swift",
+            "sha256": "5cdcc4869f8a255f95db45cbe227c5f5ec4a9afd41ff12573a5a48460cd1c3a4",
+            "lines": 41
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsViewerHistoryCollector.swift",
+            "sha256": "0c5a41afcf2b264c4a8be3fda733e23264d24fe276e87b25a9679de7471f4c51",
+            "lines": 34
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsWebhookDelivery.swift",
+            "sha256": "481ddb2507e3026ddbe012208d59b6f3affcbe7c876cf7f22fe001f2c97ae797",
+            "lines": 60
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperationsXRPCErrorMiddleware.swift",
+            "sha256": "295a08f1378c9fbc38324cc4df27828cff774ccd22bf4f7d1aa5c2fc55659fcd",
+            "lines": 53
+          },
+          {
+            "path": "services/operations/Sources/Operations/OperatorAuthorizationMiddleware.swift",
+            "sha256": "98eeef6ff48a89ed3fe3e518348cb7df4994ef206242f4fcb94bccd0bcc5f5a8",
+            "lines": 21
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/ConsolidatedWorkerCapabilityTests.swift",
+            "sha256": "0634893823a55e36ffa0ec21fd77db5446a1cbf10be10f49acedb8c25cdeaf71",
+            "lines": 55
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/MutationAuditBoundaryTests.swift",
+            "sha256": "05c961ae453ed12185b175ca0443422d7a239963e2a7a474d3eafb0444827dd1",
+            "lines": 241
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/MutationAuditRecorderProbe.swift",
+            "sha256": "7c910702c644bd7e2c5013724c79b31ed20cc6cc0372f8189b6077bb6b86b07c",
+            "lines": 11
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/OperationsDatabaseCostCollectorTests.swift",
+            "sha256": "5c032ff029a0d35bbec83d04a1ff2fa4cc5068fb6375f86b9a10ad1a93c14eba",
+            "lines": 201
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/OperationsRetentionJobTests.swift",
+            "sha256": "1ada363fb0aec5b4eb042a90b117897b3f75ed743e3dbbc242f2136c031bfa39",
+            "lines": 94
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/OperationsSmokeTests.swift",
+            "sha256": "2fa89def5cc268ce7a5613845202e1070d37fa13d4fdf5d50ddf27f0e14d527a",
+            "lines": 510
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/OperationsViewerHistoryCollectorTests.swift",
+            "sha256": "a7149747250059799a7ffcd4eab1bfcb47e73a69629ba128f4dbde73ab871cf7",
+            "lines": 63
+          },
+          {
+            "path": "services/operations/Tests/OperationsTests/V2AuthorityAlertTests.swift",
+            "sha256": "1036432153eb016d00bad43a72a68f1a516d4c8cf119275f91555ba92560e199",
+            "lines": 239
+          }
+        ]
+      },
+      {
+        "name": "wire-corpus-edge",
+        "replacement": "services/wire-corpus-edge/cmd",
+        "files": [
+          {
+            "path": "services/wire-corpus-edge/Dockerfile",
+            "sha256": "a67a717acdb08e179cacabd45762240816f011780eb96c79f2b5aefd17a370a3",
+            "lines": 37
+          },
+          {
+            "path": "services/wire-corpus-edge/Package.resolved",
+            "sha256": "d31864a7b31377b6a29b2e761832cf585ac33aa7df6df36d8682de413243b5ef",
+            "lines": 249
+          },
+          {
+            "path": "services/wire-corpus-edge/Package.swift",
+            "sha256": "d7367f35dc5efcb7d521dda9ebccb56a8d3b1556b8f0e6addc19ed539e7fc4af",
+            "lines": 57
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/PostgresWireCorpusStore.swift",
+            "sha256": "82ad213b371017a45f12b10bbf1d10b1f3e63bcc1cf19f30ac2780cbc4856129",
+            "lines": 1001
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeAuthMiddleware.swift",
+            "sha256": "39ccf77c04546c61f73d8fc7f55121f36af7745d7a1e5ddb3f4d377f5d5a9ff9",
+            "lines": 82
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeCommand.swift",
+            "sha256": "eee7b342eda9c2a39c542cb828f4a4e2bae045bcea16cfc4758ef3be5c37cc89",
+            "lines": 68
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeConfig.swift",
+            "sha256": "6e6bf5b7ec7e731172e9196daa572dad8a7f5343ce57ad1e4984bd2eb517eab8",
+            "lines": 53
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeConfigError.swift",
+            "sha256": "a44db4333dd67af502f07cc8a97c84b9ae7d393cd2ec05251754fa1095cf0147",
+            "lines": 8
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeErrorMiddleware.swift",
+            "sha256": "e180b677771ed4a45014c4a7c011e4191206d52082da7154bb23196865fa492c",
+            "lines": 43
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgePostgresConfig.swift",
+            "sha256": "fe65e9f45171a4156364cd8b85c3ee8fa360597100c13844d79403410155cb1a",
+            "lines": 35
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeRequestContext.swift",
+            "sha256": "dd32c089f501f8cd63af4dc1db964654d4f598bb4ea2e5bc7e14fd97e5887bd6",
+            "lines": 9
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeRequestError.swift",
+            "sha256": "b465d09f2416e5fe5c6d4a631369ad902b424ef8b29dac0ae6c5da6b09186654",
+            "lines": 23
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeRouterBuilder.swift",
+            "sha256": "da056c10198952cf17d5402d0f8fa8ba849195e7654736e0cb6a6da6f3405e3f",
+            "lines": 243
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusEdgeStoreError.swift",
+            "sha256": "2a5266e00d26197f98db9e3557216824bb21bcc11ab8c3c4486d0f3ac3366199",
+            "lines": 23
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusErrorDiagnostics.swift",
+            "sha256": "3419f14fd0fbb4c76bd09bd933ad23e485f3ca8a414d4af733a2c3790e3fd7f5",
+            "lines": 21
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusPayloadCache.swift",
+            "sha256": "f6c2630d3c164554b5921c44629f2be8604f51c3ca284df4ca1098f8c3a72e59",
+            "lines": 3
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusReplayGuard.swift",
+            "sha256": "376b706dc5f928327aa025b8a4038d961c73823548b4303531d288906c29ce69",
+            "lines": 19
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireCorpusStoring.swift",
+            "sha256": "5d16564285edd316398587cba304cce796754ad9e54d8f22e7e6cc3247d2154b",
+            "lines": 43
+          },
+          {
+            "path": "services/wire-corpus-edge/Sources/WireCorpusEdge/WireEditionCacheProof.swift",
+            "sha256": "823c20ab3a44661e15d31c5b4bb837c2dc0b915209debb294084dfc5f3cc6be1",
+            "lines": 53
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/CorpusCacheCommands.swift",
+            "sha256": "7f397803947f0da5657a55f51033275661dfe9f229b459953c560b36a310c0ed",
+            "lines": 36
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/FinanceCorpusRouteTests.swift",
+            "sha256": "6aa03833f31e556a914750d048c37e8f163b814320a1deba9df34fd349902af9",
+            "lines": 121
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/FinancePostgresCorpusIntegrationTests.swift",
+            "sha256": "649e0c8023a4e1ff65f1b683ed6fc929ee575632bc7380540d8b84b2e0f65e25",
+            "lines": 89
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/SportsCorpusRouteTests.swift",
+            "sha256": "a0e7ff2385bda665adf4fe034094069a5826730fb045ff7d08e9d960055307ef",
+            "lines": 187
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/SportsPostgresCorpusIntegrationTests.swift",
+            "sha256": "7f2d7aa864a7594c0efaca2a04feafb0b14e82f21a9b6f7ec18facf4069c2283",
+            "lines": 265
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusCacheIntegrationTests.swift",
+            "sha256": "584452e2ccc2307e70c0d246da8cad76dc54c2da767fa7d295788c5289bc6d87",
+            "lines": 121
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusEdgeConfigTests.swift",
+            "sha256": "4198e3b0e4ea31f0ac195d938410bbe411d6add1fa08231497f492627316e773",
+            "lines": 54
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusEdgeRouteTests.swift",
+            "sha256": "368a4b07af72d12c34dbc04e6c7e62d25a5dfc683da4c6e1633c57fa75ff93bb",
+            "lines": 318
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusErrorDiagnosticsTests.swift",
+            "sha256": "4ca10ddec6d03e16ed0016151ffd62ba04596e996e3245876c057cca9aa9d4e7",
+            "lines": 17
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusFallbackIntegrationTests.swift",
+            "sha256": "a054473934eac64ef7327a2f2018957704e5960a8122323aabf671407e4725c7",
+            "lines": 243
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusPayloadCacheTests.swift",
+            "sha256": "6416f8fb56669dcd27a22de190fb47376079ad7cc942eb11c513350cd86b9909",
+            "lines": 182
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusRecoveryIntegrationTests.swift",
+            "sha256": "4d1e202e7d989616c4df2a83559f39f77bab6ff4f37153653ad257e360cdfbd4",
+            "lines": 86
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireCorpusReplayGuardTests.swift",
+            "sha256": "be2afc896c972246106e5eb1307221e7ba263c49c7951e27714408170b574b36",
+            "lines": 16
+          },
+          {
+            "path": "services/wire-corpus-edge/Tests/WireCorpusEdgeTests/WireEditionCacheProofTests.swift",
+            "sha256": "acc09b714a6d131b64297d1479e28c9740fd65c863ba581492fd2870713cf0b2",
+            "lines": 45
+          }
+        ]
+      }
+    ]
+  },
   "schemaVersion": 1,
   "description": "Source inventory; implementation and parity must be tracked separately.",
   "packages": [
@@ -9966,11 +11590,15 @@
         },
         {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "d687a01540eef23453490e6b02288e932cb296498bbffa6841cbbb4086b56f53"
+          "sha256": "111d5d8fa200772cb2715a3b5f34a8691ae3b66c0976bf5d3f8fba0b85d376ac"
+        },
+        {
+          "path": "packages/spec/__tests__/ci-postgres-preparation.test.ts",
+          "sha256": "3c8bd5d3cd42cd28aff5e5ea5be5ec5707308fb049faaf4155cec41292876397"
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "cb22359bf4e72a331f16947b90a4ac61520e9e36cc70301100250c27d29f0c7a"
+          "sha256": "604dbf030e056225c824e3863337485a79839408e1b71a788e5ec25b6fcd1ee9"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",
@@ -9982,7 +11610,7 @@
         },
         {
           "path": "packages/spec/__tests__/client-xrpc-transport.test.ts",
-          "sha256": "dfef1915ce3008e3b9c4dd285cf659b27432599b123dbbae6c46b5aa2ace05b2"
+          "sha256": "403932f2de249c47b357ee4cb0128e2051fc1ab46b934b6e87ed8a313e2cf345"
         },
         {
           "path": "packages/spec/__tests__/coverage-inventory.test.ts",
@@ -10002,7 +11630,7 @@
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-drain-indexes.test.ts",
-          "sha256": "7f7c5f2737d06b3481c0d241d9cdbb2992556a5a745eec45353a7a585b7f7b0c"
+          "sha256": "fa650930ed143ffc770d9ce62c59b286ef21e582f6c86238cb5167dd95f37ed5"
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-durability-migration.test.ts",
@@ -10018,7 +11646,7 @@
         },
         {
           "path": "packages/spec/__tests__/openapi-routes.test.ts",
-          "sha256": "3b97207929f41bd4e7e72afd8e8860a1386c459119151746c1735dacb479d69a"
+          "sha256": "9eeb88ea9bd0ed6db6173ef452efb235817103050e0ecd7c08db4b4509365b2b"
         },
         {
           "path": "packages/spec/__tests__/operations-change-retention-postgres.test.ts",
@@ -10038,11 +11666,11 @@
         },
         {
           "path": "packages/spec/__tests__/podcast-contract.test.ts",
-          "sha256": "da6ab38d0d4a34cc334857c8d342b3439dfc8369a50d3fec0353765323bddd27"
+          "sha256": "c6d0bd83b72894919a8b2684ce76e1f8cb657d881fdc0b4fa13144453a61b898"
         },
         {
           "path": "packages/spec/__tests__/podcast-deployment.test.ts",
-          "sha256": "b912a6d6c3232489a306b33ba94473a26654e45c4cfcd9d8cf23bbff0d8a92fe"
+          "sha256": "1fb13f05bbcbdffcfe3b6a76580c881e62af823bd06b6b25594da3dcb1803804"
         },
         {
           "path": "packages/spec/__tests__/postgres-replay-harness.test.ts",
@@ -10054,11 +11682,11 @@
         },
         {
           "path": "packages/spec/__tests__/read-age-contract.test.ts",
-          "sha256": "c121fdf852cf056424fc64a217f12007af443b3b576acca3aa55602d16185ce1"
+          "sha256": "3523e75b346b24d3a62c45d99715bc16207ac47a941da01d0452f3621b5ac669"
         },
         {
           "path": "packages/spec/__tests__/schema-readiness-deployment.test.ts",
-          "sha256": "7cdcbf31ac114e9cb2dddead384d8fc2b88a0121d115627c9995ba1b7b0d895b"
+          "sha256": "efea935dfd86fa150fc71ae51b8e457fdc0f9fde636b69aa7381cb3f970405bc"
         },
         {
           "path": "packages/spec/__tests__/sports-public-contract.test.ts",
@@ -10098,7 +11726,7 @@
         },
         {
           "path": "packages/spec/__tests__/wire-edition-migration.test.ts",
-          "sha256": "3abf4430ef4443b60e751e5f5366f6b211269a0e184e5c3b58dcaa68b990bc7e"
+          "sha256": "870647d9c2afa3fcbfbfd753110ab435308a5c071e570f34c908957f32a7570e"
         },
         {
           "path": "packages/spec/__tests__/wire-feed-quality-migration.test.ts",

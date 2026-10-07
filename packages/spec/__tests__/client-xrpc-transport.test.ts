@@ -108,7 +108,7 @@ describe("client XRPC transport", () => {
     const source = readFileSync(
       join(
         REPO_ROOT,
-        "services/gateway/Sources/Gateway/Routes/AppViewProxyRoutes.swift"
+        "services/gateway/internal/gateway/routes.go"
       ),
       "utf8"
     );
@@ -119,19 +119,16 @@ describe("client XRPC transport", () => {
     );
 
     for (const migration of proxyMigrations) {
-      const routeMethod = migration.method.toLowerCase();
-      const routeStart = source.indexOf(
-        `group.${routeMethod}("${migration.path}")`
+      const registration = source.split("\n").find((line) =>
+        line.includes(`Method: "${migration.method.toUpperCase()}"`) &&
+        line.includes(`Path: "${migration.path}"`)
       );
-      expect(routeStart, `missing Gateway adapter for ${migration.path}`).toBeGreaterThanOrEqual(0);
-      const routeEnd = source.indexOf("\n    }", routeStart);
-      expect(routeEnd, `unterminated Gateway adapter for ${migration.path}`).toBeGreaterThan(routeStart);
-      const handler = source.slice(routeStart, routeEnd);
-      expect(handler, `${migration.path} must forward to XRPC`).toContain(
-        `path: "/xrpc/${migration.xrpcNsid}"`
+      expect(registration, `missing Gateway adapter for ${migration.path}`).toBeDefined();
+      expect(registration, `${migration.path} must forward to XRPC`).toContain(
+        `Target: "/xrpc/${migration.xrpcNsid}"`
       );
-      expect(handler, `${migration.path} must use the Lexicon HTTP verb`).toContain(
-        `method: "${/\.(get|list)[A-Z]/.test(migration.xrpcNsid!) ? "GET" : "POST"}`
+      expect(registration, `${migration.path} must use the Lexicon HTTP verb`).toContain(
+        `UpstreamMethod: "${/\.(get|list)[A-Z]/.test(migration.xrpcNsid!) ? "GET" : "POST"}`
       );
     }
   });
@@ -140,7 +137,7 @@ describe("client XRPC transport", () => {
     const middleware = readFileSync(
       join(
         REPO_ROOT,
-        "packages/swift/GatewayCore/Sources/GatewayCore/Middleware/RequestTraceMiddleware.swift"
+        "services/gateway/internal/gateway/request_trace.go"
       ),
       "utf8"
     );
@@ -167,7 +164,7 @@ describe("client XRPC transport", () => {
     const appViewRoutes = readFileSync(
       join(
         REPO_ROOT,
-        "services/appview/Sources/AppView/Routes/AppViewExtendedRoutes.swift"
+        "services/appview/internal/unreadcounts/routes.go"
       ),
       "utf8"
     );
@@ -177,7 +174,7 @@ describe("client XRPC transport", () => {
       'repeatedQuery: ["publicationIds": publicationIds]'
     );
     expect(appViewRoutes).toContain(
-      'queryParameters[values: "publicationIds"]'
+      'q["publicationIds"]'
     );
   });
 

@@ -97,6 +97,9 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 # AppView (sidebar + Thin AppView reads)
 (cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
 
+# Go AppView candidate (requires explicit PostgreSQL, including APP_ENV=local; no SQLite fallback)
+(cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only go run ./cmd/appview)
+
 # Replicated projection role (AppView + Wire durable inboxes)
 (cd services/indexing-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true INDEXING_WORKER_ROLE=projection THIN_APPVIEW_JETSTREAM_MODE=v2_authoritative go run ./cmd/indexing-worker)
 ```

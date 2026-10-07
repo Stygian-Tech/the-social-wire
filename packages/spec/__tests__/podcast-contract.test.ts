@@ -9,7 +9,7 @@ test('listener state is private revision CAS and supports exact rewind source po
  expect(spec.components.schemas.PodcastListenerState.properties.playbackSpeed).toEqual({type:'number',minimum:.75,maximum:2,multipleOf:.25});
  expect(spec.components.schemas.PodcastStateSnapshot.required).toEqual(['revision','state']);
  expect(read('database/migrations/20261005010000_podcast_listener.sql')).toContain('podcast_viewer_state');
- expect(read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore.swift')).toContain('revision=');
+ expect(read('packages/go/podcastcore/state_store.go')).toContain('revision=');
 });
 test('podcast media and private/public clips preserve HTTP ranges and server contracts',()=>{
  for(const path of ['/v1/podcasts/media','/v1/podcasts/assets','/v1/podcasts/public/assets']) {
@@ -20,12 +20,13 @@ test('podcast media and private/public clips preserve HTTP ranges and server con
  for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/POST clips publish.bru`)).toContain('/v1/podcasts/clips/publish');
 });
 test('podcasts remain gated and isolated from article retention and public private history',()=>{
- expect(read('services/appview/Sources/AppView/AppViewServiceConfig.swift')).toContain('podcastsEnabled: Bool = false');
+ expect(read('services/appview/internal/runtime/host.go')).toContain('if c.PodcastsEnabled');
+ expect(read('services/appview/internal/config/config.go')).toContain('strings.EqualFold(env["PODCASTS_ENABLED"], "true")');
  const migration=read('database/migrations/20261005010000_podcast_listener.sql');
  expect(migration).not.toContain('expires_at');expect(migration).toContain('dedupe_key text UNIQUE NOT NULL');
- expect(read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastProtocolAdapter.swift')).toContain('org.atpodcasting.podcast');
- expect(read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastProtocolAdapter.swift')).toContain('place.pod.show');
- expect(read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastProtocolAdapter.swift')).toContain('live.voxport.podcast.series');
+ expect(read('packages/go/podcastcore/protocol.go')).toContain('org.atpodcasting.podcast');
+ expect(read('packages/go/podcastcore/protocol.go')).toContain('place.pod.show');
+ expect(read('packages/go/podcastcore/protocol.go')).toContain('live.voxport.podcast.series');
 });
 
 test('private RSS subscriptions are viewer-owned and excluded from public processing',()=>{
@@ -49,7 +50,7 @@ test('publisher chapter and host metadata use shared arrays and private artwork 
  expect(spec.components.schemas.PodcastShow.properties.hosts.items.$ref).toBe('#/components/schemas/PodcastPerson');
  expect(spec.paths['/v1/podcasts/image'].get.security).toEqual([{ATProtoOAuthDPoP:[]}]);
  for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/GET image.bru`)).toContain('/v1/podcasts/image');
- expect(read('services/appview/Sources/AppView/Podcasts/PodcastRoutes.swift')).toContain('silence:v2:');
+ expect(read('services/appview/internal/podcasts/job_routes.go')).toContain('silence:v2:');
  expect(read('services/podcast-worker/.env.example')).toContain('PODCAST_BRIDGE_ENABLED=false');
 });
 
@@ -60,7 +61,7 @@ test('library search protects viewer queries and uses bounded continuation pages
  expect(spec.components.schemas.PodcastSearchRequest.properties.scope.enum).toEqual(['library','directory']);
  expect(spec.components.schemas.PodcastSearchResponse.required).toEqual(['shows','episodes','hasMore']);
  for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/POST search.bru`)).toContain('/v1/podcasts/search');
- const store=read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore+Search.swift');
+ const store=read('packages/go/podcastcore/search_store.go');
  expect(store).toContain('LIMIT 501');expect(store).toContain('scanned >= 500');
  expect(store).not.toContain('INSERT');expect(store).not.toContain('UPDATE');
 });
@@ -71,8 +72,8 @@ test('Podcast Index discovery is explicit and returns bounded public candidates'
  expect(spec.components.schemas.PodcastSearchResponse.properties.directoryLimit.enum).toEqual([50]);
  expect(spec.paths['/v1/podcasts/search'].post.responses['502']).toBeDefined();
  for(const service of ['appview','gateway']) expect(read(`services/${service}/bruno/Podcasts/POST discover.bru`)).toContain('"scope": "directory"');
- const source=read('services/appview/Sources/AppView/Podcasts/PodcastDirectoryFetcher.swift');
+ const source=read('services/appview/internal/podcasts/directory.go');
  expect(source).toContain('https://api.podcastindex.org/search');expect(source).toContain('User-Agent');
- expect(source).toContain('validateURL: { $0 == url }');expect(source).toContain('timeout: .seconds(8)');
+ expect(source).toContain('ValidateURL: func(raw string) bool { return raw == target }');expect(source).toContain('Timeout: 8 * time.Second');
  expect(source).not.toContain('Authorization');
 });

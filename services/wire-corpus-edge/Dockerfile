@@ -1,37 +1,13 @@
-FROM swift:6.2.4-jammy AS builder
-
-WORKDIR /src
-
-COPY packages/swift/FinanceCore packages/swift/FinanceCore
-COPY packages/swift/SportsCore packages/swift/SportsCore
-
-COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resolved* packages/swift/WireCore/
-COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
-COPY packages/swift/WireCore/Tests packages/swift/WireCore/Tests
-
-COPY packages/swift/SocialWireRedis/Package.swift packages/swift/SocialWireRedis/Package.resolved* packages/swift/SocialWireRedis/
-COPY packages/swift/SocialWireRedis/Sources packages/swift/SocialWireRedis/Sources
-COPY packages/swift/SocialWireRedis/Tests packages/swift/SocialWireRedis/Tests
-
-COPY services/wire-corpus-edge/Package.swift services/wire-corpus-edge/Package.resolved* services/wire-corpus-edge/
-COPY services/wire-corpus-edge/Sources services/wire-corpus-edge/Sources
-COPY services/wire-corpus-edge/Tests services/wire-corpus-edge/Tests
-
-WORKDIR /src/services/wire-corpus-edge
-RUN swift package resolve
-RUN swift build -c release --product WireCorpusEdge
-
-FROM ubuntu:22.04
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends libssl3 libcurl4 libicu70 libxml2 ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /src/services/wire-corpus-edge/.build/release/WireCorpusEdge /usr/local/bin/WireCorpusEdge
-COPY --from=builder /usr/lib/swift/linux /usr/lib/swift/linux
-
-RUN chmod +x /usr/local/bin/WireCorpusEdge
-RUN useradd --system --no-create-home appuser
-USER appuser
+FROM golang:1.26.6-bookworm AS build
+WORKDIR /repo
+COPY packages/go/ packages/go/
+COPY services/wire-corpus-edge/go.mod services/wire-corpus-edge/go.sum services/wire-corpus-edge/
+WORKDIR /repo/services/wire-corpus-edge
+RUN go mod download
+COPY services/wire-corpus-edge/cmd/ cmd/
+COPY services/wire-corpus-edge/internal/ internal/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /wire-corpus-edge ./cmd/wire-corpus-edge
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /wire-corpus-edge /wire-corpus-edge
 EXPOSE 8080
-ENTRYPOINT ["WireCorpusEdge"]
+ENTRYPOINT ["/wire-corpus-edge"]

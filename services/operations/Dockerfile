@@ -1,6 +1,6 @@
 FROM golang:1.26-bookworm AS schema-ready-builder
 WORKDIR /src/services/jetstream-ingest
-# The schema gate needs local module metadata even in Swift runtime images.
+# Keep the canonical migration gate in front of the worker runtime.
 COPY packages/go/go.mod packages/go/go.sum /src/packages/go/
 COPY services/jetstream-ingest/go.mod services/jetstream-ingest/go.sum ./
 RUN go mod download
@@ -10,27 +10,23 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/schema-ready ./cmd
 COPY database/migrations /src/database/migrations
 RUN /out/schema-ready --generate-manifest /src/database/migrations > /out/required-migrations.txt
 
-FROM swift:6.2.4-jammy AS builder
-WORKDIR /src
-RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev libxml2-dev && rm -rf /var/lib/apt/lists/*
-COPY packages/swift/ReadStateCore packages/swift/ReadStateCore
-
-COPY packages/swift/ThinAppViewCore packages/swift/ThinAppViewCore
-COPY packages/swift/SocialWireRedis packages/swift/SocialWireRedis
-COPY packages/swift/GatewayCore packages/swift/GatewayCore
-COPY packages/swift/OperationsCore packages/swift/OperationsCore
-COPY services/operations services/operations
+FROM golang:1.26-bookworm AS builder
 WORKDIR /src/services/operations
-RUN swift package resolve
-RUN swift build -c release --product Operations
+COPY packages/go/go.mod packages/go/go.sum /src/packages/go/
+COPY services/operations/go.mod services/operations/go.sum ./
+RUN go mod download
+COPY packages/go /src/packages/go
+COPY services/operations/cmd ./cmd
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/Operations ./cmd/operations
 
-FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y --no-install-recommends libssl3 libcurl4 libsqlite3-0 libicu70 libxml2 ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /src/services/operations/.build/release/Operations /usr/local/bin/Operations
-COPY --from=builder /usr/lib/swift/linux /usr/lib/swift/linux
-RUN useradd --system --no-create-home appuser
-USER appuser
-EXPOSE 8083
+FROM debian:bookworm-slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd --system --no-create-home appuser
+COPY --from=builder /out/Operations /usr/local/bin/Operations
 COPY --from=schema-ready-builder /out/schema-ready /usr/local/bin/schema-ready
 COPY --from=schema-ready-builder /out/required-migrations.txt /etc/socialwire/required-migrations.txt
+USER appuser
+EXPOSE 8083
 ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "/usr/local/bin/Operations"]

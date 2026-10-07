@@ -36,7 +36,7 @@ Automated and manual verification for every package in the monorepo.
 
 ## Test location rule
 
-Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/gateway/Tests/`, etc.). See [[Contributing]].
+Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/gateway/internal/`, etc.). See [[Contributing]].
 
 ## Full CI gate
 
