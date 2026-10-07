@@ -140,3 +140,17 @@ func TestWireModeSourcePriority(t *testing.T) {
 		t.Fatal(c, e)
 	}
 }
+func TestPodcastConfiguredAssetRoutesUseCanonicalGatewayPaths(t *testing.T) {
+	h := hostFixture(t, true, map[string]string{"PODCAST_MEDIA_WORKER_URL": "http://podcast-worker.railway.internal", "PODCAST_MEDIA_INTERNAL_SECRET": strings.Repeat("m", 32)})
+	if w := serveHost(h, "GET", "/v1/podcasts/assets", ""); w.Code != 401 {
+		t.Fatal("configured private asset route missing", w.Code)
+	}
+	if w := serveHost(h, "GET", "/v1/podcasts/public/assets", ""); w.Code == 401 || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("configured public asset route missing", w.Code, w.Body.String())
+	}
+	for _, path := range []string{"/v1/podcasts/clips/asset", "/v1/podcasts/public/clips/asset"} {
+		if w := serveHost(h, "GET", path, ""); w.Code != 404 {
+			t.Fatal("unregistered legacy asset path admitted", path, w.Code)
+		}
+	}
+}
