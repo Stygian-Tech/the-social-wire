@@ -8,7 +8,7 @@ const migration = readFileSync(
   "utf8",
 );
 const metadata = readFileSync(
-  join(root, "services/wire-worker/Sources/WireWorkerCore/PostgresWireLinkMetadataStore.swift"),
+  join(root, "packages/go/wireworkercore/metadata_sql.go"),
   "utf8",
 );
 
@@ -27,7 +27,7 @@ describe("Wire account and metadata work indexes", () => {
   });
 
   it("matches the general claim statuses and null-first priority without changing due rules", () => {
-    const generalClaim = metadata.slice(metadata.indexOf("let generalRows"));
+    const generalClaim = metadata;
     const statuses = generalClaim.match(/WHERE status IN \(([^)]+)\)/)?.[1];
     expect(statuses).toBeDefined();
     expect(migration).toContain(`WHERE status IN (${statuses})`);
