@@ -5,6 +5,7 @@
     "dockerfilePath": "/services/jetstream-ingest/Dockerfile",
     "watchPatterns": [
       "/services/jetstream-ingest/**",
+      "/packages/go/**",
       "/database/migrations/**",
       "/railway/wire-jetstream-ingest.json"
     ]

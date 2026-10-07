@@ -275,6 +275,7 @@ export default defineRailway((context) => {
       watchPatterns: [
         "/.railway/**",
         "/services/jetstream-ingest/**",
+        "/packages/go/**",
         "/database/migrations/**",
       ],
     },
