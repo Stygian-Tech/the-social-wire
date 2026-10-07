@@ -11,6 +11,7 @@ import (
 )
 
 type Service struct {
+	Cache       *CacheStore
 	DB          *sql.DB
 	Repo        Repository
 	Client      *http.Client

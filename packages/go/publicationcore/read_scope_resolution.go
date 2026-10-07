@@ -10,7 +10,16 @@ func (s *Service) ResolveScopes(ctx context.Context, auth gatewaycore.AuthContex
 	if e := selector.Validate(); e != nil {
 		return nil, e
 	}
-	sidebar, e := s.Sidebar(ctx, auth, "full")
+	var sidebar Sidebar
+	var e error
+	if s.Cache != nil {
+		if cached, err := s.Cache.Lookup(ctx, auth.DID, s.Now(), true); err == nil && cached != nil {
+			sidebar = cached.Snapshot.Sidebar()
+		}
+	}
+	if sidebar.ViewerDID == "" {
+		sidebar, e = s.Sidebar(ctx, auth, "full")
+	}
 	if e != nil {
 		return nil, e
 	}
