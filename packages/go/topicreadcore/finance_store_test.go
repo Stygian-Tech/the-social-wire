@@ -32,13 +32,14 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	instrument := financecore.ReviewedInstruments()[0]
 	instrument = financecore.ApplyReviewedMetadata(instrument)
 	raw, _ := json.Marshal(instrument)
-	if _, err := db.Exec(`INSERT INTO finance_instruments(instrument_id,provider_key,payload,updated_at)VALUES($1,$2,$3::jsonb,$4)`, instrument.ID, "topic-fixture-finance", raw, now); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
 		db.Exec(`DELETE FROM finance_generations WHERE generation_id=$1::uuid`, generation)
 		db.Exec(`DELETE FROM finance_instruments WHERE provider_key='topic-fixture-finance'`)
 	})
+	if _, err := db.Exec(`INSERT INTO finance_instruments(instrument_id,provider_key,payload,updated_at)VALUES($1,$2,$3::jsonb,$4)`, instrument.ID, "topic-fixture-finance", raw, now); err != nil {
+		t.Fatal(err)
+	}
+
 	fixture := &financeWireFixture{items: map[string]wirecore.FeedItem{}}
 	candidates := []financecore.RankCandidate{}
 	for index, title := range []string{"Apple reports record earnings and revenue", "Apple announces semiconductor investment deal", "Apple publishes quarterly financial regulation filing"} {

@@ -19,13 +19,14 @@ func TestSportsPostgresSnapshotLiveChangesAndResolverGate(t *testing.T) {
 	id := "88888888-2222-2222-2222-222222222222"
 	entity := sportscore.Entity{ID: "topic-sports-team", Name: "Fixture Football Club", Kind: "team", CompetitionIDs: []string{}, Aliases: []string{}, ProviderIDs: map[string]string{}, Memberships: []sportscore.Membership{}, Active: true}
 	raw, _ := corpuscore.MarshalHTTP(entity)
-	if _, err := db.Exec(`INSERT INTO sports_entities(entity_id,payload,updated_at)VALUES($1,$2::jsonb,$3)`, entity.ID, raw, now); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
 		db.Exec(`DELETE FROM sports_generations WHERE generation_id=$1::uuid`, id)
 		db.Exec(`DELETE FROM sports_entities WHERE entity_id=$1`, entity.ID)
 	})
+	if _, err := db.Exec(`INSERT INTO sports_entities(entity_id,payload,updated_at)VALUES($1,$2::jsonb,$3)`, entity.ID, raw, now); err != nil {
+		t.Fatal(err)
+	}
+
 	fixture := &financeWireFixture{items: map[string]wirecore.FeedItem{}}
 	candidates := []sportscore.RankCandidate{}
 	for index, title := range []string{"Fixture Football Club wins championship final", "Fixture Football Club signs new player", "Fixture Football Club sets new season record"} {
