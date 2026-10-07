@@ -22,6 +22,7 @@ type Database interface {
 type PostgresStore struct {
 	DB                Database
 	Environment       string
+	InboxCache        InboxObservationCache
 	FingerprintSecret string
 	TelemetryExporter interface {
 		Export(context.Context, []telemetrycore.MetricSample) error
