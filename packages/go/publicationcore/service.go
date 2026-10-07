@@ -11,6 +11,15 @@ import (
 )
 
 type Service struct {
+	Enroller    *Enroller
+	Lists       func(context.Context, gatewaycore.AuthContext) (any, error)
+	background  context.Context
+	cancel      context.CancelFunc
+	bgmu        sync.Mutex
+	bgwg        sync.WaitGroup
+	bgclosed    bool
+	bgkeys      map[string]bool
+	bgslots     chan struct{}
 	Cache       *CacheStore
 	DB          *sql.DB
 	Repo        Repository
@@ -31,7 +40,11 @@ type scopeEntry struct {
 }
 
 func NewService(db *sql.DB, repo Repository, client *http.Client) *Service {
-	return &Service{DB: db, Repo: repo, Client: client, Now: time.Now, discoveries: map[string]discoveryEntry{}, scopes: map[string]scopeEntry{}, rows: map[string]map[string]SidebarRow{}}
+	if client == nil {
+		client = gatewaycore.NewPublicHTTPClient(nil)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Service{background: ctx, cancel: cancel, bgkeys: map[string]bool{}, bgslots: make(chan struct{}, 64), DB: db, Repo: repo, Client: client, Now: time.Now, discoveries: map[string]discoveryEntry{}, scopes: map[string]scopeEntry{}, rows: map[string]map[string]SidebarRow{}}
 }
 func (s *Service) Scope(ctx context.Context, id, author string) AppViewScope {
 	key := NormalizeATRepoParam(id)
@@ -114,7 +127,16 @@ func (s *Service) Priority(ctx context.Context, auth gatewaycore.AuthContext, re
 		delete(s.rows, auth.DID)
 		s.mu.Unlock()
 	}
-	discovery, e := s.Discover(ctx, auth.DID, !refresh)
+	var discovery DiscoveryContext
+	var e error
+	s.mu.Lock()
+	cached := s.discoveries[auth.DID]
+	s.mu.Unlock()
+	if !refresh && cached.expires.After(s.Now()) {
+		discovery = cached.value
+	} else {
+		discovery, e = s.Discover(ctx, auth.DID, false)
+	}
 	if e != nil {
 		return Sidebar{}, discovery, e
 	}
@@ -131,4 +153,14 @@ func (s *Service) Counters(ctx context.Context, viewer string, rows []SidebarRow
 		return store.Refresh(ctx, viewer, scopes, s.Now())
 	}
 	return store.Snapshot(ctx, viewer, scopes, s.Now())
+}
+func (s *Service) Refresh(ctx context.Context, auth gatewaycore.AuthContext) (Sidebar, error) {
+	if s.Cache != nil {
+		_ = s.Cache.InvalidateSidebar(ctx, auth.DID)
+	}
+	sidebar, _, e := s.Priority(ctx, auth, true)
+	if e == nil {
+		s.launch("sidebar:"+auth.DID, func(work context.Context) { s.rebuild(work, auth) })
+	}
+	return sidebar, e
 }

@@ -155,7 +155,7 @@ func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-c
 		return 0, errors.New("invalid enrollment author")
 	}
 	base, err := e.PDS.Resolve(ctx, did)
-	if err != nil {
+	if err != nil || base == "" {
 		return 0, errors.New("PDS resolution unavailable")
 	}
 	budget := e.MaximumRecords
@@ -287,4 +287,17 @@ func retryDelay(raw string, attempt int, at time.Time, jitter float64) time.Dura
 		base = max(0, date.Sub(at))
 	}
 	return min(30*time.Second, time.Duration(float64(base)*(1+max(0, min(.25, jitter)))))
+}
+func NewEnroller(db *sql.DB, repo Repository, pds *thinappviewcore.PDSClient, getter thinappviewcore.PublicGetter, cache *thinappviewcore.ProjectionCache, env map[string]string) *Enroller {
+	integer := func(key string, fallback int) int {
+		n, e := strconv.Atoi(strings.TrimSpace(env[key]))
+		if e != nil || n <= 0 {
+			return fallback
+		}
+		return n
+	}
+	retention := time.Duration(integer("THIN_APPVIEW_CONTENT_TTL_SECONDS", 30*86400)) * time.Second
+	rss := &thinappviewcore.RSSIngestion{DB: db, HTTP: getter, Cache: cache, MaximumItems: integer("THIN_APPVIEW_MAX_RSS_ITEMS_PER_FEED", 200), Retention: retention}
+	projector := &appviewworkercore.EventProjectorRuntime{DB: db, PDS: pds, Cache: cache, RSS: rss, Counters: thinappviewcore.CounterStore{DB: db}, Retention: retention}
+	return &Enroller{DB: db, Repo: repo, PDS: pds, HTTP: getter, Projection: projector, RSS: rss, MaximumAuthors: integer("THIN_APPVIEW_MAX_ENROLL_AUTHORS", 500), MaximumRecords: integer("THIN_APPVIEW_MAX_ENROLL_RECORDS_PER_AUTHOR", 2000), Concurrency: integer("THIN_APPVIEW_MAX_ENROLL_CONCURRENCY", 4)}
 }

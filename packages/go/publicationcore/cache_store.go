@@ -12,6 +12,7 @@ type CacheStore struct {
 	Projection                thinappviewcore.ProjectionCache
 	Redis                     *socialwireredis.CacheClient
 	SidebarFresh, SidebarHard time.Duration
+	UnreadFresh, UnreadHard   time.Duration
 }
 type CachedSnapshot struct {
 	Snapshot            BootstrapSnapshot

@@ -2,6 +2,8 @@ package publicationcore
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"time"
 )
 
@@ -42,7 +44,7 @@ func snapshotJSON(snapshot BootstrapSnapshot) (string, error) {
 	if e = json.Unmarshal(raw, &value); e != nil {
 		return "", e
 	}
-	transformDates(value, true)
+	value = referenceDates(value, reflect.ValueOf(snapshot))
 	raw, e = json.Marshal(value)
 	return string(raw), e
 }
@@ -85,4 +87,42 @@ func transformDates(value any, encode bool) {
 			transformDates(item, encode)
 		}
 	}
+}
+
+func referenceDates(value any, source reflect.Value) any {
+	if !source.IsValid() {
+		return value
+	}
+	if source.Kind() == reflect.Pointer {
+		if source.IsNil() {
+			return value
+		}
+		return referenceDates(value, source.Elem())
+	}
+	if source.Type() == reflect.TypeOf(time.Time{}) {
+		at := source.Interface().(time.Time)
+		return float64(at.UnixNano())/1e9 - 978307200
+	}
+	switch source.Kind() {
+	case reflect.Struct:
+		if object, ok := value.(map[string]any); ok {
+			for i := 0; i < source.NumField(); i++ {
+				field := source.Type().Field(i)
+				key := strings.Split(field.Tag.Get("json"), ",")[0]
+				if key == "" {
+					key = field.Name
+				}
+				if item, exists := object[key]; exists {
+					object[key] = referenceDates(item, source.Field(i))
+				}
+			}
+		}
+	case reflect.Slice:
+		if array, ok := value.([]any); ok {
+			for i := 0; i < len(array) && i < source.Len(); i++ {
+				array[i] = referenceDates(array[i], source.Index(i))
+			}
+		}
+	}
+	return value
 }

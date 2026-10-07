@@ -26,8 +26,8 @@ func (s *Service) ResolveScopes(ctx context.Context, auth gatewaycore.AuthContex
 	rows := []SidebarRow{}
 	switch selector.Kind {
 	case "publication":
-		for _, row := range allSidebarRows(sidebar) {
-			if IDsMatch(row.PublicationID, *selector.PublicationID) {
+		for _, row := range sidebar.AllPublicationRows {
+			if row.PublicationID == *selector.PublicationID {
 				rows = append(rows, row)
 			}
 		}
@@ -40,7 +40,7 @@ func (s *Service) ResolveScopes(ctx context.Context, auth gatewaycore.AuthContex
 		rows = sidebar.FollowingTabPublications
 	case "folder":
 		for _, section := range sidebar.FolderSections {
-			if section.FolderRKey == *selector.FolderRKey || section.FolderURI == *selector.FolderRKey {
+			if section.FolderRKey == *selector.FolderRKey {
 				rows = append(rows, section.Publications...)
 			}
 		}
