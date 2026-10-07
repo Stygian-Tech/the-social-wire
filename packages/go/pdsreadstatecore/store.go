@@ -121,28 +121,50 @@ func validateTransition(previous r.Manifest, previousCID string, candidate r.Man
 }
 
 func (s *Store) activate(ctx context.Context, viewer string, manifest r.Manifest, cid string, data []byte, generation *r.Generation) error {
+	return s.activateWithRevision(ctx, viewer, manifest, cid, data, generation, nil)
+}
+
+func (s *Store) activateWithRevision(ctx context.Context, viewer string, manifest r.Manifest, cid string, data []byte, generation *r.Generation, expected *int64) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if expected != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO appview_pds_read_state_authority(viewer_did) VALUES($1) ON CONFLICT DO NOTHING`, viewer); err != nil {
+			return err
+		}
+	}
 	var previousJSON []byte
 	var previousCID sql.NullString
 	var ready bool
-	if err := tx.QueryRowContext(ctx, `SELECT manifest::text, manifest_cid, projection_ready FROM appview_pds_read_state_authority WHERE viewer_did=$1 FOR UPDATE`, viewer).Scan(&previousJSON, &previousCID, &ready); err != nil {
+	var legacyRevision int64
+	if err := tx.QueryRowContext(ctx, `SELECT manifest::text, manifest_cid, projection_ready,legacy_revision FROM appview_pds_read_state_authority WHERE viewer_did=$1 FOR UPDATE`, viewer).Scan(&previousJSON, &previousCID, &ready, &legacyRevision); err != nil {
 		return err
 	}
 	// Workers reconcile an existing PDS authority; first migration belongs to the
 	// explicit legacy parity protocol and cannot be inferred by this worker.
 	if !previousCID.Valid {
-		return ErrStaleGeneration
-	}
-	previous, err := r.DecodeManifest(previousJSON, viewer)
-	if err != nil {
-		return err
-	}
-	if err := validateTransition(previous, previousCID.String, manifest, cid); err != nil {
-		return err
+		if expected == nil {
+			return ErrStaleGeneration
+		}
+		if *expected != legacyRevision {
+			return ErrRevisionChanged
+		}
+		if manifest.Version != 1 {
+			return ErrParityMismatch
+		}
+		if err := verifyLegacyParity(ctx, tx, viewer, generation.Projection.Operations()); err != nil {
+			return err
+		}
+	} else {
+		previous, err := r.DecodeManifest(previousJSON, viewer)
+		if err != nil {
+			return err
+		}
+		if err := validateTransition(previous, previousCID.String, manifest, cid); err != nil {
+			return err
+		}
 	}
 	if !ready || previousCID.String != cid {
 		if err := persistProjection(ctx, tx, viewer, generation.Projection.Operations()); err != nil {
