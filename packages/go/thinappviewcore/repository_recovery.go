@@ -46,6 +46,10 @@ type RecoveryCollection struct {
 	Complete      bool     `json:"complete"`
 }
 type RecoveryState struct {
+	SnapshotMode    string                        `json:"snapshotMode,omitempty"`
+	CommitCID       string                        `json:"commitCid,omitempty"`
+	Revision        string                        `json:"revision,omitempty"`
+	RecordOffset    int                           `json:"recordOffset,omitempty"`
 	SnapshotID      string                        `json:"snapshotId"`
 	PruningComplete bool                          `json:"pruningComplete"`
 	PruneCreatedAt  *SwiftDate                    `json:"pruneCreatedAt,omitempty"`
