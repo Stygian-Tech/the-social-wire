@@ -1,10 +1,10 @@
 FROM golang:1.26-bookworm AS builder
 
 WORKDIR /src/services/jetstream-ingest
-# Resolve the shared Go package through the repository-local replace directive.
-COPY packages/go/ /src/packages/go/
+COPY packages/go/go.mod packages/go/go.sum /src/packages/go/
 COPY services/jetstream-ingest/go.mod services/jetstream-ingest/go.sum ./
 RUN go mod download
+COPY packages/go /src/packages/go
 COPY services/jetstream-ingest/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/jetstream-ingest ./cmd/jetstream-ingest
 
