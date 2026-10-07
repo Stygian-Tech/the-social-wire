@@ -1,0 +1,34 @@
+name: Production Merge Verification
+
+# Railway Wait for CI needs a check suite on the pushed main commit. Reuse the
+# exact protected PR result and identical source tree; never rebuild or deploy.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+
+concurrency:
+  group: production-merge-verification-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Production — Validated Merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Verify exact protected PR evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/validated-merge.mjs
