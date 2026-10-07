@@ -210,6 +210,9 @@ func (h *Host) Run(ctx context.Context, authority *operationscore.RoleLeaseAutho
 		launch(h.runInbox)
 		launch(h.runReconciliations)
 	} else {
+		if h.Config.ProactiveBackfillSuppressed() {
+			slog.Info("Suppressing legacy proactive AppView backfill under durable Jetstream V2 authority")
+		}
 		launch(h.runRetention)
 		if h.Config.RSSPoll {
 			launch(h.runRSS)

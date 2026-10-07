@@ -19,6 +19,10 @@ type HostConfig struct {
 	PDSIdleDays                                                                                                         float64
 	TelemetryEnabled                                                                                                    bool
 	RecoveryEnabled                                                                                                     bool
+	ProactiveBackfillEnabled                                                                                            bool
+	ProactiveBackfillInterval                                                                                           time.Duration
+	ProactiveBackfillAuthorLimit                                                                                        int
+	ProactiveBackfillAuthorDIDs                                                                                         []string
 }
 
 func hostConfiguration(environment map[string]string, role string) (HostConfig, error) {
@@ -67,10 +71,25 @@ func hostConfiguration(environment map[string]string, role string) (HostConfig, 
 	c.PollInterval = max(25*time.Millisecond, c.PollInterval)
 	c.AppliedRetention = max(time.Minute, c.AppliedRetention)
 	c.DeadLetterRetention = max(time.Minute, c.DeadLetterRetention)
+	c.ProactiveBackfillEnabled = hostFlag(environment["THIN_APPVIEW_PROACTIVE_BACKFILL_ENABLED"], true)
+	c.ProactiveBackfillInterval = hostSeconds(environment, "THIN_APPVIEW_PROACTIVE_BACKFILL_INTERVAL_SECONDS", 15*60)
+	c.ProactiveBackfillAuthorLimit = hostInt(environment, "THIN_APPVIEW_PROACTIVE_BACKFILL_AUTHOR_LIMIT", 40)
+	for _, raw := range strings.Split(environment["THIN_APPVIEW_PROACTIVE_BACKFILL_AUTHOR_DIDS"], ",") {
+		if did := strings.TrimSpace(raw); did != "" {
+			c.ProactiveBackfillAuthorDIDs = append(c.ProactiveBackfillAuthorDIDs, did)
+		}
+	}
 	if value, err := strconv.ParseFloat(environment["THIN_APPVIEW_PDS_READ_STATE_IDLE_DAYS"], 64); err == nil {
 		c.PDSIdleDays = max(7, value)
 	}
 	return c, nil
+}
+
+// Legacy proactive enrollment is deliberately suppressed under the only
+// supported Go intake mode, v2_authoritative. Missing history is repaired by
+// leased durable reconciliation or Operations recovery, never an unfenced loop.
+func (c HostConfig) ProactiveBackfillSuppressed() bool {
+	return c.Role == "coordinator" && c.ProactiveBackfillEnabled
 }
 func hostFlag(value string, fallback bool) bool {
 	if strings.TrimSpace(value) == "" {
