@@ -47,7 +47,7 @@ export type PlayerContext = {
   state: PodcastState;
   error: string | null;
   silence: PodcastSilence | null;
-  play: (episode: PodcastEpisode) => Promise<void>;
+  play: (episode: PodcastEpisode, startAt?: number) => Promise<void>;
   toggle: () => void;
   seek: (time: number) => void;
   changeState: (patch: StatePatch) => Promise<void>;
@@ -217,7 +217,7 @@ export function PodcastPlayerProvider({
   const seek = useCallback(
     (time: number) => {
       if (!audio.current) return;
-      if (!audio.current.getAttribute("src") && active.current) {
+      if ((!audio.current.getAttribute("src") || audio.current.readyState === 0) && active.current) {
         // A restored episode has no media source until playback starts.
         pendingSeek.current = { episodeId: active.current.id, time };
       }
@@ -231,11 +231,14 @@ export function PodcastPlayerProvider({
     [saveProgress],
   );
   const play = useCallback(
-    async (item: PodcastEpisode) => {
+    async (item: PodcastEpisode, startAt?: number) => {
       const element = audio.current;
       if (!element || !viewerRef.current) return;
       const generation = ++playbackGeneration.current;
       const did = viewerRef.current;
+      if (startAt !== undefined && Number.isFinite(startAt)) {
+        pendingSeek.current = { episodeId: item.id, time: clampPlaybackTime(startAt, item.durationSeconds ?? 0) };
+      } else if (pendingSeek.current?.episodeId !== item.id) pendingSeek.current = null;
       saveProgress();
       element.pause();
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
@@ -284,6 +287,7 @@ export function PodcastPlayerProvider({
           objectUrl.current = URL.createObjectURL(media);
           source = objectUrl.current;
         } catch {
+          if (generation !== playbackGeneration.current || viewerRef.current !== did || audio.current !== element) return;
           setError("Private Audio Could Not Be Loaded. Try Downloading It for Offline Playback.");
           return;
         }
@@ -296,9 +300,10 @@ export function PodcastPlayerProvider({
       element.playbackRate = stateRef.current.playbackSpeed;
       element.preservesPitch = true;
       const resume = stateRef.current.progress[item.id];
-      const requestedPosition = pendingSeek.current?.episodeId === item.id ? pendingSeek.current.time : undefined;
-      pendingSeek.current = null;
       element.onloadedmetadata = () => {
+        if (generation !== playbackGeneration.current || viewerRef.current !== did || audio.current !== element) return;
+        const requestedPosition = pendingSeek.current?.episodeId === item.id ? pendingSeek.current.time : undefined;
+        pendingSeek.current = null;
         element.currentTime = clampPlaybackTime(
           requestedPosition ?? (resume?.completed ? 0 : (resume?.positionSeconds ?? 0)),
           element.duration,

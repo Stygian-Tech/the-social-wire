@@ -6,7 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { act } from "react";
+import { act, useEffect } from "react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
 import * as gateway from "@/lib/socialWireGatewayClient";
@@ -159,6 +159,39 @@ function environment() {
   };
 }
 describe("Persistent podcast player", () => {
+  it("starts a different episode at an explicit time instead of its saved resume position", async () => {
+    const env = environment();
+    const other = { ...episode, id: "other", audioUrl: "https://publisher.test/other.mp3" };
+    window.localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({ episode, state: { ...initialPodcastState(), progress: { other: { positionSeconds: 90, completed: false, updatedAt: "2026-10-06" } } }, pending: {} }));
+    let player: PlayerContext;
+    function Capture() { const context = usePodcastPlayer(); useEffect(() => { player = context; }, [context]); return <span>{context.episode?.title}</span>; }
+    render(<PodcastPlayerProvider><Capture /></PodcastPlayerProvider>);
+    await act(async () => { await player!.changeState({ progress: { other: { positionSeconds: 90, completed: false, updatedAt: "2026-10-06" } } }); });
+    expect(player!.state.progress.other?.positionSeconds).toBe(90);
+    await act(async () => { await player!.play(other, 10); });
+    expect(env.element.src).toBe(other.audioUrl);
+    expect(env.element.currentTime).toBe(10);
+    await act(async () => { await player!.play(other, 0); });
+    expect(env.element.currentTime).toBe(0);
+  });
+
+  it("ignores stale metadata callbacks and honors seeks made while selected media loads", async () => {
+    const env = environment();
+    env.element.play = async () => {};
+    let player: PlayerContext;
+    function Capture() { const context = usePodcastPlayer(); useEffect(() => { player = context; }, [context]); return null; }
+    render(<PodcastPlayerProvider><Capture /></PodcastPlayerProvider>);
+    await act(async () => { await player!.play(episode, 15); });
+    const staleMetadata = env.element.onloadedmetadata!;
+    const other = { ...episode, id: "other", audioUrl: "https://publisher.test/other.mp3" };
+    await act(async () => { await player!.play(other, 20); player!.seek(30); });
+    await act(async () => staleMetadata.call(env.element, new window.Event("loadedmetadata")));
+    expect(env.element.currentTime).toBe(30);
+    await act(async () => env.element.onloadedmetadata?.(new window.Event("loadedmetadata")));
+    expect(env.element.currentTime).toBe(30);
+    expect(env.element.src).toBe(other.audioUrl);
+  });
+
   it("loads selected chapter artwork without restarting audio", async () => {
     const env = environment();
     const chaptered = { ...episode, chapters: [{ startSeconds: 0, title: "Intro" }] };
