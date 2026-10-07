@@ -11630,7 +11630,7 @@
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-drain-indexes.test.ts",
-          "sha256": "7f7c5f2737d06b3481c0d241d9cdbb2992556a5a745eec45353a7a585b7f7b0c"
+          "sha256": "fa650930ed143ffc770d9ce62c59b286ef21e582f6c86238cb5167dd95f37ed5"
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-durability-migration.test.ts",
@@ -11686,7 +11686,7 @@
         },
         {
           "path": "packages/spec/__tests__/schema-readiness-deployment.test.ts",
-          "sha256": "7cdcbf31ac114e9cb2dddead384d8fc2b88a0121d115627c9995ba1b7b0d895b"
+          "sha256": "efea935dfd86fa150fc71ae51b8e457fdc0f9fde636b69aa7381cb3f970405bc"
         },
         {
           "path": "packages/spec/__tests__/sports-public-contract.test.ts",
