@@ -106,7 +106,12 @@ func (c *EntryCache) page(ctx context.Context, auth gatewaycore.AuthContext, q a
 		var e error
 		lease, e = cache.Projection.AcquireRefreshLease(ctx, "firstpage", id, 10*time.Second)
 		if e != nil {
-			return appviewcore.EntryPage{}, e
+			if ctx.Err() != nil {
+				return appviewcore.EntryPage{}, ctx.Err()
+			}
+			// Match the disposable Redis store's fail-open rebuild lease. No key
+			// is owned, so renewal/release must not touch another holder's lock.
+			lease = &thinappviewcore.RefreshLease{TTL: 10 * time.Second}
 		}
 		if lease == nil {
 			timer := time.NewTimer(250 * time.Millisecond)

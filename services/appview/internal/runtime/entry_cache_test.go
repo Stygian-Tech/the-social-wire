@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/stygian-tech/the-social-wire/packages/go/appviewcore"
+	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/publicationcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 	"net/url"
@@ -106,5 +108,25 @@ func TestRedisConfiguredUnavailableDisablesCacheWithoutSQLiteFallback(t *testing
 	}
 	if w := serveHost(h, "GET", "/readyz", ""); w.Code != 200 {
 		t.Fatal(w.Code)
+	}
+}
+func TestFirstPageRedisOutageStillServesLivePostgresEntries(t *testing.T) {
+	server := miniredis.RunT(t)
+	h := hostFixture(t, false, map[string]string{"APPVIEW_CACHE_BACKEND": "redis", "REDIS_URL": "redis://" + server.Addr()})
+	server.Close()
+	at := time.Now().UTC()
+	author := fmt.Sprintf("did:plc:hostoutage%d", at.UnixNano())
+	uri := "at://" + author + "/site.standard.document/one"
+	publication := "at://" + author + "/site.standard.publication/pub"
+	t.Cleanup(func() { h.DB.Exec(`DELETE FROM content_items WHERE uri=$1`, uri) })
+	render := fmt.Sprintf(`{"title":"live PostgreSQL fixture","publishedAt":%q}`, at.Format(time.RFC3339Nano))
+	if _, e := h.DB.Exec(`INSERT INTO content_items(uri,cid,author_did,collection,created_at,publication_site,render_json,expires_at)VALUES($1,'fixture',$2,'site.standard.document',$3,$4,$5::jsonb,$6)`, uri, author, at, publication, render, at.Add(time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	page, e := h.EntryCache.Read(ctx, gatewaycore.AuthContext{DID: "did:plc:outageviewer"}, appviewcore.EntryQuery{ViewerDID: "did:plc:outageviewer", AuthorDID: author, PublicationATURI: publication, PublicationID: publication, Filter: "all", Limit: 50}, 0, at)
+	if e != nil || len(page.Entries) != 1 || page.Entries[0].Title != "live PostgreSQL fixture" {
+		t.Fatal(page, e)
 	}
 }
