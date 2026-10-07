@@ -36,6 +36,15 @@ struct PodcastMediaProxyRoutes {
     var req = HTTPClientRequest(
       url: baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + query)
     if let range = request.headers[.range] { req.headers.add(name: "Range", value: range) }
+    if let auth {
+      req.headers.add(name: "Authorization", value: auth.authorizationForwardingValue)
+      if let dpop = auth.dpopProof { req.headers.add(name: "DPoP", value: dpop) }
+      if let upstream = auth.upstreamDpopProof?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !upstream.isEmpty
+      {
+        req.headers.add(name: ATProtoUpstreamDPoP.headerName, value: upstream)
+      }
+    }
     if let auth, let secret = internalSecret {
       let headers = try GatewayInternalTrust.signedHeaders(
         secret: secret, did: auth.did, method: "GET", pathWithQuery: path)

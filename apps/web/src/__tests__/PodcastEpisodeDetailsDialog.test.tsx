@@ -18,6 +18,27 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => { cleanup(); await new Promise(resolve => setTimeout(resolve, 0)); }); restores.splice(0).reverse().forEach(restore => restore()); });
 const episode: PodcastEpisode = { id: "episode", showId: "show", title: "The Episode", audioUrl: "/audio", publishedAt: "2026-10-05", transcripts: [], description: '<p>Full &amp; Formatted Notes.</p><ul><li>A Topic</li></ul><a href="https://example.com/notes">Source</a><script>alert("bad")</script><img src="https://example.com/image.jpg" onerror="alert(1)">' };
 
+it("keeps a bounded decoded card excerpt and exposes accessible timecode buttons only in full notes", async () => {
+  const positions: number[] = [];
+  render(<PodcastEpisodeDetailsDialog episode={{ ...episode, durationSeconds: 120, description: '<p>0:30 First &amp; Second.</p><p>1:00 Topic.</p><p>3:00 Out of Range.</p>' }} onTimecode={seconds => positions.push(seconds)} />);
+  const trigger = screen.getByRole("button", { name: "Show Notes: The Episode" });
+  const excerpt = trigger.querySelector(".line-clamp-3")!;
+  expect(excerpt.textContent).toBe("0:30 First & Second. 1:00 Topic. 3:00 Out of Range.");
+  expect(excerpt.className).toContain("max-h-15");
+  expect(excerpt.className).toContain("leading-5");
+  expect(excerpt.className.split(" ")).not.toContain("block");
+  expect(trigger.querySelector("button")).toBeNull();
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole("dialog", { name: episode.title });
+  const time = within(dialog).getByRole("button", { name: "Seek to 0:30" });
+  expect(time.tagName).toBe("BUTTON");
+  fireEvent.click(time);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Seek to 1:00" }));
+  expect(positions).toEqual([30, 60]);
+  expect(within(dialog).queryByRole("button", { name: "Seek to 3:00" })).toBeNull();
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
 it("opens complete sanitized show notes from the episode body and closes without playback", async () => {
   const view = render(<PodcastEpisodeDetailsDialog episode={episode} showName="Primary Technology" />);
   const trigger = screen.getByRole("button", { name: "Show Notes: The Episode" });
