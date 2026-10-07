@@ -20,11 +20,12 @@ type Database interface {
 	Begin(context.Context) (pgx.Tx, error)
 }
 type PostgresStore struct {
-	DB                Database
-	Environment       string
-	InboxCache        InboxObservationCache
-	FingerprintSecret string
-	TelemetryExporter interface {
+	DB                   Database
+	Environment          string
+	InboxCache           InboxObservationCache
+	DatabaseObservations DatabaseObservations
+	FingerprintSecret    string
+	TelemetryExporter    interface {
 		Export(context.Context, []telemetrycore.MetricSample) error
 	}
 }
