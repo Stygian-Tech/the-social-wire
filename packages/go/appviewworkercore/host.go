@@ -77,7 +77,7 @@ func NewHost(environment map[string]string, role string) (*Host, error) {
 	pds := &thinappviewcore.PDSClient{PLCBase: environment["ATPROTO_PLC_URL"]}
 	rss := &thinappviewcore.RSSIngestion{DB: db, Cache: cache, MaximumItems: config.MaximumRSSItems, Retention: config.ContentRetention}
 	projector := &EventProjectorRuntime{DB: db, PDS: pds, Cache: cache, RSS: rss, Counters: thinappviewcore.CounterStore{DB: db}, Retention: config.ContentRetention, AppliedRetention: config.AppliedRetention, WorkerID: config.InstanceID}
-	restorer := RepositoryRestorer{DB: db, PDS: pds, Projector: projector, RecordBudget: config.RecoveryRecordBudget, MaximumRateLimitRetries: 3}
+	restorer := RepositoryRestorer{DB: db, PDS: pds, Projector: projector, RecordBudget: min(200, config.RecoveryRecordBudget), MaximumRateLimitRetries: 3}
 	projector.RestoreRepository = restorer.Restore
 	host := &Host{Config: config, DB: db, Projector: projector, RSS: rss, Cache: cache, Redis: redisClient}
 	readState := &pdsreadstatecore.Store{DB: db, FetchRecord: pds.FetchRecord}
@@ -359,9 +359,6 @@ func (h *Host) processReconciliation(ctx context.Context, request thinappviewcor
 		}
 	}()
 	err := h.Projector.RestoreRepository(workCtx, scope)
-	if err == nil {
-		_, err = h.Projector.ReconcileReadState(workCtx, request.RepoDID, false)
-	}
 	cancel()
 	renewErr := <-done
 	if err == nil {
@@ -374,8 +371,9 @@ func (h *Host) processReconciliation(ctx context.Context, request thinappviewcor
 	if err == nil {
 		err = store.CompleteReconciliation(ctx, request, config.InstanceID, at.Add(config.AppliedRetention), at)
 	} else {
+		slog.Warn("AppView repository recovery failed", "category", recoveryFailureCategory(err))
 		delay := InboxRetryDelay(request.AttemptCount+1, rand.Float64())
-		err = store.RetryReconciliation(ctx, request, config.InstanceID, "repository_reconciliation_incomplete", at.Add(delay), at)
+		err = store.RetryReconciliation(ctx, request, config.InstanceID, recoveryFailureCategory(err), at.Add(delay), at)
 	}
 	if err != nil {
 		slog.Warn("AppView recovery persistence failed", "error", err)
