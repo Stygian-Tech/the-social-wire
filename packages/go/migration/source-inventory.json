@@ -7855,11 +7855,11 @@
         },
         {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "80aa54f641a347ff4ba1981defd04830a113fea3cd96005c84ffbe71b91e8252"
+          "sha256": "704b77925a4ffd1b237d7d4a9a72ab181c84dc9dac32c53414a55161a960c9a7"
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "54ae3771c698041db144f912457ae3da9fc7465af1e655b287dc8cd075d22ddf"
+          "sha256": "809c3c51efbd8542a0783aa4c97920d671e5dba3368e1c7a2968628c4d913769"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",

@@ -39,10 +39,4 @@ From the repository root: `GOWORK=off go -C packages/go test -race ./thinappview
 
 Status: **partial**. `migration/status.json` is the machine-readable completion record.
 
-Remaining work:
-
-- transactional event application, claims and acknowledgements
-- repository repairs and lifecycle cleanup
-- RSS identities/polling and PDS backfill
-- stores, projections, caches and remaining models
-- podcast parsing, listener protocol, and store surfaces added on Development
+Inbox application stores, repository recovery, RSS polling, selections, counters and worker projection caches are implemented for the Go worker hosts. Remaining Swift serving models and podcast listener contracts continue to support the Gateway/AppView services. Development worker activation requires separate live acceptance.

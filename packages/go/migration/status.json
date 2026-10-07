@@ -10,12 +10,12 @@
         "ranking",
         "provider-native instrument and selection identities",
         "preference fingerprints",
-        "ranking analysis models"
+        "ranking analysis models",
+        "article resolver and topic evidence",
+        "reviewed catalogs and named feed identities"
       ],
       "remaining": [
-        "article resolver and topic evidence",
-        "reviewed catalogs and named feeds",
-        "provider adapters and rights constraints",
+        "provider serving contracts",
         "cursors and remaining serving models"
       ]
     },
@@ -51,13 +51,11 @@
       "implemented": [
         "PostgreSQL fenced role leases",
         "transactional publication fence",
-        "lease supervisor cancellation and teardown"
+        "lease supervisor cancellation and teardown",
+        "bounded lease renewal retry and observation events"
       ],
       "remaining": [
-        "health evidence and telemetry",
-        "recovery/control/store contracts",
-        "remaining supported stores",
-        "supervisor retry and observation policy parity"
+        "remaining Operations service stores and APIs"
       ]
     },
     {
@@ -77,13 +75,14 @@
       "implemented": [
         "v1 validation and projection",
         "IPLD DAG-CBOR canonical hashing with restricted receipt value validation",
-        "v2 original-intent hashes and device receipt chains"
-      ],
-      "remaining": [
+        "v2 original-intent hashes and device receipt chains",
         "strict v2 closed-shape loading",
         "v1 extension retention",
+        "bounded generation loading and original-record CID verification"
+      ],
+      "remaining": [
         "v2 merge/compaction and manifest publication",
-        "sync/store/transport/GC implementations"
+        "client sync/outbox/GC implementations"
       ]
     },
     {
@@ -121,12 +120,12 @@
         "identity and preference fingerprints",
         "sport hierarchy",
         "membership timestamp compatibility",
-        "ranking analysis models"
+        "ranking analysis models",
+        "article resolver and entity index",
+        "reviewed catalogs and provider response parsing"
       ],
       "remaining": [
-        "article resolver and entity index",
-        "reviewed catalogs and providers",
-        "provider adapters",
+        "provider serving contracts",
         "cursors and remaining serving models"
       ]
     },
@@ -136,14 +135,15 @@
       "implemented": [
         "official Jetstream SDK decoding with metadata validation and exact integers",
         "gofeed RSS/Atom/JSON Feed parsing",
-        "x/net/html thumbnail extraction and feed URL normalization"
+        "x/net/html thumbnail extraction and feed URL normalization",
+        "transactional inbox claims, acknowledgements and repository recovery",
+        "RSS identities, conditional polling, PDS backfill and lifecycle cleanup",
+        "content, selection, counters and projection cache stores",
+        "public HTTP/DID/PDS resolution with bounded transport"
       ],
       "remaining": [
-        "transactional event application, claims and acknowledgements",
-        "repository repairs and lifecycle cleanup",
-        "RSS identities/polling and PDS backfill",
-        "stores, projections, caches and remaining models",
-        "podcast parsing, listener protocol, and store surfaces added on Development"
+        "remaining serving models",
+        "podcast parsing, listener protocol, and store surfaces retained in Swift"
       ]
     },
     {
@@ -173,14 +173,13 @@
     "roleLeases": "PostgreSQL 17 takeover, stale tokens, post-lock expiry and shared publication fence tests",
     "financeSportsRanking": "45 actual Swift/Go snapshots; identical ranked IDs",
     "generationPublication": "canonical PostgreSQL schema; metadata projection equality, baseline/external candidates, atomic regional editions, stale fence rollback, shadow pointer isolation and retention",
-    "libraryAdoption": "regressions for fractional feed dates, chronological ordering, JSON Feed, HTML comments/entities, stale circuit completions, Redis transport expiry, canonical DAG-CBOR bounds and exact protocol integers"
+    "libraryAdoption": "regressions for fractional feed dates, chronological ordering, JSON Feed, HTML comments/entities, stale circuit completions, Redis transport expiry, canonical DAG-CBOR bounds and exact protocol integers",
+    "runtimePorts": "canonical PostgreSQL race tests for inbox recovery, selections, counters, read-state CID activation, metadata fences, catalog/provider parity and coordinator lifecycle; hosted acceptance pending"
   },
   "remainingServices": [
-    "Go Projection Pool event application, repair and inbox drain",
-    "Go Coordinator jobs, enrichment, labels and graph maintenance",
-    "Finance/Sports background projectors and materializers",
-    "Operations health/telemetry compatibility",
-    "Docker/Railway replacement targets and Development handoff evidence"
+    "Go exact-head CI, production image and Development handoff evidence",
+    "Operations telemetry compatibility verification",
+    "remove superseded Swift worker services after Go runtime acceptance"
   ],
   "serviceLibraries": [
     {
@@ -191,23 +190,48 @@
         "fenced atomic generation/edition publication",
         "bounded generation and leaf retention",
         "cycle activation and label freshness gates",
-        "ranking cadence and readiness scheduler"
+        "ranking cadence and readiness scheduler",
+        "fenced inbox application, drain and dependency recovery",
+        "baseline labels, metadata/profile enrichment and graph maintenance",
+        "recommendation replay and durable cleanup",
+        "host configuration and joined lane lifecycle"
       ],
       "remaining": [
-        "inbox application and drain",
-        "baseline label refresh transport",
-        "metadata, profile, graph and recovery jobs",
-        "Finance/Sports projectors and materializers",
-        "worker host and runtime configuration"
+        "exact-head CI and Development runtime acceptance"
       ]
     },
     {
       "name": "appviewworkercore",
-      "status": "pending"
+      "status": "implemented_pending_activation",
+      "implemented": [
+        "AppView projection, repository reconciliation, read-state activation and coordinator jobs",
+        "fenced Operations replay, diagnostic reconciliation and durable controls"
+      ],
+      "remaining": [
+        "exact-head CI and Development runtime acceptance"
+      ]
     },
     {
       "name": "indexingworkercore",
-      "status": "pending"
+      "status": "implemented_pending_activation",
+      "implemented": [
+        "independently supervised projection/coordinator roles",
+        "reserved authority capacity, health probes and bounded shutdown"
+      ],
+      "remaining": [
+        "exact-head CI and Development runtime acceptance"
+      ]
+    },
+    {
+      "name": "topicworkercore",
+      "status": "implemented_pending_activation",
+      "implemented": [
+        "Finance/Sports catalog projectors and fenced materializers",
+        "rights-gated provider refresh with bounded retry and cache retention"
+      ],
+      "remaining": [
+        "exact-head CI and Development runtime acceptance"
+      ]
     }
   ]
 }
