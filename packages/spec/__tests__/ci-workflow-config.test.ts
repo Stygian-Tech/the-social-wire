@@ -50,7 +50,7 @@ describe("CI workflow configuration", () => {
       railwayInfrastructure.indexOf("const indexingBuild"),
       railwayInfrastructure.indexOf("const longRunningDeploy"),
     );
-    expect(indexingBuild).toContain('"/packages/swift/FinanceCore/**"');
+    expect(indexingBuild).toContain('"/packages/go/**"');
   });
 
   it("packages and watches SportsCore in every deployed Sports consumer", () => {
@@ -70,7 +70,7 @@ describe("CI workflow configuration", () => {
       railwayInfrastructure.indexOf("const indexingBuild"),
       railwayInfrastructure.indexOf("const longRunningDeploy"),
     );
-    expect(indexingBuild).toContain('"/packages/swift/SportsCore/**"');
+    expect(indexingBuild).toContain('"/packages/go/**"');
   });
 
   it("keeps Finance and Sports selection ingestion in Development's explicit collection override", () => {
