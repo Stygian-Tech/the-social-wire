@@ -101,8 +101,11 @@ def inventory():
         )
     retired_path = ROOT / "packages/go/migration/retired-worker-sources.json"
     retired = json.loads(retired_path.read_text()) if retired_path.exists() else None
+    services_path = ROOT / "packages/go/migration/retired-service-sources.json"
+    retired_services = json.loads(services_path.read_text()) if services_path.exists() else None
     return {
         **({"retiredWorkers": retired} if retired is not None else {}),
+        **({"retiredServices": retired_services} if retired_services is not None else {}),
         "schemaVersion": 1,
         "description": "Source inventory; implementation and parity must be tracked separately.",
         "packages": packages,
