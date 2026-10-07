@@ -5,7 +5,7 @@ type CreateBackfillRequest struct {
 	ExpectedEstimate        int                   `json:"expectedEstimate"`
 	AuditNote               *string               `json:"auditNote,omitempty"`
 	EnvironmentConfirmation *string               `json:"environmentConfirmation,omitempty"`
-	IDempotencyKey          string                `json:"idempotencyKey"`
+	IdempotencyKey          string                `json:"idempotencyKey"`
 	ExpectedGapVersion      *int                  `json:"expectedGapVersion,omitempty"`
 	RequestFingerprint      string                `json:"requestFingerprint"`
 }

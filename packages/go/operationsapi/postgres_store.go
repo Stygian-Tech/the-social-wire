@@ -19,15 +19,16 @@ type Database interface {
 	Begin(context.Context) (pgx.Tx, error)
 }
 type PostgresStore struct {
-	DB          Database
-	Environment string
+	DB                Database
+	Environment       string
+	FingerprintSecret string
 }
 
 func NewPostgresStore(db Database, environment string) (*PostgresStore, error) {
 	if db == nil || (environment != "dev" && environment != "prod") {
 		return nil, errors.New("Operations requires a database and canonical environment")
 	}
-	return &PostgresStore{db, environment}, nil
+	return &PostgresStore{DB: db, Environment: environment}, nil
 }
 func (s *PostgresStore) Ping(ctx context.Context) error {
 	var one int
