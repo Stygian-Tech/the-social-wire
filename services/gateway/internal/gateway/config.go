@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	PodcastsEnabled                                                           bool
 	Environment, Address, DatabaseURL, RedisURL, CacheBackend                 string
 	AppViewURL, OperationsURL, ProjectionURL, LatrURL                         string
 	AppViewSecret, OperationsSecret, LatrClientID, LatrAPIKey, LatrCredential string
@@ -27,6 +28,7 @@ func ParseConfig(env map[string]string) (Config, error) {
 		return v
 	}
 	c := Config{Environment: get("APP_ENV", "local"), DatabaseURL: get("DATABASE_URL", ""), RedisURL: get("REDIS_URL", ""), AppViewURL: get("APPVIEW_BASE_URL", ""), OperationsURL: get("OPERATIONS_BASE_URL", ""), ProjectionURL: get("PROJECTION_POOL_BASE_URL", get("CHARYBDIS_BASE_URL", "")), LatrURL: get("LATR_IOS_PROXY_URL", ""), AppViewSecret: get("GATEWAY_APPVIEW_INTERNAL_SECRET", ""), OperationsSecret: get("GATEWAY_OPERATIONS_INTERNAL_SECRET", ""), LatrClientID: get("LATR_IOS_PROXY_CLIENT_ID", ""), LatrAPIKey: get("LATR_IOS_PROXY_API_KEY", ""), LatrCredential: get("LATR_IOS_PROXY_CLIENT_CREDENTIAL", ""), PublicOrigin: get("OAUTH_PUBLIC_ORIGIN", ""), IOSOrigin: get("OAUTH_IOS_METADATA_ORIGIN", ""), OperationsOrigin: get("OAUTH_OPERATIONS_ORIGIN", ""), Modes: map[string]string{}}
+	c.PodcastsEnabled = strings.EqualFold(env["PODCASTS_ENABLED"], "true")
 	if c.Environment != "local" && c.Environment != "dev" && c.Environment != "prod" {
 		return c, fmt.Errorf("APP_ENV must be local, dev or prod")
 	}

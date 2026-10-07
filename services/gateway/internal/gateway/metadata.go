@@ -44,7 +44,7 @@ func (s *Server) metadata(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	writeJSON(w, 200, map[string]any{"client_id": clientOrigin + path, "application_type": kind, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}, "redirect_uris": []string{redirect}, "scope": scope, "token_endpoint_auth_method": "none", "dpop_bound_access_tokens": true, "client_name": name, "client_uri": clientOrigin})
+	writeJSON(w, 200, map[string]any{"client_id": clientOrigin + path, "application_type": kind, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}, "redirect_uris": []string{redirect}, "scope": podcastScope(scope, s.Config.PodcastsEnabled), "token_endpoint_auth_method": "none", "dpop_bound_access_tokens": true, "client_name": name, "client_uri": clientOrigin})
 }
 func gatewayOrigin(r *http.Request) string { htu := gatewaycoreOrigin(r); return htu }
 func gatewaycoreOrigin(r *http.Request) string {
