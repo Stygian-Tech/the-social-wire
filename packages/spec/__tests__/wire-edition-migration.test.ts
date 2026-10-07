@@ -35,7 +35,7 @@ const generationStore = readFileSync(
   "utf8",
 );
 const corpusStore = readFileSync(
-  join(import.meta.dir, "../../../services/wire-corpus-edge/Sources/WireCorpusEdge/PostgresWireCorpusStore.swift"),
+  join(import.meta.dir, "../../../packages/go/corpuscore/postgres_edition.go"),
   "utf8",
 );
 
