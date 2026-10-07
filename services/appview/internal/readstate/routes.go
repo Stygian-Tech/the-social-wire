@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/stygian-tech/the-social-wire/packages/go/appviewcore"
 	"io"
 	"net/http"
 
+	"github.com/stygian-tech/the-social-wire/packages/go/appviewcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/pdsreadstatecore"
 	r "github.com/stygian-tech/the-social-wire/packages/go/readstatecore"
@@ -116,7 +116,14 @@ func finish(w http.ResponseWriter, body any, err error) {
 		return
 	}
 	if errors.Is(err, pdsreadstatecore.ErrLegacyScopeOverlap) {
-		respondError(w, 409, "ReadStateMigrationScopeConflict", "Overlapping publications have different read boundaries. Your existing read state is preserved; reconcile those boundaries before retrying migration.")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":     "ReadStateMigrationScopeConflict",
+			"message":   "Overlapping publications have different read boundaries. Your existing read state is preserved; reconcile those boundaries before retrying migration.",
+			"requestId": w.Header().Get("X-Request-ID"),
+			"retryable": true,
+		})
 		return
 	}
 	if errors.Is(err, pdsreadstatecore.ErrStaleGeneration) || errors.Is(err, pdsreadstatecore.ErrRevisionChanged) || errors.Is(err, pdsreadstatecore.ErrParityMismatch) || errors.Is(err, pdsreadstatecore.ErrAlreadyMigrated) || errors.Is(err, pdsreadstatecore.ErrLegacyScopeUnavailable) || errors.Is(err, r.ErrInvalidRecord) || errors.Is(err, r.ErrIncompleteGeneration) || errors.Is(err, r.ErrInvalidReference) || errors.Is(err, r.ErrSizeLimit) || errors.Is(err, r.ErrConflictingSequence) {
