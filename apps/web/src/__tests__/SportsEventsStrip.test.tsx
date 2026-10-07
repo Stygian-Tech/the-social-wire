@@ -151,7 +151,7 @@ describe("Schedule presentation", () => {
   const section=screen.getByRole("region",{name:"Sports Events"});
   expect(section.classList.contains("sticky")).toBe(true);expect(section.classList.contains("top-0")).toBe(true);expect(section.classList.contains("bg-background")).toBe(true);
   const body=document.getElementById(button.getAttribute("aria-controls")!)!;
-  expect((body.querySelector("[data-schedule-body]") as HTMLElement)?.style.minHeight).toBe("var(--sports-body-min-height,176px)");
+  expect((body.querySelector("[data-schedule-body]") as HTMLElement)?.style.minHeight).toBe("");
   fireEvent.click(button);
   expect(screen.getByRole("button",{name:"Expand Schedules"}).getAttribute("aria-expanded")).toBe("false");
   expect(body.isConnected).toBe(true);expect(body.getAttribute("aria-hidden")).toBe("true");expect(body.hasAttribute("inert")).toBe(true);
