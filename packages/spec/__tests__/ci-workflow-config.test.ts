@@ -144,7 +144,9 @@ describe("CI workflow configuration", () => {
     expect(commands).toContain("verify-ranking-parity.sh");
     expect(commands).toContain("verify-edition-parity.sh");
     expect(commands).toContain("verify-domain-ranking-parity.sh");
-    for (const name of ["SOCIALWIRE_GO_TEST_DATABASE_URL", "SOCIALWIRE_GO_WIRE_TEST_DATABASE_URL", "SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL", "SOCIALWIRE_GO_READSTATE_TEST_DATABASE_URL", "SOCIALWIRE_GO_TOPICS_TEST_DATABASE_URL", "SOCIALWIRE_GO_OPERATIONS_TEST_DATABASE_URL"]) {
+    const integration = job.steps.find((step) => step.run?.includes("go test -race -p 1 ./..."))!;
+    expect(integration.env?.SOCIALWIRE_GO_CORPUS_TEST_DATABASE_URL).toContain("127.0.0.1:5432/socialwire_go_test");
+    for (const name of ["SOCIALWIRE_GO_TEST_DATABASE_URL", "SOCIALWIRE_GO_WIRE_TEST_DATABASE_URL", "SOCIALWIRE_GO_CORPUS_TEST_DATABASE_URL", "SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL", "SOCIALWIRE_GO_READSTATE_TEST_DATABASE_URL", "SOCIALWIRE_GO_TOPICS_TEST_DATABASE_URL", "SOCIALWIRE_GO_OPERATIONS_TEST_DATABASE_URL"]) {
       expect(job.steps.some((step) => step.env?.[name])).toBe(true);
     }
     const gate = parsed.jobs.required.steps.find((step) => step.run)!;
@@ -400,7 +402,8 @@ describe("CI workflow configuration", () => {
 
   it("tests migrated Go entry points within the existing required gate", () => {
     expect(workflow).toContain("Test migrated Go service entry points");
-    expect(workflow).toContain("for service in gateway appview operations; do");
+    expect(workflow).toContain("services/wire-corpus-edge/go.sum");
+    expect(workflow).toContain("for service in gateway appview operations wire-corpus-edge; do");
     expect(workflow).toContain('cd "services/$service"');
     expect(workflow).toContain("go test -race -p 1 ./...");
     expect(pathFilters).toContain("'services/*/go.mod'");

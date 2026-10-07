@@ -87,11 +87,18 @@ describe("CI path detection", () => {
     }
   });
 
-  it("tests migrated service entry points and local module dependencies", () => {
-    for (const path of ["services/operations/cmd/operations/main.go", "services/operations/go.mod", "services/appview/internal/topics/routes.go", "services/gateway/go.sum"]) {
-      const result = detect(repositoryWithChange(path), "pull_request");
-      expect(result.get("go_packages")).toBe("true");
-    }
+  it.each([
+    "services/operations/cmd/operations/main.go",
+    "services/operations/go.mod",
+    "services/appview/internal/topics/routes.go",
+    "services/gateway/go.sum",
+    "services/wire-corpus-edge/go.mod",
+    "services/wire-corpus-edge/go.sum",
+    "services/wire-corpus-edge/internal/edge/handler_test.go",
+    "services/wire-corpus-edge/cmd/wire-corpus-edge/main.go",
+  ])("tests migrated Go service coverage for %s", (path) => {
+    const result = detect(repositoryWithChange(path), "pull_request");
+    expect(result.get("go_packages")).toBe("true");
   });
 
   it("checks Go runtime parity when a worker library changes", () => {

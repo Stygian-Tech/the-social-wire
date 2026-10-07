@@ -371,6 +371,7 @@ jobs:
             services/gateway/go.sum
             services/appview/go.sum
             services/operations/go.sum
+            services/wire-corpus-edge/go.sum
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -388,6 +389,7 @@ jobs:
         env:
           GOWORK: "off"
           SOCIALWIRE_GO_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
+          SOCIALWIRE_GO_CORPUS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
           SOCIALWIRE_GO_WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
           SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
           SOCIALWIRE_GO_READSTATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
@@ -404,7 +406,7 @@ jobs:
           SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
           SOCIALWIRE_GO_OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_go_test?sslmode=disable
         run: |
-          for service in gateway appview operations; do
+          for service in gateway appview operations wire-corpus-edge; do
             (
               cd "services/$service"
               test -z "$(gofmt -l .)"
