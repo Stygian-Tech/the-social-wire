@@ -10,6 +10,7 @@ require (
 	github.com/ipfs/go-cid v0.6.1
 	github.com/ipld/go-ipld-prime v0.24.0
 	github.com/jackc/pgx/v5 v5.7.6
+	github.com/jcalabro/atmos v0.3.7
 	github.com/mmcdole/gofeed v1.5.0
 	github.com/multiformats/go-multibase v0.3.0
 	github.com/pb33f/libopenapi v0.41.2
@@ -34,7 +35,6 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/jcalabro/atmos v0.3.7 // indirect
 	github.com/jcalabro/gloom v0.1.0 // indirect
 	github.com/jcalabro/gt v0.0.14 // indirect
 	github.com/jcalabro/jttp v0.0.7 // indirect
@@ -58,6 +58,8 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
+	gitlab.com/yawning/secp256k1-voi v0.0.0-20230925100816-f2616030848b // indirect
+	gitlab.com/yawning/tuplehash v0.0.0-20230713102510-df83abbf9a02 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
