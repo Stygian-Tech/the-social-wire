@@ -18,6 +18,7 @@ type CatalogProvider interface {
 }
 type Routes struct {
 	FinanceStore    *topicreadcore.FinanceStore
+	SportsStore     *topicreadcore.SportsStore
 	Circle          *topicreadcore.CircleService
 	Wire            *topicreadcore.WireStore
 	Moderation      *topicreadcore.ModerationService
@@ -28,6 +29,9 @@ type Routes struct {
 }
 
 func (r Routes) Register(mux *http.ServeMux) {
+	if r.SportsStore != nil {
+		r.registerSports(mux)
+	}
 	if r.FinanceStore != nil {
 		r.registerFinance(mux)
 	}
@@ -216,7 +220,15 @@ func (r Routes) catalog(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	if r.Sports != nil {
+	if r.SportsStore != nil {
+		value, e := r.SportsStore.Availability(req.Context(), now)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		sports = value
+		sa = value.Available
+	} else if r.Sports != nil {
 		sports, sa, err = r.Sports.Availability(req.Context(), now)
 		if err != nil {
 			fail(w, err)

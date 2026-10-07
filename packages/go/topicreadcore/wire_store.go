@@ -90,6 +90,16 @@ func allows(snapshot *ModerationSnapshot, actor *string, item wirecore.FeedItem)
 	return snapshot.Allows(key, item.Title, item.Summary, item.RepresentativeURI)
 }
 func corpusError(err error) error {
+	var status corpuscore.RemoteStatusError
+	if errors.As(err, &status) {
+		switch status.Status {
+		case 400:
+			return ErrInvalidCursor
+		case 503:
+			return ErrModerationUnavailable
+		}
+	}
+
 	if errors.Is(err, corpuscore.ErrCursorExpired) {
 		return ErrCursorExpired
 	}
@@ -137,6 +147,12 @@ func (s *WireStore) Feed(ctx context.Context, cursor string, limit int, language
 			fallback = &n
 		}
 		page, err := s.Corpus.Feed(ctx, corpuscore.FeedQuery{Language: language, GenerationID: generation, StartOrdinal: ordinal, Limit: batch, FallbackLimit: fallback}, now)
+		if errors.Is(corpusError(err), ErrInvalidCursor) && generation == nil {
+			if viewer != "" {
+				return WirePage{}, ErrUnavailable
+			}
+			page, err = s.Corpus.Feed(ctx, corpuscore.FeedQuery{Language: language, StartOrdinal: ordinal, Limit: batch}, now)
+		}
 		if err != nil {
 			return WirePage{}, corpusError(err)
 		}
@@ -193,6 +209,19 @@ func (s *WireStore) Edition(ctx context.Context, language string, region *string
 	language = PrimaryLanguage(language)
 	fallback := 5000
 	corpus, err := s.Corpus.Edition(ctx, corpuscore.EditionQuery{Language: language, Region: region, FallbackLimit: &fallback}, now)
+	if errors.Is(corpusError(err), ErrInvalidCursor) {
+		if region == nil && viewer != "" {
+			return wirecore.Edition{}, ErrUnavailable
+		}
+		var bounded *int
+		if viewer != "" {
+			bounded = &fallback
+		}
+		corpus, err = s.Corpus.Edition(ctx, corpuscore.EditionQuery{Language: language, FallbackLimit: bounded}, now)
+		if viewer != "" && errors.Is(corpusError(err), ErrInvalidCursor) {
+			return wirecore.Edition{}, ErrUnavailable
+		}
+	}
 	if err != nil {
 		return wirecore.Edition{}, corpusError(err)
 	}

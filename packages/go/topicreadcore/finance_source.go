@@ -24,7 +24,7 @@ func (s *FinanceStore) Catalog(ctx context.Context) ([]financecore.Instrument, e
 			return nil, err
 		}
 		var i financecore.Instrument
-		if err = json.Unmarshal(raw, &i); err != nil {
+		if err = corpuscore.DecodeContract(raw, &i); err != nil {
 			return nil, err
 		}
 		result = append(result, financecore.ApplyReviewedMetadata(i))
@@ -89,7 +89,7 @@ func (s *FinanceStore) source(ctx context.Context, language string, now time.Tim
 	}
 	source.Language = language
 	source.Source = &provenance
-	err = json.Unmarshal(raw, &source.Candidates)
+	err = corpuscore.DecodeContract(raw, &source.Candidates)
 	return source, err
 }
 func (s *FinanceStore) importCatalog(ctx context.Context, source corpuscore.FinanceGeneration, now time.Time) error {

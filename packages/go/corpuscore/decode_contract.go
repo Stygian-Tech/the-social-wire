@@ -111,3 +111,6 @@ func requiredFields(raw any, t reflect.Type) bool {
 		return true
 	}
 }
+
+// DecodeContract preserves the same required-field rules for presentation caches and imports.
+func DecodeContract(data []byte, destination any) error { return decodeContract(data, destination) }

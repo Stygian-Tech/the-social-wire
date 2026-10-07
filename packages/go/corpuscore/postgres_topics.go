@@ -135,6 +135,11 @@ func (s *PostgreSQLStore) SportsEvents(ctx context.Context, q EventsQuery, now t
 	if err != nil {
 		return nil, err
 	}
+	return s.SportsEventsWithCatalog(ctx, q, now, catalog)
+}
+
+// SportsEventsWithCatalog preserves the same SQL bounds with the caller's active catalog.
+func (s *PostgreSQLStore) SportsEventsWithCatalog(ctx context.Context, q EventsQuery, now time.Time, catalog []sportscore.Entity) ([]sportscore.Event, error) {
 	identity := newTeamIdentity(catalog, now)
 	preferred := stringSet(q.PreferredIDs)
 	direct := []string{}

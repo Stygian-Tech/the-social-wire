@@ -112,8 +112,19 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 	if response.StatusCode != 200 {
 		return nil, response.StatusCode, RemoteStatusError{response.StatusCode}
 	}
-	if contract && response.Header.Get("X-Wire-Corpus-Contract") != "3" {
-		return nil, 200, RemoteVersionError{}
+	if contract {
+		minimum := 3
+		path, _, _ := strings.Cut(target, "?")
+		switch path {
+		case "/internal/wire/v1/feed", "/internal/wire/v1/item", "/internal/wire/v1/catalog":
+			minimum = 1
+		case "/internal/wire/v1/edition":
+			minimum = 2
+		}
+		version, err := strconv.Atoi(response.Header.Get("X-Wire-Corpus-Contract"))
+		if err != nil || version < minimum || version > 3 {
+			return nil, 200, RemoteVersionError{}
+		}
 	}
 	return data, 200, nil
 }

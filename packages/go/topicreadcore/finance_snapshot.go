@@ -3,7 +3,6 @@ package topicreadcore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"log/slog"
@@ -25,7 +24,7 @@ func (s *FinanceStore) retained(ctx context.Context, id, scope, language, revisi
 		return nil, err
 	}
 	value.Source = &source
-	if err = json.Unmarshal(raw, &value.Candidates); err != nil {
+	if err = corpuscore.DecodeContract(raw, &value.Candidates); err != nil {
 		return nil, err
 	}
 	return &value, nil
@@ -60,7 +59,7 @@ func (s *FinanceStore) persist(ctx context.Context, proposal, source corpuscore.
 		return value, err
 	}
 	value.Source = &actualSource
-	err = json.Unmarshal(raw, &value.Candidates)
+	err = corpuscore.DecodeContract(raw, &value.Candidates)
 	return value, err
 }
 func (s *FinanceStore) purgeIfDue(ctx context.Context, now time.Time) {

@@ -2,7 +2,6 @@ package topicreadcore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
@@ -122,7 +121,7 @@ func (s *CircleService) Edition(ctx context.Context, auth gatewaycore.AuthContex
 		body, _ := s.State.Cache.CachedEdition(ctx, auth.DID, graph.Graph.SnapshotID, candidates.GenerationID, language, hidden, now)
 		if body != nil {
 			var response CircleEdition
-			if json.Unmarshal(body, &response) == nil {
+			if corpuscore.DecodeContract(body, &response) == nil {
 				return response, nil
 			}
 		}

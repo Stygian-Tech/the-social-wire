@@ -49,7 +49,7 @@ type StandingSnapshot struct {
 	Season        string        `json:"season"`
 	SourceURL     string        `json:"sourceURL"`
 	Status        string        `json:"status"`
-	UpdatedAt     time.Time     `json:"updatedAt"`
+	UpdatedAt     time.Time     `json:"updatedAt,omitempty"`
 	Degraded      bool          `json:"degraded"`
 	Rows          []StandingRow `json:"rows"`
 }
