@@ -1022,8 +1022,8 @@
         },
         {
           "path": "packages/swift/GatewayCore/Sources/GatewayCore/Services/PublicDNSAddressValidator.swift",
-          "sha256": "238624980b6aa9b73fadb0783d82080c8ba671c465102898d369c815bd446fd8",
-          "lines": 242,
+          "sha256": "d0292d07fcdf063bd8b86fbfdfcf3289a667b12faa2e73675cdec7e2443b9977",
+          "lines": 259,
           "publicDeclarations": []
         },
         {

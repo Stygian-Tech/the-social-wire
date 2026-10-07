@@ -27,8 +27,7 @@ import {
   savePodcastDownload,
   type PodcastDownload,
 } from "@/lib/podcasts/offline";
-import { formatPodcastTime } from "@/lib/podcasts/playback";
-import { PodcastArtwork } from "./PodcastArtwork";
+import { PodcastEpisodeDetailsDialog } from "./PodcastEpisodeDetailsDialog";
 import { PodcastShowDetails } from "./PodcastShowDetails";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
 const button =
@@ -63,6 +62,7 @@ function PodcastViewerLibrary() {
   const downloadEpisodes = useMemo(() => downloads.map(item => item.episode), [downloads]);
   const searching = searchScope === "discover" || !!searchQuery.trim();
   const search = usePodcastLibrarySearch({ viewer, query: searchQuery, scope: searchScope === "discover" ? "directory" : "library", showId: feed === "show" ? showId ?? undefined : undefined, downloaded: feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
+  const showNames = useMemo(() => new Map([...shows, ...search.shows].map(show => [show.id, show.title.trim()])), [shows, search.shows]);
   const controllers = useRef(new Map<string, AbortController>());
   useEffect(() => () => controllers.current.get("directory-preview")?.abort(), [searchQuery, searchScope]);
   const libraryGeneration = useRef(0);
@@ -337,23 +337,7 @@ function PodcastViewerLibrary() {
         <ul className="space-y-3">
           {displayed.map((item) => (
             <li key={item.id} className="rounded-xl border p-4">
-              <div className="flex items-center gap-3">
-                <PodcastArtwork src={item.artworkUrl ?? item.showArtworkUrl} alt="" size={64} className="size-16" />
-                <h3 className="font-semibold">{item.title}</h3>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {item.publishedAt
-                  ? new Date(item.publishedAt).toLocaleDateString()
-                  : ""}{" "}
-                {item.durationSeconds
-                  ? `· ${formatPodcastTime(item.durationSeconds)}`
-                  : ""}
-              </p>
-              {item.description ? (
-                <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
-                  {item.description.replace(/<[^>]*>/g, " ")}
-                </p>
-              ) : null}
+              <PodcastEpisodeDetailsDialog episode={item} showName={showNames.get(item.showId)} />
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <PodcastEpisodeActionButton
                   icon={Play}
