@@ -72,6 +72,8 @@ type TokenVerifier struct {
 	mu                       sync.Mutex
 	cache                    map[string]jsonCacheEntry
 	group                    singleflight.Group
+	inFlight                 int
+	waiters                  map[string]int
 }
 
 func (v *TokenVerifier) fetch(ctx context.Context, target string, maximum int) ([]byte, int, error) {
@@ -110,17 +112,41 @@ func (v *TokenVerifier) fetch(ctx context.Context, target string, maximum int) (
 func (v *TokenVerifier) cachedFetch(ctx context.Context, target string, maximum int, refresh bool) ([]byte, int, error) {
 	v.mu.Lock()
 	old, ok := v.cache[target]
-	v.mu.Unlock()
 	if ok && !refresh && old.expires.After(time.Now()) {
+		v.mu.Unlock()
 		return old.data, old.status, nil
 	}
+	if v.waiters == nil {
+		v.waiters = map[string]int{}
+	}
+	if v.waiters[target] >= 256 || (v.waiters[target] == 0 && len(v.waiters) >= 64) {
+		v.mu.Unlock()
+		return nil, 0, ErrAuthDependency
+	}
+	v.waiters[target]++
+	v.mu.Unlock()
+	defer func() {
+		v.mu.Lock()
+		v.waiters[target]--
+		if v.waiters[target] == 0 {
+			delete(v.waiters, target)
+		}
+		v.mu.Unlock()
+	}()
 	ch := v.group.DoChan(target, func() (any, error) {
 		v.mu.Lock()
 		current, found := v.cache[target]
-		v.mu.Unlock()
 		if found && current.expires.After(time.Now()) && (!refresh || !current.expires.Equal(old.expires)) {
+			v.mu.Unlock()
 			return current, nil
 		}
+		if v.inFlight >= 64 {
+			v.mu.Unlock()
+			return nil, ErrAuthDependency
+		}
+		v.inFlight++
+		v.mu.Unlock()
+		defer func() { v.mu.Lock(); v.inFlight--; v.mu.Unlock() }()
 		load, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		data, status, e := v.fetch(load, target, maximum)
@@ -137,15 +163,29 @@ func (v *TokenVerifier) cachedFetch(ctx context.Context, target string, maximum 
 		if v.cache == nil {
 			v.cache = map[string]jsonCacheEntry{}
 		}
-		if len(v.cache) >= 4096 {
+		delete(v.cache, target)
+		cost := len(target) + len(data)
+		for key, entry := range v.cache {
+			if entry.expires.Before(time.Now()) {
+				delete(v.cache, key)
+			} else {
+				cost += len(key) + len(entry.data)
+			}
+		}
+		for len(v.cache) >= 10000 || cost > 16*1024*1024 {
+			var oldest string
+			var expiry time.Time
 			for key, entry := range v.cache {
-				if entry.expires.Before(time.Now()) {
-					delete(v.cache, key)
+				if oldest == "" || entry.expires.Before(expiry) {
+					oldest = key
+					expiry = entry.expires
 				}
 			}
-			if len(v.cache) >= 4096 {
-				return nil, ErrAuthDependency
+			if oldest == "" {
+				return item, nil
 			}
+			cost -= len(oldest) + len(v.cache[oldest].data)
+			delete(v.cache, oldest)
 		}
 		v.cache[target] = item
 		return item, nil
@@ -161,6 +201,7 @@ func (v *TokenVerifier) cachedFetch(ctx context.Context, target string, maximum 
 		return item.data, item.status, nil
 	}
 }
+
 func (v *TokenVerifier) resolveAuthority(ctx context.Context, did string) (authority, error) {
 	return v.resolveAuthorityMode(ctx, did, false)
 }

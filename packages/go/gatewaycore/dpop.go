@@ -8,6 +8,7 @@ import (
 	"errors"
 	jose "github.com/go-jose/go-jose/v4"
 	"math"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -26,7 +27,11 @@ func CanonicalHTU(r *http.Request) string {
 	scheme := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
 	if scheme == "" {
 		scheme = "https"
-		if strings.HasPrefix(strings.ToLower(host), "localhost") || strings.HasPrefix(host, "127.") {
+		hostname := host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			hostname = h
+		}
+		if strings.EqualFold(hostname, "localhost") || hostname == "127.0.0.1" {
 			scheme = "http"
 		}
 	}
