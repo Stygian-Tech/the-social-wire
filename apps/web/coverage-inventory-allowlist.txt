@@ -56,7 +56,6 @@ src/components/shared/ListColumnError.tsx
 src/components/shared/ResizableListColumn.tsx
 src/components/ui/button.tsx
 src/hooks/useCrossClientReadSync.ts
-src/hooks/useLexiconMigration.tsx
 src/hooks/useLoginHandleSuggestions.ts
 src/hooks/usePublicationSidebarProjection.ts
 src/hooks/useSavedLinkPublication.ts
