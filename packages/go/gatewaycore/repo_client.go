@@ -34,6 +34,8 @@ type RepoPage struct {
 type RepoClient struct {
 	Client *http.Client
 	PLCURL string
+	// PDSResolver is an optional acceleration boundary; callers retain the same read validation.
+	PDSResolver func(context.Context, string) (string, error)
 }
 
 func (c *RepoClient) ResolveDID(ctx context.Context, repo string) (string, error) {
@@ -56,11 +58,29 @@ func (c *RepoClient) ResolveDID(ctx context.Context, repo string) (string, error
 	}
 	return doc.DID, nil
 }
+
+// WithPDSResolver returns an independent client configuration without changing transport ownership.
+func (c *RepoClient) WithPDSResolver(resolve func(context.Context, string) (string, error)) *RepoClient {
+	clone := *c
+	clone.PDSResolver = resolve
+	return &clone
+}
 func (c *RepoClient) ResolvePDS(ctx context.Context, did string) (string, error) {
+	if c.PDSResolver != nil {
+		endpoint, err := c.PDSResolver(ctx, did)
+		if err != nil {
+			return "", err
+		}
+		return NormalizePublicRemoteBase(endpoint)
+	}
+
 	v := TokenVerifier{Client: c.Client}
 	raw, status, e := v.fetch(ctx, strings.TrimRight(c.PLCURL, "/")+"/"+url.PathEscape(did), 262144)
 	if e != nil {
 		return "", e
+	}
+	if status == 429 || status >= 500 {
+		return "", PDSHTTPError{Status: status, Message: "PDS resolution is unavailable"}
 	}
 	if status != 200 {
 		return "", ErrAuthentication
