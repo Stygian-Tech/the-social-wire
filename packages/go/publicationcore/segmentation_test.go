@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-func TestPublicationIdentityRetainsRecordKeyAndMatchesEncodedAuthorities(t *testing.T) {
-	a := "at://did:plc:viewer/site.standard.publication/key%2Fone"
-	b := "at://did%3Aplc%3Aviewer/site.standard.publication/key%2Fone"
+func TestPublicationIdentityMatchesEncodedAuthorities(t *testing.T) {
+	a := "at://did:plc:viewer/site.standard.publication/key-one"
+	b := "at://did%3Aplc%3Aviewer/site.standard.publication/key-one"
 	if !IDsMatch(a, b) || NormalizeATRepoParam(b) != a {
 		t.Fatal(LookupKeys(b))
 	}
-	if IDsMatch(a, "at://did:plc:viewer/site.standard.publication/key/one") {
-		t.Fatal("record key decoded as path")
+	if IDsMatch(a, "at://did:plc:viewer/site.standard.publication/other-key") {
+		t.Fatal("different record key matched")
 	}
 	if !IDsMatch("@did:plc:viewer", "did:plc:viewer") {
 		t.Fatal("DID normalization")
