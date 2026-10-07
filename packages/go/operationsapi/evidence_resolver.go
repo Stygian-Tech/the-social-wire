@@ -52,8 +52,9 @@ func requiredWorkerStates(states []ServiceState, at time.Time, validity time.Dur
 	return []ServiceState{}
 }
 func ServiceEvidence(states []ServiceState, at time.Time) EvidenceMetadata {
-	required := []string{"gateway", "appview", "appview-worker", "operations"}
-	validity := 45 * time.Second
+	return ServiceEvidenceFor(states, []string{"gateway", "appview", "appview-worker", "operations"}, "operations_service_state", at, 45*time.Second)
+}
+func ServiceEvidenceFor(states []ServiceState, required []string, source string, at time.Time, validity time.Duration) EvidenceMetadata {
 	missing := []string{}
 	freshCount := 0
 	var watermark *WireTime
@@ -93,7 +94,7 @@ func ServiceEvidence(states []ServiceState, at time.Time) EvidenceMetadata {
 	} else if len(missing) == 0 {
 		accuracy = "exact"
 	}
-	e := EvidenceMetadata{Source: "operations_service_state", Accuracy: accuracy, GeneratedAt: WireTime{at}, IndexedThrough: watermark, ValidUntil: WireTime{at}, Coverage: pointer(float64(freshCount) / float64(len(required))), LastSuccessfulAt: watermark}
+	e := EvidenceMetadata{Source: source, Accuracy: accuracy, GeneratedAt: WireTime{at}, IndexedThrough: watermark, ValidUntil: WireTime{at}, Coverage: pointer(evidenceCoverage(freshCount, len(required))), LastSuccessfulAt: watermark}
 	if watermark != nil {
 		e.AgeSeconds = max(0, at.Sub(watermark.Time).Seconds())
 		e.ValidUntil = WireTime{watermark.Add(validity)}
@@ -248,4 +249,11 @@ func durableAuthorityState(checkpoint DurabilityCheckpoint, inbox InboxMetrics, 
 		state.ProjectionWatermark = pointer(strconv.FormatInt(*checkpoint.LastAppliedSequence, 10))
 	}
 	return state
+}
+
+func evidenceCoverage(count, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(count) / float64(total)
 }

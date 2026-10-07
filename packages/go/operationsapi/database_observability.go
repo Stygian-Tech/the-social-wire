@@ -5,11 +5,6 @@ import (
 	"time"
 )
 
-type DatabaseTableRecordCount struct {
-	Schema           string `json:"schema"`
-	Table            string `json:"table"`
-	EstimatedRecords int64  `json:"estimatedRecords"`
-}
 type DatabaseObservabilitySnapshot struct {
 	DatabaseSizeBytes        int64                      `json:"databaseSizeBytes"`
 	ActiveConnections        int64                      `json:"activeConnections"`
