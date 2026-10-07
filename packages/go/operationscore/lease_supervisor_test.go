@@ -103,3 +103,25 @@ func TestSupervisorWatchdogCancelsBlockedRenewal(t *testing.T) {
 		t.Fatal("watchdog failed to cancel independently of renewal")
 	}
 }
+
+func TestSupervisorPublishesFreshControlEvidence(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	validated, renewed := false, false
+	store := &supervisorStore{renew: func(context.Context) (FencedRoleLease, error) { return testLease(), nil }}
+	config := DefaultSupervisorConfig("role", "owner")
+	config.RenewInterval = 10 * time.Millisecond
+	supervisor := LeaseSupervisor{Store: store, Config: config, OnEvent: func(event LeaseEvent) {
+		switch event.Phase {
+		case "validated":
+			validated = true
+		case "renewed":
+			renewed = true
+			cancel()
+		}
+	}}
+	supervisor.runOwned(parent, testLease(), time.Now(), func(ctx context.Context, _ RoleLeaseAuthority) error { <-ctx.Done(); return ctx.Err() })
+	if !validated || !renewed {
+		t.Fatalf("missing control evidence: validated=%v renewed=%v", validated, renewed)
+	}
+}
