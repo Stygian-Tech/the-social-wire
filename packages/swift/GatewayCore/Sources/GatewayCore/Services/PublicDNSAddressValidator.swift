@@ -131,8 +131,25 @@ enum PublicDNSAddressValidator {
       Task { await attempt.callerTimedOutOrCancelled() }
     }
     guard let addresses else { throw PDSAccessTokenAttestationError.unavailable }
-    guard let address = addresses.first else { throw PDSAccessTokenAttestationError.invalid }
+    guard let address = preferredPublicAddress(addresses) else { throw PDSAccessTokenAttestationError.invalid }
     return address
+  }
+
+  /// Prefer IPv4 when both families are public: some hosted runtimes have no
+  /// IPv6 egress. Validate the entire answer set before choosing either family.
+  static func preferredPublicAddress(_ addresses: [String]) -> String? {
+    guard !addresses.isEmpty, addresses.allSatisfy({ address in
+      var ipv4 = in_addr()
+      if inet_pton(AF_INET, address, &ipv4) == 1 {
+        return withUnsafeBytes(of: ipv4) { isPublicIPv4(Array($0)) }
+      }
+      var ipv6 = in6_addr()
+      if inet_pton(AF_INET6, address, &ipv6) == 1 {
+        return withUnsafeBytes(of: ipv6) { isPublicIPv6(Array($0)) }
+      }
+      return false
+    }) else { return nil }
+    return addresses.first(where: { !$0.contains(":") }) ?? addresses.first
   }
 
   /// `nil` means DNS resolution failed; `false` means no exclusively public answer set exists.

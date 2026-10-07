@@ -452,6 +452,32 @@ struct PDSAccessTokenAttestorTests {
     }
   }
 
+  @Test("dual-stack DNS pinning prefers public IPv4 and retains IPv6-only sources")
+  func publicDNSAddressFamilyPreference() async throws {
+    let ipv6 = "2600:1f10:4c2d:4711:9d8a:76f6:4afb:80cd"
+    let ipv4 = "3.228.126.156"
+    let dualStack = try await PublicDNSAddressValidator.validatedAddress(
+      for: "https://tracker.example", resolver: { _ in [ipv6, ipv4] })
+    #expect(dualStack == ipv4)
+    let ipv6Only = try await PublicDNSAddressValidator.validatedAddress(
+      for: "https://ipv6.example", resolver: { _ in [ipv6] })
+    #expect(ipv6Only == ipv6)
+  }
+
+  @Test("address family preference still rejects every mixed unsafe DNS answer set", arguments: [
+    ["3.228.126.156", "127.0.0.1"],
+    ["2600:1f10:4c2d:4711:9d8a:76f6:4afb:80cd", "10.0.0.1"],
+    ["3.228.126.156", "::1"],
+    ["3.228.126.156", "::ffff:127.0.0.1"],
+    ["3.228.126.156", "not-an-address"]
+  ])
+  func publicDNSMixedUnsafeAnswers(addresses: [String]) async throws {
+    await #expect(throws: PDSAccessTokenAttestationError.invalid) {
+      try await PublicDNSAddressValidator.validatedAddress(
+        for: "https://tracker.example", resolver: { _ in addresses })
+    }
+  }
+
   @Test("DNS deadline returns while a blocking resolver retains its bounded permit")
   func boundedDNSResolutionDeadline() async throws {
     let admission = PublicDNSResolverAdmission(maximumConcurrentResolutions: 1)
