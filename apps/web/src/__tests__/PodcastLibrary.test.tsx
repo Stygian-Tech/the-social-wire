@@ -55,7 +55,10 @@ it("adds a tokenized private RSS feed without a public subscription write", asyn
   expect(write).not.toHaveBeenCalled();
   expect(requestPaths).not.toContain("resolve");
   expect(screen.queryByText("Map RSS to AT Protocol")).toBeNull();
-  expect(screen.getByRole("complementary", { name: "Podcast Library" })).toBeTruthy();
+  expect(screen.getByRole("complementary", { name: "Podcast Library" }).className).toContain("rounded-xl");
+  expect(screen.getByRole("complementary", { name: "Podcast Library" }).className).toContain("p-3");
+  expect(screen.getByRole("button", { name: "Recently Added" }).className).toContain("min-h-8");
+  expect(screen.getByRole("button", { name: "Recently Added" }).className).toContain("pointer-coarse:min-h-11");
 });
 
 it("offers device audio saving from viewer-owned offline downloads without an OAuth session", async () => {
