@@ -17,6 +17,7 @@ import (
 )
 
 type RepositoryRestorer struct {
+	Snapshots               RepositorySnapshotSource
 	DB                      *sql.DB
 	PDS                     *thinappviewcore.PDSClient
 	Projector               *EventProjectorRuntime
@@ -54,6 +55,9 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 	state, err = store.Save(ctx, scope, state, nil, false)
 	if err != nil {
 		return err
+	}
+	if state.SnapshotMode == signedSnapshotMode {
+		return r.restoreSignedSnapshot(ctx, store, scope, state)
 	}
 	budget := r.RecordBudget
 	if budget <= 0 {
@@ -116,7 +120,7 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 					continue
 				}
 				// Some PDS document serializers reject pages larger than one record.
-				// Retry the same forward cursor once; a second failure remains an error.
+				// Retry a single record before switching to a signed snapshot.
 				if status == 400 && collection == "site.standard.document" && limit > 1 && documentPageInvalidRequest(data) {
 					limit = 1
 					reverse = false
@@ -135,6 +139,11 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 					case <-timer.C:
 					}
 					continue
+				}
+				if status == 400 && collection == "site.standard.document" && limit == 1 && documentPageInvalidRequest(data) {
+					fallback := r
+					fallback.RecordBudget = budget - observedThisSlice
+					return fallback.restoreSignedSnapshot(ctx, store, scope, state)
 				}
 				if status != 200 {
 					return fmt.Errorf("repository listRecords status %d", status)
@@ -156,17 +165,6 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 			if page.Records == nil || len(page.Records) > limit {
 				return errors.New("malformed repository page")
 			}
-			uris := []string{}
-			for _, record := range page.Records {
-				expected := "at://" + scope.RepoDID + "/" + collection + "/"
-				if !strings.HasPrefix(record.URI, expected) || strings.Contains(strings.TrimPrefix(record.URI, expected), "/") || strings.TrimPrefix(record.URI, expected) == "" || record.CID == "" || len(record.Value) == 0 || record.Value[0] != '{' {
-					return errors.New("malformed repository record")
-				}
-				if err := r.Projector.Commit(ctx, scope.RepoDID, collection, strings.TrimPrefix(record.URI, expected), record.CID, "create", "", record.Value, time.Now(), pds); err != nil {
-					return err
-				}
-				uris = append(uris, record.URI)
-			}
 			var next *string
 			if len(page.Cursor) > 0 && string(page.Cursor) != "null" {
 				var cursor string
@@ -183,13 +181,26 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 				}
 				for _, seen := range previous.SeenCursors {
 					if seen == *next {
-						return errors.New("repeated repository cursor")
+						fallback := r
+						fallback.RecordBudget = budget - observedThisSlice
+						return fallback.restoreSignedSnapshot(ctx, store, scope, state)
 					}
 				}
 				previous.SeenCursors = append(previous.SeenCursors, *next)
 				if len(previous.SeenCursors) > 10000 {
 					return errors.New("repository page limit exceeded")
 				}
+			}
+			uris := []string{}
+			for _, record := range page.Records {
+				expected := "at://" + scope.RepoDID + "/" + collection + "/"
+				if !strings.HasPrefix(record.URI, expected) || strings.Contains(strings.TrimPrefix(record.URI, expected), "/") || strings.TrimPrefix(record.URI, expected) == "" || record.CID == "" || len(record.Value) == 0 || record.Value[0] != '{' {
+					return errors.New("malformed repository record")
+				}
+				if err := r.Projector.Commit(ctx, scope.RepoDID, collection, strings.TrimPrefix(record.URI, expected), record.CID, "create", "", record.Value, time.Now(), pds); err != nil {
+					return err
+				}
+				uris = append(uris, record.URI)
 			}
 			previous.Cursor = next
 			previous.Complete = next == nil
