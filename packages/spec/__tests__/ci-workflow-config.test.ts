@@ -39,7 +39,8 @@ describe("CI workflow configuration", () => {
       const copiesWholePackage = dockerfile.includes("COPY packages/swift/FinanceCore packages/swift/FinanceCore");
       const copiesManifestAndSources = dockerfile.includes("COPY packages/swift/FinanceCore/Package.swift") &&
         dockerfile.includes("COPY packages/swift/FinanceCore/Sources packages/swift/FinanceCore/Sources");
-      expect(copiesWholePackage || copiesManifestAndSources).toBe(true);
+      const copiesGoRuntime = image === "indexing-worker" && dockerfile.includes("COPY packages/go /src/packages/go");
+      expect(copiesWholePackage || copiesManifestAndSources || copiesGoRuntime).toBe(true);
     }
     for (const configName of ["appview", "wire-worker", "wire-inbox-drain", "wire-fresh-inbox-drain", "wire-corpus-edge"]) {
       const config = JSON.parse(readFileSync(join(repositoryRoot, `railway/${configName}.json`), "utf8"));
@@ -58,7 +59,8 @@ describe("CI workflow configuration", () => {
       const copiesWholePackage = dockerfile.includes("COPY packages/swift/SportsCore packages/swift/SportsCore");
       const copiesManifestAndSources = dockerfile.includes("COPY packages/swift/SportsCore/Package.swift") &&
         dockerfile.includes("COPY packages/swift/SportsCore/Sources packages/swift/SportsCore/Sources");
-      expect(copiesWholePackage || copiesManifestAndSources).toBe(true);
+      const copiesGoRuntime = image === "indexing-worker" && dockerfile.includes("COPY packages/go /src/packages/go");
+      expect(copiesWholePackage || copiesManifestAndSources || copiesGoRuntime).toBe(true);
     }
     for (const configName of ["appview", "wire-worker", "wire-inbox-drain", "wire-fresh-inbox-drain", "wire-corpus-edge"]) {
       const config = JSON.parse(readFileSync(join(repositoryRoot, `railway/${configName}.json`), "utf8"));
@@ -124,6 +126,40 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("  spec:");
     expect(workflow).toContain("  required:");
     expect(workflow).toContain("name: CI — Required");
+  });
+
+  it("requires Go package parity and PostgreSQL integration checks", () => {
+    const parsed = Bun.YAML.parse(workflow) as {
+      jobs: Record<string, { needs?: string[]; steps: { run?: string; env?: Record<string, string> }[] }>;
+    };
+    const job = parsed.jobs["go-packages"];
+    expect(parsed.jobs.required.needs).toContain("go-packages");
+    const commands = job.steps.map((step) => step.run ?? "").join("\n");
+    expect(commands).toContain("go test -race -p 1 ./...");
+    expect(commands).toContain("generate-contracts.py --check");
+    expect(commands).toContain("verify-ranking-parity.sh");
+    expect(commands).toContain("verify-edition-parity.sh");
+    expect(commands).toContain("verify-domain-ranking-parity.sh");
+    for (const name of ["SOCIALWIRE_GO_TEST_DATABASE_URL", "SOCIALWIRE_GO_WIRE_TEST_DATABASE_URL", "SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL", "SOCIALWIRE_GO_READSTATE_TEST_DATABASE_URL", "SOCIALWIRE_GO_TOPICS_TEST_DATABASE_URL"]) {
+      expect(job.steps.some((step) => step.env?.[name])).toBe(true);
+    }
+    const gate = parsed.jobs.required.steps.find((step) => step.run)!;
+    expect(gate.run).toContain('check "$GO_PACKAGES_FLAG" "$GO_PACKAGES_RESULT"');
+  });
+
+  it("tests the Go indexing runtime while retaining standalone Swift rollback jobs", () => {
+    const parsed = Bun.YAML.parse(workflow) as {
+      jobs: Record<string, { steps: { run?: string; uses?: string }[] }>;
+    };
+    const indexing = parsed.jobs["indexing-worker"].steps;
+    const commands = indexing.map((step) => step.run ?? "").join("\n");
+    expect(indexing.some((step) => step.uses === "actions/setup-go@v6")).toBe(true);
+    expect(commands).toContain("go test -race ./...");
+    expect(commands).toContain("services/indexing-worker/Dockerfile");
+    expect(commands).not.toContain("swift test");
+    for (const name of ["charybdis", "wire-worker"]) {
+      expect(parsed.jobs[name].steps.some((step) => step.run?.includes("swift test"))).toBe(true);
+    }
   });
 
   it("runs bounded benchmark tests with an isolated receipt fixture and requires success", () => {
@@ -343,6 +379,7 @@ describe("CI workflow configuration", () => {
       "appview",
       "charybdis",
       "operations",
+      "go_packages",
       "jetstream_ingest",
       "wire_ingest",
       "wire_worker",

@@ -49,6 +49,18 @@ function extractOpenAPIPaths(yaml: string): string[] {
 }
 
 describe("OpenAPI route drift", () => {
+  it("registers every Sports response schema in canonical components", () => {
+    const document = Bun.YAML.parse(readFileSync(OPENAPI_PATH, "utf8")) as {
+      components: { schemas: Record<string, unknown> };
+      tags: Record<string, unknown>[];
+    };
+    const sportsSchemas = ["SportsEntity", "SportsFeedDefinition", "SportsAvailability", "SportsAssociation", "SportsItem", "SportsPage", "SportsBracketSource", "SportsStandingZone", "SportsStandingRow", "SportsStandingSnapshot", "SportsEvent"];
+    for (const name of sportsSchemas) {
+      expect(document.components.schemas[name]).toBeDefined();
+      expect(document.tags.some((tag) => name in tag)).toBe(false);
+    }
+  });
+
   it("documents paths registered in gateway and appview router sources", () => {
     const yaml = readFileSync(OPENAPI_PATH, "utf8");
     const routerSources = [
