@@ -168,7 +168,8 @@ func TestLocalCacheFallbackKeepsOriginalClientIndependent(t *testing.T) {
 		calls.Add(1)
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"service":[{"id":"#atproto_pds","serviceEndpoint":"https://publisher.social"}]}`))}, nil
 	})}}
-	r := New(base, nil, "dev")
+	var absent *redis.Client
+	r := New(base, absent, "dev")
 	ctx := context.Background()
 	for range 2 {
 		if _, err := r.ResolvePDS(ctx, "did:web:publisher.social"); err != nil {

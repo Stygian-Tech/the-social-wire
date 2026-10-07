@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,11 @@ type Repository struct {
 // New does not own either HTTP or Redis transport. RepoClient is the cached clone
 // for consumers requiring the concrete shared reader type; the original stays unchanged.
 func New(base *gatewaycore.RepoClient, commands redis.Cmdable, environment string) *Repository {
+	// Hosts commonly pass an optional *redis.Client through the command interface.
+	if commands != nil && reflect.ValueOf(commands).Kind() == reflect.Pointer && reflect.ValueOf(commands).IsNil() {
+		commands = nil
+	}
+
 	r := &Repository{base: base.WithPDSResolver(nil), redis: commands, namespace: socialwireredis.NewKeyNamespace(environment, "v1"), entries: map[string]entry{}, leases: map[string]localLease{}, Now: time.Now}
 	if commands != nil {
 		r.cache = socialwireredis.NewCacheClient(socialwireredis.RedisCommands{Client: commands})
