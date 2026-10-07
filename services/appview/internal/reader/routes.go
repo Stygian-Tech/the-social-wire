@@ -18,6 +18,7 @@ import (
 )
 
 type Routes struct {
+	EntryPage      func(context.Context, gatewaycore.AuthContext, appviewcore.EntryQuery, int, time.Time) (appviewcore.EntryPage, error)
 	DB             *sql.DB
 	Now            func() time.Time
 	ListFeed       func(context.Context, gatewaycore.AuthContext, string, string, string, int, time.Time) (*appviewcore.FeedPage, error)
@@ -207,9 +208,17 @@ func (a Routes) entries(w http.ResponseWriter, r *http.Request) {
 			fail(w, r, 400, "invalid_request", "Invalid `maxEntries`", false)
 			return
 		}
-		page, err = reader.EntriesUpTo(ctx, query, maximum, a.now())
+		if a.EntryPage != nil {
+			page, err = a.EntryPage(ctx, viewer, query, maximum, a.now())
+		} else {
+			page, err = reader.EntriesUpTo(ctx, query, maximum, a.now())
+		}
 	} else {
-		page, err = reader.Entries(ctx, query, a.now())
+		if a.EntryPage != nil {
+			page, err = a.EntryPage(ctx, viewer, query, 0, a.now())
+		} else {
+			page, err = reader.Entries(ctx, query, a.now())
+		}
 	}
 	if err != nil {
 		databaseError(w, r, err)

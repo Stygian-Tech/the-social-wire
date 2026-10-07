@@ -35,7 +35,9 @@ func (a Routes) Register(mux *http.ServeMux) {
 	if a.Assets != nil {
 		mux.HandleFunc("GET /v1/podcasts/image", a.Assets.Image)
 		mux.HandleFunc("GET /v1/podcasts/media", a.Assets.Media)
-		mux.HandleFunc("GET /v1/podcasts/clips/asset", a.Assets.PrivateAsset)
+		if a.Assets.WorkerURL != "" && a.Assets.Secret != "" {
+			mux.HandleFunc("GET /v1/podcasts/assets", a.Assets.PrivateAsset)
+		}
 	}
 }
 func (a Routes) RegisterPublic(mux *http.ServeMux) {
@@ -44,8 +46,8 @@ func (a Routes) RegisterPublic(mux *http.ServeMux) {
 			podcastError(w, err)
 		}
 	})
-	if a.Assets != nil {
-		mux.HandleFunc("GET /v1/podcasts/public/clips/asset", a.Assets.PublicAsset)
+	if a.Assets != nil && a.Assets.WorkerURL != "" && a.Assets.Secret != "" {
+		mux.HandleFunc("GET /v1/podcasts/public/assets", a.Assets.PublicAsset)
 	}
 }
 func podcastError(w http.ResponseWriter, err error) {
