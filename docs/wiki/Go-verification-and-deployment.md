@@ -10,7 +10,7 @@ Run from the repository root with Go 1.26, Swift 6.2.4, Python 3 and Bash:
 python3 scripts/go/generate-contracts.py --check
 python3 scripts/go/package-inventory.py --check
 GOWORK=off go -C packages/go vet ./...
-GOWORK=off go -C packages/go test -race ./...
+GOWORK=off go -C packages/go test -race -p 1 ./...
 bash scripts/go/verify-ranking-parity.sh
 bash scripts/go/verify-edition-parity.sh
 bash scripts/go/verify-domain-ranking-parity.sh
@@ -78,7 +78,13 @@ Root Bun workspaces use `bun install --frozen-lockfile` in CI. Commit reviewed `
 4. Wait for rolling deployments to settle, verify running/total replicas, absence of crashed replicas/pending work, and startup/readiness evidence. Inspect current runtime logs and ingestion/ranking activity where applicable. A successful image build alone is insufficient.
 5. Probe the Development public readiness/API paths when available and verify signed-in/OAuth flows for runtime/auth changes. If a workspace proxy blocks public probes, report that limit and use Railway deployment health, replicas and logs as bounded platform evidence; do not claim public or authenticated user-flow verification.
 
-The current foundation does not replace the Swift Projection Pool/Coordinator host. Their Go activation requires remaining event/job contracts, runnable images/configuration, parity/recovery evidence and a separate validated cutover. A Development foundation rollout must not be reported as completed migration of every backend service.
+Projection Pool and Coordinator use the Go indexing-worker host. Gateway, AppView, Operations, and Corpus Edge have separate Go executable and deployment gates; passing package tests does not establish that their hosted selectors or running deployments have changed.
+
+For these API services, verify the actual process against the canonical disposable schema, including protected-route admission, internal trust, readiness recovery, cache isolation, and joined shutdown. Local Go AppView requires an explicit PostgreSQL `DATABASE_URL`; it does not provide the former service SQLite backend. Shared Swift libraries remain for the native app and source-based parity tests.
+
+Production promotion starts from `main` and selects the backend changes after Development acceptance. Keep Development frontend changes and podcast enablement out of that candidate. Generate its schema-ready manifest and Go contract bundles from its own canonical migrations and schemas. Podcast PostgreSQL integration tests use `SOCIALWIRE_GO_PODCAST_TEST_DATABASE_URL`, enabled by CI only when both podcast migrations exist in the candidate; all other PostgreSQL checks remain enabled independently.
+
+PR CI runs tests, static checks, contract comparisons, and disposable database migrations. Deployment Docker images and Next.js production bundles are built by the deployment pipeline, rather than duplicated in PR CI.
 
 ## Comments, names, and wiki publication
 
