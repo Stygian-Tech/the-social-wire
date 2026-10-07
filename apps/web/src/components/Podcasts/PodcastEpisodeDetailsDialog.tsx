@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { CheckCircle, Circle } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import type { PodcastEpisode } from "@/lib/podcasts/client";
 import { formatPodcastTime } from "@/lib/podcasts/playback";
@@ -8,16 +9,22 @@ import { sanitizeHTMLWithLinks } from "@/lib/sanitize";
 import { linkPodcastTimecodes, podcastNotesExcerpt } from "@/lib/podcasts/showNotes";
 import { PodcastArtwork } from "./PodcastArtwork";
 
-export function PodcastEpisodeDetailsDialog({ episode, showName, onTimecode }: { episode: PodcastEpisode; showName?: string; onTimecode?: (seconds: number) => void }) {
+export function PodcastEpisodeDetailsDialog({ episode, showName, played, onTimecode }: { episode: PodcastEpisode; showName?: string; played?: boolean; onTimecode?: (seconds: number) => void }) {
   const [open, setOpen] = useState(false);
   const notes = useMemo(() => open ? linkPodcastTimecodes(sanitizeHTMLWithLinks(episode.description ?? ""), episode.durationSeconds) : "", [open, episode.description, episode.durationSeconds]);
   const excerpt = useMemo(() => podcastNotesExcerpt(episode.description ?? ""), [episode.description]);
   return <Dialog open={open} onOpenChange={setOpen}>
     <DialogTrigger aria-label={`Show Notes: ${episode.title}`} className="block w-full min-w-0 rounded text-left hover:bg-accent/30 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
-      {showName ? <span className="mb-2 block line-clamp-2 break-words text-xs font-medium text-muted-foreground">{showName}</span> : null}
+      <span className="mb-2 flex items-start justify-between gap-3 text-xs text-muted-foreground">
+        {showName ? <span className="min-w-0 flex-1 line-clamp-2 break-words font-medium">{showName}</span> : <span />}
+        {played !== undefined ? <span className="inline-flex shrink-0 items-center gap-1.5">
+          {played ? <CheckCircle aria-hidden="true" className="size-3.5" /> : <Circle aria-hidden="true" className="size-3.5" />}
+          {played ? "Played" : "Unplayed"}
+        </span> : null}
+      </span>
       <span className="flex items-center gap-3">
-        <PodcastArtwork src={episode.artworkUrl} fallbackSources={[episode.showArtworkUrl]} alt="" size={64} className="size-16" />
-        <span role="heading" aria-level={3} className="min-w-0 break-words font-semibold">{episode.title}</span>
+        <PodcastArtwork src={episode.artworkUrl} fallbackSources={[episode.showArtworkUrl]} alt="" size={64} className={`size-16 ${played ? "opacity-60 grayscale" : ""}`} />
+        <span role="heading" aria-level={3} className={`min-w-0 break-words font-semibold ${played ? "text-muted-foreground" : ""}`}>{episode.title}</span>
       </span>
       <span className="mt-1 block text-xs text-muted-foreground">
         {episode.publishedAt ? new Date(episode.publishedAt).toLocaleDateString() : ""}{" "}

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { act } from "react";
+import { act, useState } from "react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
 import * as playerModule from "@/components/Podcasts/PodcastPlayerProvider";
@@ -147,14 +147,14 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore(), () => write.mockRestore());
   render(<PodcastLibrary />);
   await screen.findByText("Recent Episode");
-  expect(screen.getByText("Recent Episode").closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
+  expect(screen.getByText("Recent Episode").closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
   expect(screen.queryByRole("group", { name: "Podcast Search Scope" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Library" })).toBeNull();
   expect(screen.getAllByRole("button", { name: "Search" })).toHaveLength(1);
   const input = screen.getByRole("searchbox", { name: "Search Your Library" });
   fireEvent.change(input, { target: { value: "science" } });
   await screen.findByText("Matched Science Episode");
-  expect(screen.getByText("Matched Science Episode").closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
+  expect(screen.getByText("Matched Science Episode").closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
   expect(screen.queryByText("Recent Episode")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Clear Search" }));
   await screen.findByText("Recent Episode");
@@ -199,17 +199,17 @@ it("labels mixed episode cards with their podcast names across recent, downloads
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
   render(<PodcastLibrary />);
   await screen.findByText(recent.title);
-  expect(screen.getByText(recent.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Primary Technology");
+  expect(screen.getByText(recent.title).closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe("Primary Technology");
   for (const item of [unknown, blank]) {
-    expect(screen.getByText(item.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe(item.title);
+    expect(screen.getByText(item.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Unplayed");
   }
   fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
   await screen.findByText(downloaded.title);
-  expect(screen.getByText(downloaded.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Members Podcast");
+  expect(screen.getByText(downloaded.title).closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe("Members Podcast");
   fireEvent.click(screen.getByRole("button", { name: /Up Next/ }));
   await screen.findByText(recent.title);
-  expect(screen.getByText(recent.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Primary Technology");
-  expect(screen.getByText(downloaded.title).closest("li")?.firstElementChild?.firstElementChild?.textContent).toBe("Members Podcast");
+  expect(screen.getByText(recent.title).closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe("Primary Technology");
+  expect(screen.getByText(downloaded.title).closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe("Members Podcast");
   expect(paths.filter(path => path === "shows")).toHaveLength(1);
   expect(paths.every(path => path === "shows" || path.startsWith("episodes"))).toBe(true);
 });
@@ -269,4 +269,55 @@ it("clears private library terms before directory search and previews before exp
   expect(sidebar.getByRole("button", { name: "Search" }).getAttribute("aria-current")).toBeNull();
   expect(screen.queryByRole("link", { name: "Podcast Index" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Podcast Search Scope" })).toBeNull();
+});
+
+it("updates Played indicators while preserving episode positions and usable playback and notes", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const changes: Partial<client.PodcastState>[] = [];
+  const playback: string[] = [];
+  const initial = client.initialPodcastState();
+  initial.progress.finished = { positionSeconds: 120, completed: true, updatedAt: "2026-10-05T00:00:00Z" };
+  initial.progress.fresh = { positionSeconds: 35, completed: false, updatedAt: "2026-10-05T00:00:00Z" };
+  const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
+  const player = spyOn(playerModule, "usePodcastPlayer").mockImplementation(function useFixturePlayer() {
+    const [state, setState] = useState(initial);
+    return {
+      state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null,
+      play: async item => { playback.push(item.id); }, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {},
+      changeState: async patch => {
+        changes.push(patch);
+        setState(current => ({ ...current, ...patch, progress: { ...current.progress, ...patch.progress } }));
+      },
+    };
+  });
+  const episodes: client.PodcastEpisode[] = ["finished", "fresh"].map(id => ({ id, showId: "show", title: id === "finished" ? "Finished Episode" : "Fresh Episode", audioUrl: `/${id}`, durationSeconds: 120, publishedAt: "2026-10-05", transcripts: [], description: "Publisher show notes" }));
+  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path === "shows" ? { shows: [{ id: "show", title: "My Podcast", sourceKind: "rss" }] } : { episodes }) as T);
+  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  render(<PodcastLibrary />);
+  const finished = (await screen.findByRole("button", { name: "Show Notes: Finished Episode" })).closest("li")!;
+  const fresh = screen.getByRole("button", { name: "Show Notes: Fresh Episode" }).closest("li")!;
+  expect(finished.getAttribute("data-played")).toBe("true");
+  expect(within(finished).getByText("Played")).toBeTruthy();
+  expect(within(fresh).getByText("Unplayed")).toBeTruthy();
+  fireEvent.click(within(fresh).getByRole("button", { name: "Mark Played" }));
+  await waitFor(() => expect(within(fresh).getByText("Played")).toBeTruthy());
+  expect(fresh.getAttribute("data-played")).toBe("true");
+  expect(within(fresh).getByRole("heading").classList.contains("text-muted-foreground")).toBe(true);
+  expect(changes[0]?.progress?.fresh?.positionSeconds).toBe(35);
+  expect(changes[0]?.progress?.fresh?.completed).toBe(true);
+  expect(within(finished).getByText("Played")).toBeTruthy();
+  fireEvent.click(within(fresh).getByRole("button", { name: "Play" }));
+  expect(playback).toEqual(["fresh"]);
+  expect(within(fresh).getByRole("button", { name: "Play" }).hasAttribute("disabled")).toBe(false);
+  fireEvent.click(within(fresh).getByRole("button", { name: "Mark Unplayed" }));
+  await waitFor(() => expect(within(fresh).getByText("Unplayed")).toBeTruthy());
+  expect(fresh.getAttribute("data-played")).toBe("false");
+  expect(within(fresh).getByRole("heading").classList.contains("text-muted-foreground")).toBe(false);
+  expect(changes[1]?.progress?.fresh?.positionSeconds).toBe(35);
+  expect(changes[1]?.progress?.fresh?.completed).toBe(false);
+  expect(within(finished).getByText("Played")).toBeTruthy();
+  fireEvent.click(within(finished).getByRole("button", { name: "Show Notes: Finished Episode" }));
+  expect(within(await screen.findByRole("dialog")).getByText("Publisher show notes")).toBeTruthy();
 });
