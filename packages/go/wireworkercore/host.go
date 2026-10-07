@@ -256,7 +256,7 @@ func (h *Host) runRanking(ctx context.Context, authority *operationscore.RoleLea
 				wireRuntimeFailure(err)
 			}
 		}
-		_, err = cycle.Run(ctx, at)
+		outcome, err := cycle.Run(ctx, at)
 		if ctx.Err() != nil {
 			h.ranking.Failed(reservation.Token, time.Now())
 			return ctx.Err()
@@ -266,7 +266,7 @@ func (h *Host) runRanking(ctx context.Context, authority *operationscore.RoleLea
 			wireRuntimeFailure(err)
 		} else {
 			h.ranking.Succeeded(reservation.Token, time.Now(), h.Config.Interval)
-			if err = h.topics.Materialize(ctx, authority, at); err != nil {
+			if err = materializeCycleTopics(ctx, outcome, func() error { return h.topics.MaterializeFinance(ctx, authority, at) }, func() error { return h.topics.MaterializeSports(ctx, authority, at) }); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -400,4 +400,17 @@ func (h *Host) SetSchedulers(ranking, graph *RankingScheduler) {
 	if graph != nil {
 		h.graph = graph
 	}
+}
+
+// Finance is derived only after a Wire generation; Sports also refreshes on a
+// successful skipped cycle, matching the independently enabled topic runtime.
+func materializeCycleTopics(ctx context.Context, outcome CycleOutcome, finance, sports func() error) error {
+	var financeErr error
+	if outcome.GenerationID != "" {
+		financeErr = finance()
+	}
+	if ctx.Err() != nil {
+		return errors.Join(financeErr, ctx.Err())
+	}
+	return errors.Join(financeErr, sports())
 }

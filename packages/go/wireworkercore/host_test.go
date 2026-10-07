@@ -48,3 +48,29 @@ func TestHostDrainReadinessAndJoinedCancellation(t *testing.T) {
 		t.Fatal("host did not join cancellation")
 	}
 }
+
+func TestCycleTopicMaterializationPreservesOutcomeAndIndependentFailures(t *testing.T) {
+	for _, generated := range []bool{false, true} {
+		t.Run(map[bool]string{false: "skipped", true: "generated"}[generated], func(t *testing.T) {
+			outcome := CycleOutcome{}
+			if generated {
+				outcome.GenerationID = "generation"
+			}
+			financeCalls, sportsCalls := 0, 0
+			failure := errors.New("finance failure")
+			err := materializeCycleTopics(context.Background(), outcome, func() error { financeCalls++; return failure }, func() error { sportsCalls++; return nil })
+			if sportsCalls != 1 || financeCalls != map[bool]int{false: 0, true: 1}[generated] {
+				t.Fatalf("calls finance=%d sports=%d", financeCalls, sportsCalls)
+			}
+			if generated != errors.Is(err, failure) {
+				t.Fatalf("unexpected error %v", err)
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	called := false
+	err := materializeCycleTopics(ctx, CycleOutcome{GenerationID: "generation"}, func() error { cancel(); return nil }, func() error { called = true; return nil })
+	if called || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation did not stop next topic: %v", err)
+	}
+}
