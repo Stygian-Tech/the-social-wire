@@ -26,6 +26,14 @@ func TestAggregateCursorContinuesAfterReturnedCapUsingFeedPosition(t *testing.T)
 		}
 	}
 	reader := ContentReader{DB: db}
+	scoped, err := reader.ScopedEntries(ctx, author, []PublicationScope{{PublicationID: author, AuthorDID: author}}, "all", "", 5, at)
+	if err != nil || len(scoped.Response.Entries) != 5 || scoped.Response.Cursor == nil {
+		t.Fatalf("author scope aggregation: %#v %v", scoped, err)
+	}
+	scopedNext, err := reader.ScopedEntries(ctx, author, []PublicationScope{{PublicationID: author, AuthorDID: author}}, "all", *scoped.Response.Cursor, 5, at)
+	if err != nil || len(scopedNext.Response.Entries) != 3 || scopedNext.Response.Entries[0].EntryID != ids[5] {
+		t.Fatalf("author scope continuation: %#v %v", scopedNext, err)
+	}
 	query := EntryQuery{ViewerDID: author, AuthorDID: author, Filter: "all", Limit: 3}
 	page, err := reader.EntriesUpTo(ctx, query, 5, at)
 	if err != nil || len(page.Entries) != 5 || page.Cursor == nil {
