@@ -29,7 +29,7 @@
     {
       "name": "ThinAppViewCore",
       "repository": "https://github.com/Stygian-Tech/thin-app-view-core.git",
-      "revision": "3b8523ecb1c673c06674ecf27acc225d7d35331a"
+      "revision": "0af7ddf8ae4c844036db11f9dd1f09bb379f2cb5"
     },
     {
       "name": "GatewayCore",
