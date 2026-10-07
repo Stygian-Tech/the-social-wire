@@ -18,6 +18,7 @@ type Routes struct {
 	Store         *pdsreadstatecore.Store
 	DB            *sql.DB
 	ResolveScopes func(context.Context, gatewaycore.AuthContext, appviewcore.ReadScopeSelector) ([]appviewcore.PublicationScope, error)
+	Invalidate    func(context.Context, string) error
 }
 
 func (a Routes) Register(mux *http.ServeMux) {
@@ -97,6 +98,9 @@ func (a Routes) confirm(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	status, err := a.Store.Confirm(req.Context(), did, body.ManifestCID, body.ExpectedLegacyRevision)
+	if err == nil && a.Invalidate != nil {
+		err = a.Invalidate(req.Context(), did)
+	}
 	finish(w, status, err)
 }
 

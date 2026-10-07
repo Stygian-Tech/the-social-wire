@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,13 +18,18 @@ import (
 )
 
 type Routes struct {
-	DB         *sql.DB
-	Now        func() time.Time
-	ListFeed   func(context.Context, gatewaycore.AuthContext, string, string, string, int, time.Time) (*appviewcore.FeedPage, error)
-	RepairFeed func(context.Context, string) bool
+	DB             *sql.DB
+	Now            func() time.Time
+	ListFeed       func(context.Context, gatewaycore.AuthContext, string, string, string, int, time.Time) (*appviewcore.FeedPage, error)
+	RepairFeed     func(context.Context, string) bool
+	InvalidateRead func(context.Context, string, string) error
+	PurgeCircle    func(context.Context, string) error
+	PurgeUnread    func(context.Context, string) error
 }
 
 func (a Routes) Register(mux *http.ServeMux) {
+	mux.HandleFunc("DELETE /v1/appview/privacy/purge", a.purge)
+	mux.HandleFunc("POST /xrpc/app.thesocialwire.appview.purgeViewerData", a.purge)
 	for _, path := range []string{"/v1/appview/feed", "/xrpc/app.thesocialwire.appview.getFeed"} {
 		mux.HandleFunc("GET "+path, a.feed)
 	}
@@ -275,6 +281,11 @@ func (a Routes) mutateRead(w http.ResponseWriter, r *http.Request, read bool) {
 		fail(w, r, 400, "invalid_request", "Invalid read mark", false)
 		return
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		fail(w, r, 400, "invalid_request", "Invalid read mark", false)
+		return
+	}
 	at := a.now()
 	if body.ReadAt != nil {
 		at = *body.ReadAt
@@ -288,10 +299,44 @@ func (a Routes) mutateRead(w http.ResponseWriter, r *http.Request, read bool) {
 		databaseError(w, r, err)
 		return
 	}
+	if a.InvalidateRead != nil {
+		if err := a.InvalidateRead(r.Context(), viewer.DID, body.SubjectURI); err != nil {
+			databaseError(w, r, err)
+			return
+		}
+	}
 	if strings.HasPrefix(r.URL.Path, "/xrpc/") {
 		respond(w, struct{}{})
 	} else {
 		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func (a Routes) purge(w http.ResponseWriter, r *http.Request) {
+	viewer, ok := auth(w, r)
+	if !ok {
+		return
+	}
+	if err := (appviewcore.ReadMutationStore{DB: a.DB}).Purge(r.Context(), viewer.DID); err != nil {
+		if errors.Is(err, appviewcore.ErrPDSReadStateRequired) {
+			fail(w, r, 409, "Conflict", err.Error(), false)
+		} else {
+			databaseError(w, r, err)
+		}
+		return
+	}
+	for _, callback := range []func(context.Context, string) error{a.PurgeCircle, a.PurgeUnread} {
+		if callback != nil {
+			if err := callback(r.Context(), viewer.DID); err != nil {
+				databaseError(w, r, err)
+				return
+			}
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/xrpc/") {
+		respond(w, struct{}{})
+	} else {
+		w.WriteHeader(200)
 	}
 }
 
