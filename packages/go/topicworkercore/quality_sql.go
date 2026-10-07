@@ -7,8 +7,14 @@ const financeQuality = `item.eligible=TRUE AND item.expires_at>$1
     AND length(btrim(item.title))>=12 AND item.canonical_url ~* '^https?://'
     AND COALESCE(item.published_at,item.first_seen_at)>=$1-interval '30 days'
     AND (item.provenance ? 'standard_site' OR EXISTS (
-      SELECT 1 FROM wire_link_metadata_cache metadata WHERE metadata.canonical_key=item.canonical_key
-        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale') AND metadata.stale_until>$1
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified=TRUE
+        AND metadata.stale_until>$1
+      UNION ALL
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified IS NULL
+        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale')
+        AND metadata.stale_until>$1
         AND num_nonnulls(metadata.title,metadata.description,metadata.image_url,metadata.site_name,
           metadata.author_name,metadata.published_at::text,metadata.icon_url)>=2 OFFSET 0))
     AND concat_ws(' ',item.title,item.summary) ~* '(bitcoin|crypto|commodity|nasdaq|dividend|earnings|stock|shares|investor|market|economy|inflation|interest rate|central bank|gdp|unemployment|employment report|jobs report|consumer prices|economic growth|recession|tariff|trade deficit|trade surplus|government budget|bond|fiscal|merger|acquisition|revenue|filing|regulation|announces|launches|semiconductor|software|technology|pharmaceutical|healthcare|biotech|bank|insurance|financial|oil|energy|natural gas|mining|metals|chemicals|manufacturing|aerospace|industrial|retail|consumer|automotive|telecom|media|utilities|electric utility|real estate|housing|industry|sector|company|business|sales|production|supply|demand|investment|exports|imports|regulatory|manufacturers|firms|ceo|chief executive|leadership)'
@@ -41,8 +47,14 @@ const financeCandidatesSQL = `WITH analysis_pool AS MATERIALIZED (
     AND length(btrim(item.title))>=12 AND item.canonical_url ~* '^https?://'
     AND COALESCE(item.published_at,item.first_seen_at)>=$1-interval '30 days'
     AND (item.provenance ? 'standard_site' OR EXISTS (
-      SELECT 1 FROM wire_link_metadata_cache metadata WHERE metadata.canonical_key=item.canonical_key
-        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale') AND metadata.stale_until>$1
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified=TRUE
+        AND metadata.stale_until>$1
+      UNION ALL
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified IS NULL
+        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale')
+        AND metadata.stale_until>$1
         AND num_nonnulls(metadata.title,metadata.description,metadata.image_url,metadata.site_name,
           metadata.author_name,metadata.published_at::text,metadata.icon_url)>=2 OFFSET 0))
     AND concat_ws(' ',item.title,item.summary) ~* '(bitcoin|crypto|commodity|nasdaq|dividend|earnings|stock|shares|investor|market|economy|inflation|interest rate|central bank|gdp|unemployment|employment report|jobs report|consumer prices|economic growth|recession|tariff|trade deficit|trade surplus|government budget|bond|fiscal|merger|acquisition|revenue|filing|regulation|announces|launches|semiconductor|software|technology|pharmaceutical|healthcare|biotech|bank|insurance|financial|oil|energy|natural gas|mining|metals|chemicals|manufacturing|aerospace|industrial|retail|consumer|automotive|telecom|media|utilities|electric utility|real estate|housing|industry|sector|company|business|sales|production|supply|demand|investment|exports|imports|regulatory|manufacturers|firms|ceo|chief executive|leadership)'
@@ -58,8 +70,14 @@ const sportsQuality = `item.eligible=TRUE AND item.expires_at>$1
     AND length(btrim(item.title))>=12 AND item.canonical_url ~* '^https?://'
     AND COALESCE(item.published_at,item.first_seen_at)>=$1-interval '30 days'
     AND (item.provenance ? 'standard_site' OR EXISTS (
-      SELECT 1 FROM wire_link_metadata_cache metadata WHERE metadata.canonical_key=item.canonical_key
-        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale') AND metadata.stale_until>$1
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified=TRUE
+        AND metadata.stale_until>$1
+      UNION ALL
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified IS NULL
+        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale')
+        AND metadata.stale_until>$1
         AND num_nonnulls(metadata.title,metadata.description,metadata.image_url,metadata.site_name,
           metadata.author_name,metadata.published_at::text,metadata.icon_url)>=2 OFFSET 0))
     AND NOT EXISTS (SELECT 1 FROM wire_labels label WHERE label.canonical_key=item.canonical_key
@@ -106,8 +124,14 @@ const sportsCandidatesSQL = `WITH prior_generation AS MATERIALIZED (
     AND length(btrim(item.title))>=12 AND item.canonical_url ~* '^https?://'
     AND COALESCE(item.published_at,item.first_seen_at)>=$1-interval '30 days'
     AND (item.provenance ? 'standard_site' OR EXISTS (
-      SELECT 1 FROM wire_link_metadata_cache metadata WHERE metadata.canonical_key=item.canonical_key
-        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale') AND metadata.stale_until>$1
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified=TRUE
+        AND metadata.stale_until>$1
+      UNION ALL
+      SELECT 1 FROM wire_link_metadata_cache metadata
+      WHERE metadata.canonical_key=item.canonical_key AND metadata.open_graph_qualified IS NULL
+        AND metadata.source='open_graph' AND metadata.status IN ('fresh','stale')
+        AND metadata.stale_until>$1
         AND num_nonnulls(metadata.title,metadata.description,metadata.image_url,metadata.site_name,
           metadata.author_name,metadata.published_at::text,metadata.icon_url)>=2 OFFSET 0))
     AND NOT EXISTS (SELECT 1 FROM wire_labels label WHERE label.canonical_key=item.canonical_key
