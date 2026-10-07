@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, expect, it } from "bun:test";
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { act } from "react";
 import { PodcastEpisodeDetailsDialog } from "@/components/Podcasts/PodcastEpisodeDetailsDialog";
 import type { PodcastEpisode } from "@/lib/podcasts/client";
+import * as nextImage from "next/image";
+import type { ImageProps } from "next/image";
 
 const restores: (() => void)[] = [];
 beforeEach(() => {
@@ -47,4 +49,24 @@ it("offers a clear empty state when an episode has no notes or known podcast nam
   const dialog = await screen.findByRole("dialog", { name: episode.title });
   expect(within(dialog).getByText("Episode Show Notes")).toBeTruthy();
   expect(within(dialog).getByText("No Show Notes Are Available for This Episode")).toBeTruthy();
+});
+
+it("shows bounded episode artwork in the notes header and falls back to show artwork", async () => {
+  const imageSpy = spyOn(nextImage, "default").mockImplementation((({ src, alt, width, height, style, onError, className }: ImageProps) =>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={typeof src === "string" ? src : ""} alt={alt} width={width} height={height} style={style} onError={onError} className={className} />) as unknown as typeof nextImage.default);
+  restores.push(() => imageSpy.mockRestore());
+  const withArtwork = { ...episode, artworkUrl: "https://publisher.test/episode.jpg", showArtworkUrl: "https://publisher.test/show.jpg" };
+  render(<PodcastEpisodeDetailsDialog episode={withArtwork} showName="Primary Technology" />);
+  fireEvent.click(screen.getByRole("button", { name: "Show Notes: The Episode" }));
+  const dialog = await screen.findByRole("dialog", { name: episode.title });
+  const image = within(dialog).getByRole("img", { name: "The Episode Artwork" }) as HTMLImageElement;
+  expect(image.src).toBe(withArtwork.artworkUrl);
+  expect(image.style.width).toBe("64px");
+  expect(image.style.height).toBe("64px");
+  expect(image.className).toContain("object-cover");
+  fireEvent.error(image);
+  expect(image.src).toBe(withArtwork.showArtworkUrl);
+  expect(image.style.width).toBe("64px");
+  expect(image.style.height).toBe("64px");
 });
