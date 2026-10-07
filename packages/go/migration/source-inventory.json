@@ -11629,6 +11629,10 @@
           "sha256": "9e29065892bae1eda832edfe9b7d92184525f7254a848bc6bd9413751e269f7d"
         },
         {
+          "path": "packages/spec/__tests__/ingress-go-image-dependencies.test.ts",
+          "sha256": "4719482bea5a4efb607cb0d9dd4dc05ccd9e13f04d8fae6c4d9becf48e1a54cd"
+        },
+        {
           "path": "packages/spec/__tests__/jetstream-bounded-snapshot-migration.test.ts",
           "sha256": "f96e91fe8f7b6b847d777a83e9c5256ab91bbfe331679751c1b2a8d61ae721f6"
         },
