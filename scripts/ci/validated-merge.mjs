@@ -108,6 +108,8 @@ async function boundedText(response, maximumBytes) {
   return text;
 }
 
+// This version retains merge_commit_sha; newer API shapes omit the exact merge
+// identity needed by this gate. Missing proof must remain a rejection.
 export function githubReadAPI(token, { fetcher = fetch, deadlineMS = Date.now() + 120000 } = {}) {
   if (!token) fail('Missing GitHub read token');
   return async (path, { text = false } = {}) => {
@@ -116,7 +118,7 @@ export function githubReadAPI(token, { fetcher = fetch, deadlineMS = Date.now() 
     const signal = AbortSignal.timeout(Math.min(10000, remaining));
     let response;
     try {
-      response = await fetcher(`https://api.github.com${path}`, { method: 'GET', redirect: 'manual', headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2026-03-10' }, signal });
+      response = await fetcher(`https://api.github.com${path}`, { method: 'GET', redirect: 'manual', headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' }, signal });
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         if (!text || !/^\/repos\/[^/]+\/[^/]+\/actions\/jobs\/[0-9]+\/logs$/.test(path)) fail('Unexpected GitHub evidence redirect');
         let target; try { target = new URL(response.headers.get('location')); } catch { fail('Invalid GitHub logs redirect'); }
