@@ -34,7 +34,7 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 		return err
 	}
 	if state.Completed {
-		return nil
+		return r.finalize(ctx, scope.RepoDID)
 	}
 	pds, err := r.PDS.Resolve(ctx, scope.RepoDID)
 	if err != nil {
@@ -57,9 +57,14 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 	}
 	budget := r.RecordBudget
 	if budget <= 0 {
-		budget = 500
+		budget = 200
 	}
+	// Recovery checkpoints yield small successful slices before the restore deadline.
+	// Diagnostic backfills retain their independently configured record budget.
+	budget = min(200, budget)
 	observedThisSlice := 0
+	pagesThisSlice := 0
+	pageBudget := min(20, (budget+9)/10)
 	for _, collection := range []string{"site.standard.document", "site.standard.entry"} {
 		previous := state.Collections[collection]
 		if previous.Complete {
@@ -69,16 +74,21 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 			previous.SeenCursors = []string{}
 		}
 		reverse := true
+		limit := 50
+		if collection == "site.standard.document" {
+			limit = 10
+		}
 		for {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if observedThisSlice >= budget {
+			if observedThisSlice >= budget || pagesThisSlice >= pageBudget {
 				return r.yield(ctx, store, scope)
 			}
-			limit := 50
-			if collection == "site.standard.document" {
-				limit = 10
+			// Leave the next request's timeout plus DB headroom before starting another
+			// page. Only saved progress can yield; request failures remain failures.
+			if deadline, ok := ctx.Deadline(); ok && pagesThisSlice > 0 && time.Until(deadline) < 21*time.Second {
+				return r.yield(ctx, store, scope)
 			}
 			params := url.Values{"repo": []string{scope.RepoDID}, "collection": []string{collection}, "limit": []string{strconv.Itoa(limit)}}
 			if reverse {
@@ -103,6 +113,15 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 				if status == 400 && reverse && requiresForward(data) {
 					reverse = false
 					params.Del("reverse")
+					continue
+				}
+				// Some PDS document serializers reject pages larger than one record.
+				// Retry the same forward cursor once; a second failure remains an error.
+				if status == 400 && collection == "site.standard.document" && limit > 1 && documentPageInvalidRequest(data) {
+					limit = 1
+					reverse = false
+					params.Del("reverse")
+					params.Set("limit", "1")
 					continue
 				}
 				if status == 429 && attempt < r.MaximumRateLimitRetries {
@@ -182,10 +201,11 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 			if err != nil {
 				return err
 			}
+			pagesThisSlice++
 			if previous.Complete {
 				break
 			}
-			if observedThisSlice >= budget {
+			if observedThisSlice >= budget || pagesThisSlice >= pageBudget {
 				return r.yield(ctx, store, scope)
 			}
 		}
@@ -198,8 +218,17 @@ func (r RepositoryRestorer) Restore(ctx context.Context, scope thinappviewcore.R
 	if !state.Completed {
 		return r.yield(ctx, store, scope)
 	}
+	return r.finalize(ctx, scope.RepoDID)
+}
+
+// A completed content snapshot still needs its derived counters and caches finalized.
+// Retrying this step must never refetch the PDS or repeat snapshot pruning.
+func (r RepositoryRestorer) finalize(ctx context.Context, did string) error {
+	if err := r.Projector.Counters.DirtyAuthor(ctx, did, time.Now()); err != nil {
+		return err
+	}
 	if r.Projector.Cache != nil {
-		_ = r.Projector.Cache.InvalidateAll(ctx)
+		return r.Projector.Cache.InvalidateAll(ctx)
 	}
 	return nil
 }
@@ -218,6 +247,13 @@ func requiresForward(body []byte) bool {
 	message = strings.ToLower(message)
 	return strings.Contains(message, "reverse") && (strings.Contains(message, "unsupported") || strings.Contains(message, "not supported") || strings.Contains(message, "unknown") || strings.Contains(message, "invalid"))
 }
+func documentPageInvalidRequest(body []byte) bool {
+	var value struct {
+		Error string `json:"error"`
+	}
+	return json.Unmarshal(body, &value) == nil && strings.EqualFold(value.Error, "InvalidRequest")
+}
+
 func newSnapshotToken() (string, error) {
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
