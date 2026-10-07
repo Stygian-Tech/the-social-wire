@@ -6,7 +6,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -21,7 +20,7 @@ type WebhookDelivery struct {
 }
 
 func (d WebhookDelivery) Deliver(ctx context.Context, alert any) error {
-	body, err := json.Marshal(alert)
+	body, err := marshalStored(alert)
 	if err != nil {
 		return err
 	}
