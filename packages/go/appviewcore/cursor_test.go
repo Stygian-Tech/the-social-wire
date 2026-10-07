@@ -23,3 +23,11 @@ func TestRejectMalformedCursors(t *testing.T) {
 		}
 	}
 }
+
+func TestCursorRetainsDatabaseOrderingPrecision(t *testing.T) {
+	fixture := "2026-10-06T09:03:20.123456789Z|at://did:plc:test/site.standard.document/a"
+	cursor, err := DecodeEntryCursor(fixture)
+	if err != nil || cursor.Encode() != fixture {
+		t.Fatalf("fractional position lost: %#v %v", cursor, err)
+	}
+}

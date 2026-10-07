@@ -13,7 +13,10 @@ type EntryCursor struct {
 }
 
 func (c EntryCursor) Encode() string {
-	return c.CreatedAt.UTC().Format(time.RFC3339) + "|" + c.URI
+	// PostgreSQL ordering retains fractional seconds. Dropping them here would
+	// skip the rest of a timestamp group on the next page. The wire shape and
+	// acceptance of existing second-precision cursors remain unchanged.
+	return c.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + c.URI
 }
 
 func DecodeEntryCursor(raw string) (EntryCursor, error) {
@@ -21,7 +24,7 @@ func DecodeEntryCursor(raw string) (EntryCursor, error) {
 	if !ok || uri == "" {
 		return EntryCursor{}, errors.New("invalid entry cursor")
 	}
-	at, err := time.Parse(time.RFC3339, date)
+	at, err := time.Parse(time.RFC3339Nano, date)
 	if err != nil {
 		return EntryCursor{}, errors.New("invalid entry cursor")
 	}

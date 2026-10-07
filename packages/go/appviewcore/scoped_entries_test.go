@@ -42,6 +42,18 @@ func TestScopedEntriesUseFirstMatchingPublicationFloorAndDedupeURLs(t *testing.T
 	if err != nil || len(page.Response.Entries) != 2 {
 		t.Fatalf("inherited other publication floor: %#v %v", page, err)
 	}
+	snapshot, err := reader.UnreadSnapshot(ctx, viewer, scopes[:1], "", 1, at)
+	if err != nil || len(snapshot.Entries) != 1 || snapshot.Cursor == nil {
+		t.Fatalf("unread mutation snapshot: %#v %v", snapshot, err)
+	}
+	nextSnapshot, err := reader.UnreadSnapshot(ctx, viewer, scopes[:1], *snapshot.Cursor, 100, at)
+	if err != nil || len(nextSnapshot.Entries) != 2 || nextSnapshot.Cursor != nil {
+		t.Fatalf("mutation snapshot deduplicated or lost continuation: %#v %v", nextSnapshot, err)
+	}
+	snapshot, err = reader.UnreadSnapshot(ctx, viewer, scopes, "", 100, at)
+	if err != nil || len(snapshot.Entries) != 0 {
+		t.Fatalf("mutation snapshot inherited later overlapping scope: %#v %v", snapshot, err)
+	}
 	page, err = reader.ScopedEntries(ctx, viewer, []PublicationScope{{PublicationID: publicationB, AuthorDID: author, PublicationSiteURLs: []string{"https://other.invalid/feed"}}}, "all", "", 50, at)
 	if err != nil || len(page.Response.Entries) != 0 {
 		t.Fatalf("scope site filter leaked entries: %#v %v", page, err)

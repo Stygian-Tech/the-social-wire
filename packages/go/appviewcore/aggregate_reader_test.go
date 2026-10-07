@@ -13,7 +13,7 @@ func TestAggregateCursorContinuesAfterReturnedCapUsingFeedPosition(t *testing.T)
 	db := fixtureDatabase(t)
 	ctx := context.Background()
 	author := fmt.Sprintf("did:plc:aggregate%d", time.Now().UnixNano())
-	at := time.Now().UTC().Truncate(time.Second)
+	at := time.Now().UTC().Truncate(time.Microsecond)
 	t.Cleanup(func() { db.Exec(`DELETE FROM content_items WHERE author_did=$1`, author) })
 	ids := []string{}
 	for i := 0; i < 8; i++ {

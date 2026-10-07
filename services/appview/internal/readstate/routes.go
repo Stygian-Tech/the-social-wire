@@ -1,8 +1,11 @@
 package readstate
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/stygian-tech/the-social-wire/packages/go/appviewcore"
 	"io"
 	"net/http"
 
@@ -11,12 +14,17 @@ import (
 	r "github.com/stygian-tech/the-social-wire/packages/go/readstatecore"
 )
 
-type Routes struct{ Store *pdsreadstatecore.Store }
+type Routes struct {
+	Store         *pdsreadstatecore.Store
+	DB            *sql.DB
+	ResolveScopes func(context.Context, gatewaycore.AuthContext, appviewcore.ReadScopeSelector) ([]appviewcore.PublicationScope, error)
+}
 
 func (a Routes) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.appview.getReadStateStatus", a.status)
 	mux.HandleFunc("POST /xrpc/app.thesocialwire.appview.exportReadState", a.export)
 	mux.HandleFunc("POST /xrpc/app.thesocialwire.appview.confirmReadState", a.confirm)
+	mux.HandleFunc("POST /xrpc/app.thesocialwire.appview.prepareReadState", a.prepare)
 }
 
 func viewer(w http.ResponseWriter, req *http.Request) (string, bool) {
@@ -107,7 +115,7 @@ func finish(w http.ResponseWriter, body any, err error) {
 		respondError(w, 409, "ReadStateMigrationScopeConflict", "Overlapping publications have different read boundaries. Your existing read state is preserved; reconcile those boundaries before retrying migration.")
 		return
 	}
-	if errors.Is(err, pdsreadstatecore.ErrStaleGeneration) || errors.Is(err, pdsreadstatecore.ErrRevisionChanged) || errors.Is(err, pdsreadstatecore.ErrParityMismatch) || errors.Is(err, pdsreadstatecore.ErrAlreadyMigrated) || errors.Is(err, pdsreadstatecore.ErrLegacyScopeUnavailable) || errors.Is(err, r.ErrInvalidRecord) || errors.Is(err, r.ErrIncompleteGeneration) || errors.Is(err, r.ErrInvalidReference) {
+	if errors.Is(err, pdsreadstatecore.ErrStaleGeneration) || errors.Is(err, pdsreadstatecore.ErrRevisionChanged) || errors.Is(err, pdsreadstatecore.ErrParityMismatch) || errors.Is(err, pdsreadstatecore.ErrAlreadyMigrated) || errors.Is(err, pdsreadstatecore.ErrLegacyScopeUnavailable) || errors.Is(err, r.ErrInvalidRecord) || errors.Is(err, r.ErrIncompleteGeneration) || errors.Is(err, r.ErrInvalidReference) || errors.Is(err, r.ErrSizeLimit) || errors.Is(err, r.ErrConflictingSequence) {
 		respondError(w, 409, "Conflict", "Read-state generation is invalid, changed or incomplete")
 		return
 	}

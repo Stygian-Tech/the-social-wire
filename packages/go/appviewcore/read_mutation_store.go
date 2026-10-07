@@ -15,23 +15,13 @@ func (s ReadMutationStore) Put(ctx context.Context, viewer, subject string, read
 	if viewer == "" || subject == "" {
 		return errors.New("viewer and subject required")
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
+	// Share the authority-row lock with verified PDS activation. Checking before
+	// locking would allow authority to switch between the check and legacy writes.
+	tx, err := beginLegacyMutation(ctx, s.DB, viewer)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	// Share the authority-row lock with verified PDS activation. Checking before
-	// locking would allow authority to switch between the check and legacy writes.
-	if _, err := tx.ExecContext(ctx, `INSERT INTO appview_pds_read_state_authority(viewer_did) VALUES($1) ON CONFLICT(viewer_did) DO NOTHING`, viewer); err != nil {
-		return err
-	}
-	var pds bool
-	if err := tx.QueryRowContext(ctx, `SELECT manifest_cid IS NOT NULL FROM appview_pds_read_state_authority WHERE viewer_did=$1 FOR UPDATE`, viewer).Scan(&pds); err != nil {
-		return err
-	}
-	if pds {
-		return ErrPDSReadStateRequired
-	}
 	// Serialize concurrent writes for the same viewer/subject before evaluating
 	// its prior state, so duplicate requests cannot adjust a badge twice.
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1 || '|' || $2, 150))`, viewer, subject); err != nil {
