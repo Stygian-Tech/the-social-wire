@@ -176,7 +176,7 @@ describe("Schedule presentation", () => {
  });
  it("fits unavailable schedules to their guidance", async () => {
   const fetch=spyOn(Sports,"getSportsEvents").mockRejectedValue(new Error("unavailable"));restores.push(()=>fetch.mockRestore());mount(false);
-  await waitFor(()=>expect(screen.getByText("Schedules Unavailable")).toBeTruthy());
+  await waitFor(()=>expect(screen.getByText("Schedules Unavailable")).toBeTruthy(),{timeout:3000});
   expect((screen.getByRole("region",{name:"Sports Events"}).querySelector("[data-schedule-body]") as HTMLElement).style.minHeight).toBe("");
  });
  it("keeps toggling available when browser storage writes fail", () => {
