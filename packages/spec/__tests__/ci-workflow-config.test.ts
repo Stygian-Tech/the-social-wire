@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
@@ -239,9 +239,40 @@ describe("CI workflow configuration", () => {
   it("passes event SHAs into path detection and enforces coverage", () => {
     expect(workflow).toContain("GITHUB_EVENT_BEFORE: ${{ github.event.before }}");
     expect(workflow).toContain("GITHUB_EVENT_PULL_REQUEST_BASE_SHA:");
-    expect(workflow).toContain("bun --cwd apps/web run test:coverage");
-    expect(workflow).toContain("bun --cwd apps/operations run test:coverage");
+    expect(workflow).toContain("bun run --cwd apps/web test:coverage");
+    expect(workflow).toContain("bun run --cwd apps/operations test:coverage");
     expect(workflow).toContain("go test -race -coverprofile=");
+  });
+
+  it("executes workspace coverage scripts and propagates their failures", () => {
+    const parsed = Bun.YAML.parse(workflow) as {
+      jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }>;
+    };
+    const fixture = mkdtempSync(join(tmpdir(), "socialwire-coverage-command-"));
+    try {
+      const workspaces = [["web", "apps/web"], ["operations-web", "apps/operations"]];
+      for (const [job, workspace] of workspaces) {
+        const directory = join(fixture, workspace);
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, "package.json"), JSON.stringify({
+          scripts: { "test:coverage": "bun coverage-fixture.ts" },
+        }));
+        writeFileSync(join(directory, "coverage-fixture.ts"),
+          'await Bun.write("coverage-executed", "yes"); process.exit(23);');
+        const command = parsed.jobs[job].steps.find(step => step.name === "Test")?.run;
+        expect(command).toBeDefined();
+        const args = command!.trim().split(/\s+/).slice(1);
+        const result = spawnSync(process.execPath, args, {
+          cwd: fixture,
+          env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` },
+          encoding: "utf8",
+        });
+        expect(result.status).toBe(23);
+        expect(readFileSync(join(directory, "coverage-executed"), "utf8")).toBe("yes");
+      }
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
   });
 
   it("pins the latest production-supported Node.js LTS in JavaScript jobs", () => {
