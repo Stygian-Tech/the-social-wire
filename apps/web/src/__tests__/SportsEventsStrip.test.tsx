@@ -151,7 +151,7 @@ describe("Schedule presentation", () => {
   const section=screen.getByRole("region",{name:"Sports Events"});
   expect(section.classList.contains("sticky")).toBe(true);expect(section.classList.contains("top-0")).toBe(true);expect(section.classList.contains("bg-background")).toBe(true);
   const body=document.getElementById(button.getAttribute("aria-controls")!)!;
-  expect((body.querySelector("[data-schedule-body]") as HTMLElement)?.style.minHeight).toBe("var(--sports-body-min-height,176px)");
+  expect((body.querySelector("[data-schedule-body]") as HTMLElement)?.style.minHeight).toBe("");
   fireEvent.click(button);
   expect(screen.getByRole("button",{name:"Expand Schedules"}).getAttribute("aria-expanded")).toBe("false");
   expect(body.isConnected).toBe(true);expect(body.getAttribute("aria-hidden")).toBe("true");expect(body.hasAttribute("inert")).toBe(true);
@@ -168,6 +168,16 @@ describe("Schedule presentation", () => {
   window.localStorage.setItem("the-social-wire.sports-schedules-expanded.v1:did:plc:other","false");
   const fetch=spyOn(Sports,"getSportsEvents").mockResolvedValue(fixture);restores.push(()=>fetch.mockRestore());mount(false);
   expect(screen.getByRole("button",{name:"Collapse Schedules"})).toBeTruthy();
+ });
+ it("fits empty schedules to their guidance", async () => {
+  const fetch=spyOn(Sports,"getSportsEvents").mockResolvedValue({events:[],degraded:false});restores.push(()=>fetch.mockRestore());mount(false);
+  await waitFor(()=>expect(screen.getByText("No upcoming or recent events in this feed.")).toBeTruthy());
+  expect((screen.getByRole("region",{name:"Sports Events"}).querySelector("[data-schedule-body]") as HTMLElement).style.minHeight).toBe("");
+ });
+ it("fits unavailable schedules to their guidance", async () => {
+  const fetch=spyOn(Sports,"getSportsEvents").mockRejectedValue(new Error("unavailable"));restores.push(()=>fetch.mockRestore());mount(false);
+  await waitFor(()=>expect(screen.getByText("Schedules Unavailable")).toBeTruthy(),{timeout:3000});
+  expect((screen.getByRole("region",{name:"Sports Events"}).querySelector("[data-schedule-body]") as HTMLElement).style.minHeight).toBe("");
  });
  it("keeps toggling available when browser storage writes fail", () => {
   const viewer="did:plc:storage-unavailable";
