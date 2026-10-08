@@ -62,9 +62,6 @@ import {
 export const COLLECTION_FOLDER = "app.thesocialwire.folder";
 export const COLLECTION_PUB_PREFS = "app.thesocialwire.publicationPrefs";
 export const COLLECTION_PREFERENCES = "app.thesocialwire.preferences";
-export const LEGACY_COLLECTION_FOLDER = "com.thesocialwire.folder";
-export const LEGACY_COLLECTION_PUB_PREFS = "com.thesocialwire.publicationPrefs";
-export const LEGACY_COLLECTION_PREFERENCES = "com.thesocialwire.preferences";
 export const COLLECTION_STANDARD_SITE_SUBSCRIPTION =
   "site.standard.graph.subscription";
 /** Skyreader RSS/Atom subscriptions (writes require OAuth repo scope). */
@@ -85,15 +82,6 @@ export {
   LEGACY_COLLECTION_LATR_SAVED_ITEM,
 } from "@/lib/latrCollections";
 export const PREFERENCES_RKEY = "self";
-
-export const LEGACY_LEXICON_COLLECTIONS: ReadonlyArray<{
-  legacy: string;
-  current: string;
-}> = [
-  { legacy: LEGACY_COLLECTION_FOLDER, current: COLLECTION_FOLDER },
-  { legacy: LEGACY_COLLECTION_PUB_PREFS, current: COLLECTION_PUB_PREFS },
-  { legacy: LEGACY_COLLECTION_PREFERENCES, current: COLLECTION_PREFERENCES },
-];
 
 /** Sidebar pseudo-folder URI (not a real `app.thesocialwire.folder` record). */
 export const PSEUDO_FOLDER_MY_URI = "__my__";
@@ -1568,77 +1556,6 @@ export class PDSClient {
   async listMergedLatrHttpsSaves(): Promise<MergedLatrSave[]> {
     return this.listMergedLatrSaves();
   }
-
-  /**
-   * Copies legacy `com.thesocialwire.*` records into `app.thesocialwire.*` and deletes the old rows.
-   * No-op when legacy collections are empty.
-   */
-  async migrateLegacyLexiconsIfNeeded(): Promise<LexiconMigrationSummary> {
-    const summary = emptyLexiconMigrationSummary();
-
-    for (const { legacy, current } of LEGACY_LEXICON_COLLECTIONS) {
-      const probe = await this.agent.api.com.atproto.repo.listRecords({
-        repo: this.did,
-        collection: legacy,
-        limit: 1,
-      });
-      if (!probe.data.records?.length) continue;
-
-      let cursor: string | undefined;
-      do {
-        const page = await this.agent.api.com.atproto.repo.listRecords({
-          repo: this.did,
-          collection: legacy,
-          limit: 100,
-          cursor,
-        });
-
-        for (const record of page.data.records ?? []) {
-          const rkey = rkeyFromURI(record.uri);
-          const targetRkey =
-            legacy === LEGACY_COLLECTION_PREFERENCES ? PREFERENCES_RKEY : rkey;
-
-          let exists = false;
-          try {
-            await this.agent.api.com.atproto.repo.getRecord({
-              repo: this.did,
-              collection: current,
-              rkey: targetRkey,
-            });
-            exists = true;
-          } catch {
-            exists = false;
-          }
-
-          if (!exists) {
-            const migrated = {
-              ...(record.value as Record<string, unknown>),
-              $type: current,
-            };
-            await this.agent.api.com.atproto.repo.putRecord({
-              repo: this.did,
-              collection: current,
-              rkey: targetRkey,
-              record: migrated,
-            });
-            incrementLexiconMigrationCopied(summary, legacy);
-          }
-
-          await this.agent.api.com.atproto.repo.deleteRecord({
-            repo: this.did,
-            collection: legacy,
-            rkey,
-          });
-          incrementLexiconMigrationDeleted(summary, legacy);
-        }
-
-        cursor = page.data.cursor;
-      } while (cursor);
-    }
-
-    return summary;
-  }
-
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1649,71 +1566,4 @@ export class PDSClient {
  */
 export function rkeyFromURI(uri: string): string {
   return uri.split("/").pop() ?? uri;
-}
-
-export interface LexiconMigrationSummary {
-  foldersCopied: number;
-  publicationPrefsCopied: number;
-  preferencesCopied: number;
-  foldersDeleted: number;
-  publicationPrefsDeleted: number;
-  preferencesDeleted: number;
-}
-
-export function lexiconMigrationChanged(
-  summary: LexiconMigrationSummary
-): boolean {
-  return (
-    summary.foldersCopied > 0 ||
-    summary.publicationPrefsCopied > 0 ||
-    summary.preferencesCopied > 0 ||
-    summary.foldersDeleted > 0 ||
-    summary.publicationPrefsDeleted > 0 ||
-    summary.preferencesDeleted > 0
-  );
-}
-
-function emptyLexiconMigrationSummary(): LexiconMigrationSummary {
-  return {
-    foldersCopied: 0,
-    publicationPrefsCopied: 0,
-    preferencesCopied: 0,
-    foldersDeleted: 0,
-    publicationPrefsDeleted: 0,
-    preferencesDeleted: 0,
-  };
-}
-
-function incrementLexiconMigrationCopied(
-  summary: LexiconMigrationSummary,
-  legacyCollection: string
-): void {
-  switch (legacyCollection) {
-    case LEGACY_COLLECTION_FOLDER:
-      summary.foldersCopied += 1;
-      break;
-    case LEGACY_COLLECTION_PUB_PREFS:
-      summary.publicationPrefsCopied += 1;
-      break;
-    case LEGACY_COLLECTION_PREFERENCES:
-      summary.preferencesCopied += 1;
-      break;
-  }
-}
-
-function incrementLexiconMigrationDeleted(
-  summary: LexiconMigrationSummary,
-  legacyCollection: string
-): void {
-  switch (legacyCollection) {
-    case LEGACY_COLLECTION_FOLDER:
-      summary.foldersDeleted += 1;
-      break;
-    case LEGACY_COLLECTION_PUB_PREFS:
-      summary.publicationPrefsDeleted += 1;
-      break;
-    case LEGACY_COLLECTION_PREFERENCES:
-      summary.preferencesDeleted += 1;
-      break;
-  }
 }

@@ -11681,7 +11681,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "a0d389f69f3db379f3233b9cabafb57e46fe76c40f7db23385c73a09400770e2"
+          "sha256": "787c50bc6b1252fd001c7590e8ee406d1edd2077bc7064d4c783cebbd0149ccb"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",
