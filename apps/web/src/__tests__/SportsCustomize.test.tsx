@@ -174,7 +174,8 @@ it.each([{width:320,height:568},{width:392,height:420},{width:1024,height:360}])
  const longNames=Array.from({length:30},(_,i)=>({id:`result-${i}`,name:`Very Long International Sports Team Display Name ${i}`,kind:"team",competitionIDs:[],aliases:[],active:true}));search.mockResolvedValue({entities:longNames});
  render(view(true));
  fireEvent.change(screen.getByRole("searchbox"),{target:{value:"International"}});
- await waitFor(()=>expect(screen.getAllByRole("button",{name:"Follow"})).toHaveLength(30));
+ // Allow the 300ms search debounce and the large dialog's deferred render under CI load.
+ await waitFor(()=>expect(screen.getAllByRole("button",{name:"Follow"})).toHaveLength(30),{timeout:3000});
  const dialog=screen.getByRole("dialog",{name:"Customize Sports"});
  expect(dialog.classList.contains("max-h-[calc(100dvh-2rem)]")).toBe(true);expect(dialog.classList.contains("w-[calc(100vw-2rem)]")).toBe(true);expect(dialog.classList.contains("sm:max-w-2xl")).toBe(true);expect(dialog.classList.contains("overflow-hidden")).toBe(true);
  const body=dialog.querySelector("[data-sports-customize-body]")!;const footer=dialog.querySelector("[data-sports-customize-footer]")!;

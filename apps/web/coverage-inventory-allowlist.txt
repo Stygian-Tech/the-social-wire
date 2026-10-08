@@ -11,7 +11,6 @@ src/app/me/page.tsx
 src/app/me/publications/page.tsx
 src/app/me/settings/page.tsx
 src/app/page.tsx
-src/app/providers.tsx
 src/app/read/ClosePublicationsSheetOnMobilePubRoute.tsx
 src/app/read/[...pubId]/page.tsx
 src/app/read/layout.tsx
@@ -19,7 +18,6 @@ src/app/saved/layout.tsx
 src/app/saved/page.tsx
 src/app/saved/settings/page.tsx
 src/components/Account/AccountHeader.tsx
-src/components/Account/FeedSettingsSection.tsx
 src/components/Account/MyPublicationsSection.tsx
 src/components/AppSidebar/AddPublication/AddPublicationInner.tsx
 src/components/AppSidebar/AddPublication/PublicationAuthFields.tsx
@@ -37,9 +35,7 @@ src/components/AppSidebar/PublicationTabButton.tsx
 src/components/AppSidebar/SavedFeedSourcesSection.tsx
 src/components/AppSidebar/SidebarFoldersSection.tsx
 src/components/AppSidebar/SidebarPublicationsSection.tsx
-src/components/AppSidebar/SidebarSectionUnreadBadge.tsx
 src/components/AppSidebar/UnreadSidebarBadge.tsx
-src/components/EntryDetail/ArticleSocialToolbar.tsx
 src/components/EntryDetail/EntryArticleEmbed.tsx
 src/components/EntryDetail/EntryArticleEmbedInner.tsx
 src/components/EntryDetail/EntryArticleEmbedTypes.ts
@@ -54,16 +50,13 @@ src/components/SavedLinks/SavedLinksBrowser.tsx
 src/components/shared/EnvironmentBanner.tsx
 src/components/shared/ListColumnError.tsx
 src/components/shared/ResizableListColumn.tsx
-src/components/ui/button.tsx
 src/hooks/useCrossClientReadSync.ts
-src/hooks/useLexiconMigration.tsx
 src/hooks/useLoginHandleSuggestions.ts
 src/hooks/usePublicationSidebarProjection.ts
 src/hooks/useSavedLinkPublication.ts
 src/hooks/useSavedLinkSocialEntry.ts
 src/hooks/useViewerProfile.ts
 src/lib/embedProbeCache.ts
-src/lib/indexedDbQueryPersister.ts
 src/lib/latrGatewayDebugClient.ts
 src/lib/oEmbedCache.ts
 src/lib/oEmbedClient.ts
@@ -73,8 +66,6 @@ src/lib/savedFeedSources.ts
 # TSW-107: Existing authenticated integration surfaces awaiting rendered coverage.
 # OPML subscription-hook wiring; parser and import panel are covered separately.
 src/components/Account/OpmlImportSection.tsx
-# OAuth/PDS provider selection and Semble collection preferences; client contracts are covered.
-src/components/Account/ReadLaterSettingsSection.tsx
 # Circle query/action provider integration with the editorial layout; feed/action contracts are covered.
 # Stateful tag dialogs and paginated mutations; tag parsing and PDS operations are covered.
 src/components/SavedLinks/SavedLinksTagToolbar.tsx

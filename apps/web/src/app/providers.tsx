@@ -9,7 +9,6 @@ import {
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AppearanceProvider } from "@/hooks/useAppearance";
-import { LexiconMigrationRunner } from "@/hooks/useLexiconMigration";
 import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
@@ -148,7 +147,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
       >
         <AuthProvider>
           <CircleViewerCacheCleanup />
-          <LexiconMigrationRunner />
           {children}
         </AuthProvider>
       </PersistQueryClientProvider>
