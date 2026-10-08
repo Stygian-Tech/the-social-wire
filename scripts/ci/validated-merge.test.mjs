@@ -56,3 +56,79 @@ test('missing immutable receipt never substitutes API association metadata', asy
 
 test('new API associated PR shape omitting merge_commit_sha fails closed', async () => { const f = fixture(); delete f.pr.merge_commit_sha; await assert.rejects(verifyOnce(f.api, repository, merge), /not visible/); });
 test('new API full PR shape omitting merge_commit_sha cannot pass exact merge proof', async () => { const f = fixture(); f.data[`/repos/${repository}/commits/${merge}/pulls?per_page=100`] = [structuredClone(f.pr)]; delete f.pr.merge_commit_sha; await assert.rejects(verifyOnce(f.api, repository, merge), /exact main merge/); });
+
+function inheritedFixture() {
+  const f = fixture();
+  const original = f.data[`/repos/${repository}/actions/runs/31/attempts/1/jobs?per_page=100`].jobs[0];
+  Object.assign(original, {
+    started_at: '2026-10-07T00:00:00Z', completed_at: '2026-10-07T00:00:10Z',
+    steps: [{ number: 4, name: 'Record immutable PR verification context', status: 'completed', conclusion: 'success', started_at: '2026-10-07T00:00:05Z', completed_at: '2026-10-07T00:00:06Z' }],
+  });
+  f.run.run_attempt = 2;
+  const inherited = { ...structuredClone(original), id: 90, run_attempt: 2 };
+  f.data[`/repos/${repository}/actions/runs/31/attempts/2/jobs?per_page=100`] = { total_count: 2, jobs: [inherited, { id: 91, name: 'CI — Required', run_id: 31, run_attempt: 2, head_sha: head, status: 'completed', conclusion: 'success', check_run_url: `https://api.github.com/repos/${repository}/check-runs/19` }] };
+  f.data[`/repos/${repository}/actions/jobs/90/logs`] = f.data[`/repos/${repository}/actions/jobs/80/logs`];
+  return { ...f, original, inherited };
+}
+
+test('validates inherited successful receipt with reissued job ID and latest successful retry', async () => {
+  const f = inheritedFixture(), requests = [];
+  await verifyOnce(async path => { requests.push(path); return f.api(path); }, repository, merge);
+  assert.ok(requests.includes(`/repos/${repository}/actions/jobs/80/logs`));
+  assert.ok(requests.includes(`/repos/${repository}/actions/jobs/90/logs`));
+  assert.equal(requests.filter(path => path.includes('/attempts/')).length, 2);
+});
+
+for (const [name, alter] of [
+  ['future receipt attempt', f => f.data[`/repos/${repository}/actions/jobs/90/logs`] = f.data[`/repos/${repository}/actions/jobs/90/logs`].replace('"runAttempt":1', '"runAttempt":3')],
+  ['zero receipt attempt', f => f.data[`/repos/${repository}/actions/jobs/90/logs`] = f.data[`/repos/${repository}/actions/jobs/90/logs`].replace('"runAttempt":1', '"runAttempt":0')],
+  ['fractional receipt attempt', f => f.data[`/repos/${repository}/actions/jobs/90/logs`] = f.data[`/repos/${repository}/actions/jobs/90/logs`].replace('"runAttempt":1', '"runAttempt":1.5')],
+  ['missing original receipt job', f => f.data[`/repos/${repository}/actions/runs/31/attempts/1/jobs?per_page=100`].jobs = []],
+  ['duplicate original receipt job', f => f.data[`/repos/${repository}/actions/runs/31/attempts/1/jobs?per_page=100`].jobs.push(structuredClone(f.original))],
+  ['unbounded original jobs', f => f.data[`/repos/${repository}/actions/runs/31/attempts/1/jobs?per_page=100`].total_count = 100],
+  ['wrong original run', f => f.original.run_id++],
+  ['wrong original head', f => f.original.head_sha = merge],
+  ['wrong original attempt', f => f.original.run_attempt = 2],
+  ['pending original job', f => f.original.status = 'in_progress'],
+  ['failed original job', f => f.original.conclusion = 'failure'],
+  ['invalid original job ID', f => f.original.id = 0],
+  ['changed original log', f => f.data[`/repos/${repository}/actions/jobs/80/logs`] += '\n'],
+  ['changed inherited log', f => f.data[`/repos/${repository}/actions/jobs/90/logs`] += '\n'],
+  ['missing original receipt', f => f.data[`/repos/${repository}/actions/jobs/80/logs`] = 'ordinary log'],
+  ['ambiguous original receipt', f => f.data[`/repos/${repository}/actions/jobs/80/logs`] += '\n' + f.data[`/repos/${repository}/actions/jobs/80/logs`]],
+  ['failed latest required check', f => f.check.conclusion = 'failure'],
+  ['failed latest workflow', f => f.run.conclusion = 'failure'],
+  ['changed merged tree', f => f.data[`/repos/${repository}/git/commits/${merge}`].tree.sha = head],
+  ['extra inherited receipt key', f => f.data[`/repos/${repository}/actions/jobs/90/logs`] = f.data[`/repos/${repository}/actions/jobs/90/logs`].replace('"runID":31', '"extra":true,"runID":31')],
+]) test(`inherited receipt rejects ${name}`, async () => { const f = inheritedFixture(); alter(f); await assert.rejects(verifyOnce(f.api, repository, merge), VerificationError); });
+
+for (const target of ['original', 'inherited']) {
+  for (const field of ['started_at', 'completed_at']) test(`inherited receipt rejects changed ${target} job ${field}`, async () => { const f = inheritedFixture(); f[target][field] = '2026-10-07T00:00:07Z'; await assert.rejects(verifyOnce(f.api, repository, merge), VerificationError); });
+  for (const [field, value] of Object.entries({ number: 5, name: 'Other step', status: 'in_progress', conclusion: 'failure', started_at: '2026-10-07T00:00:04Z', completed_at: '2026-10-07T00:00:07Z' })) test(`inherited receipt rejects changed ${target} step ${field}`, async () => { const f = inheritedFixture(); f[target].steps[0][field] = value; await assert.rejects(verifyOnce(f.api, repository, merge), VerificationError); });
+}
+
+for (const [name, alter] of [
+  ['missing timestamps', job => { delete job.started_at; delete job.completed_at; }],
+  ['invalid timestamp', job => job.started_at = 'not-a-date'],
+  ['reversed timestamps', job => job.started_at = '2026-10-07T00:00:11Z'],
+  ['absent steps', job => delete job.steps],
+  ['empty steps', job => job.steps = []],
+  ['missing receipt step', job => job.steps[0].name = 'Other step'],
+  ['duplicate receipt step', job => job.steps.push(structuredClone(job.steps[0]))],
+  ['failed receipt step', job => job.steps[0].conclusion = 'failure'],
+  ['missing step field', job => delete job.steps[0].completed_at],
+  ['reversed step timestamps', job => job.steps[0].started_at = '2026-10-07T00:00:07Z'],
+]) test(`inherited receipt rejects equally ${name} in both job records`, async () => { const f = inheritedFixture(); alter(f.original); alter(f.inherited); await assert.rejects(verifyOnce(f.api, repository, merge), VerificationError); });
+
+test('log adapter rejects invalid UTF-8 instead of collapsing distinct raw bytes', async () => {
+  const api = githubReadAPI('test-token', { fetcher: async () => new Response(new Uint8Array([0xff])) });
+  await assert.rejects(api('/repos/owner/repo/actions/jobs/80/logs', { text: true }), /Invalid UTF-8/);
+});
+
+for (const [name, alter] of [
+  ['failed latest Required job', f => f.data[`/repos/${repository}/actions/runs/31/attempts/2/jobs?per_page=100`].jobs[1].conclusion = 'failure'],
+  ['pending latest Required job', f => f.data[`/repos/${repository}/actions/runs/31/attempts/2/jobs?per_page=100`].jobs[1].status = 'in_progress'],
+  ['failed inherited changes job', f => f.inherited.conclusion = 'failure'],
+  ['wrong inherited attempt', f => f.inherited.run_attempt = 1],
+  ['missing original log response', f => f.api = async path => path.endsWith('/jobs/80/logs') ? Promise.reject(new VerificationError('Missing original logs')) : structuredClone(f.data[path])],
+]) test(`inherited receipt rejects ${name}`, async () => { const f = inheritedFixture(); alter(f); await assert.rejects(verifyOnce(f.api, repository, merge), VerificationError); });

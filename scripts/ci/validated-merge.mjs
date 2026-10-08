@@ -54,12 +54,42 @@ export async function verifyOnce(api, repository, mergeSHA) {
   }
   const logs = await api(`${prefix}/actions/jobs/${changesJobs[0].id}/logs`, { text: true });
   const receipt = parseReceipt(logs);
-  const expected = { runID, runAttempt: run.run_attempt, prNumber: number, baseRef: 'main', headSHA, repository };
+  const receiptAttempt = receipt.runAttempt;
+  if (!Number.isSafeInteger(receiptAttempt) || receiptAttempt < 1 || receiptAttempt > run.run_attempt) fail('Invalid CI receipt attempt');
+  const expected = { runID, runAttempt: receiptAttempt, prNumber: number, baseRef: 'main', headSHA, repository };
   if (Object.keys(receipt).length !== Object.keys(expected).length || Object.entries(expected).some(([key, value]) => receipt[key] !== value)) fail('Exact CI pull request receipt mismatch');
+  if (receiptAttempt < run.run_attempt) {
+    // Failed-job retries reissue successful job IDs/attempts but inherit their
+    // original execution metadata and logs. Prove that inheritance directly;
+    // never substitute an older successful workflow or required check.
+    const original = await api(`${prefix}/actions/runs/${runID}/attempts/${receiptAttempt}/jobs?per_page=100`);
+    if (!Array.isArray(original.jobs) || !Number.isSafeInteger(original.total_count) || original.total_count < 0 || original.total_count >= 100) fail('Unbounded or invalid original receipt jobs');
+    const matches = original.jobs.filter(job => job.name === 'Detect Changed Paths');
+    if (matches.length !== 1) fail('Original receipt job missing or ambiguous');
+    const job = matches[0];
+    if (job.run_id !== runID || job.run_attempt !== receiptAttempt || job.head_sha !== headSHA || job.status !== 'completed' || job.conclusion !== 'success' || !Number.isSafeInteger(job.id) || job.id < 1) fail('Original receipt job lacks successful attempt provenance');
+    if (JSON.stringify(receiptExecution(job)) !== JSON.stringify(receiptExecution(changesJobs[0]))) fail('Inherited receipt execution metadata mismatch');
+    const originalLogs = await api(`${prefix}/actions/jobs/${job.id}/logs`, { text: true });
+    parseReceipt(originalLogs);
+    if (originalLogs !== logs) fail('Inherited receipt logs differ from original successful job');
+  }
   const mergedCommit = await api(`${prefix}/git/commits/${mergeSHA}`);
   const headCommit = await api(`${prefix}/git/commits/${headSHA}`);
   if (mergedCommit.sha !== mergeSHA || headCommit.sha !== headSHA || !sha(mergedCommit.tree?.sha) || mergedCommit.tree.sha !== headCommit.tree?.sha) fail('Merged source tree differs from the validated pull request head');
   return { prNumber: number, mergeSHA, headSHA, treeSHA: mergedCommit.tree.sha, runID };
+}
+
+function receiptExecution(job) {
+  const validTime = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) && Number.isFinite(Date.parse(value));
+  const orderedTimes = value => validTime(value.started_at) && validTime(value.completed_at) && Date.parse(value.started_at) <= Date.parse(value.completed_at);
+  if (!orderedTimes(job) || !Array.isArray(job.steps) || job.steps.length < 1 || job.steps.length >= 100) fail('Missing or invalid inherited receipt execution metadata');
+  const steps = job.steps.map(step => {
+    if (!step || !Number.isSafeInteger(step.number) || step.number < 1 || !['name', 'status', 'conclusion'].every(key => typeof step[key] === 'string' && step[key].length > 0) || !orderedTimes(step)) fail('Missing or invalid inherited receipt step metadata');
+    return { number: step.number, name: step.name, status: step.status, conclusion: step.conclusion, started_at: step.started_at, completed_at: step.completed_at };
+  });
+  const receiptSteps = steps.filter(step => step.name === 'Record immutable PR verification context');
+  if (receiptSteps.length !== 1 || receiptSteps[0].status !== 'completed' || receiptSteps[0].conclusion !== 'success') fail('Inherited receipt-producing step missing or unsuccessful');
+  return { name: job.name, started_at: job.started_at, completed_at: job.completed_at, steps };
 }
 
 export async function verifyMergedCommit(api, repository, mergeSHA, { attempts = 8, delayMS = 5000, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
@@ -101,10 +131,12 @@ async function boundedText(response, maximumBytes) {
         chunks.push(Buffer.from(value));
       }
     } finally { reader.releaseLock(); }
-    return Buffer.concat(chunks).toString('utf8');
+    try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks)); }
+    catch { fail('Invalid UTF-8 GitHub evidence'); }
   }
   const text = await response.text();
   if (Buffer.byteLength(text) > maximumBytes) fail('GitHub evidence exceeds byte limit');
+  if (Buffer.from(text, 'utf8').toString('utf8') !== text) fail('Invalid UTF-8 GitHub evidence');
   return text;
 }
 
