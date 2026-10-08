@@ -79,4 +79,3 @@ src/components/Podcasts/PodcastBridgeStatus.tsx
 src/lib/podcasts/publicClip.ts
 
 # Finance reader composition; owning feed/detail behavior is covered separately.
-src/components/FinanceReader.tsx
