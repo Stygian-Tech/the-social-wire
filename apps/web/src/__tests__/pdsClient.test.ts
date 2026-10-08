@@ -12,9 +12,6 @@ import {
   COLLECTION_FOLDER,
   COLLECTION_PUB_PREFS,
   COLLECTION_PREFERENCES,
-  LEGACY_COLLECTION_FOLDER,
-  LEGACY_COLLECTION_PUB_PREFS,
-  LEGACY_COLLECTION_PREFERENCES,
   COLLECTION_STANDARD_SITE_SUBSCRIPTION,
   COLLECTION_LATR_SAVED_EXTERNAL,
   COLLECTION_LATR_SAVED_ITEM,
@@ -106,20 +103,6 @@ describe("collection constants", () => {
 
   it("preferences collection ID matches lexicon", () => {
     expect(COLLECTION_PREFERENCES).toBe("app.thesocialwire.preferences");
-  });
-
-  it("legacy folder collection ID is preserved for migration", () => {
-    expect(LEGACY_COLLECTION_FOLDER).toBe("com.thesocialwire.folder");
-  });
-
-  it("legacy publicationPrefs collection ID is preserved for migration", () => {
-    expect(LEGACY_COLLECTION_PUB_PREFS).toBe(
-      "com.thesocialwire.publicationPrefs"
-    );
-  });
-
-  it("legacy preferences collection ID is preserved for migration", () => {
-    expect(LEGACY_COLLECTION_PREFERENCES).toBe("com.thesocialwire.preferences");
   });
 
   it("standard.site subscription collection ID matches lexicon", () => {

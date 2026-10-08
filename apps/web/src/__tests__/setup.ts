@@ -12,4 +12,16 @@ if (typeof document === "undefined") {
   globalThis.navigator = dom.window.navigator;
 }
 
+// Browser components schedule focus/observer cleanup beyond a single test's
+// temporary globals. Keep the shared jsdom constructors available throughout.
+for (const name of ["HTMLElement", "Element", "Node", "DOMRect", "MutationObserver"] as const) {
+  if (typeof globalThis[name] === "undefined") {
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      writable: true,
+      value: window[name],
+    });
+  }
+}
+
 expect.extend(matchers);

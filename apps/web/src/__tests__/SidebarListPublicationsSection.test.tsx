@@ -102,7 +102,11 @@ describe("SidebarListPublicationsSection", () => {
     const select = mock(() => undefined);
     mount({onSelectPub: select, selectedPubId: first});
     const sources = screen.getAllByRole("button");
-    expect(sources.map(source => source.textContent)).toEqual(["?Alice’s Blog@alice.example", "?Second Sourcehttps://example.org/feed.xml"]);
+    expect(sources.map(source => source.getAttribute("aria-label"))).toEqual([
+      "Alice’s Blog", "Second Source",
+    ]);
+    expect(sources[0].textContent).toContain("@alice.example");
+    expect(sources[1].textContent).toContain("https://example.org/feed.xml");
     expect(screen.queryByText("Unrelated")).toBeNull();
     expect(sources[0].hasAttribute("data-active")).toBe(true);
     fireEvent.click(sources[1]);

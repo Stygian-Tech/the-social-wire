@@ -90,7 +90,7 @@ jobs:
       - name: Typecheck shared PDS read-state protocol
         run: bun --cwd packages/read-state typecheck
       - name: Test
-        run: bun --cwd apps/web run test:coverage
+        run: bun run --cwd apps/web test:coverage
         env:
           NEXT_PUBLIC_APP_ENV: test
 
@@ -120,7 +120,7 @@ jobs:
       - name: Lint
         run: bunx turbo lint --filter=operations
       - name: Test
-        run: bun --cwd apps/operations run test:coverage
+        run: bun run --cwd apps/operations test:coverage
 
   apple:
     name: Apple
