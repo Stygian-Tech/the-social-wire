@@ -169,6 +169,16 @@ describe("Schedule presentation", () => {
   const fetch=spyOn(Sports,"getSportsEvents").mockResolvedValue(fixture);restores.push(()=>fetch.mockRestore());mount(false);
   expect(screen.getByRole("button",{name:"Collapse Schedules"})).toBeTruthy();
  });
+ it("fits empty schedules to their guidance", async () => {
+  const fetch=spyOn(Sports,"getSportsEvents").mockResolvedValue({events:[],degraded:false});restores.push(()=>fetch.mockRestore());mount(false);
+  await waitFor(()=>expect(screen.getByText("No upcoming or recent events in this feed.")).toBeTruthy());
+  expect((screen.getByRole("region",{name:"Sports Events"}).querySelector("[data-schedule-body]") as HTMLElement).style.minHeight).toBe("");
+ });
+ it("fits unavailable schedules to their guidance", async () => {
+  const fetch=spyOn(Sports,"getSportsEvents").mockRejectedValue(new Error("unavailable"));restores.push(()=>fetch.mockRestore());mount(false);
+  await waitFor(()=>expect(screen.getByText("Schedules Unavailable")).toBeTruthy());
+  expect((screen.getByRole("region",{name:"Sports Events"}).querySelector("[data-schedule-body]") as HTMLElement).style.minHeight).toBe("");
+ });
  it("keeps toggling available when browser storage writes fail", () => {
   const viewer="did:plc:storage-unavailable";
   const fetch=spyOn(Sports,"getSportsEvents").mockResolvedValue(fixture);restores.push(()=>fetch.mockRestore());
