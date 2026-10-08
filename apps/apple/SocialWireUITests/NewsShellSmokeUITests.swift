@@ -42,6 +42,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
         let following = tabButton("Following", in: app)
         XCTAssertTrue(following.waitForExistence(timeout: 3))
+        selectDestination("Following", in: app)
         app.buttons["fixture-hide-following"].tap()
         XCTAssertTrue(following.waitForNonExistence(timeout: 3))
         app.tabBars.buttons["Read Later"].tap()
@@ -102,6 +103,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
         selectDestination("Lists", in: app)
+        XCTAssertTrue(content(for: "standardLists", in: app).waitForExistence(timeout: 5))
         let fixtureList = app.buttons["lists.row.at://did:plc:fixture/app.standard-reader.list/main"]
         XCTAssertTrue(fixtureList.waitForExistence(timeout: 5))
         fixtureList.tap()
@@ -121,14 +123,23 @@ final class NewsShellSmokeUITests: XCTestCase {
         let name = app.textFields["lists.createName"]
         XCTAssertTrue(name.exists)
         XCTAssertFalse(app.buttons["lists.create"].isEnabled)
+        let managementForm = app.collectionViews.containing(.textField, identifier: "lists.createName").firstMatch
         let delete = app.buttons["Delete Fixture List"]
-        if !delete.isHittable { app.swipeUp() }
+        if !delete.isHittable { managementForm.swipeUp() }
         XCTAssertTrue(delete.isHittable)
         delete.tap()
         XCTAssertTrue(app.buttons["Delete List"].waitForExistence(timeout: 3))
-        app.buttons["Cancel"].firstMatch.tap()
+        let cancel = app.buttons.matching(identifier: "Cancel").allElementsBoundByIndex.first { $0.isHittable }
+        if let cancel {
+            cancel.tap()
+        } else {
+            // The native iPad popover is outside the centered management sheet;
+            // use the uncovered window corner to dismiss only the top popover.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.1)).tap()
+        }
+        XCTAssertTrue(app.buttons["Delete List"].waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Delete Fixture List"].exists)
-        if !name.isHittable { app.swipeDown() }
+        if !name.isHittable { managementForm.swipeDown() }
         name.tap()
         name.typeText("New Fixture List")
         XCTAssertTrue(app.buttons["lists.create"].isEnabled)
@@ -138,16 +149,37 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.entry.ui-story-1"].waitForExistence(timeout: 3))
     }
 
-    /// The same regression runs with the iPad sidebar and the iPhone overflow menu.
+    /// Follow compact root sections or regular-width sidebar destinations.
     private func selectDestination(_ label: String, in app: XCUIApplication) {
+        let root: String? = switch label {
+        case "Finance", "Sports": "Topics"
+        case "Subscribed", "Following", "The Wire", "Your Circle": "Feeds"
+        case "Archive": "Read Later"
+        default: nil
+        }
+        if let root, app.tabBars.buttons[root].exists {
+            app.tabBars.buttons[root].tap()
+        }
         func destination() -> XCUIElement {
             let tab = app.tabBars.buttons[label]
             if tab.exists && tab.isHittable { return tab }
+            // UIKit's compact More menu exposes destinations as cells with text
+            // descendants, so activate the row rather than its static label.
+            let cells = app.cells.containing(.staticText, identifier: label).allElementsBoundByIndex
+            if let row = cells.first(where: { $0.isHittable }) { return row }
             let candidates = app.descendants(matching: .any)
                 .matching(identifier: label).allElementsBoundByIndex
             if let visible = candidates.first(where: { $0.isHittable }) { return visible }
             // A hidden sidebar row must not prevent opening the compact overflow menu.
             return app.buttons["missing-destination-\(label)"]
+        }
+        if !destination().exists {
+            // Grouped Topics can leave the floating top tab selected while hiding
+            // other topic destinations behind the adaptive iPad sidebar.
+            let toggles = [app.buttons["ToggleSideBar"], app.buttons["Toggle sidebar"]]
+            if let toggle = toggles.first(where: { $0.exists && $0.isHittable }) {
+                toggle.tap()
+            }
         }
         if !destination().exists {
             let more = app.tabBars.buttons["More"]

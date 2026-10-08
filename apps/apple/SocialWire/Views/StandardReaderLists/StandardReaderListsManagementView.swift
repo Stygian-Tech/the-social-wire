@@ -72,6 +72,7 @@ struct StandardReaderListsManagementView: View {
                                     .accessibilityLabel("Delete \(list.name)").disabled(model.isSaving)
                             }
                         }
+                        .buttonStyle(.borderless)
                     }
                 }
                 if let error = error ?? model.error { Section { Text(error).foregroundStyle(.red) } }
@@ -86,6 +87,7 @@ struct StandardReaderListsManagementView: View {
                         pendingDelete = nil
                     }
                 }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
             } message: { list in Text("Delete \(list.name) from your PDS? This cannot be undone.") }
             .confirmationDialog("Remove Saved List?", isPresented: Binding(get: { pendingRemove != nil }, set: { if !$0 { pendingRemove = nil } }), presenting: pendingRemove) { list in
                 Button("Remove List", role: .destructive) { Task { await save(list, remove: true) }; pendingRemove = nil }

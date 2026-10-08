@@ -54,7 +54,7 @@ struct NewsShellUITestHarness: View {
             if isShellConfigured {
                 NewsShellView()
                     .environment(fixtureModel)
-                    .safeAreaInset(edge: .bottom) {
+                    .safeAreaInset(edge: .top) {
                         if ProcessInfo.processInfo.arguments.contains("--ui-testing-shell-routing") {
                             HStack {
                                 Button("Hide Following") {

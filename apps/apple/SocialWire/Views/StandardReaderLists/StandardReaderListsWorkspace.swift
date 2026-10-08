@@ -7,6 +7,9 @@ struct StandardReaderListsWorkspace: View {
     @State private var pendingRemoval: StandardReaderList?
     @State private var feedback = 0
     @State private var openedEntryID: String?
+    @State private var deferredReadEntryID: String?
+    @State private var deferredReadViewerDID: String?
+    @State private var entryOpenRevision = 0
 
     private var model: StandardReaderListsModel { appModel.standardReaderLists }
 
@@ -36,7 +39,7 @@ struct StandardReaderListsWorkspace: View {
                     Label("Article Could Not Load", systemImage: "exclamationmark.triangle")
                 } description: { Text(error) } actions: {
                     if let id = openedEntryID, let item = model.entries.first(where: { $0.entryId == id }) {
-                        Button("Retry") { Task { await model.openEntry(item) } }
+                        Button("Retry") { open(item) }
                     }
                 }
             } else {
@@ -67,10 +70,29 @@ struct StandardReaderListsWorkspace: View {
         }
         .sensoryFeedback(.success, trigger: feedback)
         .onChange(of: model.filter) { _, _ in
+            entryOpenRevision += 1
+            settleDeferredRead()
             openedEntryID = nil
             Task { await model.loadFeed() }
         }
+        .onChange(of: model.selectedList?.uri) { _, _ in
+            settleDeferredRead()
+            entryOpenRevision += 1
+        }
+        .onChange(of: compactColumn) { previous, current in
+            if previous == .detail, current != .detail {
+                entryOpenRevision += 1
+                settleDeferredRead()
+            }
+        }
+        .onDisappear {
+            entryOpenRevision += 1
+            settleDeferredRead()
+        }
         .onChange(of: appModel.viewerDID) { _, _ in
+            deferredReadEntryID = nil
+            deferredReadViewerDID = nil
+            entryOpenRevision += 1
             openedEntryID = nil
             showingManagement = false
             pendingRemoval = nil
@@ -174,7 +196,11 @@ struct StandardReaderListsWorkspace: View {
                         ContentUnavailableView("No Articles", systemImage: "doc.text", description: Text("This list has no \(model.filter == .unread ? "unread " : "")articles yet."))
                     }
                 }
-                .refreshable { await model.loadFeed() }
+                .refreshable {
+                    entryOpenRevision += 1
+                    settleDeferredRead()
+                    await model.loadFeed()
+                }
                 Picker("Articles", selection: $listModel.filter) {
                     Text("All").tag(ReaderFilter.all)
                     Text("Unread").tag(ReaderFilter.unread)
@@ -191,16 +217,40 @@ struct StandardReaderListsWorkspace: View {
     private func open(_ item: EntryListItem) {
         let viewer = appModel.viewerDID
         let listURI = model.selectedList?.uri
+        entryOpenRevision += 1
+        let revision = entryOpenRevision
+        let previous = deferredReadViewerDID == viewer ? deferredReadEntryID : nil
+        deferredReadEntryID = nil
+        deferredReadViewerDID = nil
         openedEntryID = item.entryId
         compactColumn = .detail
         Task {
-            if let previous = model.selectedEntry?.entryId, previous != item.entryId, model.filter == .unread {
+            guard appModel.viewerDID == viewer else { return }
+            if let previous, previous != item.entryId {
                 await appModel.markRead(for: .entry(entryId: previous))
             }
-            guard appModel.viewerDID == viewer, model.selectedList?.uri == listURI else { return }
+            guard appModel.viewerDID == viewer, model.selectedList?.uri == listURI,
+                  entryOpenRevision == revision else { return }
             await model.openEntry(item)
-            guard appModel.viewerDID == viewer, model.selectedEntry?.entryId == item.entryId else { return }
-            if model.filter != .unread { await appModel.markRead(for: .entry(entryId: item.entryId)) }
+            guard appModel.viewerDID == viewer, model.selectedEntry?.entryId == item.entryId,
+                  entryOpenRevision == revision else { return }
+            if model.filter == .unread {
+                deferredReadEntryID = item.entryId
+                deferredReadViewerDID = viewer
+            } else {
+                await appModel.markRead(for: .entry(entryId: item.entryId))
+            }
+        }
+    }
+
+    private func settleDeferredRead() {
+        guard let entryID = deferredReadEntryID else { return }
+        let viewer = deferredReadViewerDID
+        deferredReadEntryID = nil
+        deferredReadViewerDID = nil
+        Task {
+            guard viewer != nil, appModel.viewerDID == viewer else { return }
+            await appModel.markRead(for: .entry(entryId: entryID))
         }
     }
 

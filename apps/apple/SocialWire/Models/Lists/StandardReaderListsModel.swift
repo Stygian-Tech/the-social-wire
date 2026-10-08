@@ -104,7 +104,7 @@ final class StandardReaderListsModel {
 #endif
         guard let viewer, let listURI = selectedList?.uri, entries.contains(where: { $0.entryId == item.entryId }) else { return }
         detailEpoch += 1
-        let revision = detailEpoch, currentFeedEpoch = feedEpoch
+        let revision = detailEpoch
         isLoadingEntry = true
         entryError = nil
         selectedEntry = nil
@@ -112,7 +112,7 @@ final class StandardReaderListsModel {
         do {
             let detail = try await gateway.fetchAppViewEntryDetail(entryId: item.entryId)
             guard self.viewer == viewer, selectedList?.uri == listURI,
-                  revision == detailEpoch, feedEpoch == currentFeedEpoch else { return }
+                  revision == detailEpoch else { return }
             guard let detail else { throw SocialWireError.badResponse("This article is unavailable.") }
             selectedEntry = detail
         } catch {
