@@ -113,7 +113,8 @@ func (a Routes) feed(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	// One feed budget covers pool waits, repair, and retry before Gateway times out.
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	started := time.Now()
 	var page *appviewcore.FeedPage
