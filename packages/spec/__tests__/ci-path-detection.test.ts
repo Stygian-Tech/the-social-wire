@@ -288,3 +288,15 @@ describe("CI path detection", () => {
     expect([...result.values()].every((value) => value === "true")).toBe(true);
   });
 });
+
+describe("extracted Swift contract path detection", () => {
+  it.each([
+    "packages/go/migration/extracted-swift-packages.json",
+    "scripts/go/check-out-swift-contracts.py",
+  ])("checks every extracted-contract consumer when %s changes", (path) => {
+    const result = detect(repositoryWithChange(path), "pull_request");
+    for (const job of ["redis", "shared_swift", "spec", "go_packages", "jetstream_ingest", "wire_ingest"]) {
+      expect(result.get(job), job).toBe("true");
+    }
+  });
+});

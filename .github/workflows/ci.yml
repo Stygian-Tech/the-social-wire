@@ -178,6 +178,8 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -210,6 +212,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - name: Apply database migrations for AppView integration tests
         uses: ./.github/actions/prepare-postgres
         with:
@@ -227,7 +231,7 @@ jobs:
             packages/swift/WireCore/.build
             packages/swift/FinanceCore/.build
             packages/swift/SportsCore/.build
-          key: ${{ runner.os }}-swift-shared-6.2.4-${{ hashFiles('packages/swift/**/Package.resolved') }}
+          key: ${{ runner.os }}-swift-shared-6.2.4-${{ hashFiles('packages/swift/**/Package.resolved', 'packages/go/migration/extracted-swift-packages.json') }}
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -285,6 +289,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - uses: actions/setup-go@v6
         with:
           go-version-file: packages/go/go.mod
@@ -567,6 +573,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}

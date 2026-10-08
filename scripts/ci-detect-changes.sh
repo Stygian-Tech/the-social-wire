@@ -100,10 +100,14 @@ filter_changed apple \
 # Shared Go hosts and their schema gates are checked once by go_packages below.
 
 filter_changed redis \
+  'scripts/go/check-out-swift-contracts.py' \
+  'packages/go/migration/extracted-swift-packages.json' \
   'packages/swift/SocialWireRedis/**' \
   '.github/workflows/ci.yml'
 
 filter_changed shared_swift \
+  'scripts/go/check-out-swift-contracts.py' \
+  'packages/go/migration/extracted-swift-packages.json' \
   'database/migrations/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/OperationsCore/**' \
@@ -116,15 +120,19 @@ filter_changed shared_swift \
   '.github/workflows/ci.yml'
 
 filter_changed jetstream_ingest \
+  'scripts/go/check-out-swift-contracts.py' \
+  'packages/go/migration/extracted-swift-packages.json' \
   'packages/go/**' \
   'services/jetstream-ingest/**' \
   'database/migrations/**' \
-  'packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/Fixtures/jetstream-v2-go-sdk-v0.2.0-events.json' \
+  'services/jetstream-ingest/internal/ingest/testdata/jetstream-v2-go-sdk-v0.2.0-events.json' \
   'railway/jetstream-ingest.json' \
   '.railway/**' \
   '.github/workflows/ci.yml'
 
 filter_changed wire_ingest \
+  'scripts/go/check-out-swift-contracts.py' \
+  'packages/go/migration/extracted-swift-packages.json' \
   'packages/go/**' \
   'services/jetstream-ingest/**' \
   'database/migrations/**' \
@@ -175,6 +183,8 @@ filter_changed lexicons \
   '.github/workflows/ci.yml'
 
 filter_changed spec \
+  'scripts/go/check-out-swift-contracts.py' \
+  'packages/go/migration/extracted-swift-packages.json' \
   'scripts/ci/**' \
   'services/jetstream-ingest/cmd/schema-ready/**' \
   'services/jetstream-ingest/internal/schemaready/**' \

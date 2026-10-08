@@ -66,3 +66,12 @@ apps/apple/*.xcodeproj/project.xcworkspace/xcuserdata/*/UserInterfaceState.xcuse
 
 # Local secret files
 /.secrets
+
+# Revision-pinned Swift reference contracts; bootstrap with scripts/go/check-out-swift-contracts.py.
+/packages/swift/OperationsCore/
+/packages/swift/SocialWireRedis/
+/packages/swift/WireCore/
+/packages/swift/FinanceCore/
+/packages/swift/SportsCore/
+/packages/swift/ThinAppViewCore/
+/packages/swift/GatewayCore/

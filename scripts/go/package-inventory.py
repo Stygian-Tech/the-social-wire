@@ -25,6 +25,12 @@ MAPPINGS = {
 
 def inventory():
     packages = []
+    extracted_path = ROOT / "packages/go/migration/extracted-swift-packages.json"
+    extracted = json.loads(extracted_path.read_text()) if extracted_path.exists() else {"packages": []}
+    provenance = {package["name"]: package for package in extracted["packages"]}
+    for name in provenance:
+        if not (ROOT / "packages/swift" / name / "Package.swift").is_file():
+            raise SystemExit("Missing pinned Swift contracts; run scripts/go/check-out-swift-contracts.py first.")
     for manifest in sorted((ROOT / "packages/swift").glob("*/Package.swift")):
         directory = manifest.parent
         sources = []
@@ -49,6 +55,7 @@ def inventory():
         packages.append(
             {
                 "name": name,
+                **({"extracted": provenance[name]} if name in provenance else {}),
                 "source": str(directory.relative_to(ROOT)),
                 "target": "packages/go/" + MAPPINGS.get(name, name.lower()),
                 "sources": sources,
@@ -106,6 +113,7 @@ def inventory():
     return {
         **({"retiredWorkers": retired} if retired is not None else {}),
         **({"retiredServices": retired_services} if retired_services is not None else {}),
+        **({"extractedSwiftPackages": extracted} if extracted["packages"] else {}),
         "schemaVersion": 1,
         "description": "Source inventory; implementation and parity must be tracked separately.",
         "packages": packages,
