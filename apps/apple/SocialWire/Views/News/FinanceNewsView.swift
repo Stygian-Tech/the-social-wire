@@ -8,16 +8,44 @@ struct FinanceNewsView: View {
     @State private var showingCustomization = false
     let sceneModel: NewsSceneModel
 
+    private var visibleFeeds: [FinanceNamedFeed] {
+        appModel.financeFeeds.filter {
+            $0.isVisible(hideCrypto: appModel.feedPreferences.hideFinanceCrypto)
+        }
+    }
+
+    private var tickerInstruments: [FinanceInstrument] {
+        var seen = Set<String>()
+        let storyInstruments = appModel.financeItems
+            .flatMap(\.instruments)
+            .map(\.instrument)
+        return (Array(appModel.financeInstrumentMetadata.values) + storyInstruments)
+            .filter { seen.insert($0.id).inserted }
+            .sorted { $0.symbol.localizedStandardCompare($1.symbol) == .orderedAscending }
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
+                if !tickerInstruments.isEmpty {
+                    FinanceMarketTickerStrip(instruments: tickerInstruments)
+                }
+                FinanceFeedStrip(
+                    feeds: visibleFeeds,
+                    instruments: appModel.financeInstrumentMetadata,
+                    selectedFeedID: appModel.selectedFinanceFeedID,
+                    onSelect: { feed in
+                        Task { await appModel.selectFinanceFeed(feed.id) }
+                    }
+                )
                 HStack {
-                    Text(appModel.selectedFinanceFeed.title).font(.largeTitle.bold())
+                    Button("Choose Feed", systemImage: "line.3.horizontal.decrease") {
+                        showingFeedPicker = true
+                    }
+                    .accessibilityValue(appModel.selectedFinanceFeed.title)
                     Spacer()
                     Button("Customize", systemImage: "slider.horizontal.3") { showingCustomization = true }
                 }
-                Button("Choose Feed", systemImage: "line.3.horizontal.decrease") { showingFeedPicker = true }
-                    .accessibilityValue(appModel.selectedFinanceFeed.title)
                 if appModel.selectedFinanceFeedID != "finance" {
                     Text("Only Stories Matching This Feed").font(.caption).foregroundStyle(.secondary)
                 }
@@ -60,10 +88,6 @@ struct FinanceNewsView: View {
         }
         .scrollPosition(id: $scrollAnchor)
         .refreshable { await appModel.loadFinance() }
-        .task(id: appModel.viewerDID) {
-            await appModel.loadFinanceFeeds()
-            await appModel.loadFinance()
-        }
         .onChange(of: appModel.selectedFinanceFeedID) { _, _ in scrollAnchor = nil }
         .sheet(isPresented: $showingFeedPicker) { FinanceFeedPickerView() }
         .sheet(isPresented: $showingCustomization) { FinanceCustomizationView() }
@@ -72,5 +96,75 @@ struct FinanceNewsView: View {
     private func open(_ item: FinanceFeedItem) {
         guard let url = URL(string: item.story.canonicalUrl) else { return }
         openURL(url)
+    }
+}
+
+private struct FinanceFeedStrip: View {
+    let feeds: [FinanceNamedFeed]
+    let instruments: [String: FinanceInstrument]
+    let selectedFeedID: String
+    let onSelect: (FinanceNamedFeed) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 8) {
+                ForEach(feeds) { feed in
+                    Button {
+                        onSelect(feed)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(feed.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            if let symbol = tickerSymbol(for: feed) {
+                                Text(symbol)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            selectedFeedID == feed.id ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08),
+                            in: .rect(cornerRadius: 10)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectedFeedID == feed.id ? .isSelected : [])
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func tickerSymbol(for feed: FinanceNamedFeed) -> String? {
+        guard feed.kind == "instrument", let instrumentID = feed.instrumentIDs.first else { return nil }
+        return instruments[instrumentID]?.symbol
+    }
+}
+
+private struct FinanceMarketTickerStrip: View {
+    let instruments: [FinanceInstrument]
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 8) {
+                ForEach(instruments) { instrument in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(instrument.symbol)
+                            .font(.subheadline.monospaced().weight(.semibold))
+                        Text(instrument.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: .rect(cornerRadius: 10))
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+        .accessibilityLabel("Market Tickers")
     }
 }

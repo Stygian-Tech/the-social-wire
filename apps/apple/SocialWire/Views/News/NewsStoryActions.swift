@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Keep the visible copy short while retaining explicit VoiceOver action names.
 struct NewsStoryActions: View {
+    @Environment(\.suppressesNewsContentActions) private var suppressesNewsContentActions
+
     let onOpenStory: () -> Void
     var onHide: (() -> Void)?
 
@@ -22,7 +24,7 @@ struct NewsStoryActions: View {
 
     @ViewBuilder
     private var actions: some View {
-        Button(action: onOpenStory) {
+        Button(action: openStory) {
             Text("Open Story")
                 .frame(minHeight: 32)
         }
@@ -32,7 +34,10 @@ struct NewsStoryActions: View {
         .accessibilityIdentifier("story-open")
 
         if let onHide {
-            Button(role: .destructive, action: onHide) {
+            Button(role: .destructive) {
+                guard !suppressesNewsContentActions else { return }
+                onHide()
+            } label: {
                 Label("Hide Story", systemImage: "eye.slash")
                     .labelStyle(.iconOnly)
                     .frame(minWidth: 44, minHeight: 44)
@@ -40,5 +45,10 @@ struct NewsStoryActions: View {
             .buttonStyle(.borderless)
             .accessibilityIdentifier("story-hide")
         }
+    }
+
+    private func openStory() {
+        guard !suppressesNewsContentActions else { return }
+        onOpenStory()
     }
 }

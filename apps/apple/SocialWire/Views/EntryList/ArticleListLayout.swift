@@ -23,7 +23,11 @@ struct ArticleListLayout<Content: View>: View {
                 content
             }
             .padding()
+            #if os(macOS)
             .frame(maxWidth: ArticleReadingWidth.feed, alignment: .leading)
+            #else
+            .frame(maxWidth: .infinity, alignment: .leading)
+            #endif
             .frame(maxWidth: .infinity, alignment: .center)
         }
     }

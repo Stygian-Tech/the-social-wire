@@ -22,11 +22,6 @@ struct CircleNewsView: View {
 
     var body: some View {
         editorialCanvas
-        .task(id: appModel.circleCatalog?.isAvailable) {
-            if appModel.circleEdition == nil, !isRefreshing {
-                await appModel.loadCircleEdition()
-            }
-        }
         .overlay(alignment: .bottom) {
             if let lastHiddenStory {
                 HStack(spacing: 12) {

@@ -17,7 +17,7 @@ enum ReaderMarkReadScope: Equatable {
             .folder(folderRkey: folderRkey)
         case .publication(let publicationId):
             .publication(publicationId: publicationId)
-        case .savedSource:
+        case .standardList, .savedSource:
             .unavailable
         }
     }

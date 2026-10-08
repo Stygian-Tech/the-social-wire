@@ -56,6 +56,7 @@ final class SocialWireAppModel {
     var isMutatingSavedTags = false
     var selectedSidebar: SidebarSelection?
     var feedSelection: FeedSelection = .topLevel(.subscribed)
+    var standardReaderLists: [StandardReaderList] = []
     var publicationSidebarTab: PublicationSidebarTab = .subscribed
     var readerListSource: ReaderListSource = .subscribed
     var sidebarSubscribedFeedExpanded = false
@@ -565,7 +566,7 @@ final class SocialWireAppModel {
     var hasSelectedArticleFeed: Bool {
         if selectedPublication != nil { return true }
         switch feedSelection {
-        case .topLevel(.wire), .topLevel(.subscribed), .topLevel(.following), .folder:
+        case .topLevel(.wire), .topLevel(.subscribed), .topLevel(.following), .folder, .standardList:
             return true
         default:
             return false
@@ -586,6 +587,8 @@ final class SocialWireAppModel {
             await loadAggregateFeed(kind: "following")
         case .folder(let rkey):
             await loadAggregateFeed(kind: "folder", id: rkey)
+        case .standardList(let uri):
+            await loadAggregateFeed(kind: "list", id: uri)
         default:
             break
         }
@@ -817,6 +820,7 @@ final class SocialWireAppModel {
         savedTagMutationProgress = nil
         isMutatingSavedTags = false
         selectedSidebar = nil
+        standardReaderLists = []
         feedSelection = .topLevel(.subscribed)
         viewerProfile = nil
         preferencesFromGateway = nil
@@ -1060,6 +1064,20 @@ final class SocialWireAppModel {
         await loadAggregateFeed(kind: "folder", id: folderRkey)
     }
 
+    func selectStandardReaderList(_ list: StandardReaderList) async {
+        prepareForPublicationSelection()
+        readerListSource = .subscribed
+        publicationSidebarTab = .subscribed
+        feedSelection = .standardList(list.uri)
+        if let viewerDID {
+            FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+        }
+        selectedSidebar = nil
+        selectedPublication = nil
+        entries = []
+        await loadAggregateFeed(kind: "list", id: list.uri)
+    }
+
     private func loadAggregateFeed(
         kind: String,
         id: String? = nil,
@@ -1236,6 +1254,8 @@ final class SocialWireAppModel {
             await loadAggregateFeed(kind: "following", cursor: cursor)
         case .folder(let rkey):
             await loadAggregateFeed(kind: "folder", id: rkey, cursor: cursor)
+        case .standardList(let uri):
+            await loadAggregateFeed(kind: "list", id: uri, cursor: cursor)
         default:
             entriesPaginationTriggeredForEntryId = nil
         }
@@ -1462,11 +1482,11 @@ final class SocialWireAppModel {
             case .wire:
                 feedPreferences.showWire && wireCatalog?.isAvailable != false
             case .finance:
-                feedPreferences.showFinance && wireCatalog?.financeAvailable == true
+                feedPreferences.showFinance && wireCatalog?.financeAvailable != false
             case .podcasts:
                 podcasts.available
             case .sports:
-                feedPreferences.showSports && wireCatalog?.sportsAvailable == true
+                feedPreferences.showSports && wireCatalog?.sportsAvailable != false
             case .circle:
                 feedPreferences.showCircle && circleCatalog?.enabled != false
             case .subscribed:
@@ -2052,8 +2072,18 @@ final class SocialWireAppModel {
                 await self?.applyPendingStreamedBootstrapSelectionIfNeeded()
             }
         case .lists:
-            // List navigation is currently web-only; accept the supplemental bootstrap event.
-            break
+            guard let page = event.lists else { return }
+            if page.complete || standardReaderLists.isEmpty {
+                standardReaderLists = page.lists
+            } else {
+                var listsByURI = Dictionary(uniqueKeysWithValues: standardReaderLists.map { ($0.uri, $0) })
+                for list in page.lists {
+                    listsByURI[list.uri] = list
+                }
+                let existingURIs = Set(standardReaderLists.map(\.uri))
+                standardReaderLists = standardReaderLists.compactMap { listsByURI[$0.uri] }
+                    + page.lists.filter { !existingURIs.contains($0.uri) }
+            }
         case .warning, .error:
             break
         case .done:
@@ -3503,6 +3533,13 @@ final class SocialWireAppModel {
             }
             pendingRestoredFeedSelection = nil
             await selectFolderFeed(folderRkey: folderRkey)
+        case .standardList(let uri):
+            guard let list = standardReaderLists.first(where: { $0.uri == uri }) else {
+                pendingRestoredFeedSelection = nil
+                return
+            }
+            pendingRestoredFeedSelection = nil
+            await selectStandardReaderList(list)
         case .publication(let publicationId):
             guard let publication = publication(forId: publicationId) else {
                 pendingRestoredFeedSelection = nil
