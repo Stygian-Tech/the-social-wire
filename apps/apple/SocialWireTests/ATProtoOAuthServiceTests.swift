@@ -24,6 +24,19 @@ struct ATProtoOAuthServiceTests {
         #expect(fields["redirect_uri"] == ATProtoOAuthConfig.redirectURI)
     }
 
+    @Test("Lists request canonical PDS write scopes and require reauthorization for old sessions")
+    func listsPermissionScopes() {
+        let listScopes: Set<String> = [
+            "repo:app.standard-reader.list?action=create&action=delete",
+            "repo:app.standard-reader.listSave?action=create&action=update&action=delete",
+        ]
+        let actual = Set(ATProtoOAuthService.scopes.split(separator: " ").map(String.init))
+        #expect(listScopes.isSubset(of: actual))
+        #expect(listScopes.isSubset(of: ATProtoOAuthService.requiredFeatureScopes))
+        let previous = actual.subtracting(listScopes).joined(separator: " ")
+        #expect(!ATProtoOAuthService.hasRequiredFeatureScopes(previous))
+    }
+
     @Test("OAuth scopes include viewer moderation RPCs for the Bluesky AppView")
     func scopesIncludeViewerModerationRPCs() {
         let audience = "?aud=did:web:api.bsky.app%23bsky_appview"

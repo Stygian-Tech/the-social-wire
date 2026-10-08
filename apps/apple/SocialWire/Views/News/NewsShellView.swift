@@ -106,9 +106,6 @@ struct NewsShellView: View {
             appModel.loadPrimaryTabPreferences()
             reconcileVisibleSelection()
         }
-        .onChange(of: appModel.standardReaderLists) { _, _ in
-            reconcileSectionSelection(.lists)
-        }
         .onChange(of: appModel.feedSelection) { _, selection in
             if case .folder = selection { showSelectedLibraryScope() }
         }
@@ -149,16 +146,21 @@ struct NewsShellView: View {
                 sceneModel: sceneModel,
                 onSelection: {},
                 onStandardListSelection: { list in
-                    selectedSlot = .standardList(list.uri)
+                    selectedSection = .lists
+                    Task { await appModel.standardReaderLists.select(list) }
                 }
             )
         } detail: {
-            destinationContent(
-                for: selectedSlot,
-                navigationItems: navigationItems(for: selectedSection),
-                selection: sectionSelectionBinding(for: selectedSection),
-                usesSidebarNavigation: true
-            )
+            if selectedSection == .lists {
+                listsWorkspace
+            } else {
+                destinationContent(
+                    for: selectedSlot,
+                    navigationItems: navigationItems(for: selectedSection),
+                    selection: sectionSelectionBinding(for: selectedSection),
+                    usesSidebarNavigation: true
+                )
+            }
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -176,7 +178,7 @@ struct NewsShellView: View {
     }
 
     private var standardListNavigationItems: [NewsNavigationItem] {
-        appModel.standardReaderLists.map {
+        appModel.standardReaderLists.lists.map {
             NewsNavigationItem(slot: .standardList($0.uri), title: $0.name, systemImage: "list.bullet")
         }
     }
@@ -199,7 +201,7 @@ struct NewsShellView: View {
                 usesSidebarNavigation: usesSidebarNavigation
             )
         } else if case .standardList(let uri) = slot,
-                  let list = appModel.standardReaderLists.first(where: { $0.uri == uri }) {
+                  let list = appModel.standardReaderLists.lists.first(where: { $0.uri == uri }) {
             destinationView(
                 title: list.name,
                 tab: .library,
@@ -256,9 +258,14 @@ struct NewsShellView: View {
                 sectionPager(.topics, items: topicDestinations.map(NewsNavigationItem.init(feed:)))
             }
             Tab("Lists", systemImage: "list.bullet", value: NewsRootSection.lists) {
-                sectionPager(.lists, items: standardListNavigationItems)
+                listsWorkspace
             }
         }
+    }
+
+    private var listsWorkspace: some View {
+        StandardReaderListsWorkspace()
+            .accessibilityIdentifier("news-tab-content-standardLists")
     }
 
     private func sectionPager(_ section: NewsRootSection, items: [NewsNavigationItem]) -> some View {
@@ -306,6 +313,7 @@ struct NewsShellView: View {
     }
 
     private func selectedSectionChanged(_ oldValue: NewsRootSection, _ section: NewsRootSection) {
+        guard section != .lists else { return }
         reconcileSectionSelection(section)
     }
 
@@ -359,9 +367,8 @@ struct NewsShellView: View {
             appModel.selectReaderListSource(source)
             sceneModel.select(.saved, availableTabs: availableTabs)
         } else if case let .standardList(uri) = slot,
-                  let list = appModel.standardReaderLists.first(where: { $0.uri == uri }) {
-            sceneModel.select(.library, availableTabs: availableTabs)
-            Task { await appModel.selectStandardReaderList(list) }
+                  let list = appModel.standardReaderLists.lists.first(where: { $0.uri == uri }) {
+            Task { await appModel.standardReaderLists.select(list) }
         } else if let feed = slot.primaryFeed {
             activatePrimaryFeed(feed)
         }
@@ -435,7 +442,7 @@ struct NewsShellView: View {
     }
 
     private func sceneTabChanged(_ oldValue: NewsTab, _ tab: NewsTab) {
-        guard isTabConfigurationLoaded else { return }
+        guard isTabConfigurationLoaded, selectedSection != .lists else { return }
         switch tab {
         case .wire:
             selectPrimaryFeed(.wire)
@@ -473,6 +480,7 @@ struct NewsShellView: View {
         _ source: ReaderListSource
     ) {
         guard isTabConfigurationLoaded,
+              selectedSection != .lists,
               sceneModel.selectedTab == .library,
               let feed = primaryFeed(for: source)
         else { return }

@@ -18,6 +18,7 @@ final class SocialWireAppModel {
     private let gateway: SocialWireGatewayClient
     let podcasts: PodcastLibraryModel
     let sportsTopic: SportsTopicModel
+    let standardReaderLists: StandardReaderListsModel
     let readStateSync: PDSReadStateSyncService
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
@@ -56,7 +57,6 @@ final class SocialWireAppModel {
     var isMutatingSavedTags = false
     var selectedSidebar: SidebarSelection?
     var feedSelection: FeedSelection = .topLevel(.subscribed)
-    var standardReaderLists: [StandardReaderList] = []
     var publicationSidebarTab: PublicationSidebarTab = .subscribed
     var readerListSource: ReaderListSource = .subscribed
     var sidebarSubscribedFeedExpanded = false
@@ -193,11 +193,13 @@ final class SocialWireAppModel {
         gateway = SocialWireGatewayClient(auth: authService)
         podcasts = PodcastLibraryModel(gateway: gateway, xrpc: xrpc)
         sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
+        standardReaderLists = StandardReaderListsModel(gateway: gateway, xrpc: xrpc)
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         authService.setSessionChangeHandler { [weak self] session in
             self?.isSignedIn = session != nil
             self?.sportsTopic.bind(viewer: session?.did)
+            self?.standardReaderLists.bind(viewer: session?.did)
         }
         readerFilter = ReaderFilter.loadSaved()
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
@@ -821,7 +823,7 @@ final class SocialWireAppModel {
         savedTagMutationProgress = nil
         isMutatingSavedTags = false
         selectedSidebar = nil
-        standardReaderLists = []
+        standardReaderLists.bind(viewer: nil)
         feedSelection = .topLevel(.subscribed)
         viewerProfile = nil
         preferencesFromGateway = nil
@@ -1649,12 +1651,15 @@ final class SocialWireAppModel {
         financeSelections.map(\.key).sorted().joined(separator: ":") + (feedPreferences.hideFinanceCrypto ? ":hide-crypto" : ":show-crypto")
     }
 
-    func loadFinanceCustomization() async {
-        guard let viewerDID else { return }
+    @discardableResult
+    func loadFinanceSelections() async -> Bool {
+        guard let viewerDID, !isSavingFinanceSelection else { return false }
         let context = financeContextEpoch
+        let fingerprint = financeSelectionFingerprint
         do {
             var records: [FinanceSelectionRecord] = []
             var cursor: String?
+            var observedCursors = Set<String>()
             repeat {
                 let page: ListRecordsResponse<FinanceSelectionRecord> = try await xrpc.listRecords(
                     repo: viewerDID, collection: FinanceSelectionRecord.collection,
@@ -1662,9 +1667,27 @@ final class SocialWireAppModel {
                 )
                 records += page.records.map(\.value)
                 cursor = page.cursor
+                if let cursor, !observedCursors.insert(cursor).inserted {
+                    throw SocialWireError.badResponse("Finance Interests Could Not Be Reconciled")
+                }
             } while cursor != nil
-            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+            guard self.viewerDID == viewerDID, context == financeContextEpoch,
+                  fingerprint == financeSelectionFingerprint, !isSavingFinanceSelection else { return false }
             financeSelections = records
+            return true
+        } catch {
+            guard self.viewerDID == viewerDID, context == financeContextEpoch else { return false }
+            financeError = error.localizedDescription
+            return false
+        }
+    }
+
+    func loadFinanceCustomization() async {
+        guard let viewerDID else { return }
+        let context = financeContextEpoch
+        guard await loadFinanceSelections(), self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+        let records = financeSelections
+        do {
             let sectors = try await gateway.fetchFinanceSectors()
             guard self.viewerDID == viewerDID, context == financeContextEpoch else { return }
             financeSectors = sectors
@@ -2077,17 +2100,7 @@ final class SocialWireAppModel {
             }
         case .lists:
             guard let page = event.lists else { return }
-            if page.complete || standardReaderLists.isEmpty {
-                standardReaderLists = page.lists
-            } else {
-                var listsByURI = Dictionary(uniqueKeysWithValues: standardReaderLists.map { ($0.uri, $0) })
-                for list in page.lists {
-                    listsByURI[list.uri] = list
-                }
-                let existingURIs = Set(standardReaderLists.map(\.uri))
-                standardReaderLists = standardReaderLists.compactMap { listsByURI[$0.uri] }
-                    + page.lists.filter { !existingURIs.contains($0.uri) }
-            }
+            standardReaderLists.apply(page)
         case .warning, .error:
             break
         case .done:
@@ -3538,7 +3551,7 @@ final class SocialWireAppModel {
             pendingRestoredFeedSelection = nil
             await selectFolderFeed(folderRkey: folderRkey)
         case .standardList(let uri):
-            guard let list = standardReaderLists.first(where: { $0.uri == uri }) else {
+            guard let list = standardReaderLists.lists.first(where: { $0.uri == uri }) else {
                 pendingRestoredFeedSelection = nil
                 return
             }

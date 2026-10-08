@@ -120,9 +120,9 @@ struct NewsSidebarView: View {
 
     @ViewBuilder
     private var listsSection: some View {
-        if !appModel.standardReaderLists.isEmpty {
+        if !appModel.standardReaderLists.lists.isEmpty {
             Section("Lists") {
-                ForEach(appModel.standardReaderLists) { list in
+                ForEach(appModel.standardReaderLists.lists) { list in
                     Button {
                         onStandardListSelection(list)
                     } label: {

@@ -9,6 +9,25 @@ struct SportsFeedPickerGroupTests {
         return try JSONDecoder().decode(SportsNamedFeed.self, from: JSONSerialization.data(withJSONObject: object))
     }
 
+    @Test("following shortcuts exclude muted, inactive, unavailable and grouped feeds")
+    func followedFeedCatalog() throws {
+        let active = try feed("active", kind: "team")
+        let muted = try feed("muted", kind: "team")
+        let inactive = try feed("inactive", kind: "team")
+        let unavailable = try feed("unavailable", kind: "team")
+        let group = SportsNamedFeed(id: "group", title: "Group", kind: "competition", entityIDs: ["active", "muted"], description: "")
+        let entities = [SportsEntity(id: "active", name: "Active", kind: "team", sportID: nil, competitionIDs: [], aliases: [], providerIDs: [:], active: true),
+                        SportsEntity(id: "muted", name: "Muted", kind: "team", sportID: nil, competitionIDs: [], aliases: [], providerIDs: [:], active: true),
+                        SportsEntity(id: "inactive", name: "Inactive", kind: "team", sportID: nil, competitionIDs: [], aliases: [], providerIDs: [:], active: false)]
+        var selections = ["active", "muted", "inactive", "unavailable"].map {
+            SportsSelectionRecord(reference: $0, action: "follow", createdAt: "now", updatedAt: "now")
+        }
+        selections.append(SportsSelectionRecord(reference: "muted", action: "mute", createdAt: "now", updatedAt: "now"))
+        let feeds = [.all, group, muted, inactive, unavailable, active]
+        #expect(SportsNamedFeed.followedFeeds(feeds, entities: entities, selections: selections).map(\.id) == [active.id])
+        #expect(SportsNamedFeed.followedFeeds(feeds, entities: entities, selections: []).isEmpty)
+    }
+
     @Test("para swimming classes and medley indices remain distinct selectable groups")
     func paraSwimmingClasses() throws {
         let feeds = try [feed("s8", path: ["Swimming", "Para Swimming", "S"], kind: "classification"), feed("sb8", path: ["Swimming", "Para Swimming", "SB"], kind: "classification"), feed("sm8", path: ["Swimming", "Para Swimming", "SM"], kind: "classification")]

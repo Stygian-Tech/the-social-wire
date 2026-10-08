@@ -13,7 +13,7 @@ import (
 func TestPodcastDisabledMetadataKeepsProductionScope(t *testing.T) {
 	for _, fixture := range []struct{ path, scope, digest string }{
 		{"/oauth-client-metadata.json", webScope, "4f04e3f3d987b84c79ed8738268fefbd5905e7c91932fc300fd4a97e57751739"},
-		{"/ios-client-metadata.json", iosScope, "d85fdb91aa30e373c33f44e5f59a39ab19f1879222cf29d2bd1bd7c07e83ae66"},
+		{"/ios-client-metadata.json", iosScope, "38c8134dc32537cb3948ae5621514bc2f8103f884edde0c33bc9928e3a9d317f"},
 	} {
 		for _, enabled := range []bool{false, true} {
 			s := Server{Config: Config{PodcastsEnabled: enabled}}

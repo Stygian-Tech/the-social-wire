@@ -72,6 +72,97 @@ final class NewsShellSmokeUITests: XCTestCase {
         return app.descendants(matching: .any)[label].firstMatch
     }
 
+    func testTopicsRemainReachableBeyondPrimaryTabs() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists"]
+        app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+
+        selectDestination("Finance", in: app)
+        let chooseFinance = app.buttons["Choose Feed"]
+        XCTAssertTrue(chooseFinance.waitForExistence(timeout: 5))
+        chooseFinance.tap()
+        XCTAssertTrue(app.navigationBars["Finance Feeds"].waitForExistence(timeout: 3))
+        app.buttons["Done"].firstMatch.tap()
+
+        selectDestination("Sports", in: app)
+        let sportsPicker = app.buttons["sports-feed-picker"]
+        XCTAssertTrue(sportsPicker.waitForExistence(timeout: 5))
+        sportsPicker.tap()
+        XCTAssertTrue(app.navigationBars["Sports Feeds"].waitForExistence(timeout: 3))
+        app.buttons["Done"].firstMatch.tap()
+
+        selectDestination("Subscribed", in: app)
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
+    }
+
+    func testListsSelectionAndManagementRemainReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists"]
+        app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+        selectDestination("Lists", in: app)
+        let fixtureList = app.buttons["lists.row.at://did:plc:fixture/app.standard-reader.list/main"]
+        XCTAssertTrue(fixtureList.waitForExistence(timeout: 5))
+        fixtureList.tap()
+        XCTAssertTrue(app.buttons["lists.entry.ui-story-1"].waitForExistence(timeout: 5))
+
+        let manage = app.buttons["lists.manage"]
+        if !manage.isHittable {
+            let back = app.navigationBars.buttons["Lists"].firstMatch
+            XCTAssertTrue(back.waitForExistence(timeout: 3))
+            back.tap()
+        }
+        XCTAssertTrue(manage.waitForExistence(timeout: 3))
+        manage.tap()
+        XCTAssertTrue(app.navigationBars["Manage Lists"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["lists.searchInput"].exists)
+        XCTAssertFalse(app.buttons["lists.search"].isEnabled)
+        let name = app.textFields["lists.createName"]
+        XCTAssertTrue(name.exists)
+        XCTAssertFalse(app.buttons["lists.create"].isEnabled)
+        let delete = app.buttons["Delete Fixture List"]
+        if !delete.isHittable { app.swipeUp() }
+        XCTAssertTrue(delete.isHittable)
+        delete.tap()
+        XCTAssertTrue(app.buttons["Delete List"].waitForExistence(timeout: 3))
+        app.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Delete Fixture List"].exists)
+        if !name.isHittable { app.swipeDown() }
+        name.tap()
+        name.typeText("New Fixture List")
+        XCTAssertTrue(app.buttons["lists.create"].isEnabled)
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(fixtureList.waitForExistence(timeout: 3))
+        fixtureList.tap()
+        XCTAssertTrue(app.buttons["lists.entry.ui-story-1"].waitForExistence(timeout: 3))
+    }
+
+    /// The same regression runs with the iPad sidebar and the iPhone overflow menu.
+    private func selectDestination(_ label: String, in app: XCUIApplication) {
+        func destination() -> XCUIElement {
+            let tab = app.tabBars.buttons[label]
+            if tab.exists && tab.isHittable { return tab }
+            let candidates = app.descendants(matching: .any)
+                .matching(identifier: label).allElementsBoundByIndex
+            if let visible = candidates.first(where: { $0.isHittable }) { return visible }
+            // A hidden sidebar row must not prevent opening the compact overflow menu.
+            return app.buttons["missing-destination-\(label)"]
+        }
+        if !destination().exists {
+            let more = app.tabBars.buttons["More"]
+            if more.exists && more.isHittable { more.tap() }
+        }
+        if !destination().exists {
+            let topics = app.buttons["Topics"].firstMatch
+            if topics.exists && topics.isHittable { topics.tap() }
+        }
+        let target = destination()
+        XCTAssertTrue(target.waitForExistence(timeout: 3), "Missing destination: \(label)")
+        XCTAssertTrue(target.isHittable, "Unreachable destination: \(label)")
+        target.tap()
+    }
+
     func testWireCardsFitNarrowCanvas() {
         assertFeedCards(circle: false, largeText: false)
     }
