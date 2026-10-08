@@ -5,7 +5,6 @@ import {
   describe,
   expect,
   it,
-  mock,
   spyOn,
 } from "bun:test";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -14,6 +13,7 @@ import type { ReactNode } from "react";
 
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import * as AuthHook from "@/hooks/useAuth";
+import * as EntryListModule from "@/components/EntryList/EntryList";
 import * as WireEditionHook from "@/hooks/useWireEdition";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import * as ResolveEntryOpenURL from "@/lib/resolveEntryOpenUrl";
@@ -32,6 +32,7 @@ beforeAll(() => {
 });
 
 let restoreAuthSpy: (() => void) | undefined;
+let restoreEntryListSpy: (() => void) | undefined;
 let resolveEntryOpenUrlFromPds: ReturnType<
   typeof spyOn<typeof ResolveEntryOpenURL, "resolveEntryOpenUrlFromPds">
 >;
@@ -44,6 +45,8 @@ beforeEach(() => {
   window.localStorage.clear();
   renderedEntry = unresolvedEntry;
   renderedEntryListProps = {};
+  const entryListSpy = spyOn(EntryListModule, "EntryList").mockImplementation(renderEntryList);
+  restoreEntryListSpy = () => entryListSpy.mockRestore();
   const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
     session: { did: "did:plc:viewer" },
     getOAuthSession: () => null,
@@ -84,6 +87,8 @@ afterEach(() => {
   window.localStorage.clear();
   restoreAuthSpy?.();
   restoreAuthSpy = undefined;
+  restoreEntryListSpy?.();
+  restoreEntryListSpy = undefined;
   resolveEntryOpenUrlFromPds.mockRestore();
   useWireEdition.mockRestore();
 });
@@ -133,8 +138,7 @@ function wireEditionPageForEntry(entry: EntryListItem): WireEditionPage {
   };
 }
 
-mock.module("@/components/EntryList/EntryList", () => ({
-  EntryList: ({
+const renderEntryList = ({
     onSelectEntry,
     resolvingEntryId,
     wireFeed,
@@ -162,8 +166,7 @@ mock.module("@/components/EntryList/EntryList", () => ({
     >
       {renderedEntry.title}
     </button>
-  ),
-}));
+  );
 
 const { default: ReadPubPage } = await import(
   "@/app/read/[...pubId]/ReadPubPage"
