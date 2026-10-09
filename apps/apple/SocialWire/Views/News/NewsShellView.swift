@@ -153,7 +153,8 @@ struct NewsShellView: View {
             )
         } detail: {
             if selectedSection == .lists {
-                listsWorkspace
+                StandardReaderListsWorkspace(usesExternalSidebar: true)
+                    .accessibilityIdentifier("news-tab-content-standardLists")
             } else {
                 destinationContent(
                     for: selectedSlot,

@@ -2,7 +2,9 @@ import SwiftUI
 
 struct StandardReaderListsWorkspace: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    var usesExternalSidebar = false
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showingManagement = false
     @State private var pendingRemoval: StandardReaderList?
     @State private var feedback = 0
@@ -14,38 +16,7 @@ struct StandardReaderListsWorkspace: View {
     private var model: StandardReaderListsModel { appModel.standardReaderLists }
 
     var body: some View {
-        NavigationSplitView(preferredCompactColumn: $compactColumn) {
-            listsColumn
-                .navigationTitle("Lists")
-                .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Manage Lists", systemImage: "plus") { showingManagement = true }
-                            .disabled(!model.signedIn)
-                            .accessibilityIdentifier("lists.manage")
-                    }
-                }
-        } content: {
-            articlesColumn
-                .navigationTitle(model.selectedList?.name ?? "Articles")
-                .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
-        } detail: {
-            if let entry = model.selectedEntry {
-                EntryDetailView(entry: entry)
-            } else if model.isLoadingEntry {
-                ProgressView("Loading Article")
-            } else if let error = model.entryError {
-                ContentUnavailableView {
-                    Label("Article Could Not Load", systemImage: "exclamationmark.triangle")
-                } description: { Text(error) } actions: {
-                    if let id = openedEntryID, let item = model.entries.first(where: { $0.entryId == id }) {
-                        Button("Retry") { open(item) }
-                    }
-                }
-            } else {
-                ContentUnavailableView("Select an Article", systemImage: "doc.text")
-            }
-        }
+        workspaceColumns
         .task(id: appModel.viewerDID) { await model.load() }
         .sheet(isPresented: $showingManagement) {
             StandardReaderListsManagementView(model: model, publications: availablePublications)
@@ -97,6 +68,63 @@ struct StandardReaderListsWorkspace: View {
             showingManagement = false
             pendingRemoval = nil
             compactColumn = .sidebar
+        }
+    }
+
+    @ViewBuilder
+    private var workspaceColumns: some View {
+        if usesExternalSidebar {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                Group {
+                    if model.selectedList == nil { listsColumn }
+                    else { articlesColumn }
+                }
+                .navigationTitle(model.selectedList?.name ?? "Lists")
+                .toolbar { managementButton }
+            } detail: {
+                readerColumn
+            }
+        } else {
+            NavigationSplitView(preferredCompactColumn: $compactColumn) {
+                listsColumn
+                    .navigationTitle("Lists")
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
+                    .toolbar { managementButton }
+            } content: {
+                articlesColumn
+                    .navigationTitle(model.selectedList?.name ?? "Articles")
+                    .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
+            } detail: {
+                readerColumn
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var managementButton: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button("Manage Lists", systemImage: "plus") { showingManagement = true }
+                .disabled(!model.signedIn)
+                .accessibilityIdentifier("lists.manage")
+        }
+    }
+
+    @ViewBuilder
+    private var readerColumn: some View {
+        if let entry = model.selectedEntry {
+            EntryDetailView(entry: entry)
+        } else if model.isLoadingEntry {
+            ProgressView("Loading Article")
+        } else if let error = model.entryError {
+            ContentUnavailableView {
+                Label("Article Could Not Load", systemImage: "exclamationmark.triangle")
+            } description: { Text(error) } actions: {
+                if let id = openedEntryID, let item = model.entries.first(where: { $0.entryId == id }) {
+                    Button("Retry") { open(item) }
+                }
+            }
+        } else {
+            ContentUnavailableView("Select an Article", systemImage: "doc.text")
         }
     }
 

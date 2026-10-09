@@ -42,7 +42,6 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
         let following = tabButton("Following", in: app)
         XCTAssertTrue(following.waitForExistence(timeout: 3))
-        selectDestination("Following", in: app)
         app.buttons["fixture-hide-following"].tap()
         XCTAssertTrue(following.waitForNonExistence(timeout: 3))
         app.tabBars.buttons["Read Later"].tap()
