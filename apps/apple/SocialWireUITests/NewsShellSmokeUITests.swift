@@ -149,6 +149,32 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.entry.ui-story-1"].waitForExistence(timeout: 3))
     }
 
+    func testEmptyListsManagementAndOtherDestinationsRemainReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists", "--ui-testing-empty-lists"]
+        app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+
+        selectDestination("Lists", in: app)
+        XCTAssertTrue(content(for: "standardLists", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No Lists Yet"].waitForExistence(timeout: 3))
+        let manage = app.buttons["lists.manage"]
+        XCTAssertTrue(manage.waitForExistence(timeout: 3))
+        XCTAssertTrue(manage.isEnabled)
+        XCTAssertTrue(manage.isHittable)
+        manage.tap()
+        XCTAssertTrue(app.navigationBars["Manage Lists"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["lists.createName"].exists)
+        app.buttons["Done"].firstMatch.tap()
+
+        selectDestination("Finance", in: app)
+        XCTAssertTrue(app.buttons["Choose Feed"].waitForExistence(timeout: 5))
+        selectDestination("Lists", in: app)
+        XCTAssertTrue(app.staticTexts["No Lists Yet"].waitForExistence(timeout: 3))
+        selectDestination("Read Later", in: app)
+        XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 5))
+    }
+
     /// Follow compact root sections or regular-width sidebar destinations.
     private func selectDestination(_ label: String, in app: XCUIApplication) {
         let root: String? = switch label {
@@ -161,6 +187,18 @@ final class NewsShellSmokeUITests: XCTestCase {
             app.tabBars.buttons[root].tap()
         }
         func destination() -> XCUIElement {
+            let sidebarID: String? = switch label {
+            case "Finance": "finance"
+            case "Sports": "sports"
+            case "The Wire": "wire"
+            case "Your Circle": "circle"
+            case "Lists": "standardLists"
+            default: nil
+            }
+            if let sidebarID {
+                let sidebarButton = app.buttons["news-tab-button-\(sidebarID)"]
+                if sidebarButton.exists && sidebarButton.isHittable { return sidebarButton }
+            }
             let tab = app.tabBars.buttons[label]
             if tab.exists && tab.isHittable { return tab }
             // UIKit's compact More menu exposes destinations as cells with text

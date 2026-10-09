@@ -83,6 +83,33 @@ struct StandardReaderListsModelTests {
         #expect(!model.isLoadingEntry)
     }
 
+    @Test("Bootstrap list pages preserve partial membership and clear removed selections on completion")
+    func bootstrapPagesReconcileSelection() async {
+        let auth = ATProtoOAuthService()
+        let model = StandardReaderListsModel(gateway: SocialWireGatewayClient(auth: auth), xrpc: XRPCClient(auth: auth, resolver: ATProtoResolver()))
+        let selected = StandardReaderList(uri: "at://did:plc:viewer/app.standard-reader.list/selected", name: "Selected", creatorDid: "did:plc:viewer", publications: [], users: [], owned: true, saved: false)
+        let other = StandardReaderList(uri: "at://did:plc:other/app.standard-reader.list/other", name: "Other", creatorDid: "did:plc:other", publications: [], users: [], owned: false, saved: true)
+        let entry = EntryListItem(entryId: "at://did:plc:author/site.standard.document/article", title: "Article", summary: nil, publishedAt: "2026-10-08T00:00:00Z", thumbnailUrl: nil, thumbnailFallbackUrl: nil)
+        model.configureFixture(lists: [selected, other], entries: [entry])
+        await model.select(selected)
+        await model.openEntry(entry)
+
+        var updated = other
+        updated.name = "Updated"
+        model.apply(StandardReaderListsPage(lists: [updated], refreshedAt: "now", complete: false))
+        #expect(model.lists == [selected, updated])
+        #expect(model.selectedList == selected)
+        #expect(model.selectedEntry?.entryId == entry.entryId)
+        #expect(model.error != nil)
+
+        model.apply(StandardReaderListsPage(lists: [updated], refreshedAt: "now", complete: true))
+        #expect(model.lists == [updated])
+        #expect(model.selectedList == nil)
+        #expect(model.selectedEntry == nil)
+        #expect(model.entries.isEmpty)
+        #expect(model.error == nil)
+    }
+
     @Test("Switching accounts clears list membership, feed rows, and open article")
     func accountReset() async {
         let auth = ATProtoOAuthService()

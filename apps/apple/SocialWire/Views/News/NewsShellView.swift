@@ -144,7 +144,8 @@ struct NewsShellView: View {
             NewsSidebarView(
                 availableTabs: availableTabs,
                 sceneModel: sceneModel,
-                onSelection: {},
+                onSelection: sidebarDestinationSelected,
+                onListsSelection: { selectedSection = .lists },
                 onStandardListSelection: { list in
                     selectedSection = .lists
                     Task { await appModel.standardReaderLists.select(list) }
@@ -317,6 +318,15 @@ struct NewsShellView: View {
         reconcileSectionSelection(section)
     }
 
+    private func sidebarDestinationSelected() {
+        switch sceneModel.selectedTab {
+        case .finance, .sports: selectedSection = .topics
+        case .saved: selectedSection = .readLater
+        default: selectedSection = .feeds
+        }
+        sceneTabChanged(sceneModel.selectedTab, sceneModel.selectedTab)
+    }
+
     private func reconcileSectionSelection(_ section: NewsRootSection) {
         let items = navigationItems(for: section)
         guard let slot = sectionSelections[section].flatMap({ remembered in
@@ -424,6 +434,7 @@ struct NewsShellView: View {
         _ feeds: [NewsPrimaryFeed]
     ) {
         slotFeeds = feeds.filter { $0 != .podcasts }
+        guard selectedSection != .lists else { return }
 
         if let selectedFeed = selectedSlot.primaryFeed,
            !appModel.visiblePrimaryTabFeedChoices.contains(selectedFeed) {

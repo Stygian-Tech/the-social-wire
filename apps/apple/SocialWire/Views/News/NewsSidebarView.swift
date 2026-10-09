@@ -5,6 +5,7 @@ struct NewsSidebarView: View {
     let availableTabs: [NewsTab]
     let sceneModel: NewsSceneModel
     let onSelection: () -> Void
+    let onListsSelection: () -> Void
     let onStandardListSelection: (StandardReaderList) -> Void
     @State private var presentedSheet: NewsSidebarSheet?
 
@@ -120,24 +121,26 @@ struct NewsSidebarView: View {
 
     @ViewBuilder
     private var listsSection: some View {
-        if !appModel.standardReaderLists.lists.isEmpty {
-            Section("Lists") {
-                ForEach(appModel.standardReaderLists.lists) { list in
-                    Button {
-                        onStandardListSelection(list)
-                    } label: {
-                        FeedSidebarRowLabel(
-                            title: list.name,
-                            systemImage: "list.bullet",
-                            unreadCount: nil
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .readerSidebarListRow()
-                    .accessibilityAddTraits(
-                        appModel.feedSelection == .standardList(list.uri) ? .isSelected : []
+        Section("Lists") {
+            Button("Lists", systemImage: "list.bullet", action: onListsSelection)
+                .buttonStyle(.plain)
+                .readerSidebarListRow()
+                .accessibilityIdentifier("news-tab-button-standardLists")
+            ForEach(appModel.standardReaderLists.lists) { list in
+                Button {
+                    onStandardListSelection(list)
+                } label: {
+                    FeedSidebarRowLabel(
+                        title: list.name,
+                        systemImage: "list.bullet",
+                        unreadCount: nil
                     )
                 }
+                .buttonStyle(.plain)
+                .readerSidebarListRow()
+                .accessibilityAddTraits(
+                    appModel.standardReaderLists.selectedList?.uri == list.uri ? .isSelected : []
+                )
             }
         }
     }

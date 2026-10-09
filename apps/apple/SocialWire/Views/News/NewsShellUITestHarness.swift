@@ -93,6 +93,9 @@ struct NewsShellUITestHarness: View {
                                     creatorDid: "did:plc:fixture", publications: [Self.fixturePublication.publicationId],
                                     publicationDetails: nil, users: [], owned: true, saved: true)],
                                 entries: [Self.entry(index: 1)])
+                            if ProcessInfo.processInfo.arguments.contains("--ui-testing-empty-lists") {
+                                fixtureModel.standardReaderLists.configureFixture(lists: [], entries: [])
+                            }
                         }
                         // Start from the default Subscribed selection; avoid live fetch work.
                         fixtureModel.readerListSource = .subscribed
