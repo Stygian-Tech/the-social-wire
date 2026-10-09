@@ -201,6 +201,12 @@ final class NewsShellSmokeUITests: XCTestCase {
             }
             let tab = app.tabBars.buttons[label]
             if tab.exists && tab.isHittable { return tab }
+            let capsule = app.navigationBars.buttons[label]
+            if capsule.exists {
+                let rail = app.navigationBars.scrollViews.firstMatch
+                if rail.exists { revealHorizontally(capsule, in: rail) }
+                if capsule.isHittable { return capsule }
+            }
             // UIKit's compact More menu exposes destinations as cells with text
             // descendants, so activate the row rather than its static label.
             let cells = app.cells.containing(.staticText, identifier: label).allElementsBoundByIndex
