@@ -18,15 +18,17 @@ struct NewsShellView: View {
     @State private var slotFeeds: [NewsPrimaryFeed] = []
     @State private var isTabConfigurationLoaded = false
     @State private var isProfilePresented = false
+    #if os(iOS)
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    #endif
 
     private var availableTabs: [NewsTab] {
         NewsTab.available(
-            preferences: appModel.feedPreferences,
-            wireCatalog: appModel.wireCatalog,
-            circleCatalog: appModel.circleCatalog,
-            financeAvailable: appModel.wireCatalog?.financeAvailable != false,
-            sportsAvailable: appModel.wireCatalog?.sportsAvailable != false,
-            podcastsAvailable: false
+            wire: appModel.feedPreferences.showWire,
+            circle: appModel.feedPreferences.showCircle,
+            finance: appModel.feedPreferences.showFinance,
+            sports: appModel.feedPreferences.showSports,
+            podcasts: false
         )
     }
 
@@ -47,11 +49,30 @@ struct NewsShellView: View {
     }
 
     private var feedDestinations: [NewsPrimaryFeed] {
-        [.wire, .circle, .subscribed, .following]
+        [.wire, .circle, .subscribed, .following].filter(isVisibleInSettings)
     }
 
     private var topicDestinations: [NewsPrimaryFeed] {
-        [.finance, .sports]
+        [.finance, .sports].filter(isVisibleInSettings)
+    }
+
+    private func isVisibleInSettings(_ feed: NewsPrimaryFeed) -> Bool {
+        switch feed {
+        case .wire:
+            appModel.feedPreferences.showWire
+        case .circle:
+            appModel.feedPreferences.showCircle
+        case .finance:
+            appModel.feedPreferences.showFinance
+        case .sports:
+            appModel.feedPreferences.showSports
+        case .subscribed:
+            appModel.feedPreferences.visibleFeeds.contains(.subscribed)
+        case .following:
+            appModel.feedPreferences.visibleFeeds.contains(.following)
+        case .podcasts:
+            false
+        }
     }
 
     /// LatrKit owns the archive; the Semble connector has no archived bucket to show.
@@ -106,9 +127,42 @@ struct NewsShellView: View {
     }
 
     private var detailStack: some View {
-        feedTabs
+        Group {
+            #if os(iOS)
+            if horizontalSizeClass == .regular {
+                regularWidthSplitView
+            } else {
+                feedTabs
+            }
+            #else
+            feedTabs
+            #endif
+        }
         .accessibilityIdentifier("news-detail-column")
     }
+
+    #if os(iOS)
+    private var regularWidthSplitView: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            NewsSidebarView(
+                availableTabs: availableTabs,
+                sceneModel: sceneModel,
+                onSelection: {},
+                onStandardListSelection: { list in
+                    selectedSlot = .standardList(list.uri)
+                }
+            )
+        } detail: {
+            destinationContent(
+                for: selectedSlot,
+                navigationItems: navigationItems(for: selectedSection),
+                selection: sectionSelectionBinding(for: selectedSection),
+                usesSidebarNavigation: true
+            )
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+    #endif
 
     @ViewBuilder
     private var feedTabs: some View {
@@ -142,7 +196,8 @@ struct NewsShellView: View {
     private func destinationContent(
         for slot: NewsTabSlot,
         navigationItems: [NewsNavigationItem],
-        selection: Binding<NewsTabSlot>
+        selection: Binding<NewsTabSlot>,
+        usesSidebarNavigation: Bool = false
     ) -> some View {
         if let source = slot.savedListSource {
             destinationView(
@@ -151,7 +206,8 @@ struct NewsShellView: View {
                 navigationItems: navigationItems,
                 selection: selection,
                 supportsUnreadFilter: false,
-                bulkReadScope: .unavailable
+                bulkReadScope: .unavailable,
+                usesSidebarNavigation: usesSidebarNavigation
             )
         } else if case .standardList(let uri) = slot,
                   let list = appModel.standardReaderLists.first(where: { $0.uri == uri }) {
@@ -161,7 +217,8 @@ struct NewsShellView: View {
                 navigationItems: navigationItems,
                 selection: selection,
                 supportsUnreadFilter: false,
-                bulkReadScope: .unavailable
+                bulkReadScope: .unavailable,
+                usesSidebarNavigation: usesSidebarNavigation
             )
         } else if let feed = selectedSlot.primaryFeed {
             destinationView(
@@ -170,7 +227,8 @@ struct NewsShellView: View {
                 navigationItems: navigationItems,
                 selection: selection,
                 supportsUnreadFilter: feed == .subscribed || feed == .following,
-                bulkReadScope: bulkReadScope(for: feed)
+                bulkReadScope: bulkReadScope(for: feed),
+                usesSidebarNavigation: usesSidebarNavigation
             )
         }
     }
@@ -181,7 +239,8 @@ struct NewsShellView: View {
         navigationItems: [NewsNavigationItem],
         selection: Binding<NewsTabSlot>,
         supportsUnreadFilter: Bool,
-        bulkReadScope: ReaderMarkReadScope
+        bulkReadScope: ReaderMarkReadScope,
+        usesSidebarNavigation: Bool = false
     ) -> some View {
         NewsFeedShellView(
             title: title,
@@ -191,7 +250,8 @@ struct NewsShellView: View {
             navigationItems: navigationItems,
             selection: selection,
             supportsUnreadFilter: supportsUnreadFilter,
-            bulkReadScope: bulkReadScope
+            bulkReadScope: bulkReadScope,
+            usesSidebarNavigation: usesSidebarNavigation
         )
     }
 
@@ -520,6 +580,7 @@ private struct NewsFeedShellView: View {
     @Binding var selection: NewsTabSlot
     let supportsUnreadFilter: Bool
     let bulkReadScope: ReaderMarkReadScope
+    let usesSidebarNavigation: Bool
 
     private enum NewsShellSheet: String, Identifiable {
         case addPublication
@@ -555,7 +616,7 @@ private struct NewsFeedShellView: View {
                     .offset(x: horizontalDragOffset)
             }
             .contentShape(Rectangle())
-            .simultaneousGesture(sectionSwipeGesture)
+            .simultaneousGesture(usesSidebarNavigation ? nil : sectionSwipeGesture)
                 .toolbar { toolbarContent }
                 .navigationDestination(for: NewsRoute.self) { route in
                     NewsRouteDestination(route: route, tab: tab, sceneModel: sceneModel)
@@ -576,33 +637,40 @@ private struct NewsFeedShellView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            NewsHorizontalNavigationBar(items: navigationItems, selection: $selection)
-        }
-        ToolbarItem(placement: leadingPlacement) {
-            Button {
-                isProfilePresented = true
-            } label: {
-                ViewerProfileAvatar(size: 30)
+            if usesSidebarNavigation {
+                Text(effectiveTitle)
+                    .font(.headline)
+            } else {
+                NewsHorizontalNavigationBar(items: navigationItems, selection: $selection)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Profile")
         }
-        if tab == .library && appModel.readerListSource == .subscribed {
-            ToolbarItem(placement: trailingPlacement) {
-                Menu {
-                    Button("Add Publication", systemImage: "plus.circle") {
-                        presentedSheet = .addPublication
-                    }
-                    Button("New Folder", systemImage: "folder.badge.plus") {
-                        presentedSheet = .newFolder
-                    }
-                    Button("Import OPML", systemImage: "square.and.arrow.down") {
-                        presentedSheet = .importOPML
-                    }
+        if !usesSidebarNavigation {
+            ToolbarItem(placement: leadingPlacement) {
+                Button {
+                    isProfilePresented = true
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    ViewerProfileAvatar(size: 30)
                 }
-                .help("Add a publication, folder, or OPML subscription list")
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profile")
+            }
+            if tab == .library && appModel.readerListSource == .subscribed {
+                ToolbarItem(placement: trailingPlacement) {
+                    Menu {
+                        Button("Add Publication", systemImage: "plus.circle") {
+                            presentedSheet = .addPublication
+                        }
+                        Button("New Folder", systemImage: "folder.badge.plus") {
+                            presentedSheet = .newFolder
+                        }
+                        Button("Import OPML", systemImage: "square.and.arrow.down") {
+                            presentedSheet = .importOPML
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus")
+                    }
+                    .help("Add a publication, folder, or OPML subscription list")
+                }
             }
         }
         if supportsUnreadFilter {

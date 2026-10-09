@@ -5,8 +5,8 @@ struct NewsSidebarView: View {
     let availableTabs: [NewsTab]
     let sceneModel: NewsSceneModel
     let onSelection: () -> Void
+    let onStandardListSelection: (StandardReaderList) -> Void
     @State private var presentedSheet: NewsSidebarSheet?
-    @State private var isReadLaterExpanded = false
 
     var body: some View {
         List {
@@ -14,10 +14,10 @@ struct NewsSidebarView: View {
             audioSection
             feedsSection
             topicsSection
+            listsSection
         }
         .listStyle(.sidebar)
         .listItemTint(.indigo)
-        .navigationTitle("The Social Wire")
         .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
         .toolbar {
             if sceneModel.selectedTab == .library && appModel.readerListSource == .subscribed {
@@ -118,56 +118,65 @@ struct NewsSidebarView: View {
         }
     }
 
-    private var savedSection: some View {
-        Section("Saved") {
-            DisclosureGroup(isExpanded: $isReadLaterExpanded) {
-                if !appModel.currentSavedFeedSources.isEmpty {
+    @ViewBuilder
+    private var listsSection: some View {
+        if !appModel.standardReaderLists.isEmpty {
+            Section("Lists") {
+                ForEach(appModel.standardReaderLists) { list in
                     Button {
-                        appModel.clearSavedFeedSource()
-                        selectSavedSource()
+                        onStandardListSelection(list)
                     } label: {
                         FeedSidebarRowLabel(
-                            title: "All Saved Stories",
-                            systemImage: "tray.full",
-                            unreadCount: appModel.currentSavedLinks.count
+                            title: list.name,
+                            systemImage: "list.bullet",
+                            unreadCount: nil
                         )
                     }
                     .buttonStyle(.plain)
                     .readerSidebarListRow()
-
-                    ForEach(appModel.currentSavedFeedSources) { source in
-                        Button {
-                            appModel.selectSavedFeedSource(source)
-                            selectSavedSource()
-                        } label: {
-                            HStack(spacing: 8) {
-                                SavedLinkPublicationChip(model: source.model)
-                                Spacer(minLength: 8)
-                                SidebarCountLabel(
-                                    count: source.count,
-                                    accessibilityDescription: "saved articles"
-                                )
-                            }
-                            .readerFullWidthTapLabel()
-                        }
-                        .buttonStyle(.plain)
-                        .readerSidebarListRow()
-                    }
-                }
-            } label: {
-                Button {
-                    appModel.clearSavedFeedSource()
-                    selectSavedSource()
-                } label: {
-                    FeedSidebarRowLabel(
-                        title: ReaderListSource.readLater.rawValue,
-                        systemImage: ReaderListSource.readLater.systemImage,
-                        unreadCount: nil
+                    .accessibilityAddTraits(
+                        appModel.feedSelection == .standardList(list.uri) ? .isSelected : []
                     )
                 }
-                .buttonStyle(.plain)
             }
+        }
+    }
+
+    private var savedSection: some View {
+        Section("Saved") {
+            Button {
+                appModel.clearSavedFeedSource()
+                selectSavedSource()
+            } label: {
+                FeedSidebarRowLabel(
+                    title: ReaderListSource.readLater.rawValue,
+                    systemImage: ReaderListSource.readLater.systemImage,
+                    unreadCount: nil
+                )
+            }
+            .buttonStyle(.plain)
             .readerSidebarListRow()
+
+            ForEach(appModel.currentSavedFeedSources) { source in
+                Button {
+                    appModel.selectSavedFeedSource(source)
+                    selectSavedSource()
+                } label: {
+                    HStack(spacing: 8) {
+                        SavedLinkPublicationChip(model: source.model)
+                        Spacer(minLength: 8)
+                        SidebarCountLabel(
+                            count: source.count,
+                            accessibilityDescription: "saved articles"
+                        )
+                    }
+                    .padding(.leading, 20)
+                    .readerFullWidthTapLabel()
+                }
+                .buttonStyle(.plain)
+                .readerSidebarListRow()
+            }
+
             if appModel.visibleReaderListSources.contains(.archive) {
                 sourceRow(.archive)
             }

@@ -4,14 +4,22 @@ import WebKit
 struct TradingViewFinanceWidget: View {
     @Environment(\.colorScheme) private var colorScheme
     let symbol: String
+    var height: CGFloat = 230
+    var automaticallyLoads = false
+    var chartOnly = false
     @State private var requested = false
 
     var body: some View {
         Group {
-            if requested {
-                FinanceWidgetWebView(symbol: symbol, dark: colorScheme == .dark)
-                    .id("\(symbol):\(colorScheme)")
-                    .frame(height: 230)
+            if requested || automaticallyLoads {
+                FinanceWidgetWebView(
+                    symbol: symbol,
+                    dark: colorScheme == .dark,
+                    height: height,
+                    chartOnly: chartOnly
+                )
+                    .id("\(symbol):\(colorScheme):\(height):\(chartOnly)")
+                    .frame(height: height)
                     .accessibilityLabel("TradingView Performance Data")
             } else {
                 Button("Show Market Overview", systemImage: "chart.line.uptrend.xyaxis") { requested = true }
@@ -20,13 +28,25 @@ struct TradingViewFinanceWidget: View {
     }
 }
 
+@MainActor
 private struct FinanceWidgetWebView {
     let symbol: String
     let dark: Bool
+    let height: CGFloat
+    let chartOnly: Bool
 
     func configure(_ view: WKWebView) {
         guard symbol.range(of: "^[A-Za-z0-9_]+:[A-Za-z0-9_.!/-]+$", options: .regularExpression) != nil else { return }
-        let config: [String: Any] = ["symbols": [[symbol]], "chartOnly": false, "width": "100%", "height": "220", "locale": "en", "colorTheme": dark ? "dark" : "light", "autosize": false, "showVolume": false]
+        let config: [String: Any] = [
+            "symbols": [[symbol]],
+            "chartOnly": chartOnly,
+            "width": "100%",
+            "height": Int(height),
+            "locale": "en",
+            "colorTheme": dark ? "dark" : "light",
+            "autosize": false,
+            "showVolume": false
+        ]
         guard let data = try? JSONSerialization.data(withJSONObject: config),
               let json = String(data: data, encoding: .utf8) else { return }
         let html = """

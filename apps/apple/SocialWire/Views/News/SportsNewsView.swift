@@ -3,6 +3,7 @@ import SwiftUI
 struct SportsNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var scrollAnchor: String?
     @State private var showingPicker = false
     @State private var showingCustomization = false
@@ -72,12 +73,21 @@ struct SportsNewsView: View {
                     ContentUnavailableView("No Matching Stories Yet", systemImage: "sportscourt",
                         description: Text("Sports Stories Will Appear Here When Available."))
                 }
-                ForEach(topic.items) { item in
-                    WireStoryCard(entry: item.story.toEntryListItem()) {
-                        if let url = URL(string: item.story.canonicalUrl) { openURL(url) }
+                EditorialCardLayout(
+                    spacing: 18,
+                    minimumCardWidth: dynamicTypeSize.isAccessibilitySize
+                        ? ArticleReadingWidth.editorial
+                        : 280
+                ) {
+                    ForEach(topic.items) { item in
+                        VStack(alignment: .leading, spacing: 8) {
+                            WireStoryCard(entry: item.story.toEntryListItem()) {
+                                if let url = URL(string: item.story.canonicalUrl) { openURL(url) }
+                            }
+                            SportsStoryActions(item: item)
+                        }
+                        .id(item.id)
                     }
-                    .id(item.id)
-                    SportsStoryActions(item: item)
                 }
                 if topic.continuationSuspended {
                     Button("Refresh Personalized Feed") { Task { await refresh() } }

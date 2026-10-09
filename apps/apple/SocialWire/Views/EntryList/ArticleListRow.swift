@@ -21,7 +21,7 @@ struct ArticleListRow: View {
     }
 
     private var regularLayout: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .center, spacing: 14) {
             thumbnail(width: 156, height: 104)
             details
         }
@@ -29,7 +29,7 @@ struct ArticleListRow: View {
     }
 
     private var compactLayout: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             thumbnail(width: 112, height: 84)
             details
         }

@@ -3,6 +3,7 @@ import SwiftUI
 struct FinanceNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var scrollAnchor: String?
     @State private var showingFeedPicker = false
     @State private var showingCustomization = false
@@ -21,6 +22,7 @@ struct FinanceNewsView: View {
             .map(\.instrument)
         return (Array(appModel.financeInstrumentMetadata.values) + storyInstruments)
             .filter { seen.insert($0.id).inserted }
+            .filter { $0.tradingViewSymbol != nil }
             .sorted { $0.symbol.localizedStandardCompare($1.symbol) == .orderedAscending }
     }
 
@@ -70,9 +72,16 @@ struct FinanceNewsView: View {
                             ? "Finance Stories Will Appear Here When Available."
                             : "No Validated Stories Currently Match This Feed."))
                 }
-                ForEach(appModel.financeItems) { item in
-                    WireStoryCard(entry: item.story.toEntryListItem()) { open(item) }
-                        .id(item.id)
+                EditorialCardLayout(
+                    spacing: 18,
+                    minimumCardWidth: dynamicTypeSize.isAccessibilitySize
+                        ? ArticleReadingWidth.editorial
+                        : 280
+                ) {
+                    ForEach(appModel.financeItems) { item in
+                        WireStoryCard(entry: item.story.toEntryListItem()) { open(item) }
+                            .id(item.id)
+                    }
                 }
                 if appModel.financeContinuationSuspended {
                     Button("Refresh Personalized Feed") { Task { await appModel.loadFinance() } }
@@ -148,23 +157,44 @@ private struct FinanceMarketTickerStrip: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            LazyHStack(spacing: 8) {
+            LazyHGrid(
+                rows: [GridItem(.fixed(142)), GridItem(.fixed(142))],
+                alignment: .top,
+                spacing: 10
+            ) {
                 ForEach(instruments) { instrument in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(instrument.symbol)
-                            .font(.subheadline.monospaced().weight(.semibold))
-                        Text(instrument.name)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.thinMaterial, in: .rect(cornerRadius: 10))
+                    tickerCard(instrument)
                 }
             }
+            .padding(.vertical, 2)
         }
         .scrollIndicators(.hidden)
         .accessibilityLabel("Market Tickers")
+    }
+
+    private func tickerCard(_ instrument: FinanceInstrument) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(instrument.symbol)
+                    .font(.subheadline.monospaced().weight(.semibold))
+                Text(instrument.name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            if let symbol = instrument.tradingViewSymbol {
+                TradingViewFinanceWidget(
+                    symbol: symbol,
+                    height: 96,
+                    automaticallyLoads: true,
+                    chartOnly: true
+                )
+                .allowsHitTesting(false)
+            }
+        }
+        .padding(8)
+        .frame(width: 240, height: 142, alignment: .topLeading)
+        .background(.thinMaterial, in: .rect(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
     }
 }

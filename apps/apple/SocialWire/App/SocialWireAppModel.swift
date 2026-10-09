@@ -62,7 +62,8 @@ final class SocialWireAppModel {
     var sidebarSubscribedFeedExpanded = false
     var sidebarFollowingFeedExpanded = false
     var sidebarFoldersSectionExpanded = false
-    var sidebarPublicationsSectionExpanded = false
+    var sidebarSubscribedPublicationsSectionExpanded = false
+    var sidebarFollowingPublicationsSectionExpanded = false
     var sidebarExpandedFolderRkeys: Set<String> = []
     var viewerProfile: ActorProfileResponse?
     var readerFilter: ReaderFilter = .all
@@ -868,7 +869,8 @@ final class SocialWireAppModel {
         sidebarSubscribedFeedExpanded = false
         sidebarFollowingFeedExpanded = false
         sidebarFoldersSectionExpanded = false
-        sidebarPublicationsSectionExpanded = false
+        sidebarSubscribedPublicationsSectionExpanded = false
+        sidebarFollowingPublicationsSectionExpanded = false
         sidebarExpandedFolderRkeys = []
         sidebarProjection.reset()
         sidebarUnread.reset()
@@ -899,7 +901,8 @@ final class SocialWireAppModel {
         sidebarSubscribedFeedExpanded = snapshot.subscribedFeedExpanded
         sidebarFollowingFeedExpanded = snapshot.followingFeedExpanded
         sidebarFoldersSectionExpanded = snapshot.foldersSectionExpanded
-        sidebarPublicationsSectionExpanded = snapshot.publicationsSectionExpanded
+        sidebarSubscribedPublicationsSectionExpanded = snapshot.subscribedPublicationsSectionExpanded
+        sidebarFollowingPublicationsSectionExpanded = snapshot.followingPublicationsSectionExpanded
         sidebarExpandedFolderRkeys = snapshot.expandedFolderRkeys
     }
 
@@ -913,7 +916,8 @@ final class SocialWireAppModel {
                 subscribedFeedExpanded: sidebarSubscribedFeedExpanded,
                 followingFeedExpanded: sidebarFollowingFeedExpanded,
                 foldersSectionExpanded: sidebarFoldersSectionExpanded,
-                publicationsSectionExpanded: sidebarPublicationsSectionExpanded,
+                subscribedPublicationsSectionExpanded: sidebarSubscribedPublicationsSectionExpanded,
+                followingPublicationsSectionExpanded: sidebarFollowingPublicationsSectionExpanded,
                 expandedFolderRkeys: sidebarExpandedFolderRkeys
             )
         )

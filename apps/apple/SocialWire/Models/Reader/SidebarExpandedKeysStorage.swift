@@ -4,7 +4,8 @@ struct SidebarExpandedSnapshot: Equatable {
     var subscribedFeedExpanded: Bool
     var followingFeedExpanded: Bool
     var foldersSectionExpanded: Bool
-    var publicationsSectionExpanded: Bool
+    var subscribedPublicationsSectionExpanded: Bool
+    var followingPublicationsSectionExpanded: Bool
     var expandedFolderRkeys: Set<String>
 
     static func `default`() -> Self {
@@ -12,7 +13,8 @@ struct SidebarExpandedSnapshot: Equatable {
             subscribedFeedExpanded: false,
             followingFeedExpanded: false,
             foldersSectionExpanded: false,
-            publicationsSectionExpanded: false,
+            subscribedPublicationsSectionExpanded: false,
+            followingPublicationsSectionExpanded: false,
             expandedFolderRkeys: []
         )
     }
@@ -23,7 +25,9 @@ enum SidebarExpandedKeysStorage {
     static let subscribedFeedKey = "__sidebar_feed:subscribed"
     static let followingFeedKey = "__sidebar_feed:following"
     static let foldersSectionKey = "__sidebar_sec:folders"
-    static let publicationsSectionKey = "__sidebar_sec:publications"
+    static let subscribedPublicationsSectionKey = "__sidebar_sec:subscribed-publications"
+    static let followingPublicationsSectionKey = "__sidebar_sec:following-publications"
+    private static let legacyPublicationsSectionKey = "__sidebar_sec:publications"
     private static let folderExpandPrefix = "folder:"
 
     static func folderExpandKey(rkey: String) -> String {
@@ -47,11 +51,15 @@ enum SidebarExpandedKeysStorage {
             }
         }
 
+        let legacyPublicationsExpanded = keys.contains(legacyPublicationsSectionKey)
         return SidebarExpandedSnapshot(
             subscribedFeedExpanded: keys.contains(subscribedFeedKey),
             followingFeedExpanded: keys.contains(followingFeedKey),
             foldersSectionExpanded: keys.contains(foldersSectionKey),
-            publicationsSectionExpanded: keys.contains(publicationsSectionKey),
+            subscribedPublicationsSectionExpanded:
+                keys.contains(subscribedPublicationsSectionKey) || legacyPublicationsExpanded,
+            followingPublicationsSectionExpanded:
+                keys.contains(followingPublicationsSectionKey) || legacyPublicationsExpanded,
             expandedFolderRkeys: expandedFolderRkeys
         )
     }
@@ -69,8 +77,11 @@ enum SidebarExpandedKeysStorage {
         if snapshot.foldersSectionExpanded {
             keys.append(foldersSectionKey)
         }
-        if snapshot.publicationsSectionExpanded {
-            keys.append(publicationsSectionKey)
+        if snapshot.subscribedPublicationsSectionExpanded {
+            keys.append(subscribedPublicationsSectionKey)
+        }
+        if snapshot.followingPublicationsSectionExpanded {
+            keys.append(followingPublicationsSectionKey)
         }
         keys.append(contentsOf: snapshot.expandedFolderRkeys.map(folderExpandKey(rkey:)).sorted())
 
