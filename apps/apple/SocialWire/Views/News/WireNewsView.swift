@@ -9,14 +9,6 @@ struct WireNewsView: View {
 
     var body: some View {
         editorialCanvas
-        .task {
-            if appModel.readerListSource != .wire {
-                appModel.selectReaderListSource(.wire)
-            }
-            if appModel.wireEdition == nil || appModel.entries.isEmpty {
-                await appModel.loadWireEdition()
-            }
-        }
     }
 
     private var editorialCanvas: some View {

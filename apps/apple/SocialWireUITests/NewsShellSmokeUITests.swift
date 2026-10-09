@@ -17,17 +17,19 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.buttons["Add Publication"].tap()
         XCTAssertTrue(app.navigationBars["Add Publication"].waitForExistence(timeout: 3))
         app.buttons["Cancel"].firstMatch.tap()
+        app.tabBars.buttons["Read Later"].tap()
         let archive = tabButton("Archive", in: app)
         XCTAssertTrue(archive.waitForExistence(timeout: 3))
         archive.tap()
-        XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
+        XCTAssertTrue(archive.isSelected)
         XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
 
-        let readLater = tabButton("Read Later", in: app)
+        let readLater = app.navigationBars.buttons["Read Later"]
         XCTAssertTrue(readLater.waitForExistence(timeout: 3))
         readLater.tap()
-        XCTAssertTrue(app.navigationBars["Read Later"].waitForExistence(timeout: 3))
+        XCTAssertTrue(readLater.isSelected)
 
+        app.tabBars.buttons["Feeds"].tap()
         subscribed.tap()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
         XCTAssertTrue(add.waitForExistence(timeout: 3))
@@ -42,11 +44,20 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(following.waitForExistence(timeout: 3))
         app.buttons["fixture-hide-following"].tap()
         XCTAssertTrue(following.waitForNonExistence(timeout: 3))
-        tabButton("Read Later", in: app).tap()
+        app.tabBars.buttons["Read Later"].tap()
         XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
         app.buttons["fixture-select-publication"].tap()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars["Fixture Publication"].waitForExistence(timeout: 5))
+        XCTAssertTrue(tabButton("Subscribed", in: app).isSelected)
+        XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
+        let markRead = app.buttons["feed-mark-all-read"]
+        XCTAssertTrue(markRead.waitForExistence(timeout: 3))
+        markRead.tap()
+        let confirmation = app.alerts["Mark All As Read?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        // The fixture selects a publication without loading the sidebar's title index.
+        XCTAssertTrue(confirmation.staticTexts["Mark every unread story in This Publication as read?"].exists)
+        confirmation.buttons["Cancel"].tap()
     }
 
     private func tabButton(_ label: String, in app: XCUIApplication) -> XCUIElement {

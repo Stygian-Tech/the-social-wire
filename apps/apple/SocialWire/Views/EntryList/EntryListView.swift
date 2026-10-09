@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 struct EntryListView: View {
     @Environment(SocialWireAppModel.self) private var appModel
@@ -228,15 +231,15 @@ private struct EntryListScrollContent: View {
 
     var body: some View {
         ArticleListLayout(notice: notice, spacing: sectionSpacing) {
-            #if os(macOS)
-            ForEach(ArticleFeedRhythm.sections(for: entries)) { section in
-                rhythmSection(section)
+            if usesEditorialLayout {
+                ForEach(ArticleFeedRhythm.sections(for: entries)) { section in
+                    rhythmSection(section)
+                }
+            } else {
+                ForEach(entries) { entry in
+                    card(for: entry, style: .row)
+                }
             }
-            #else
-            ForEach(entries) { entry in
-                card(for: entry, style: .row)
-            }
-            #endif
 
             if isLoadingMore {
                 ProgressView()
@@ -253,7 +256,16 @@ private struct EntryListScrollContent: View {
         #endif
     }
 
-    #if os(macOS)
+    private var usesEditorialLayout: Bool {
+        #if os(macOS)
+        true
+        #elseif os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        false
+        #endif
+    }
+
     @ViewBuilder
     private func rhythmSection(_ section: ArticleFeedSection<EntryListItem>) -> some View {
         switch section.style {
@@ -276,8 +288,6 @@ private struct EntryListScrollContent: View {
             }
         }
     }
-    #endif
-
     private func card(for entry: EntryListItem, style: ArticleFeedCardStyle) -> some View {
         EntryListCard(
             entry: entry,

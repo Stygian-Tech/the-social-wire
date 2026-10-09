@@ -9,7 +9,7 @@ struct FollowingPublicationSidebarTree: View {
         @Bindable var model = appModel
         let tree = appModel.sidebarTreeViewModel
 
-        DisclosureGroup(isExpanded: $model.sidebarPublicationsSectionExpanded) {
+        DisclosureGroup(isExpanded: $model.sidebarFollowingPublicationsSectionExpanded) {
             if appModel.followingTabPublications.isEmpty,
                tree.loadingFlags.sidebarFetching,
                !tree.loadingFlags.hasSidebarSnapshot
@@ -26,7 +26,7 @@ struct FollowingPublicationSidebarTree: View {
             SidebarSectionLabel(title: "Publications", unreadCount: 0)
         }
         .readerSidebarListRow()
-        .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in
+        .onChange(of: model.sidebarFollowingPublicationsSectionExpanded) { _, _ in
             appModel.noteSidebarExpandedPresentationChanged()
         }
     }

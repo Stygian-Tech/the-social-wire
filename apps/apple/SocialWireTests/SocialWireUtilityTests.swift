@@ -215,7 +215,8 @@ struct SocialWireUtilityTests {
         snapshot.subscribedFeedExpanded = true
         snapshot.followingFeedExpanded = false
         snapshot.foldersSectionExpanded = true
-        snapshot.publicationsSectionExpanded = true
+        snapshot.subscribedPublicationsSectionExpanded = true
+        snapshot.followingPublicationsSectionExpanded = false
         snapshot.expandedFolderRkeys.insert("folder-a")
         SidebarExpandedKeysStorage.save(viewerDid: did, snapshot: snapshot)
 
@@ -223,7 +224,8 @@ struct SocialWireUtilityTests {
         #expect(loaded.subscribedFeedExpanded)
         #expect(!loaded.followingFeedExpanded)
         #expect(loaded.foldersSectionExpanded)
-        #expect(loaded.publicationsSectionExpanded)
+        #expect(loaded.subscribedPublicationsSectionExpanded)
+        #expect(!loaded.followingPublicationsSectionExpanded)
         #expect(loaded.expandedFolderRkeys == ["folder-a"])
         #expect(SidebarExpandedKeysStorage.load(viewerDid: "did:plc:another-viewer") == .default())
     }

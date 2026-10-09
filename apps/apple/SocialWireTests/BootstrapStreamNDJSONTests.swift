@@ -84,12 +84,13 @@ struct BootstrapStreamNDJSONTests {
         #expect(selected == "pub-sub")
     }
     @Test
-    func acceptsSupplementalListsWithoutInterruptingBootstrap() {
+    func decodesStandardReaderListsWithoutInterruptingBootstrap() {
         let events = BootstrapStreamNDJSON.parseLines("""
-        {"kind":"lists","lists":{"lists":[],"refreshedAt":"2026-10-02T12:00:00Z","complete":true}}
+        {"kind":"lists","lists":{"lists":[{"uri":"at://did:plc:alice/app.standard-reader.list/news","name":"News","creatorDid":"did:plc:alice","publications":[],"users":[],"owned":true,"saved":false}],"refreshedAt":"2026-10-02T12:00:00Z","complete":true}}
         {"kind":"done","done":{"refreshedAt":"2026-10-02T12:00:00Z","source":"live_projection"}}
         """)
         #expect(events.map(\.kind) == [.lists, .done])
+        #expect(events.first?.lists?.lists.first?.name == "News")
     }
 
 }

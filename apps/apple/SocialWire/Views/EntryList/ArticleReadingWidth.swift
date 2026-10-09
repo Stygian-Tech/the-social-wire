@@ -1,12 +1,11 @@
 import CoreGraphics
 
-/// Maximum content measures for the article surfaces. A Mac window is wide enough
-/// for a multi-column editorial rhythm, so both surfaces share one wider measure
-/// there while keeping their established widths on iOS.
+/// Maximum content measures for article surfaces. Wider iPad and Mac layouts use
+/// an editorial rhythm while iPhone keeps a comfortable single-column measure.
 enum ArticleReadingWidth {
     /// Feed lists: Library, Subscribed, Following.
     static var feed: CGFloat {
-        #if os(macOS)
+        #if os(macOS) || os(iOS)
         1_100
         #else
         700

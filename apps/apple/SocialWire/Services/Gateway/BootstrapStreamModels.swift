@@ -1,5 +1,25 @@
 import Foundation
 
+struct StandardReaderList: Codable, Identifiable, Hashable, Sendable {
+    let uri: String
+    let name: String
+    let description: String?
+    let creatorDid: String
+    let publications: [String]
+    let users: [String]
+    let owned: Bool
+    let saved: Bool
+
+    var id: String { uri }
+}
+
+struct StandardReaderListsPage: Codable, Sendable {
+    let lists: [StandardReaderList]
+    let refreshedAt: String
+    let creatorDid: String?
+    let complete: Bool
+}
+
 enum BootstrapStreamEventKind: String, Codable, Sendable {
     case sidebarPriority
     case sidebarSection
@@ -21,6 +41,7 @@ struct BootstrapStreamEventDTO: Codable, Sendable {
     let selectedPublication: BootstrapSelectedPublicationPayloadDTO?
     let entriesPage: BootstrapEntriesPagePayloadDTO?
     let sidebarFolders: BootstrapSidebarFoldersPayloadDTO?
+    let lists: StandardReaderListsPage?
     let warning: BootstrapMessagePayloadDTO?
     let error: BootstrapMessagePayloadDTO?
     let done: BootstrapDonePayloadDTO?

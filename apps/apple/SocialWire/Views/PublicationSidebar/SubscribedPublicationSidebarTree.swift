@@ -38,7 +38,7 @@ struct SubscribedPublicationSidebarTree: View {
             appModel.noteSidebarExpandedPresentationChanged()
         }
 
-        DisclosureGroup(isExpanded: $model.sidebarPublicationsSectionExpanded) {
+        DisclosureGroup(isExpanded: $model.sidebarSubscribedPublicationsSectionExpanded) {
             if appModel.subscribedUnfolderedPublications.isEmpty,
                tree.loadingFlags.sidebarFetching,
                !tree.loadingFlags.hasSidebarSnapshot
@@ -55,7 +55,7 @@ struct SubscribedPublicationSidebarTree: View {
             SidebarSectionLabel(title: "Publications", unreadCount: 0)
         }
         .readerSidebarListRow()
-        .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in
+        .onChange(of: model.sidebarSubscribedPublicationsSectionExpanded) { _, _ in
             appModel.noteSidebarExpandedPresentationChanged()
         }
         .confirmationDialog(

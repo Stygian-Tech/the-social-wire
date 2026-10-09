@@ -756,7 +756,10 @@ final class SocialWireGatewayClient {
     func consumeBootstrapStream(
         onEvent: @escaping @Sendable (BootstrapStreamEventDTO) -> Void
     ) async throws {
-        guard let url = URL(string: "/v1/appview/bootstrap-stream", relativeTo: baseURL)?.absoluteURL else {
+        guard let url = URL(
+            string: "/v1/appview/bootstrap-stream?includeLists=true",
+            relativeTo: baseURL
+        )?.absoluteURL else {
             throw SocialWireError.invalidURL
         }
 
