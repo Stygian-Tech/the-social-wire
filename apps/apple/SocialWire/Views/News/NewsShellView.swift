@@ -166,19 +166,8 @@ struct NewsShellView: View {
 
     @ViewBuilder
     private var feedTabs: some View {
-        #if os(iOS)
-        if #available(iOS 27.0, *) {
-            feedTabsContent
-                .tabViewStyle(.sidebarAdaptable)
-                .defaultTabBarPlacement(horizontalSizeClass == .regular ? .sidebar : .tabBar)
-        } else {
-            feedTabsContent
-                .tabViewStyle(.sidebarAdaptable)
-        }
-        #else
         feedTabsContent
             .tabViewStyle(.sidebarAdaptable)
-        #endif
     }
 
     private var readLaterNavigationItems: [NewsNavigationItem] {
