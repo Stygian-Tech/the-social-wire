@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	jetstream "github.com/bluesky-social/jetstream"
+	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 )
 
 func TestOfficialSDKJSONMatchesSwiftGoldenFixture(t *testing.T) {
@@ -39,12 +40,24 @@ func TestOfficialSDKJSONMatchesSwiftGoldenFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixturePath := filepath.Join("..", "..", "..", "..", "packages", "swift", "ThinAppViewCore", "Tests", "ThinAppViewCoreTests", "Fixtures", "jetstream-v2-go-sdk-v0.2.0-events.json")
+	fixturePath := filepath.Join("testdata", "jetstream-v2-go-sdk-v0.2.0-events.json")
 	fixture, err := os.ReadFile(fixturePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(encoded, bytes.TrimSpace(fixture)) {
 		t.Fatalf("official SDK JSON drifted from shared fixture\nencoded: %s\nfixture: %s", encoded, fixture)
+	}
+	// Both background implementations must consume the SDK's provider cursor,
+	// rather than the nested relay sequence, from this same canonical payload.
+	for _, event := range events {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		projection, err := thinappviewcore.ParseProjectionEvent(payload, int64(event.Seq), string(event.Kind), event.DID)
+		if err != nil || projection.Sequence != int64(event.Seq) {
+			t.Fatalf("Go projection contract for %s: %+v, %v", event.Kind, projection, err)
+		}
 	}
 }

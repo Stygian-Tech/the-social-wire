@@ -374,3 +374,17 @@ html[data-bold-text="true"] {
     margin-bottom: 0;
   }
 }
+
+/* Playback-only fallback when a browser cannot expose captured audio samples. */
+@keyframes podcast-waveform-height {
+  0%, 100% { height: 4px; }
+  25% { height: 8px; }
+  50% { height: 5px; }
+  75% { height: 10px; }
+}
+.podcast-waveform-indicator {
+  animation: podcast-waveform-height 850ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .podcast-waveform-indicator { animation: none; }
+}

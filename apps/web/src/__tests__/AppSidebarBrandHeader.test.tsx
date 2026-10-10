@@ -1,16 +1,26 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
-
-mock.module("next/image", () => ({
-  default: ({ alt, className }: { alt: string; className?: string }) => (
-    // eslint-disable-next-line @next/next/no-img-element -- test double for next/image.
-    <img alt={alt} className={className} />
-  ),
-}));
-
-afterEach(cleanup);
+import * as NextImage from "next/image";
+import type { ImageProps } from "next/image";
 
 describe("AppSidebarBrandHeader", () => {
+  let restoreImageSpy: (() => void) | undefined;
+
+  beforeEach(() => {
+    const imageFixture = (({ alt, className }: ImageProps) => (
+      // eslint-disable-next-line @next/next/no-img-element -- scoped test double for next/image.
+      <img alt={alt} className={className} />
+    )) as typeof NextImage.default;
+    const imageSpy = spyOn(NextImage, "default").mockImplementation(imageFixture);
+    restoreImageSpy = () => imageSpy.mockRestore();
+  });
+
+  afterEach(() => {
+    cleanup();
+    restoreImageSpy?.();
+    restoreImageSpy = undefined;
+  });
+
   it("places the logo and unclipped title on one row without status badges or actions", async () => {
     const { AppSidebarBrandHeader } = await import(
       "@/components/AppSidebar/AppSidebarBrandHeader"

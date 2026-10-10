@@ -86,11 +86,7 @@ describe("OpenAPI route drift", () => {
     });
 
     expect(directlyRegistered.length).toBeGreaterThan(0);
-    const podcastContractsPresent = [...documented].some(path => path.startsWith("/v1/podcasts/"));
     for (const path of directlyRegistered) {
-      // The Go module is shared across branches; its opt-in podcast routes are
-      // not part of a branch whose canonical contracts omit the feature.
-      if (path.startsWith("/v1/podcasts/") && !podcastContractsPresent) continue;
       expect(documented.has(path), path).toBe(true);
     }
   });

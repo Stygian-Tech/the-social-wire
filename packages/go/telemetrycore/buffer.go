@@ -172,7 +172,13 @@ func (t *TelemetryBuffer) Flush(ctx context.Context) (int, error) {
 	}
 	count := min(t.batch(), len(t.queue))
 	queued := append([]telemetryQueued(nil), t.queue[:count]...)
-	t.queue = t.queue[count:]
+	// Consumed slots otherwise keep exported maps and payloads alive behind the slice.
+	clear(t.queue[:count])
+	if count == len(t.queue) {
+		t.queue = nil
+	} else {
+		t.queue = t.queue[count:]
+	}
 	t.inFlight = count
 	t.mu.Unlock()
 	batch := make([]MetricSample, count)

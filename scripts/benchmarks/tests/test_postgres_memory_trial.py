@@ -42,7 +42,7 @@ def probe(t=0, epoch=1, phase="mixed", memory_limit_bytes=16_000_000_000):
 
 class MemoryTrialTests(unittest.TestCase):
     def test_exact_decimal_byte_caps_are_required_without_unit_coercion(self):
-        for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
+        for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000, 6_000_000_000, 4_000_000_000):
             with self.subTest(cap=cap):
                 config = configuration(cap)
                 m.validate_config(config)
@@ -75,7 +75,7 @@ class MemoryTrialTests(unittest.TestCase):
             def fixture_path(value):
                 return boot if value == "/proc/sys/kernel/random/boot_id" else Path(value)
             with patch.object(m, "Path", side_effect=fixture_path), patch.object(m.os, "sysconf", return_value=4096) as page_size:
-                for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
+                for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000, 6_000_000_000, 4_000_000_000):
                     config["memory_limit_bytes"] = cap
                     observed = (cap // 4096) * 4096
                     (cgroup / "memory.max").write_text(str(observed) + "\n")
@@ -111,8 +111,9 @@ class MemoryTrialTests(unittest.TestCase):
         for cap in m.LEGACY_EXACT_CAPS:
             sample = probe(memory_limit_bytes=cap); sample.pop("page_size_bytes"); sample.pop("memory_limit_bytes")
             m.Round(configuration(cap)).accept(sample)
-        sample = probe(memory_limit_bytes=13_000_000_000); sample.pop("page_size_bytes")
-        with self.assertRaises(m.Error): m.Round(configuration(13_000_000_000)).accept(sample)
+        for cap in (13_000_000_000, 6_000_000_000, 4_000_000_000):
+            sample = probe(memory_limit_bytes=cap); sample.pop("page_size_bytes")
+            with self.assertRaises(m.Error): m.Round(configuration(cap)).accept(sample)
         state = m.Round(configuration()); state.accept(probe())
         changed = probe(t=30); changed.pop("page_size_bytes")
         with self.assertRaises(m.Error): state.accept(changed)

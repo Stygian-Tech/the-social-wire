@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ArticleListCard<Label: View>: View {
+    @Environment(\.suppressesNewsContentActions) private var suppressesNewsContentActions
+
     let action: () -> Void
     private let label: Label
 
@@ -10,12 +12,17 @@ struct ArticleListCard<Label: View>: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        Button(action: performAction) {
             label
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .background(.thinMaterial, in: .rect(cornerRadius: 16))
                 .clipShape(.rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+    }
+
+    private func performAction() {
+        guard !suppressesNewsContentActions else { return }
+        action()
     }
 }

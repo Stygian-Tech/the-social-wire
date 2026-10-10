@@ -22,6 +22,15 @@ enum SocialWireAPIEnvironment {
         return url
     }
 
+    /// Public sharing pages must target the same deployment as the API.
+    static var webBaseURLString: String {
+        #if DEBUG || SOCIALWIRE_TESTING_API
+        "https://testing.thesocialwire.app"
+        #else
+        "https://thesocialwire.app"
+        #endif
+    }
+
     /// Discoverable OAuth **`client_id`** (**`GET .../ios-client-metadata.json`**).
     static var iosClientMetadataURL: URL {
         baseURL.appendingPathComponent("ios-client-metadata.json")

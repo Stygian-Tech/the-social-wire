@@ -1,0 +1,632 @@
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { act, useEffect } from "react";
+import type { OAuthSession } from "@atproto/oauth-client-browser";
+import * as auth from "@/hooks/useAuth";
+import * as gateway from "@/lib/socialWireGatewayClient";
+import * as offline from "@/lib/podcasts/offline";
+import * as client from "@/lib/podcasts/client";
+import { notifyPodcastSubscriptionsChanged } from "@/lib/podcasts/subscriptionsChanged";
+import { PodcastLibrarySidebar } from "@/components/Podcasts/PodcastLibrarySidebar";
+import { PodcastRoutePlayer } from "@/components/Podcasts/PodcastRoutePlayer";
+import { PodcastPlayerView } from "@/components/Podcasts/PodcastPlayerView";
+import {
+  initialPodcastState,
+  type PodcastEpisode,
+} from "@/lib/podcasts/client";
+import {
+  PodcastPlayerProvider,
+  usePodcastPlayer,
+  type PlayerContext,
+} from "@/components/Podcasts/PodcastPlayerProvider";
+const episode: PodcastEpisode = {
+  id: "episode",
+  showId: "show",
+  title: "An Episode",
+  audioUrl: "https://publisher.test/audio.mp3",
+  publishedAt: "2026-10-04T12:00:00Z",
+  durationSeconds: 120,
+  transcripts: [],
+};
+function Controls({ route, item = episode }: { route: string; item?: PodcastEpisode }) {
+  const player = usePodcastPlayer();
+  return (
+    <div>
+      <h1>{route}</h1>
+      {route === "Podcasts" ? <PodcastRoutePlayer /> : null}
+      <button onClick={() => void player.play(item)}>Play Fixture</button>
+      {player.error ? <p role="alert">{player.error}</p> : null}
+      <span data-testid="progress">
+        {player.state.progress.episode?.positionSeconds ?? 0}
+      </span>
+    </div>
+  );
+}
+const restores: (() => void)[] = [];
+afterEach(async () => {
+  cleanup();
+  // Base UI queues focus work; let it finish before restoring the DOM globals.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  for (const restore of restores.splice(0).reverse()) restore();
+  window.localStorage.clear();
+});
+function environment() {
+  for (const [name, value] of Object.entries({ getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+    restores.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
+  }
+  for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "DOMRect"] as const) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value: window[name] });
+    restores.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
+  }
+  const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  restores.push(() => { if (online) Object.defineProperty(navigator, "onLine", online); else Reflect.deleteProperty(navigator, "onLine"); });
+  const actEnvironment = Object.getOwnPropertyDescriptor(globalThis, "IS_REACT_ACT_ENVIRONMENT");
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
+  restores.push(() => { if (actEnvironment) Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", actEnvironment); else Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT"); });
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: window.localStorage,
+  });
+  restores.push(() => {
+    if (storage) Object.defineProperty(globalThis, "localStorage", storage);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  });
+  const flag = process.env.NEXT_PUBLIC_PODCASTS_ENABLED;
+  process.env.NEXT_PUBLIC_PODCASTS_ENABLED = "true";
+  restores.push(() => {
+    if (flag === undefined) delete process.env.NEXT_PUBLIC_PODCASTS_ENABLED;
+    else process.env.NEXT_PUBLIC_PODCASTS_ENABLED = flag;
+  });
+  let viewer: string | null = "did:plc:viewer-a";
+  const oauth = { get did() { return viewer; } } as unknown as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const hook = spyOn(auth, "useAuth").mockImplementation(
+    () =>
+      ({
+        session: viewer ? { did: viewer } : null,
+        getOAuthSession,
+      }) as ReturnType<typeof auth.useAuth>,
+  );
+  restores.push(() => hook.mockRestore());
+  const element = document.createElement("audio");
+  let paused = true;
+  Object.defineProperties(element, {
+    duration: { configurable: true, get: () => 120 },
+    paused: { configurable: true, get: () => paused },
+  });
+  element.load = () => {};
+  element.play = async () => {
+    paused = false;
+    element.onloadedmetadata?.(new window.Event("loadedmetadata"));
+    element.dispatchEvent(new window.Event("play"));
+  };
+  element.pause = () => {
+    if (!paused) {
+      paused = true;
+      element.dispatchEvent(new window.Event("pause"));
+    }
+  };
+  const oldAudio = Object.getOwnPropertyDescriptor(globalThis, "Audio");
+  Object.defineProperty(globalThis, "Audio", {
+    configurable: true,
+    value: class {
+      constructor() {
+        return element;
+      }
+    },
+  });
+  restores.push(() => {
+    if (oldAudio) Object.defineProperty(globalThis, "Audio", oldAudio);
+    else Reflect.deleteProperty(globalThis, "Audio");
+  });
+  const get = spyOn(offline, "getPodcastDownload").mockResolvedValue(undefined);
+  restores.push(() => get.mockRestore());
+  const shell = spyOn(
+    offline,
+    "registerPodcastOfflineShell",
+  ).mockResolvedValue();
+  restores.push(() => shell.mockRestore());
+  const requests: { path: string; body?: unknown }[] = [];
+  const fetch = spyOn(gateway, "gatewayFetch").mockImplementation(
+    async (_oauth, path, init) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      requests.push({ path, body });
+      return Response.json({
+        revision: 1,
+        state: body?.state ?? initialPodcastState(),
+      });
+    },
+  );
+  restores.push(() => fetch.mockRestore());
+  return {
+    element,
+    requests,
+    getDownload: get,
+    setViewer: (did: string | null) => {
+      viewer = did;
+    },
+  };
+}
+describe("Persistent podcast player", () => {
+  it("starts a different episode at an explicit time instead of its saved resume position", async () => {
+    const env = environment();
+    const other = { ...episode, id: "other", audioUrl: "https://publisher.test/other.mp3" };
+    window.localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({ episode, state: { ...initialPodcastState(), progress: { other: { positionSeconds: 90, completed: false, updatedAt: "2026-10-06" } } }, pending: {} }));
+    let player: PlayerContext;
+    function Capture() { const context = usePodcastPlayer(); useEffect(() => { player = context; }, [context]); return <span>{context.episode?.title}</span>; }
+    render(<PodcastPlayerProvider><Capture /></PodcastPlayerProvider>);
+    await act(async () => { await player!.changeState({ progress: { other: { positionSeconds: 90, completed: false, updatedAt: "2026-10-06" } } }); });
+    expect(player!.state.progress.other?.positionSeconds).toBe(90);
+    await act(async () => { await player!.play(other, 10); });
+    expect(env.element.src).toBe(other.audioUrl);
+    expect(env.element.currentTime).toBe(10);
+    await act(async () => { await player!.play(other, 0); });
+    expect(env.element.currentTime).toBe(0);
+  });
+
+  it("ignores stale metadata callbacks and honors seeks made while selected media loads", async () => {
+    const env = environment();
+    env.element.play = async () => {};
+    let player: PlayerContext;
+    function Capture() { const context = usePodcastPlayer(); useEffect(() => { player = context; }, [context]); return null; }
+    render(<PodcastPlayerProvider><Capture /></PodcastPlayerProvider>);
+    await act(async () => { await player!.play(episode, 15); });
+    const staleMetadata = env.element.onloadedmetadata!;
+    const other = { ...episode, id: "other", audioUrl: "https://publisher.test/other.mp3" };
+    await act(async () => { await player!.play(other, 20); player!.seek(30); });
+    await act(async () => staleMetadata.call(env.element, new window.Event("loadedmetadata")));
+    expect(env.element.currentTime).toBe(30);
+    await act(async () => env.element.onloadedmetadata?.(new window.Event("loadedmetadata")));
+    expect(env.element.currentTime).toBe(30);
+    expect(env.element.src).toBe(other.audioUrl);
+  });
+
+  it("loads selected chapter artwork without restarting audio", async () => {
+    const env = environment();
+    const chaptered = { ...episode, chapters: [{ startSeconds: 0, title: "Intro" }] };
+    const artworkUrl = "/v1/podcasts/image?episodeId=episode&kind=chapter&index=0";
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("episodes?")
+      ? { episodes: [{ ...chaptered, chapters: [{ ...chaptered.chapters[0], artworkUrl }] }] }
+      : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    const play = spyOn(env.element, "play");
+    restores.push(() => play.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" item={chaptered} /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await waitFor(() => expect(request.mock.calls.some(call => call[1] === "episodes?episodeId=episode")).toBe(true));
+    await screen.findByRole("img", { name: "Chapter Artwork: Intro" });
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(env.element.src).toBe(episode.audioUrl);
+    expect(env.element.paused).toBe(false);
+  });
+
+  it("does not report intentional cancellation of a pending play request", async () => {
+    const env = environment();
+    let rejectPlay: (reason: Error) => void = () => {};
+    const delayedPlay = spyOn(env.element, "play").mockImplementation(() => new Promise<void>((_resolve, reject) => { rejectPlay = reject; }));
+    restores.push(() => delayedPlay.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await waitFor(() => expect(delayedPlay).toHaveBeenCalled());
+    await act(async () => {
+      env.element.pause();
+      rejectPlay(new DOMException("The play() request was interrupted by a call to pause().", "AbortError"));
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("ignores canceled resume requests but still reports actual playback failures", async () => {
+    const env = environment();
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await act(async () => env.element.pause());
+    const resume = spyOn(env.element, "play").mockRejectedValueOnce(new DOMException("Interrupted", "AbortError"));
+    restores.push(() => resume.mockRestore());
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Play$/ })));
+    expect(screen.queryByRole("alert")).toBeNull();
+    resume.mockRejectedValueOnce(new DOMException("Playback is not allowed", "NotAllowedError"));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Play$/ })));
+    expect(screen.getAllByRole("alert").some(el => el.textContent?.includes("Playback is not allowed"))).toBe(true);
+  });
+
+  it("honors the preview start when a restored episode loads instead of resuming beyond the clip end", async () => {
+    const env = environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("transcript?") ? { transcripts: [] } : path === "clips" ? { clips: [] } : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    window.localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({
+      episode, state: { ...initialPodcastState(), progress: { episode: { positionSeconds: 80, durationSeconds: 120, completed: false, updatedAt: "2026-10-06" } } }, pending: {},
+    }));
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await screen.findByRole("button", { name: /^Clip$/ });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Clip$/ })));
+    await act(async () => fireEvent.change(screen.getByLabelText("Start (Seconds)"), { target: { value: "10" } }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Preview Clip" })));
+    await waitFor(() => expect(env.element.currentTime).toBe(10));
+    expect(env.element.paused).toBe(false);
+    await act(async () => { env.element.currentTime = 31; env.element.dispatchEvent(new window.Event("timeupdate")); });
+    await waitFor(() => expect(env.element.paused).toBe(true));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("ignores no-source audio errors on initial mount and account reset but reports real playback errors", async () => {
+    const env = environment();
+    const view = render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => env.element.dispatchEvent(new window.Event("error")));
+    expect(env.element.getAttribute("src")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    await act(async () => env.element.dispatchEvent(new window.Event("error")));
+    expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("Audio could not load"))).toBe(true);
+    env.setViewer("did:plc:viewer-b");
+    view.rerender(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => env.element.dispatchEvent(new window.Event("error")));
+    expect(env.element.getAttribute("src")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("seeks chapter markers and previews artwork without interrupting audio", async () => {
+    const env = environment();
+    const chaptered = { ...episode, artworkUrl: "https://publisher.test/episode.jpg", showArtworkUrl: "https://publisher.test/show.jpg", chapters: [{ startSeconds: 0, title: "Introduction" }, { startSeconds: 60, title: "Main Topic", artworkUrl: "https://publisher.test/chapter.jpg" }] };
+    render(<PodcastPlayerProvider><Controls route="Podcasts" item={chaptered} /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    const marker = await screen.findByRole("button", { name: "Seek to Chapter: Main Topic, 1:00" });
+    fireEvent.focus(marker);
+    expect(screen.getByRole("tooltip").textContent).toContain("Main Topic");
+    fireEvent.click(marker);
+    await waitFor(() => expect(env.element.currentTime).toBe(60));
+    expect(screen.getAllByRole("img", { name: "Chapter Artwork: Main Topic" }).length).toBeGreaterThan(0);
+    expect(env.element.paused).toBe(false);
+    expect(screen.getByRole("slider", { name: "Seek Podcast" })).toBeDefined();
+  });
+  it("renders route-owned player in normal flow without global reservations or floating controls", () => {
+    environment();
+    const empty: PlayerContext = { episode: null, playing: false, position: 0, duration: 0, state: initialPodcastState(), error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {} };
+    const view = render(<PodcastPlayerView player={empty} />);
+    expect(screen.queryByRole("complementary", { name: "Podcast Player" })).toBeNull();
+    view.rerender(<PodcastPlayerView player={{ ...empty, episode }} />);
+    const panel = screen.getByRole("complementary", { name: "Podcast Player" });
+    expect(panel.classList.contains("relative")).toBe(true);
+    expect(panel.classList.contains("shrink-0")).toBe(true);
+    expect(panel.classList.contains("fixed")).toBe(false);
+    expect(screen.queryByRole("button", { name: "Minimize Player" })).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
+  });
+  it("opens clip tools from the player and preserves playback on close", async () => {
+    const env = environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
+      if (path.startsWith("transcript?")) return { transcripts: [{ url: "https://publisher.test/transcript", type: "text/plain", cues: [{ startSeconds: 20, text: "A transcript cue" }] }] } as T;
+      if (path === "clips") return { clips: [] } as T;
+      return { revision: 1, state: initialPodcastState() } as T;
+    });
+    restores.push(() => request.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    const trigger = await screen.findByRole("button", { name: "Clip" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(request.mock.calls.some(call => call[1] === "clips" || call[1].startsWith("transcript?"))).toBe(false);
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Clip for Social Media" });
+    expect(dialog.textContent).toContain("Now Playing: An Episode");
+    fireEvent.click(await screen.findByRole("button", { name: /A transcript cue/ }));
+    await waitFor(() => expect(env.element.currentTime).toBe(20));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(env.element.paused).toBe(false);
+    fireEvent.click(trigger);
+    const reopened = await screen.findByRole("dialog");
+    fireEvent.keyDown(reopened, { key: "Escape", code: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+  it("shows private-feed availability without loading clip drafts", async () => {
+    environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("transcript?") ? { transcripts: [] } : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    const player: PlayerContext = { episode: { ...episode, visibility: "private" }, playing: false, position: 0, duration: 120, state: initialPodcastState(), error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {} };
+    render(<PodcastPlayerProvider><PodcastPlayerView player={player} /></PodcastPlayerProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Clip" }));
+    await screen.findByRole("dialog");
+    expect(screen.getByText("Clips Are Unavailable for Private Feeds")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Prepare Exports" })).toBeNull();
+    expect(request.mock.calls.some(call => call[1] === "clips")).toBe(false);
+  });
+  it("closes the clip dialog when the playing episode changes", async () => {
+    environment();
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path.startsWith("transcript?") ? { transcripts: [] } : path === "clips" ? { clips: [] } : { revision: 1, state: initialPodcastState() }) as T);
+    restores.push(() => request.mockRestore());
+    const player: PlayerContext = { episode, playing: false, position: 0, duration: 120, state: initialPodcastState(), error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {} };
+    const view = render(<PodcastPlayerProvider><PodcastPlayerView player={player} /></PodcastPlayerProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Clip" }));
+    await screen.findByRole("dialog");
+    view.rerender(<PodcastPlayerProvider><PodcastPlayerView player={{ ...player, episode: { ...episode, id: "next", title: "Next Episode" } }} /></PodcastPlayerProvider>);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Clip" }));
+    expect((await screen.findByRole("dialog")).textContent).toContain("Now Playing: Next Episode");
+  });
+  it("keeps arbitrary scrubbing available when chapter marks are dense", async () => {
+    const env = environment();
+    const chaptered = { ...episode, chapters: Array.from({ length: 120 }, (_, startSeconds) => ({ startSeconds, title: `Chapter ${startSeconds}` })) };
+    render(<PodcastPlayerProvider><Controls route="Podcasts" item={chaptered} /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    const slider = await screen.findByRole("slider", { name: "Seek Podcast" });
+    fireEvent.change(slider, { target: { value: "37.5" } });
+    await waitFor(() => expect(env.element.currentTime).toBe(37.5));
+    fireEvent.click(screen.getByRole("button", { name: "Seek to Chapter: Chapter 95, 1:35" }));
+    await waitFor(() => expect(env.element.currentTime).toBe(95));
+    fireEvent.change(slider, { target: { value: "40.5" } });
+    await waitFor(() => expect(env.element.currentTime).toBe(40.5));
+  });
+  it("normalizes a legacy offline playback preference before playing", async () => {
+    const env = environment();
+    const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    restores.push(() => { if (online) Object.defineProperty(navigator, "onLine", online); else Reflect.deleteProperty(navigator, "onLine"); });
+    localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({ state: { ...initialPodcastState(), playbackSpeed: 3 }, pending: { playbackSpeed: 3 } }));
+    env.getDownload.mockResolvedValue({ episode, bytes: 3, downloadedAt: "2026-10-05", media: new Blob(["mp3"]) });
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await waitFor(() => expect(env.element.playbackRate).toBe(2));
+    expect(screen.queryByRole("combobox", { name: "Playback Speed" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "Remove Silences" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Playback Defaults" }));
+    await screen.findByRole("dialog", { name: "Playback Defaults" });
+    expect((screen.getByRole("combobox", { name: "Default Speed" }) as HTMLSelectElement).value).toBe("2");
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["0.75×", "1×", "1.25×", "1.5×", "1.75×", "2×"]);
+  });
+  it.each([undefined, "v1"])("does not skip old downloaded silence metadata offline (%s)", async (analysisVersion) => {
+    const env = environment();
+    const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    restores.push(() => { if (online) Object.defineProperty(navigator, "onLine", online); else Reflect.deleteProperty(navigator, "onLine"); });
+    localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({ state: { ...initialPodcastState(), removeSilences: true } }));
+    env.getDownload.mockResolvedValue({ episode, bytes: 3, downloadedAt: "2026-10-05", media: new Blob(["mp3"]), silence: { status: "complete", intervals: [{ start: 5, end: 12 }], analysisVersion } });
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    await act(async () => { env.element.currentTime = 6; env.element.dispatchEvent(new window.Event("timeupdate")); });
+    expect(env.element.currentTime).toBe(6);
+    expect(env.element.paused).toBe(false);
+    expect(env.requests).toHaveLength(0);
+  });
+  it("refreshes legacy cached analysis online and applies only v2 original-time intervals", async () => {
+    const env = environment();
+    localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({ state: { ...initialPodcastState(), removeSilences: true } }));
+    env.getDownload.mockResolvedValue({ episode, bytes: 3, downloadedAt: "2026-10-05", media: new Blob(["mp3"]), silence: { status: "complete", intervals: [{ start: 5, end: 12 }], analysisVersion: "v1" } });
+    const save = spyOn(offline, "savePodcastDownload").mockResolvedValue();
+    restores.push(() => save.mockRestore());
+    const paths: { path: string; method?: string }[] = [];
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string, method?: string, body?: unknown): Promise<T> => {
+      paths.push({ path, method });
+      if (path.startsWith("analysis")) return { status: "complete", analysisVersion: "v2", intervals: [{ start: 10, end: 20 }] } as T;
+      return { revision: 1, state: body ? (body as { state: client.PodcastState }).state : { ...initialPodcastState(), removeSilences: true } } as T;
+    });
+    restores.push(() => request.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    await waitFor(() => expect(paths.some((call) => call.path === "analysis" && call.method === "POST")).toBe(true));
+    await act(async () => { env.element.currentTime = 6; env.element.dispatchEvent(new window.Event("timeupdate")); });
+    expect(env.element.currentTime).toBe(6);
+    await act(async () => { env.element.currentTime = 15; env.element.dispatchEvent(new window.Event("timeupdate")); });
+    expect(env.element.currentTime).toBe(20);
+    expect(save.mock.calls.some((call) => call[0] === "did:plc:viewer-a" && call[1].silence?.analysisVersion === "v2")).toBe(true);
+  });
+  it("loads private audio with authenticated media fetch and disables public analysis", async () => {
+    const env = environment();
+    const fetch = spyOn(gateway, "gatewayFetch").mockImplementation(async (_oauth, path) => {
+      if (path.startsWith("/v1/podcasts/media?")) return new Response(new Blob(["private audio"], { type: "audio/mpeg" }));
+      return Response.json({ revision: 1, state: initialPodcastState() });
+    });
+    restores.push(() => fetch.mockRestore());
+    const create = spyOn(URL, "createObjectURL").mockReturnValue("blob:private-audio");
+    const revoke = spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    restores.push(() => create.mockRestore(), () => revoke.mockRestore());
+    render(<PodcastPlayerProvider><Controls route="Podcasts" item={{ ...episode, visibility: "private", audioUrl: "/v1/podcasts/media?episodeId=episode" }} /></PodcastPlayerProvider>);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play Fixture" })));
+    await waitFor(() => expect(env.element.src).toBe("blob:private-audio"));
+    expect(fetch.mock.calls.some((call) => call[1] === "/v1/podcasts/media?episodeId=episode")).toBe(true);
+    expect(screen.queryByRole("checkbox", { name: "Remove Silences" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Playback Defaults" }));
+    await screen.findByRole("dialog", { name: "Playback Defaults" });
+    expect(screen.getByText("Silence removal is unavailable for private feeds.")).toBeDefined();
+    expect(fetch.mock.calls.some((call) => call[1].includes("analysis"))).toBe(false);
+  });
+  it("keeps audio across route children, seeks and changes pitch-preserving speed", async () => {
+    const env = environment();
+    const view = render(
+      <PodcastPlayerProvider>
+        <Controls route="Podcasts" />
+      </PodcastPlayerProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Play Fixture" }));
+    });
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    expect(env.element.preservesPitch).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Playback Defaults" }));
+    await screen.findByRole("dialog", { name: "Playback Defaults" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Default Speed" }), {
+      target: { value: "2" },
+    });
+    await waitFor(() => expect(env.element.playbackRate).toBe(2));
+    fireEvent.click(screen.getByRole("button", { name: "Close Playback Defaults" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.change(screen.getByRole("slider", { name: "Seek Podcast" }), {
+      target: { value: "42" },
+    });
+    await waitFor(() => expect(env.element.currentTime).toBe(42));
+    view.rerender(
+      <PodcastPlayerProvider>
+        <Controls route="Saved" />
+      </PodcastPlayerProvider>,
+    );
+    expect(env.element.src).toBe(episode.audioUrl);
+    expect(env.element.paused).toBe(false);
+    expect(screen.queryByRole("complementary", { name: "Podcast Player" })).toBeNull();
+    await waitFor(() =>
+      expect(
+        env.requests.some(
+          (request) =>
+            request.body &&
+            JSON.stringify(request.body).includes('"positionSeconds":42'),
+        ),
+      ).toBe(true),
+    );
+    view.rerender(<PodcastPlayerProvider><Controls route="Podcasts" /></PodcastPlayerProvider>);
+    expect(screen.getByRole("complementary", { name: "Podcast Player" })).toBeDefined();
+    expect(env.element.currentTime).toBe(42);
+    expect(env.element.paused).toBe(false);
+  });
+  it("stops audio on viewer switch and does not write the old episode into the new viewer cache", async () => {
+    const env = environment();
+    const view = render(
+      <PodcastPlayerProvider>
+        <Controls route="Podcasts" />
+      </PodcastPlayerProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Play Fixture" }));
+    });
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    env.element.currentTime = 75;
+    env.setViewer("did:plc:viewer-b");
+    view.rerender(
+      <PodcastPlayerProvider>
+        <Controls route="Podcasts" />
+      </PodcastPlayerProvider>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("complementary", { name: "Podcast Player" }),
+      ).toBeNull(),
+    );
+    expect(env.element.paused).toBe(true);
+    const cache = JSON.parse(
+      localStorage.getItem(
+        "the-social-wire.podcast-state.v1:did:plc:viewer-b",
+      ) ?? "{}",
+    );
+    expect(cache.state?.progress?.episode).toBeUndefined();
+    expect(cache.episode).toBeNull();
+  });
+  it("restores only the stored viewer's local playback and downloads without OAuth requests when offline", async () => {
+    const env = environment();
+    env.setViewer(null);
+    const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    restores.push(() => {
+      if (online) Object.defineProperty(navigator, "onLine", online);
+      else Reflect.deleteProperty(navigator, "onLine");
+    });
+    localStorage.setItem(
+      "@@atproto/oauth-client-browser(sub)",
+      "did:plc:offline",
+    );
+    localStorage.setItem(
+      "the-social-wire.podcast-state.v1:did:plc:offline",
+      JSON.stringify({
+        state: {
+          ...initialPodcastState(),
+          progress: {
+            episode: {
+              positionSeconds: 53,
+              updatedAt: "2026-10-05T01:00:00Z",
+              completed: false,
+            },
+          },
+        },
+        pending: {},
+      }),
+    );
+    env.getDownload.mockResolvedValue({
+      episode,
+      bytes: 3,
+      downloadedAt: "2026-10-05T01:00:00Z",
+      media: new Blob(["mp3"]),
+    });
+    render(
+      <PodcastPlayerProvider>
+        <Controls route="Podcasts" />
+      </PodcastPlayerProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Play Fixture" }));
+    });
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    expect(env.element.currentTime).toBe(53);
+    expect(env.element.src.startsWith("blob:")).toBe(true);
+    expect(env.requests).toHaveLength(0);
+  });
+});
+
+function SubscriptionProbe() {
+  const player = usePodcastPlayer();
+  return <><output data-testid="subscription-state">{JSON.stringify(player.state)}</output><PodcastLibrarySidebar feed="recent" showId={null} shows={[{id:"imported",title:"Imported Podcast",sourceKind:"rss"}]} subscriptions={player.state.subscriptions} downloadCount={0} queueCount={0} onSelect={() => {}} /></>;
+}
+
+it("refreshes imported subscription IDs without replacing playback preferences, queue, or progress", async () => {
+  environment();
+  const local = { ...initialPodcastState(), queue: ["episode"], progress: { episode: { positionSeconds: 42, updatedAt: "2026-10-05", completed: false } }, playbackSpeed: 1.75, removeSilences: true };
+  let calls = 0;
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(): Promise<T> => ({revision:1,state:++calls === 1 ? local : {...initialPodcastState(),subscriptions:["imported"]}} as T));
+  restores.push(() => request.mockRestore());
+  render(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  await waitFor(() => expect(JSON.parse(screen.getByTestId("subscription-state").textContent!).queue).toEqual(["episode"]));
+  act(() => notifyPodcastSubscriptionsChanged("did:plc:viewer-a"));
+  await screen.findByRole("button", {name:"Imported Podcast"});
+  expect(JSON.parse(screen.getByTestId("subscription-state").textContent!)).toEqual({...local,subscriptions:["imported"]});
+  expect(request.mock.calls).toHaveLength(2);
+});
+
+it("preserves a pending local subscription change during import refresh", async () => {
+  environment();
+  Object.defineProperty(navigator,"onLine",{configurable:true,value:false});
+  window.localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a",JSON.stringify({state:{...initialPodcastState(),subscriptions:["intentional-local"]},pending:{subscriptions:["intentional-local"]}}));
+  const request = spyOn(client,"podcastRequest").mockResolvedValue({revision:1,state:{...initialPodcastState(),subscriptions:["imported"]}});
+  restores.push(() => request.mockRestore());
+  render(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  await waitFor(() => expect(JSON.parse(screen.getByTestId("subscription-state").textContent!).subscriptions).toEqual(["intentional-local"]));
+  Object.defineProperty(navigator,"onLine",{configurable:true,value:true});
+  await act(async () => notifyPodcastSubscriptionsChanged("did:plc:viewer-a"));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(screen.getByTestId("subscription-state").textContent!).subscriptions).toEqual(["intentional-local"]);
+  expect(JSON.parse(window.localStorage.getItem("the-social-wire.podcast-state.v1:did:plc:viewer-a")!).pending.subscriptions).toEqual(["intentional-local"]);
+});
+
+it("aborts an old viewer's subscription refresh and rejects unrelated viewer events", async () => {
+  const env = environment();
+  let resolve: (value:unknown) => void = () => {};
+  let signal:AbortSignal|undefined;
+  let calls=0;
+  const request=spyOn(client,"podcastRequest").mockImplementation(<T,>(_oauth:OAuthSession,_path:string,_method?:string,_body?:unknown,nextSignal?:AbortSignal):Promise<T> => {
+    if(++calls===2){signal=nextSignal;return new Promise(done=>{resolve=value=>done(value as T);});}
+    return Promise.resolve({revision:1,state:initialPodcastState()} as T);
+  });
+  restores.push(()=>request.mockRestore());
+  const view=render(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  await waitFor(()=>expect(request).toHaveBeenCalledTimes(1));
+  act(()=>notifyPodcastSubscriptionsChanged("did:plc:other"));
+  expect(request).toHaveBeenCalledTimes(1);
+  act(()=>notifyPodcastSubscriptionsChanged("did:plc:viewer-a"));
+  await waitFor(()=>expect(request).toHaveBeenCalledTimes(2));
+  env.setViewer("did:plc:viewer-b");
+  view.rerender(<PodcastPlayerProvider><SubscriptionProbe /></PodcastPlayerProvider>);
+  expect(signal?.aborted).toBe(true);
+  await act(async()=>resolve({revision:2,state:{...initialPodcastState(),subscriptions:["imported"]}}));
+  expect(screen.queryByRole("button",{name:"Imported Podcast"})).toBeNull();
+});

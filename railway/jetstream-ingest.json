@@ -7,7 +7,8 @@
       "/services/jetstream-ingest/**",
       "/packages/go/**",
       "/database/migrations/**",
-      "/railway/jetstream-ingest.json"
+      "/railway/jetstream-ingest.json",
+      "/packages/go/**"
     ]
   },
   "deploy": {

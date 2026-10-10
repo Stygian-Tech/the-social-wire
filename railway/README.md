@@ -9,7 +9,9 @@ are managed by the scoped Infrastructure as Code partial in
 `/.railway/railway.ts`. Keep service build roots at `/` so Docker and Railpack
 builds can access shared monorepo packages.
 
-The standalone Swift Charybdis, Wire Worker and Inbox Drain source selectors are retired. Projection Pool and Coordinator use the Go Indexing Worker image through the scoped IaC partial; source retirement does not delete hosted services.
+Development's Podcast Media bucket and Podcast Media Worker are also declared
+in this graph through `/.railway/podcasts.ts`. They are omitted from Production;
+new podcast resources do not use a legacy service config path.
 
 | Railway Service | Config File |
 | --- | --- |
@@ -109,3 +111,5 @@ scoped drain owns cleanup; rank does not claim inbox work, but its cleanup loop
 is otherwise unscoped. Before the scoped drain's first start, stop the historical
 producer and every unscoped drain and wait more than the 120-second inbox lease
 period. Do not run an unscoped or historical drain alongside it.
+
+The standalone Charybdis and Wire worker configs are retired. Projection Pool and Coordinator use the Go `services/indexing-worker` image and the `.railway/railway.ts` definition. Historical Swift rollback revisions remain in Git.

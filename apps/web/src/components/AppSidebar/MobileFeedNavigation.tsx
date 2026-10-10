@@ -1,6 +1,6 @@
 "use client";
 
-import { Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
+import { Headphones, Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -11,8 +11,11 @@ import {
 import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import { cn } from "@/lib/utils";
 import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
+import { useOptionalPodcastPlayer } from "@/components/Podcasts/PodcastPlayerProvider";
+import { PodcastPlaybackWaveform } from "@/components/Podcasts/PodcastPlaybackWaveform";
 
 const FEED_ITEMS = [
+  { feed: "podcasts", label: "Podcasts", icon: Headphones },
   { feed: "wire", label: "The Wire", icon: Rss },
   { feed: "circle", label: "Your Circle", icon: Network },
   { feed: "sports", label: "Sports", icon: Trophy },
@@ -42,6 +45,7 @@ export function MobileFeedNavigation({
   onOpenLists?: () => void;
   listsActive?: boolean;
 }) {
+  const player = useOptionalPodcastPlayer();
   const items = FEED_ITEMS.filter(({ feed }) => visibleFeeds.has(feed));
   if (items.length === 0 && !onOpenLists) return null;
   const orderedItems = [
@@ -66,7 +70,7 @@ export function MobileFeedNavigation({
             key={feed}
             type="button"
             aria-label={
-              feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label
+              feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label
             }
             aria-current={active ? "page" : undefined}
             className={cn(
@@ -75,10 +79,10 @@ export function MobileFeedNavigation({
             )}
             onClick={() => onSelect(feed)}
           >
-            <Icon className="size-5" aria-hidden="true" />
+            {feed === "podcasts" && player?.playing ? <PodcastPlaybackWaveform player={player} /> : <Icon className="size-5" aria-hidden="true" />}
             <span className="w-full truncate text-center">{label}</span>
             <span className="flex h-2.5 items-center">
-              {feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? (
+              {feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? (
                 <WireBetaBadge className="px-1 py-px text-[7px]" />
               ) : null}
             </span>
@@ -103,14 +107,14 @@ export function MobileFeedNavigation({
               return (
                 <DropdownMenuItem
                   key={feed}
-                  aria-label={feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label}
+                  aria-label={feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label}
                   aria-current={currentFeed === feed ? "page" : undefined}
                   className={cn("min-h-11", currentFeed === feed && "text-[var(--purple-foreground)]")}
                   onClick={() => onSelect(feed)}
                 >
-                  <Icon className="size-4" aria-hidden="true" />
+                  {feed === "podcasts" && player?.playing ? <PodcastPlaybackWaveform player={player} /> : <Icon className="size-4" aria-hidden="true" />}
                   <span className="flex-1 truncate">{label}</span>
-                  {feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? <WireBetaBadge /> : null}
+                  {feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? <WireBetaBadge /> : null}
                 </DropdownMenuItem>
               );
             })}

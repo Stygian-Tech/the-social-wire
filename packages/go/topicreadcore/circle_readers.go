@@ -26,16 +26,24 @@ func (r *CircleReader) ViewerFollows(ctx context.Context, viewer string) (Follow
 	if r.FollowProof == "" || r.Auth.DID != viewer {
 		return FollowList{}, ErrUnavailable
 	}
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return FollowList{}, err
+	}
 	base, err := r.Moderation.Resolver.ResolvePDS(ctx, viewer)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return FollowList{}, contextErr
+	}
 	if err != nil {
 		return FollowList{}, ErrUnavailable
 	}
-	headers := http.Header{}
-	headers.Set("Authorization", strings.TrimSpace(r.Auth.Authorization))
-	headers.Set("DPoP", strings.TrimSpace(r.FollowProof))
+	// Follow records are public repository data. Keep the legacy proof presence
+	// contract, but never replay its single-use DPoP proof across public pages.
 	result := FollowList{ActorDID: viewer, FolloweeDIDs: []string{}}
 	var cursor *string
-	for {
+	seenCursors := map[string]bool{}
+	for range 200 {
 		if err := ctx.Err(); err != nil {
 			return FollowList{}, err
 		}
@@ -43,7 +51,7 @@ func (r *CircleReader) ViewerFollows(ctx context.Context, viewer string) (Follow
 		if cursor != nil {
 			query.Set("cursor", *cursor)
 		}
-		doc, err := r.privateFollowDocument(ctx, base, query, headers.Clone())
+		doc, err := r.followDocument(ctx, base, query)
 		if err != nil {
 			return FollowList{}, err
 		}
@@ -55,16 +63,19 @@ func (r *CircleReader) ViewerFollows(ctx context.Context, viewer string) (Follow
 				result.FolloweeDIDs = append(result.FolloweeDIDs, subject)
 			}
 		}
-		next, present := doc["cursor"].(string)
+		rawCursor, present := doc["cursor"]
 		if !present {
 			result.Complete = true
 			return result, nil
 		}
-		if cursor != nil && next == *cursor {
+		next, valid := rawCursor.(string)
+		if !valid || next == "" || seenCursors[next] {
 			return FollowList{}, ErrUnavailable
 		}
+		seenCursors[next] = true
 		cursor = &next
 	}
+	return FollowList{}, ErrUnavailable
 }
 func (r *CircleReader) PublicFollows(ctx context.Context, actors []string) ([]FollowList, error) {
 	actors = append([]string{}, actors...)
@@ -203,9 +214,8 @@ func keysString(values map[string]string) []string {
 	return result
 }
 
-func (r *CircleReader) privateFollowDocument(ctx context.Context, base string, query url.Values, headers http.Header) (map[string]any, error) {
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
+func (r *CircleReader) followDocument(ctx context.Context, base string, query url.Values) (map[string]any, error) {
+	headers := http.Header{}
 	headers.Set("Accept", "application/json")
 	transport := r.Moderation.HTTP
 	if transport == nil {
@@ -213,6 +223,9 @@ func (r *CircleReader) privateFollowDocument(ctx context.Context, base string, q
 	}
 	target := strings.TrimRight(base, "/") + "/xrpc/com.atproto.repo.listRecords?" + query.Encode()
 	status, _, body, err := transport.Get(ctx, target, headers, 1<<20, 0)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
+	}
 	if err != nil {
 		return nil, err
 	}

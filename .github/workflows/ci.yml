@@ -32,6 +32,7 @@ jobs:
       go_packages: ${{ steps.filter.outputs.go_packages }}
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
       wire_ingest: ${{ steps.filter.outputs.wire_ingest }}
+      podcast_worker: ${{ steps.filter.outputs.podcast_worker }}
       indexing_worker: ${{ steps.filter.outputs.indexing_worker }}
       wire_corpus_edge: ${{ steps.filter.outputs.wire_corpus_edge }}
       database_migrator: ${{ steps.filter.outputs.database_migrator }}
@@ -177,6 +178,8 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -209,6 +212,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - name: Apply database migrations for AppView integration tests
         uses: ./.github/actions/prepare-postgres
         with:
@@ -226,7 +231,7 @@ jobs:
             packages/swift/WireCore/.build
             packages/swift/FinanceCore/.build
             packages/swift/SportsCore/.build
-          key: ${{ runner.os }}-swift-shared-6.2.4-${{ hashFiles('packages/swift/**/Package.resolved') }}
+          key: ${{ runner.os }}-swift-shared-6.2.4-${{ hashFiles('packages/swift/**/Package.resolved', 'packages/go/migration/extracted-swift-packages.json') }}
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -270,7 +275,7 @@ jobs:
     timeout-minutes: 35
     services:
       postgres:
-        image: postgres:17-alpine
+        image: public.ecr.aws/docker/library/postgres:17-alpine
         env:
           POSTGRES_DB: socialwire_go_test
           POSTGRES_PASSWORD: postgres
@@ -284,6 +289,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - uses: actions/setup-go@v6
         with:
           go-version-file: packages/go/go.mod
@@ -523,7 +530,7 @@ jobs:
         run: |
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw92_telemetry_test'
-          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/operations-change-retention-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts packages/spec/__tests__/wire-ordered-signal-migration-postgres.test.ts
+          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/operations-change-retention-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts packages/spec/__tests__/wire-ordered-signal-migration-postgres.test.ts packages/spec/__tests__/wire-working-set-indexes-postgres.test.ts
       - name: Verify Jetstream V2 drain indexes and query plans
         run: |
           psql postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
@@ -566,6 +573,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: Check out pinned Swift reference contracts
+        run: python3 scripts/go/check-out-swift-contracts.py
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -632,6 +641,60 @@ jobs:
       - name: Check wiki links and navigation
         run: bash scripts/check-wiki-links.sh
 
+  podcast-worker:
+    name: Podcast Media Worker
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.podcast_worker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: podcast-validation-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PODCAST_TEST_DATABASE_URL: postgres://postgres:podcast-validation-only@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Cache Bun downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.3.14-v2-${{ hashFiles('bun.lock') }}
+      - name: Install dependencies
+        run: bash scripts/ci/install-bun.sh
+      - name: Typecheck
+        run: bun --cwd services/podcast-worker typecheck
+      - name: Test media processing and bridge identities
+        run: bun --cwd services/podcast-worker test
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: services/jetstream-ingest/go.mod
+          cache-dependency-path: services/jetstream-ingest/go.sum
+      - name: Test source entrypoint database gate
+        working-directory: services/jetstream-ingest
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Compile the test subject, without constructing a deployment image.
+          go build -o "$RUNNER_TEMP/schema-ready-test" ./cmd/schema-ready
+          status=0
+          output="$(env -u DATABASE_URL APP_ENV=dev "$RUNNER_TEMP/schema-ready-test" -- "$(command -v bun)" "$GITHUB_WORKSPACE/services/podcast-worker/src/index.ts" 2>&1)" || status=$?
+          if [[ "$status" != "1" || "$output" != *"schema readiness requires DATABASE_URL"* || "$output" == *"absolute application path"* ]]; then
+            printf '%s\n' "$output"
+            exit 1
+          fi
+
   required:
     name: CI — Required
     needs:
@@ -644,6 +707,7 @@ jobs:
       - go-packages
       - jetstream-ingest
       - wire-ingest
+      - podcast-worker
       - indexing-worker
       - wire-corpus-edge
       - database-migrator
@@ -665,6 +729,7 @@ jobs:
           GO_PACKAGES_FLAG: ${{ needs.changes.outputs.go_packages }}
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
           WIRE_INGEST_FLAG: ${{ needs.changes.outputs.wire_ingest }}
+          PODCAST_WORKER_FLAG: ${{ needs.changes.outputs.podcast_worker }}
           INDEXING_WORKER_FLAG: ${{ needs.changes.outputs.indexing_worker }}
           WIRE_CORPUS_EDGE_FLAG: ${{ needs.changes.outputs.wire_corpus_edge }}
           DATABASE_MIGRATOR_FLAG: ${{ needs.changes.outputs.database_migrator }}
@@ -680,6 +745,7 @@ jobs:
           GO_PACKAGES_RESULT: ${{ needs.go-packages.result }}
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
           WIRE_INGEST_RESULT: ${{ needs.wire-ingest.result }}
+          PODCAST_WORKER_RESULT: ${{ needs.podcast-worker.result }}
           INDEXING_WORKER_RESULT: ${{ needs.indexing-worker.result }}
           WIRE_CORPUS_EDGE_RESULT: ${{ needs.wire-corpus-edge.result }}
           DATABASE_MIGRATOR_RESULT: ${{ needs.database-migrator.result }}
@@ -720,6 +786,7 @@ jobs:
           check "$GO_PACKAGES_FLAG" "$GO_PACKAGES_RESULT" "Repository-local Go Packages"
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
           check "$WIRE_INGEST_FLAG" "$WIRE_INGEST_RESULT" "The Wire Global Ingest"
+          check "$PODCAST_WORKER_FLAG" "$PODCAST_WORKER_RESULT" "Podcast Media Worker"
           check "$INDEXING_WORKER_FLAG" "$INDEXING_WORKER_RESULT" "Replicated Indexing Worker"
           check "$WIRE_CORPUS_EDGE_FLAG" "$WIRE_CORPUS_EDGE_RESULT" "The Wire Corpus Edge"
           check "$DATABASE_MIGRATOR_FLAG" "$DATABASE_MIGRATOR_RESULT" "Database Migrator"

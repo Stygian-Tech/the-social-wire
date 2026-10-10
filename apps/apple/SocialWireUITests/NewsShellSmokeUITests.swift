@@ -17,17 +17,19 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.buttons["Add Publication"].tap()
         XCTAssertTrue(app.navigationBars["Add Publication"].waitForExistence(timeout: 3))
         app.buttons["Cancel"].firstMatch.tap()
+        app.tabBars.buttons["Read Later"].tap()
         let archive = tabButton("Archive", in: app)
         XCTAssertTrue(archive.waitForExistence(timeout: 3))
         archive.tap()
-        XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
+        XCTAssertTrue(archive.isSelected)
         XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
 
-        let readLater = tabButton("Read Later", in: app)
+        let readLater = app.navigationBars.buttons["Read Later"]
         XCTAssertTrue(readLater.waitForExistence(timeout: 3))
         readLater.tap()
-        XCTAssertTrue(app.navigationBars["Read Later"].waitForExistence(timeout: 3))
+        XCTAssertTrue(readLater.isSelected)
 
+        app.tabBars.buttons["Feeds"].tap()
         subscribed.tap()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
         XCTAssertTrue(add.waitForExistence(timeout: 3))
@@ -42,11 +44,20 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(following.waitForExistence(timeout: 3))
         app.buttons["fixture-hide-following"].tap()
         XCTAssertTrue(following.waitForNonExistence(timeout: 3))
-        tabButton("Read Later", in: app).tap()
+        app.tabBars.buttons["Read Later"].tap()
         XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
         app.buttons["fixture-select-publication"].tap()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars["Fixture Publication"].waitForExistence(timeout: 5))
+        XCTAssertTrue(tabButton("Subscribed", in: app).isSelected)
+        XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
+        let markRead = app.buttons["feed-mark-all-read"]
+        XCTAssertTrue(markRead.waitForExistence(timeout: 3))
+        markRead.tap()
+        let confirmation = app.alerts["Mark All As Read?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        // The fixture selects a publication without loading the sidebar's title index.
+        XCTAssertTrue(confirmation.staticTexts["Mark every unread story in This Publication as read?"].exists)
+        confirmation.buttons["Cancel"].tap()
     }
 
     private func tabButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
@@ -59,6 +70,172 @@ final class NewsShellSmokeUITests: XCTestCase {
             return button
         }
         return app.descendants(matching: .any)[label].firstMatch
+    }
+
+    func testTopicsRemainReachableBeyondPrimaryTabs() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists"]
+        app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+
+        selectDestination("Finance", in: app)
+        let chooseFinance = app.buttons["Choose Feed"]
+        XCTAssertTrue(chooseFinance.waitForExistence(timeout: 5))
+        chooseFinance.tap()
+        XCTAssertTrue(app.navigationBars["Finance Feeds"].waitForExistence(timeout: 3))
+        app.buttons["Done"].firstMatch.tap()
+
+        selectDestination("Sports", in: app)
+        let sportsPicker = app.buttons["sports-feed-picker"]
+        XCTAssertTrue(sportsPicker.waitForExistence(timeout: 5))
+        sportsPicker.tap()
+        XCTAssertTrue(app.navigationBars["Sports Feeds"].waitForExistence(timeout: 3))
+        app.buttons["Done"].firstMatch.tap()
+
+        selectDestination("Subscribed", in: app)
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
+    }
+
+    func testListsSelectionAndManagementRemainReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists"]
+        app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+        selectDestination("Lists", in: app)
+        XCTAssertTrue(content(for: "standardLists", in: app).waitForExistence(timeout: 5))
+        let fixtureList = app.buttons["lists.row.at://did:plc:fixture/app.standard-reader.list/main"]
+        XCTAssertTrue(fixtureList.waitForExistence(timeout: 5))
+        fixtureList.tap()
+        XCTAssertTrue(app.buttons["lists.entry.ui-story-1"].waitForExistence(timeout: 5))
+
+        let manage = app.buttons["lists.manage"]
+        if !manage.isHittable {
+            let back = app.navigationBars.buttons["Lists"].firstMatch
+            XCTAssertTrue(back.waitForExistence(timeout: 3))
+            back.tap()
+        }
+        XCTAssertTrue(manage.waitForExistence(timeout: 3))
+        manage.tap()
+        XCTAssertTrue(app.navigationBars["Manage Lists"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["lists.searchInput"].exists)
+        XCTAssertFalse(app.buttons["lists.search"].isEnabled)
+        let name = app.textFields["lists.createName"]
+        XCTAssertTrue(name.exists)
+        XCTAssertFalse(app.buttons["lists.create"].isEnabled)
+        let managementForm = app.collectionViews.containing(.textField, identifier: "lists.createName").firstMatch
+        let delete = app.buttons["Delete Fixture List"]
+        if !delete.isHittable { managementForm.swipeUp() }
+        XCTAssertTrue(delete.isHittable)
+        delete.tap()
+        XCTAssertTrue(app.buttons["Delete List"].waitForExistence(timeout: 3))
+        let cancel = app.buttons.matching(identifier: "Cancel").allElementsBoundByIndex.first { $0.isHittable }
+        if let cancel {
+            cancel.tap()
+        } else {
+            // The native iPad popover is outside the centered management sheet;
+            // use the uncovered window corner to dismiss only the top popover.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.1)).tap()
+        }
+        XCTAssertTrue(app.buttons["Delete List"].waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Delete Fixture List"].exists)
+        if !name.isHittable { managementForm.swipeDown() }
+        name.tap()
+        name.typeText("New Fixture List")
+        XCTAssertTrue(app.buttons["lists.create"].isEnabled)
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(fixtureList.waitForExistence(timeout: 3))
+        fixtureList.tap()
+        XCTAssertTrue(app.buttons["lists.entry.ui-story-1"].waitForExistence(timeout: 3))
+    }
+
+    func testEmptyListsManagementAndOtherDestinationsRemainReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists", "--ui-testing-empty-lists"]
+        app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+
+        selectDestination("Lists", in: app)
+        XCTAssertTrue(content(for: "standardLists", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No Lists Yet"].waitForExistence(timeout: 3))
+        let manage = app.buttons["lists.manage"]
+        XCTAssertTrue(manage.waitForExistence(timeout: 3))
+        XCTAssertTrue(manage.isEnabled)
+        XCTAssertTrue(manage.isHittable)
+        manage.tap()
+        XCTAssertTrue(app.navigationBars["Manage Lists"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["lists.createName"].exists)
+        app.buttons["Done"].firstMatch.tap()
+
+        selectDestination("Finance", in: app)
+        XCTAssertTrue(app.buttons["Choose Feed"].waitForExistence(timeout: 5))
+        selectDestination("Lists", in: app)
+        XCTAssertTrue(app.staticTexts["No Lists Yet"].waitForExistence(timeout: 3))
+        selectDestination("Read Later", in: app)
+        XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 5))
+    }
+
+    /// Follow compact root sections or regular-width sidebar destinations.
+    private func selectDestination(_ label: String, in app: XCUIApplication) {
+        let root: String? = switch label {
+        case "Finance", "Sports": "Topics"
+        case "Subscribed", "Following", "The Wire", "Your Circle": "Feeds"
+        case "Archive": "Read Later"
+        default: nil
+        }
+        if let root, app.tabBars.buttons[root].exists {
+            app.tabBars.buttons[root].tap()
+        }
+        func destination() -> XCUIElement {
+            let sidebarID: String? = switch label {
+            case "Finance": "finance"
+            case "Sports": "sports"
+            case "The Wire": "wire"
+            case "Your Circle": "circle"
+            case "Lists": "standardLists"
+            default: nil
+            }
+            if let sidebarID {
+                let sidebarButton = app.buttons["news-tab-button-\(sidebarID)"]
+                if sidebarButton.exists && sidebarButton.isHittable { return sidebarButton }
+            }
+            let tab = app.tabBars.buttons[label]
+            if tab.exists && tab.isHittable { return tab }
+            let capsule = app.navigationBars.buttons[label]
+            if capsule.exists {
+                let rail = app.navigationBars.scrollViews.firstMatch
+                if rail.exists { revealHorizontally(capsule, in: rail) }
+                if capsule.isHittable { return capsule }
+            }
+            // UIKit's compact More menu exposes destinations as cells with text
+            // descendants, so activate the row rather than its static label.
+            let cells = app.cells.containing(.staticText, identifier: label).allElementsBoundByIndex
+            if let row = cells.first(where: { $0.isHittable }) { return row }
+            let candidates = app.descendants(matching: .any)
+                .matching(identifier: label).allElementsBoundByIndex
+            if let visible = candidates.first(where: { $0.isHittable }) { return visible }
+            // A hidden sidebar row must not prevent opening the compact overflow menu.
+            return app.buttons["missing-destination-\(label)"]
+        }
+        if !destination().exists {
+            // Grouped Topics can leave the floating top tab selected while hiding
+            // other topic destinations behind the adaptive iPad sidebar.
+            let toggles = [app.buttons["ToggleSideBar"], app.buttons["Toggle sidebar"]]
+            if let toggle = toggles.first(where: { $0.exists && $0.isHittable }) {
+                toggle.tap()
+            }
+        }
+        if !destination().exists {
+            let more = app.tabBars.buttons["More"]
+            if more.exists && more.isHittable { more.tap() }
+        }
+        if !destination().exists {
+            let topics = app.buttons["Topics"].firstMatch
+            if topics.exists && topics.isHittable { topics.tap() }
+        }
+        let target = destination()
+        XCTAssertTrue(target.waitForExistence(timeout: 3), "Missing destination: \(label)")
+        XCTAssertTrue(target.isHittable, "Unreachable destination: \(label)")
+        target.tap()
     }
 
     func testWireCardsFitNarrowCanvas() {

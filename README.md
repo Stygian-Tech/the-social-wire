@@ -38,9 +38,8 @@ the-social-wire/
   services/
     gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Railway)
     appview/         # Publication sidebar + Thin AppView read index (Railway)
-    appview-worker/  # Compatibility executable + reusable AppView worker core
     jetstream-ingest/ # Replicated multi-lane Ingress Controller (Go; Railway)
-    indexing-worker/ # Projection Pool / Coordinator shared runtime (Swift; Railway)
+    indexing-worker/ # Projection Pool / Coordinator shared runtime (Go; Railway)
     operations/      # Operations control plane (Railway)
   packages/
     lexicons/        # record schemas plus app.thesocialwire.* service XRPC lexicons
@@ -98,8 +97,11 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 # AppView (sidebar + Thin AppView reads)
 (cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
 
+# Go AppView candidate (requires explicit PostgreSQL, including APP_ENV=local; no SQLite fallback)
+(cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only go run ./cmd/appview)
+
 # Replicated projection role (AppView + Wire durable inboxes)
-(cd services/indexing-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true INDEXING_WORKER_ROLE=projection swift run IndexingWorker)
+(cd services/indexing-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true INDEXING_WORKER_ROLE=projection THIN_APPVIEW_JETSTREAM_MODE=v2_authoritative go run ./cmd/indexing-worker)
 ```
 
 ### Running tests
@@ -114,8 +116,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 (cd services/gateway && swift test)
 (cd services/appview && swift test)
 (cd packages/swift/ThinAppViewCore && swift test)
-(cd services/appview-worker && swift test)
-(cd services/indexing-worker && swift test)
+(cd services/indexing-worker && go test -race ./...)
 (cd packages/swift/OperationsCore && swift test)
 (cd services/operations && swift test)
 (cd services/jetstream-ingest && go test ./... && go vet ./...)
@@ -144,7 +145,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 | Optional disposable cache/coordination | Private Railway Redis (currently selected in Development and Production) |
 | CI/CD | GitHub Actions validates source; Railway deploys through its Git integration |
 
-Charybdis retains the `appview-worker` directory, executable, and telemetry service key for migration rollback compatibility. See [the replicated indexing design](docs/architecture/indexing-services.md).
+Projection Pool and Coordinator use the repository-local Go runtime. Retired Swift worker executables remain recoverable from Git rollback revisions; serving services keep their shared Swift packages. See [the replicated indexing design](docs/architecture/indexing-services.md).
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for the full architecture narrative.
 

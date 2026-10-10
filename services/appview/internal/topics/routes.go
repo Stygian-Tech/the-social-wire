@@ -1,7 +1,6 @@
 package topics
 
 import (
-	"context"
 	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
@@ -13,19 +12,15 @@ import (
 	"time"
 )
 
-type CatalogProvider interface {
-	Availability(context.Context, time.Time) (any, bool, error)
-}
 type Routes struct {
-	FinanceStore    *topicreadcore.FinanceStore
-	SportsStore     *topicreadcore.SportsStore
-	Circle          *topicreadcore.CircleService
-	Wire            *topicreadcore.WireStore
-	Moderation      *topicreadcore.ModerationService
-	Telemetry       *telemetrycore.TelemetryBuffer
-	WireVisible     bool
-	Finance, Sports CatalogProvider
-	Now             func() time.Time
+	FinanceStore *topicreadcore.FinanceStore
+	SportsStore  *topicreadcore.SportsStore
+	Circle       *topicreadcore.CircleService
+	Wire         *topicreadcore.WireStore
+	Moderation   *topicreadcore.ModerationService
+	Telemetry    *telemetrycore.TelemetryBuffer
+	WireVisible  bool
+	Now          func() time.Time
 }
 
 func (r Routes) Register(mux *http.ServeMux) {
@@ -202,40 +197,9 @@ func (r Routes) catalog(w http.ResponseWriter, req *http.Request) {
 		fail(w, err)
 		return
 	}
-	finance := any(map[string]any{"enabled": false, "available": false, "widgetsEnabled": false, "feeds": []any{}})
-	sports := any(map[string]any{"enabled": false, "available": false, "eventsEnabled": false, "feeds": []any{}, "entities": []any{}, "version": "sports-named-feeds-v2"})
-	fa, sa := false, false
-	if r.FinanceStore != nil {
-		value, e := r.FinanceStore.Availability(req.Context(), now)
-		if e != nil {
-			fail(w, e)
-			return
-		}
-		finance = value
-		fa = value.Available
-	} else if r.Finance != nil {
-		finance, fa, err = r.Finance.Availability(req.Context(), now)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-	}
-	if r.SportsStore != nil {
-		value, e := r.SportsStore.Availability(req.Context(), now)
-		if e != nil {
-			fail(w, e)
-			return
-		}
-		sports = value
-		sa = value.Available
-	} else if r.Sports != nil {
-		sports, sa, err = r.Sports.Availability(req.Context(), now)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-	}
-	result := combinedCatalog{Enabled: r.WireVisible && catalog.Enabled, Available: r.WireVisible && catalog.Available, Title: "The Wire", Subtitle: "Important stories across the social web", SupportedLanguages: catalog.SupportedLanguages, LatestGenerationID: catalog.LatestGenerationID, GeneratedAt: catalog.GeneratedAt, FinanceAvailable: fa, Finance: finance, SportsAvailable: sa, Sports: sports}
+	// Topic catalogs have dedicated endpoints; including them here makes Wire
+	// discovery depend on unrelated services and transfers the full Sports taxonomy.
+	result := wireCatalog{Enabled: r.WireVisible && catalog.Enabled, Available: r.WireVisible && catalog.Available, Title: "The Wire", Subtitle: "Important stories across the social web", SupportedLanguages: catalog.SupportedLanguages, LatestGenerationID: catalog.LatestGenerationID, GeneratedAt: catalog.GeneratedAt}
 	latest := "none"
 	if catalog.LatestGenerationID != nil {
 		latest = *catalog.LatestGenerationID
@@ -285,7 +249,7 @@ func (r Routes) recordEdition(e wirecore.Edition, latency time.Duration, authent
 	metric("wire.edition.publication.concentration", concentration, base)
 }
 
-type combinedCatalog struct {
+type wireCatalog struct {
 	Enabled            bool       `json:"enabled"`
 	Available          bool       `json:"available"`
 	Title              string     `json:"title"`
@@ -293,8 +257,4 @@ type combinedCatalog struct {
 	SupportedLanguages []string   `json:"supportedLanguages"`
 	LatestGenerationID *string    `json:"latestGenerationId,omitempty"`
 	GeneratedAt        *time.Time `json:"generatedAt,omitempty"`
-	FinanceAvailable   bool       `json:"financeAvailable"`
-	Finance            any        `json:"finance"`
-	SportsAvailable    bool       `json:"sportsAvailable"`
-	Sports             any        `json:"sports"`
 }

@@ -75,6 +75,11 @@ function detect(
 }
 
 describe("CI path detection", () => {
+  it("checks podcast and infrastructure contracts when the Development graph changes", () => {
+    const result = detect(repositoryWithChange(".railway/podcasts.ts"), "pull_request");
+    expect(result.get("podcast_worker")).toBe("true");
+    expect(result.get("spec")).toBe("true");
+  });
   it("checks Go packages and worker contracts when shared Go code changes", () => {
     const result = detect(repositoryWithChange("packages/go/wirecore/ranker.go"), "pull_request");
     for (const job of ["go_packages", "indexing_worker", "jetstream_ingest", "wire_ingest"]) {
@@ -111,7 +116,7 @@ describe("CI path detection", () => {
 
   it("checks every schema-ready consumer when the local Go module changes", () => {
     const result = detect(repositoryWithChange("packages/go/go.mod"), "pull_request");
-    for (const job of ["go_packages", "indexing_worker", "jetstream_ingest", "wire_ingest"]) {
+    for (const job of ["go_packages", "indexing_worker", "jetstream_ingest", "wire_ingest", "podcast_worker"]) {
       expect(result.get(job)).toBe("true");
     }
   });
@@ -156,6 +161,7 @@ describe("CI path detection", () => {
     expect(result.get("indexing_worker")).toBe("true");
     expect(result.get("wire_corpus_edge")).toBe("true");
     expect(result.get("database_migrator")).toBe("true");
+    expect(result.get("podcast_worker")).toBe("true");
     expect(result.get("spec")).toBe("true");
   });
 
@@ -164,7 +170,7 @@ describe("CI path detection", () => {
       repositoryWithChange("services/jetstream-ingest/internal/schemaready/gate.go"),
       "pull_request",
     );
-    for (const job of ["go_packages", "jetstream_ingest", "wire_ingest", "indexing_worker"]) {
+    for (const job of ["go_packages", "jetstream_ingest", "wire_ingest", "indexing_worker", "podcast_worker"]) {
       expect(result.get(job)).toBe("true");
     }
     expect(result.get("wire_corpus_edge")).toBe("false");
@@ -252,7 +258,7 @@ describe("CI path detection", () => {
     ".github/workflows/validated-merge.yml", ".github/actions/prepare-postgres/action.yml"]) {
     it(`runs the full matrix when shared PostgreSQL preparation changes: ${path}`, () => {
       const output = detect(repositoryWithChange(path), "pull_request");
-      expect(output.size).toBe(15);
+      expect(output.size).toBe(16);
       expect([...output.values()].every(value => value === "true")).toBe(true);
     });
   }
@@ -280,5 +286,17 @@ describe("CI path detection", () => {
       "0000000000000000000000000000000000000000",
     );
     expect([...result.values()].every((value) => value === "true")).toBe(true);
+  });
+});
+
+describe("extracted Swift contract path detection", () => {
+  it.each([
+    "packages/go/migration/extracted-swift-packages.json",
+    "scripts/go/check-out-swift-contracts.py",
+  ])("checks every extracted-contract consumer when %s changes", (path) => {
+    const result = detect(repositoryWithChange(path), "pull_request");
+    for (const job of ["redis", "shared_swift", "spec", "go_packages", "jetstream_ingest", "wire_ingest"]) {
+      expect(result.get(job), job).toBe("true");
+    }
   });
 });

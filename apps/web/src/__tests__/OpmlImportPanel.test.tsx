@@ -184,3 +184,15 @@ describe("OpmlImportPanel", () => {
     expect(screen.queryByText("subscriptions.opml")).toBeNull();
   });
 });
+
+it("blocks an already-reviewed import if the subscription check later fails", async () => {
+  const onImport = mock(async () => ({ imported: [], skippedExisting: [], failed: [] }));
+  const view = render(<OpmlImportPanel existingFeedUrls={[]} existingSubscriptionsLoading={false} onImport={onImport} />);
+  fireEvent.change(screen.getByLabelText("Choose OPML File"), { target: { files: [new File([opml], "feeds.opml")] } });
+  await screen.findByRole("button", { name: "Import 3 Feeds" });
+  view.rerender(<OpmlImportPanel existingFeedUrls={[]} existingSubscriptionsLoading={false} existingSubscriptionsError="Subscription Check Failed" onImport={onImport} />);
+  const button = screen.getByRole("button", { name: "Import 3 Feeds" }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(onImport).not.toHaveBeenCalled();
+});

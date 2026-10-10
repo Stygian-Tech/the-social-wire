@@ -294,16 +294,16 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
                   </div>
                 ) : null}
                 <p
-                  className={`line-clamp-2 text-base font-semibold leading-snug text-foreground underline-offset-4 group-hover:underline ${row.excerpt ? "" : "pr-24"}`}
+                  className="line-clamp-2 text-base font-semibold leading-snug text-foreground underline-offset-4 group-hover:underline"
                 >
                   {rowTitle(row)}
                 </p>
                 {row.excerpt ? (
-                  <p className="line-clamp-2 pr-24 text-sm leading-5 text-muted-foreground">
+                  <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">
                     {row.excerpt}
                   </p>
                 ) : null}
-                <div className="absolute bottom-2.5 right-2.5 flex items-center">
+                <div className="mt-1 flex shrink-0 items-center justify-end">
                   <SavedLinkCardActions
                     row={row}
                     isArchivedView={isArchivedView}

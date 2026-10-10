@@ -1,7 +1,8 @@
-# Synthetic Ranking Capacity Fixture
+# Historical Swift Synthetic Ranking Capacity Fixture
+
+These Swift fixtures are historical oracles. Run the instructions below only against an archived revision that still contains `WireWorkerCore`; current worker source is Go. Historical receipts remain valid for their pinned revisions and must not be represented as Go capacity acceptance. Current correctness tests run `go test ./wireworkercore ./topicworkercore` in `packages/go`; the production rollup SQL probe is documented in [wire-rollup-benchmark.md](../wire-rollup-benchmark.md). A representative Go ranking-capacity experiment needs a separately reviewed fixture and evidence run.
 
 
-Swift worker references below describe historical reproduction from a preserved Git export (for example `f05429ff06c852a0645b7e70d1809b2052b61892`). Current worker execution uses `services/indexing-worker` and repository-local Go packages; do not run historical Swift commands from the current checkout.
 `WireRankingCapacityTests.swift` exercises the real PostgreSQL rollup refresh,
 candidate query, ranker, generation commit, and edition projection over 5,000
 invented stories and 25,000 invented share events. It is a separate capacity

@@ -98,3 +98,32 @@ func TestWireRoutesVisibilityBoundsAndCatalogDates(t *testing.T) {
 		}
 	}
 }
+
+func TestWireCatalogDoesNotLoadTopicCatalogs(t *testing.T) {
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	wire, err := topicreadcore.NewWireStore(routeCorpus{now: now}, strings.Repeat("a", 32), "visible", &topicreadcore.ModerationCache{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Uninitialized topic stores panic if catalog loading touches their database.
+	routes := Routes{Wire: wire, WireVisible: true, FinanceStore: &topicreadcore.FinanceStore{}, SportsStore: &topicreadcore.SportsStore{}, Now: func() time.Time { return now }}
+	mux := http.NewServeMux()
+	routes.Register(mux)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest("GET", "/xrpc/app.thesocialwire.discovery.getFeedCatalog", nil))
+	var catalog map[string]any
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &catalog) != nil {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	if catalog["enabled"] != true || catalog["available"] != true || catalog["title"] != "The Wire" {
+		t.Fatal(catalog)
+	}
+	for _, key := range []string{"finance", "financeAvailable", "sports", "sportsAvailable"} {
+		if _, exists := catalog[key]; exists {
+			t.Fatalf("unexpected topic field %q", key)
+		}
+	}
+	if response.Body.Len() > 1024 {
+		t.Fatalf("Wire metadata response grew to %d bytes", response.Body.Len())
+	}
+}

@@ -16,7 +16,7 @@ Coverage includes FIFO claim/apply/ack, lease renewal/takeover, stale authority 
 
 ## ThinAppViewCore
 
-Retained Swift API/store contracts run in the `shared-swift` CI gate:
+Retained Swift API/store contracts run in the AppView CI gate:
 
 ```bash
 (cd packages/swift/ThinAppViewCore && swift test)
@@ -26,7 +26,7 @@ Tests retain render extraction, SQLite/Postgres indexing, RSS parser/identity, c
 
 ## Live acceptance
 
-After exact-head CI and the exact Development deployment, verify both lane readiness, Coordinator ownership/standby, durable content projection and authenticated reader behavior. Use existing Gateway/AppView Bruno requests and the retained worker verification collection. A healthy listener alone is insufficient. Production promotion and rollback remain separate release actions.
+After exact-head CI and the exact Development deployment, verify both lane readiness, Coordinator ownership/standby, durable content projection and authenticated podcast behavior. Use existing Gateway/AppView Bruno requests and the retained worker verification collection. A healthy listener alone is insufficient. Production promotion and rollback remain separate release actions.
 
 - [AppView test plan](./appview.md)
 - [Thin AppView architecture](../architecture/appview.md)

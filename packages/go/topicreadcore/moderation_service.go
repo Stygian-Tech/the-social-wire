@@ -6,6 +6,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,6 +37,7 @@ type ModerationService struct {
 	HTTP       thinappviewcore.PublicGetter
 	Cache      *ModerationCache
 	PublicBase string
+	refreshes  singleflight.Group
 }
 
 func (m *ModerationService) Require(ctx context.Context, auth *gatewaycore.AuthContext, rawProofs string, now time.Time) (*ModerationSnapshot, error) {
@@ -64,12 +66,31 @@ func (m *ModerationService) RequireProofs(ctx context.Context, auth gatewaycore.
 		}
 		return nil, ErrModerationUnavailable
 	}
-	deadline, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
-	value, err := m.fetch(deadline, auth, proofs, now)
-	if err == nil {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Feed requests for the same viewer share one bounded refresh. A cancelled
+	// tab must not cancel the moderation fetch needed by another active feed.
+	result := m.refreshes.DoChan(auth.DID, func() (any, error) {
+		if fresh := m.Cache.Fresh(auth.DID, now); fresh != nil {
+			return fresh, nil
+		}
+		deadline, cancel := context.WithTimeout(context.WithoutCancel(ctx), 25*time.Second)
+		defer cancel()
+		value, err := m.fetch(deadline, auth, proofs, now)
+		if err != nil {
+			return nil, err
+		}
 		m.Cache.Store(auth.DID, value)
 		return &value, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case value := <-result:
+		if value.Err == nil {
+			return value.Val.(*ModerationSnapshot), nil
+		}
 	}
 	if stale := m.Cache.Usable(auth.DID, now); stale != nil {
 		return stale, nil

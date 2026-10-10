@@ -201,6 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const did = session.did;
+    clearStoredOAuthSessionHint();
 
     // Drop the in-memory session first so hooks abort in-flight OAuth work
     // before we revoke credentials at the authorization server.

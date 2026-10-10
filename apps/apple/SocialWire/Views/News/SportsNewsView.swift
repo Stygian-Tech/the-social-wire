@@ -3,6 +3,7 @@ import SwiftUI
 struct SportsNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var scrollAnchor: String?
     @State private var showingPicker = false
     @State private var showingCustomization = false
@@ -20,8 +21,9 @@ struct SportsNewsView: View {
                 HStack {
                     Button { showingPicker = true } label: {
                         Label(selectedEntity?.displayName ?? topic.selectedTitle, systemImage: "sportscourt")
-                            .font(.title2.bold())
+                            .font(.headline)
                     }
+                    .accessibilityIdentifier("sports-feed-picker")
                     Spacer()
                     Button("Customize", systemImage: "slider.horizontal.3") { showingCustomization = true }
                         .labelStyle(.iconOnly)
@@ -42,7 +44,9 @@ struct SportsNewsView: View {
                         eventsEnabled: topic.catalog?.eventsEnabled == true, hideScores: appModel.feedPreferences.hideSportsScores,
                         entities: topic.catalog?.entities ?? [])
                     Text("Latest News").font(.headline)
-                } else if topic.catalog?.eventsEnabled == true {
+                } else {
+                    Text("Schedule")
+                        .font(.title2.bold())
                     if topic.selectedFeedID == "sports" {
                     Picker("Schedules and Standings", selection: Binding(get: { topic.eventScope }, set: { value in
                         Task { await topic.setEventScope(value) }
@@ -53,7 +57,12 @@ struct SportsNewsView: View {
                         Text("My Teams").tag("teams")
                     }.pickerStyle(.segmented)
                     }
-                    SportsEventsStrip(events: topic.events, error: topic.eventsError, hideScores: appModel.feedPreferences.hideSportsScores, entities: topic.catalog?.entities ?? [])
+                    if topic.catalog == nil {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 72)
+                    } else {
+                        SportsEventsStrip(events: topic.events, error: topic.eventsError, hideScores: appModel.feedPreferences.hideSportsScores, entities: topic.catalog?.entities ?? [])
+                    }
                 }
                 if let error = topic.error {
                     Text(error).font(.footnote).foregroundStyle(.secondary)
@@ -65,12 +74,21 @@ struct SportsNewsView: View {
                     ContentUnavailableView("No Matching Stories Yet", systemImage: "sportscourt",
                         description: Text("Sports Stories Will Appear Here When Available."))
                 }
-                ForEach(topic.items) { item in
-                    WireStoryCard(entry: item.story.toEntryListItem()) {
-                        if let url = URL(string: item.story.canonicalUrl) { openURL(url) }
+                EditorialCardLayout(
+                    spacing: 18,
+                    minimumCardWidth: dynamicTypeSize.isAccessibilitySize
+                        ? ArticleReadingWidth.editorial
+                        : 280
+                ) {
+                    ForEach(topic.items) { item in
+                        VStack(alignment: .leading, spacing: 8) {
+                            WireStoryCard(entry: item.story.toEntryListItem()) {
+                                if let url = URL(string: item.story.canonicalUrl) { openURL(url) }
+                            }
+                            SportsStoryActions(item: item)
+                        }
+                        .id(item.id)
                     }
-                    .id(item.id)
-                    SportsStoryActions(item: item)
                 }
                 if topic.continuationSuspended {
                     Button("Refresh Personalized Feed") { Task { await refresh() } }
@@ -86,11 +104,6 @@ struct SportsNewsView: View {
         }
         .scrollPosition(id: $scrollAnchor)
         .refreshable { await refresh() }
-        .task(id: appModel.viewerDID) {
-            topic.bind(viewer: appModel.viewerDID)
-            await topic.loadCatalog()
-            await refresh()
-        }
         .onChange(of: topic.selectedFeedID) { _, _ in scrollAnchor = nil }
         .sheet(isPresented: $showingPicker) { SportsFeedPickerView() }
         .sheet(isPresented: $showingCustomization) { SportsCustomizationView(initialEntity: selectedEntity) }

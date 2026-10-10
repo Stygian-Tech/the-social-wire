@@ -31,13 +31,6 @@ const railwayServices = [
 ] as const;
 
 describe("CI workflow configuration", () => {
-  it("keeps the absent podcast worker out of the Production required graph", () => {
-    const parsed = Bun.YAML.parse(workflow) as { jobs: Record<string, unknown> };
-    expect(parsed.jobs["podcast-worker"]).toBeUndefined();
-    expect(workflow).not.toContain("PODCAST_WORKER_");
-    expect(pathFilters).not.toContain("filter_changed podcast_worker");
-    expect(workflow).not.toContain("services/podcast-worker/");
-  });
   it("retires standalone Swift worker jobs while retaining API domain tests", () => {
     for (const name of ["charybdis", "wire-worker"]) {
       expect(workflow).not.toContain(`  ${name}:`);
@@ -291,7 +284,7 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("Apply migrations from empty and verify idempotence");
     expect(workflow).toContain("Test iOS app with coverage");
     expect(workflow).toContain("go test -race");
-    expect(workflow).toContain("working-directory: services/jetstream-ingest");
+    expect(workflow).toContain("Test source entrypoint database gate");
     // PostgreSQL process-restart images are executable integration fixtures.
     expect(workflow).toContain("Verify PostgreSQL clean shutdown");
     expect(workflow).toContain("Build isolated PostgreSQL restart fixture");
@@ -458,7 +451,7 @@ describe("CI workflow configuration", () => {
     expect(productionProfile).not.toContain("wire-global-v5-dev-publication-west-20260919");
     expect(productionProfile).not.toContain("wire-global-v4-dev-live-20260830");
     expect(productionProfile).not.toContain("24790001258");
-    expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(3);
+    expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(4);
   });
 
   it("tests migrated Go entry points within the existing required gate", () => {
@@ -490,6 +483,76 @@ describe("CI workflow configuration", () => {
       "docs",
     ]) {
       expect(pathFilters).toContain(`filter_changed ${filter}`);
+    }
+  });
+});
+
+describe("extracted Swift contract checkouts", () => {
+  it("bootstraps contracts before all source-reading CI jobs", () => {
+    const parsed = Bun.YAML.parse(workflow) as { jobs: Record<string, { steps: { run?: string; uses?: string }[] }> };
+    for (const name of ["redis", "shared-swift", "go-packages", "spec"]) {
+      const steps = parsed.jobs[name].steps;
+      const checkoutIndex = steps.findIndex(step => step.run === "python3 scripts/go/check-out-swift-contracts.py");
+      expect(checkoutIndex, name).toBe(steps.findIndex(step => step.uses === "actions/checkout@v6") + 1);
+    }
+  });
+
+  it("pins offline checkouts and rejects changed, mismatched or inherited repositories", () => {
+    const root = mkdtempSync(join(tmpdir(), "swift-contract-checkout-"));
+    const git = (cwd: string, ...args: string[]) => {
+      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout.trim();
+    };
+    const source = join(root, "source");
+    const destination = join(root, "packages/swift/FixtureCore");
+    const manifest = join(root, "manifest.json");
+    const run = (...args: string[]) => spawnSync("python3", [
+      join(repositoryRoot, "scripts/go/check-out-swift-contracts.py"),
+      "--root", root, "--manifest", manifest, ...args,
+    ], { encoding: "utf8" });
+    try {
+      mkdirSync(source);
+      git(source, "init", "--quiet");
+      git(source, "config", "user.name", "Contract Test");
+      git(source, "config", "user.email", "test@example.invalid");
+      git(source, "config", "commit.gpgsign", "false");
+      writeFileSync(join(source, "Package.swift"), "original\n");
+      git(source, "add", ".");
+      git(source, "commit", "--quiet", "-m", "original");
+      const revision = git(source, "rev-parse", "HEAD");
+      const pin = (value = revision) => writeFileSync(manifest, JSON.stringify({
+        schemaVersion: 1, packages: [{ name: "FixtureCore", repository: source, revision: value }],
+      }));
+      pin();
+      expect(run("--package", "UnknownCore").status).not.toBe(0);
+      expect(existsSync(destination)).toBe(false);
+      expect(run().status).toBe(0);
+      expect(git(destination, "rev-parse", "HEAD")).toBe(revision);
+      expect(run().status).toBe(0);
+      writeFileSync(join(destination, "Package.swift"), "local work\n");
+      expect(run().stderr).toContain("local changes");
+      expect(readFileSync(join(destination, "Package.swift"), "utf8")).toBe("local work\n");
+      git(destination, "checkout", "--", "Package.swift");
+      git(destination, "remote", "set-url", "origin", join(root, "wrong"));
+      expect(run().stderr).toContain("unexpected origin");
+      git(destination, "remote", "set-url", "origin", source);
+      pin("0".repeat(40));
+      expect(run().stderr).toContain("pinned revision");
+      pin("main");
+      expect(run().stderr).toContain("full immutable Git revision");
+      pin();
+      rmSync(destination, { recursive: true });
+      mkdirSync(destination);
+      writeFileSync(join(destination, "keep.txt"), "keep\n");
+      expect(run().stderr).toContain("independent Git checkout");
+      expect(readFileSync(join(destination, "keep.txt"), "utf8")).toBe("keep\n");
+      rmSync(destination, { recursive: true });
+      pin("0".repeat(40));
+      expect(run().status).not.toBe(0);
+      expect(existsSync(destination)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

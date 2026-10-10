@@ -5,7 +5,7 @@ This package is the shared Go runtime for two independently replicated Railway s
 - `INDEXING_WORKER_ROLE=projection` runs the AppView durable-inbox projector and The Wire inbox drain. It is horizontally scalable; PostgreSQL claim/ack semantics partition work across replicas.
 - `INDEXING_WORKER_ROLE=coordinator` runs AppView RSS/backfill/retention/recovery jobs and The Wire generation/enrichment/cleanup jobs. Two replicas may run, but independent fenced leases allow exactly one active owner per subsystem while the other remains a healthy standby.
 
-Superseded Swift worker sources are retired after Go runtime acceptance. Rollback uses a previously accepted Git revision; never run old and replacement workers against the same authoritative lane.
+Superseded Swift worker sources are retired after Development Go acceptance. Rollback uses a previously accepted Git revision; never run old and replacement workers against the same authoritative lane.
 
 Required hosted variables include `APP_ENV`, `DATABASE_URL`, `ENABLE_THIN_APPVIEW=true`, `THIN_APPVIEW_JETSTREAM_MODE=v2_authoritative`, `INDEXING_WORKER_ROLE`, and the existing AppView/Wire role-specific settings and secrets. Coordinator lease timing defaults to a 30-second lease, 10-second renewal, and 5-second standby retry; override with `INDEXING_ROLE_LEASE_SECONDS`, `INDEXING_ROLE_LEASE_RENEW_SECONDS`, and `INDEXING_ROLE_STANDBY_RETRY_SECONDS` only as a coordinated operational change.
 

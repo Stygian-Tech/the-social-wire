@@ -6,6 +6,10 @@ struct SportsFeedPickerView: View {
     @State private var query = ""
 
     private var topic: SportsTopicModel { appModel.sportsTopic }
+    private var followedFeeds: [SportsNamedFeed] {
+        SportsNamedFeed.followedFeeds(topic.catalog?.feeds ?? [], entities: topic.catalog?.entities ?? [],
+                                     selections: topic.selections)
+    }
     private var groups: [SportsFeedPickerGroup] {
         SportsFeedPickerGroup.make(
             feeds: topic.catalog?.feeds ?? [.all],
@@ -19,7 +23,7 @@ struct SportsFeedPickerView: View {
     var body: some View {
         let roots = SportsFeedPickerNode.make(feeds: topic.catalog?.feeds ?? [.all], entities: topic.catalog?.entities ?? [])
         NavigationStack {
-            browser(title: "Sports Feeds", nodes: roots, feed: nil)
+            browser(title: "Sports Feeds", nodes: roots, feed: nil, showsFollowing: true)
                 .navigationDestination(for: String.self) { id in
                     if let node = roots.lazy.compactMap({ $0.find(id) }).first {
                         browser(title: SportsEntity.displayName(node.title, kind: node.kind), nodes: node.children, feed: node.feed)
@@ -28,7 +32,7 @@ struct SportsFeedPickerView: View {
         }
     }
 
-    private func browser(title: String, nodes: [SportsFeedPickerNode], feed: SportsNamedFeed?) -> some View {
+    private func browser(title: String, nodes: [SportsFeedPickerNode], feed: SportsNamedFeed?, showsFollowing: Bool = false) -> some View {
         let searching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return List {
             if searching {
@@ -36,6 +40,11 @@ struct SportsFeedPickerView: View {
                     Section(group.title) { ForEach(group.feeds) { selectionRow($0) } }
                 }
             } else {
+                if showsFollowing, !followedFeeds.isEmpty {
+                    Section("Following in Sports") {
+                        ForEach(followedFeeds) { selectionRow($0) }
+                    }
+                }
                 if let feed { Section { selectionRow(feed) } }
                 ForEach(nodes) { node in
                     if node.children.isEmpty, let feed = node.feed {

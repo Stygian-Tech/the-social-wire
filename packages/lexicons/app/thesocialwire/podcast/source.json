@@ -1,0 +1,72 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.podcast.source",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Provenance of a public RSS mirror; metadata links the source feed to its bridge PDS show record.",
+      "record": {
+        "type": "object",
+        "required": [
+          "feedUrl",
+          "podcastGuid",
+          "showUri",
+          "bridgeDid",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "feedUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "podcastGuid": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "showUri": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "at-uri"
+          },
+          "bridgeDid": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "did"
+          },
+          "createdAt": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "datetime"
+          },
+          "updatedAt": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "datetime"
+          },
+          "itemGuid": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "episodeUri": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "at-uri"
+          },
+          "publisherShowUri": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "at-uri"
+          },
+          "publisherEpisodeUri": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "at-uri"
+          }
+        }
+      }
+    }
+  }
+}

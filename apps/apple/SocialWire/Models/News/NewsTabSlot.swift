@@ -1,39 +1,47 @@
 import Foundation
 
-enum NewsTabSlot: Int, CaseIterable, Hashable {
-    case primaryOne
-    case primaryTwo
-    case primaryThree
-    case primaryFour
-    case transient
+enum NewsTabSlot: Hashable {
+    case wire
+    case circle
+    case finance
+    case podcasts
+    case sports
+    case subscribed
+    case following
+    case standardList(String)
     case readLater
     case archive
 
-    static let primarySlots: [Self] = [
-        .primaryOne,
-        .primaryTwo,
-        .primaryThree,
-        .primaryFour,
-    ]
-
-    var primaryIndex: Int? {
-        switch self {
-        case .primaryOne, .primaryTwo, .primaryThree, .primaryFour:
-            rawValue
-        case .transient, .readLater, .archive:
-            nil
+    init(_ feed: NewsPrimaryFeed) {
+        switch feed {
+        case .wire: self = .wire
+        case .circle: self = .circle
+        case .finance: self = .finance
+        case .podcasts: self = .podcasts
+        case .sports: self = .sports
+        case .subscribed: self = .subscribed
+        case .following: self = .following
         }
     }
 
-    /// Slots backed by the Read Later store instead of a feed.
+    var primaryFeed: NewsPrimaryFeed? {
+        switch self {
+        case .wire: .wire
+        case .circle: .circle
+        case .finance: .finance
+        case .podcasts: .podcasts
+        case .sports: .sports
+        case .subscribed: .subscribed
+        case .following: .following
+        case .standardList, .readLater, .archive: nil
+        }
+    }
+
     var savedListSource: ReaderListSource? {
         switch self {
-        case .readLater:
-            .readLater
-        case .archive:
-            .archive
-        case .primaryOne, .primaryTwo, .primaryThree, .primaryFour, .transient:
-            nil
+        case .readLater: .readLater
+        case .archive: .archive
+        case .wire, .circle, .finance, .podcasts, .sports, .subscribed, .following, .standardList: nil
         }
     }
 }

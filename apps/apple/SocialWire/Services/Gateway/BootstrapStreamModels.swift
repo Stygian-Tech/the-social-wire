@@ -21,6 +21,7 @@ struct BootstrapStreamEventDTO: Codable, Sendable {
     let selectedPublication: BootstrapSelectedPublicationPayloadDTO?
     let entriesPage: BootstrapEntriesPagePayloadDTO?
     let sidebarFolders: BootstrapSidebarFoldersPayloadDTO?
+    let lists: StandardReaderListsPage?
     let warning: BootstrapMessagePayloadDTO?
     let error: BootstrapMessagePayloadDTO?
     let done: BootstrapDonePayloadDTO?

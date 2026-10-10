@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "name": "OperationsCore",
+      "repository": "https://github.com/Stygian-Tech/operations-core.git",
+      "revision": "a3b7bb328189a423f3e2d2fdd1dcfd4022faddc1"
+    },
+    {
+      "name": "SocialWireRedis",
+      "repository": "https://github.com/Stygian-Tech/social-wire-redis.git",
+      "revision": "313305b98919ac8075313044b6d867c13650a329"
+    },
+    {
+      "name": "WireCore",
+      "repository": "https://github.com/Stygian-Tech/wire-core.git",
+      "revision": "a37340974f2d26d92faa70bfb048ab0681017b28"
+    },
+    {
+      "name": "FinanceCore",
+      "repository": "https://github.com/Stygian-Tech/finance-core.git",
+      "revision": "0509d93c44d2958622471e2a452317407e699cc2"
+    },
+    {
+      "name": "SportsCore",
+      "repository": "https://github.com/Stygian-Tech/sports-core.git",
+      "revision": "dab4c7a598265077260feee6589fc09903731084"
+    },
+    {
+      "name": "ThinAppViewCore",
+      "repository": "https://github.com/Stygian-Tech/thin-app-view-core.git",
+      "revision": "0af7ddf8ae4c844036db11f9dd1f09bb379f2cb5"
+    },
+    {
+      "name": "GatewayCore",
+      "repository": "https://github.com/Stygian-Tech/gateway-core.git",
+      "revision": "829315f3ca1d72397995491b28d9e3b311554c3b"
+    }
+  ]
+}

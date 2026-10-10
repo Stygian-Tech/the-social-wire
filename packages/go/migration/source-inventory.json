@@ -3984,11 +3984,56 @@
       }
     ]
   },
+  "extractedSwiftPackages": {
+    "schemaVersion": 1,
+    "packages": [
+      {
+        "name": "OperationsCore",
+        "repository": "https://github.com/Stygian-Tech/operations-core.git",
+        "revision": "a3b7bb328189a423f3e2d2fdd1dcfd4022faddc1"
+      },
+      {
+        "name": "SocialWireRedis",
+        "repository": "https://github.com/Stygian-Tech/social-wire-redis.git",
+        "revision": "313305b98919ac8075313044b6d867c13650a329"
+      },
+      {
+        "name": "WireCore",
+        "repository": "https://github.com/Stygian-Tech/wire-core.git",
+        "revision": "a37340974f2d26d92faa70bfb048ab0681017b28"
+      },
+      {
+        "name": "FinanceCore",
+        "repository": "https://github.com/Stygian-Tech/finance-core.git",
+        "revision": "0509d93c44d2958622471e2a452317407e699cc2"
+      },
+      {
+        "name": "SportsCore",
+        "repository": "https://github.com/Stygian-Tech/sports-core.git",
+        "revision": "dab4c7a598265077260feee6589fc09903731084"
+      },
+      {
+        "name": "ThinAppViewCore",
+        "repository": "https://github.com/Stygian-Tech/thin-app-view-core.git",
+        "revision": "0af7ddf8ae4c844036db11f9dd1f09bb379f2cb5"
+      },
+      {
+        "name": "GatewayCore",
+        "repository": "https://github.com/Stygian-Tech/gateway-core.git",
+        "revision": "829315f3ca1d72397995491b28d9e3b311554c3b"
+      }
+    ]
+  },
   "schemaVersion": 1,
   "description": "Source inventory; implementation and parity must be tracked separately.",
   "packages": [
     {
       "name": "FinanceCore",
+      "extracted": {
+        "name": "FinanceCore",
+        "repository": "https://github.com/Stygian-Tech/finance-core.git",
+        "revision": "0509d93c44d2958622471e2a452317407e699cc2"
+      },
       "source": "packages/swift/FinanceCore",
       "target": "packages/go/financecore",
       "sources": [
@@ -4445,6 +4490,11 @@
     },
     {
       "name": "GatewayCore",
+      "extracted": {
+        "name": "GatewayCore",
+        "repository": "https://github.com/Stygian-Tech/gateway-core.git",
+        "revision": "829315f3ca1d72397995491b28d9e3b311554c3b"
+      },
       "source": "packages/swift/GatewayCore",
       "target": "packages/go/gatewaycore",
       "sources": [
@@ -4789,8 +4839,8 @@
         },
         {
           "path": "packages/swift/GatewayCore/Sources/GatewayCore/OAuth/ATProtoOAuthScopes.swift",
-          "sha256": "4acf1f1012f28675affa61daa38e807996cf9b179810c2439e26f21c046802b4",
-          "lines": 102,
+          "sha256": "64626b7309e5ef1511abf66ea4afbeed541f99771e63688853342b99c8d5f200",
+          "lines": 108,
           "publicDeclarations": [
             "public enum ATProtoOAuthScopes {"
           ]
@@ -5007,9 +5057,20 @@
         },
         {
           "path": "packages/swift/GatewayCore/Sources/GatewayCore/Services/PublicDNSAddressValidator.swift",
-          "sha256": "238624980b6aa9b73fadb0783d82080c8ba671c465102898d369c815bd446fd8",
-          "lines": 242,
+          "sha256": "d0292d07fcdf063bd8b86fbfdfcf3289a667b12faa2e73675cdec7e2443b9977",
+          "lines": 259,
           "publicDeclarations": []
+        },
+        {
+          "path": "packages/swift/GatewayCore/Sources/GatewayCore/Services/PublicMediaFetcher.swift",
+          "sha256": "127400d72540d119fcfe2245a2d253c07633cc799e41c26e9d59e6dc1c559217",
+          "lines": 175,
+          "publicDeclarations": [
+            "public enum PublicMediaFetcher {",
+            "public static func stream(url: String, httpClient: HTTPClient, range: String?) async throws -> (",
+            "public static func fingerprint(url: String, httpClient: HTTPClient) async throws -> String? {",
+            "public static func fetch("
+          ]
         },
         {
           "path": "packages/swift/GatewayCore/Sources/GatewayCore/Services/PublicRepoResolutionError.swift",
@@ -5062,6 +5123,7 @@
         "packages/swift/GatewayCore/Tests/GatewayCoreTests/OptionalATProtoAuthMiddlewareTests.swift",
         "packages/swift/GatewayCore/Tests/GatewayCoreTests/PDSAccessTokenAttestorTests.swift",
         "packages/swift/GatewayCore/Tests/GatewayCoreTests/PublicListRecordsResponseTests.swift",
+        "packages/swift/GatewayCore/Tests/GatewayCoreTests/PublicMediaFetcherTests.swift",
         "packages/swift/GatewayCore/Tests/GatewayCoreTests/RequestTraceMiddlewareTests.swift",
         "packages/swift/GatewayCore/Tests/GatewayCoreTests/WebOAuthClientMetadataTests.swift",
         "packages/swift/GatewayCore/Tests/GatewayCoreTests/WebOAuthScopesParityTests.swift"
@@ -5069,6 +5131,11 @@
     },
     {
       "name": "OperationsCore",
+      "extracted": {
+        "name": "OperationsCore",
+        "repository": "https://github.com/Stygian-Tech/operations-core.git",
+        "revision": "a3b7bb328189a423f3e2d2fdd1dcfd4022faddc1"
+      },
       "source": "packages/swift/OperationsCore",
       "target": "packages/go/operationscore",
       "sources": [
@@ -7020,6 +7087,11 @@
     },
     {
       "name": "SocialWireRedis",
+      "extracted": {
+        "name": "SocialWireRedis",
+        "repository": "https://github.com/Stygian-Tech/social-wire-redis.git",
+        "revision": "313305b98919ac8075313044b6d867c13650a329"
+      },
       "source": "packages/swift/SocialWireRedis",
       "target": "packages/go/socialwireredis",
       "sources": [
@@ -7400,6 +7472,11 @@
     },
     {
       "name": "SportsCore",
+      "extracted": {
+        "name": "SportsCore",
+        "repository": "https://github.com/Stygian-Tech/sports-core.git",
+        "revision": "dab4c7a598265077260feee6589fc09903731084"
+      },
       "source": "packages/swift/SportsCore",
       "target": "packages/go/sportscore",
       "sources": [
@@ -8118,6 +8195,11 @@
     },
     {
       "name": "ThinAppViewCore",
+      "extracted": {
+        "name": "ThinAppViewCore",
+        "repository": "https://github.com/Stygian-Tech/thin-app-view-core.git",
+        "revision": "0af7ddf8ae4c844036db11f9dd1f09bb379f2cb5"
+      },
       "source": "packages/swift/ThinAppViewCore",
       "target": "packages/go/thinappviewcore",
       "sources": [
@@ -8313,18 +8395,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/BoundedSequentialMessagePump.swift",
-          "sha256": "f9f05ab992b30cd368e12725d53c9af9aa0f43bdf6e2714734c2d64c26f429eb",
-          "lines": 131,
-          "publicDeclarations": [
-            "public struct BoundedQueueObservation: Sendable, Equatable {",
-            "public let depth: Int",
-            "public let capacity: Int",
-            "public let dropped: Int64",
-            "public init(depth: Int, capacity: Int, dropped: Int64) {"
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/DatabaseBackend.swift",
           "sha256": "96a4fc2694bb3095ce6b098286720dafbc193de4915dec694e13042c79a44d2e",
           "lines": 47,
@@ -8360,29 +8430,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseLinuxWebSocket.swift",
-          "sha256": "09ed0122e1b2258f6fabdc6eed1f40a843b89e6821318b60df5f0a3539d2de7f",
-          "lines": 167,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseSubscriber.swift",
-          "sha256": "2f01730da919b22ac3f14b7d9e21e3026aa800be65b4a38e8a7b37eba7c20bc6",
-          "lines": 764,
-          "publicDeclarations": [
-            "public enum JetstreamCursor {",
-            "public static func parse(_ value: Any?) -> Int64? {",
-            "public static func resumeCursor(",
-            "public static func url(_ raw: String, cursor: Int64?) throws -> String {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/FirehoseSubscriberURLSessionTransport.swift",
-          "sha256": "098d255fadde0e14ec13f307466168b55cc85fedf8c3ddb3b60681fa07c56241",
-          "lines": 67,
-          "publicDeclarations": []
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/HTTPResponseBodyDrain.swift",
           "sha256": "81d8220057016536f1abafdb02ac3d828b5141609549674d60925bc1dff62ace",
           "lines": 20,
@@ -8396,48 +8443,6 @@
             "public enum HtmlTextDecoder {",
             "public static func decodePlainText(_ raw: String) -> String {"
           ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamEndpointPool.swift",
-          "sha256": "3e677f0abc2d58c82d988393b330e6df4e3a3ebaa754f2fbee3dac6bb9b1a39b",
-          "lines": 39,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamInboxProjectionWorker.swift",
-          "sha256": "90299e8f88067ebda76d0e00b1c388c1e28af4356e89705365b14184fd7d4fcd",
-          "lines": 793,
-          "publicDeclarations": [
-            "public final class JetstreamInboxProjectionWorker: Sendable {",
-            "public init(",
-            "public func runForever() async {",
-            "public func drainOnce(at now: Date = Date()) async throws -> Int {",
-            "public enum JetstreamInboxProjectionError: Error, Sendable, Equatable {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReconnectBackoff.swift",
-          "sha256": "6aad49dbb514f8cb1377ea69af04c33746500ff4f52d999086805d4e48399615",
-          "lines": 17,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReconnectProgressGate.swift",
-          "sha256": "096643ba78192a77bbbd66510df769c399c5f6da9d97ba99e04595d488838c75",
-          "lines": 36,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReplayEnvelopePolicy.swift",
-          "sha256": "7f0c5ac3242678e08ef839c3d4c59c6d13e7d01a413c1922e5e85c9cfcec66e9",
-          "lines": 35,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamReplayProgressMonitor.swift",
-          "sha256": "35ee70a5056221831860cca207764813834df0272007f07935ed92980858f109",
-          "lines": 58,
-          "publicDeclarations": []
         },
         {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/JetstreamV2ProjectionEvent.swift",
@@ -8476,12 +8481,6 @@
             "public enum JetstreamV2ProjectionEventParser {",
             "public static func parse("
           ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/LegacyJetstreamAuthorityLease.swift",
-          "sha256": "9eefc8992716cea48304c0658eb8aaa50ab6f1b88aee859485b76bfb66827b3b",
-          "lines": 83,
-          "publicDeclarations": []
         },
         {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/LivePDSReadStateRecordFetcher.swift",
@@ -8633,6 +8632,444 @@
           "sha256": "a92355cf46749eee8cefc0fd260558d886a403ea7eb15a35d3b3b51661dc1e04",
           "lines": 110,
           "publicDeclarations": []
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastChapter.swift",
+          "sha256": "81eb4150a60823b819bcbac4698bb772c55d7c43eba370d8cb9d24abbf71370c",
+          "lines": 14,
+          "publicDeclarations": [
+            "public struct PodcastChapter: Codable, Sendable, Equatable {",
+            "public var startSeconds: Double",
+            "public var title: String",
+            "public var artworkUrl: String?",
+            "public var url: String?",
+            "public init(startSeconds: Double, title: String, artworkUrl: String? = nil, url: String? = nil) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastChapterParser.swift",
+          "sha256": "de40b4082eff6499c7129191fb94c0fe134a836af88d8b50d5311561c3703984",
+          "lines": 38,
+          "publicDeclarations": [
+            "public enum PodcastChapterParser {",
+            "public static func parse(_ data: Data, duration: Double? = nil) -> [PodcastChapter] {",
+            "public static func chapters(_ rows: [[String: Any]], duration: Double? = nil) -> [PodcastChapter] {",
+            "public static func people(_ rows: [[String: Any]]) -> [PodcastPerson] {",
+            "public static func safeURL(_ raw: String?) -> String? {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastClip.swift",
+          "sha256": "2130155bcb03a0b2c28388aa0b3c912dc27d45c7b6299cb1e9cb13de95fbcbf5",
+          "lines": 33,
+          "publicDeclarations": [
+            "public struct PodcastClip: Codable, Sendable, Equatable {",
+            "public var id: String",
+            "public var episodeId: String",
+            "public var sourceUri: String?",
+            "public var jobId: String?",
+            "public var startSeconds: Double",
+            "public var endSeconds: Double",
+            "public var title: String",
+            "public var status: String",
+            "public var audioUrl: String?",
+            "public var videoUrl: String?",
+            "public var publicAudioUrl: String?",
+            "public var publicVideoUrl: String?",
+            "public var audioKey: String?",
+            "public var videoKey: String?",
+            "public var durationSeconds: Double?",
+            "public var publishedUri: String?",
+            "public var createdAt: String",
+            "public init("
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastDirectoryCandidate.swift",
+          "sha256": "664e4ecfb4714a91864dcbefa3d29448fbee207b6450f4773731427720848be3",
+          "lines": 18,
+          "publicDeclarations": [
+            "public struct PodcastDirectoryCandidate: Codable, Sendable, Equatable {",
+            "public var provider: String = \"podcastindex\"",
+            "public var id: String",
+            "public var title: String",
+            "public var description: String?",
+            "public var artworkUrl: String?",
+            "public var feedUrl: String",
+            "public init(id: String, title: String, description: String? = nil, artworkUrl: String? = nil, feedUrl: String) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastEpisode.swift",
+          "sha256": "6643c467c640b67d135d034175033c645df3ab9b8614de05b74844a3d9a132d2",
+          "lines": 45,
+          "publicDeclarations": [
+            "public struct PodcastEpisode: Codable, Sendable, Equatable {",
+            "public var id: String",
+            "public var showId: String",
+            "public var title: String",
+            "public var description: String?",
+            "public var publishedAt: String",
+            "public var audioUrl: String",
+            "public var audioMimeType: String?",
+            "public var durationSeconds: Double?",
+            "public var artworkUrl: String?",
+            "public var guid: String?",
+            "public var sourceUri: String?",
+            "public var transcripts: [PodcastTranscript]",
+            "public var visibility: String? = nil",
+            "public var chapters: [PodcastChapter] = []",
+            "public var chapterSourceUrl: String? = nil",
+            "public var showArtworkUrl: String? = nil",
+            "public init(from decoder: any Decoder) throws {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastID3ChapterArtwork.swift",
+          "sha256": "6da0fcd7ee934143e8168da219eb597f34cdc58418590e9794c57ae4173e8f5e",
+          "lines": 13,
+          "publicDeclarations": [
+            "public struct PodcastID3ChapterArtwork: Sendable, Equatable {",
+            "public let startSeconds: Double",
+            "public let data: Data",
+            "public let mimeType: String",
+            "public init(startSeconds: Double, data: Data, mimeType: String) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastID3ChapterArtworkParser.swift",
+          "sha256": "61649ef11f0529c114e9e1eb36b711fb280345c9aa406144adca38892a91c334",
+          "lines": 102,
+          "publicDeclarations": [
+            "public enum PodcastID3ChapterArtworkParser {",
+            "public static let maximumTagBytes = 4 * 1024 * 1024",
+            "public static let maximumImageBytes = 1024 * 1024",
+            "public static func tagByteCount(header: Data) -> Int? {",
+            "public static func parse(_ data: Data) -> [PodcastID3ChapterArtwork] {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastImage.swift",
+          "sha256": "e368cc2785975d3fdfc2ad259b7461c0df941eef237c404437d9075daf991d47",
+          "lines": 19,
+          "publicDeclarations": [
+            "public enum PodcastImage {",
+            "public static func mimeType(_ data: Data) -> String? {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastListenerState.swift",
+          "sha256": "5943841f1f4f733eecc5b73f21494ef5b8dba9e150496e5479bef3c389ead929",
+          "lines": 27,
+          "publicDeclarations": [
+            "public struct PodcastListenerState: Codable, Sendable, Equatable {",
+            "public var subscriptions: [String] = []",
+            "public var queue: [String] = []",
+            "public var progress: [String: PodcastProgress] = [:]",
+            "public var playbackSpeed: Double = 1",
+            "public var removeSilences: Bool = false",
+            "public var manualLinks: [PodcastManualLink] = []",
+            "public init() {}",
+            "public func validate() -> Bool {",
+            "public mutating func normalizePlaybackSpeed() {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastManualLink.swift",
+          "sha256": "cf97c5bf546a01e6d8d91953299f74cb88c461d7cc0b1b8758810ad986932e80",
+          "lines": 10,
+          "publicDeclarations": [
+            "public struct PodcastManualLink: Codable, Sendable, Equatable {",
+            "public var rssShowId: String",
+            "public var protocolShowId: String",
+            "public init(rssShowId: String, protocolShowId: String) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastParseError.swift",
+          "sha256": "f8b311eb389551601885512ad2c57cc3c400cf18ddca7a9cfc6993198aaedf74",
+          "lines": 1,
+          "publicDeclarations": [
+            "public enum PodcastParseError: Error { case invalidXML, unsupportedSource, invalidMedia }"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastPerson.swift",
+          "sha256": "d1ba03518b6b9a2e0021512d58b5a79518d5d36ddf6ec79f556cfbfc127e9dec",
+          "lines": 14,
+          "publicDeclarations": [
+            "public struct PodcastPerson: Codable, Sendable, Equatable {",
+            "public var name: String",
+            "public var role: String?",
+            "public var imageUrl: String?",
+            "public var url: String?",
+            "public init(name: String, role: String? = nil, imageUrl: String? = nil, url: String? = nil) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastPrivateCatalog.swift",
+          "sha256": "bd0153782dcdfd217aa02ab6b4e693b673cbf52e7b74af0c8bf1bb6efacbb202",
+          "lines": 90,
+          "publicDeclarations": [
+            "public enum PodcastPrivateCatalog {",
+            "public static func isPrivateID(_ id: String) -> Bool { id.hasPrefix(\"private-podcast:\") }",
+            "public static func isAllowedURL(_ raw: String) -> Bool {",
+            "public static func scope(",
+            "public static func imageURL(showID: String? = nil, episodeID: String? = nil, kind: String, index: Int = 0) -> String {",
+            "public static func visibleText(_ text: String) -> String {",
+            "public static func visible(_ original: PodcastShow) -> PodcastShow {",
+            "public static func visible(_ original: PodcastEpisode) -> PodcastEpisode {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastPrivateStorage.swift",
+          "sha256": "644918033e64f0d254698cda5947f34e9f9266176fc4728824c1c03d5e8d20ad",
+          "lines": 33,
+          "publicDeclarations": [
+            "public struct PodcastPrivateStorage: Sendable {",
+            "public init(base64Key: String) throws {",
+            "public func seal(_ plaintext: String, viewer: String, entity: String, id: String) throws -> String {",
+            "public func open(_ payload: String, viewer: String, entity: String, id: String) throws -> String {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastProgress.swift",
+          "sha256": "ce4d9b2238827e267f7ef92396b59d261499dc3b5ef901f42adee1f903c9c594",
+          "lines": 12,
+          "publicDeclarations": [
+            "public struct PodcastProgress: Codable, Sendable, Equatable {",
+            "public var positionSeconds: Double",
+            "public var updatedAt: String",
+            "public var completed: Bool",
+            "public init(positionSeconds: Double, updatedAt: String, completed: Bool = false) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastProtocolAdapter.swift",
+          "sha256": "8e4c2aa06a58fe24980b9e4b22bb87052c19e4fd2696e850df28308072470331",
+          "lines": 86,
+          "publicDeclarations": [
+            "public enum PodcastProtocolAdapter {",
+            "public static let collections = [",
+            "public static func show(uri: String, record: [String: Any], blobBase: String? = nil) throws",
+            "public static func episode("
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastRSSParser.swift",
+          "sha256": "316b565b62a0842f8bd780c173b3e37ccd8c34824f3c628a70fae96bfc26ec92",
+          "lines": 186,
+          "publicDeclarations": [
+            "public final class PodcastRSSParser: NSObject, XMLParserDelegate {",
+            "public init(feedURL: String) { self.feedURL = feedURL }",
+            "public static func identity(_ value: String) -> String {",
+            "public func parse(_ data: Data) throws -> (show: PodcastShow, episodes: [PodcastEpisode]) {",
+            "public func parser(",
+            "public func parser(_ parser: XMLParser, foundCharacters text: String) {",
+            "public func parser(_ parser: XMLParser, foundCDATA data: Data) {",
+            "public func parser(",
+            "public func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {",
+            "public static func isAudio(url: String, type: String?) -> Bool {",
+            "public static func duration(_ raw: String?) -> Double? {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastRSSURL.swift",
+          "sha256": "da07095dd74ea385b76ae27f93f66f86d9d377012becb930d8167b9c8ca09c41",
+          "lines": 21,
+          "publicDeclarations": [
+            "public enum PodcastRSSURL {",
+            "public static func isAllowed(_ raw: String) -> Bool {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastSearch.swift",
+          "sha256": "fa6306ce500e95cf49e2c4c15288e002bad69e8369b8d70dfd7242986628b6ad",
+          "lines": 20,
+          "publicDeclarations": [
+            "public enum PodcastSearch {",
+            "public static func matches(_ query: String, title: String, description: String?, hosts: [PodcastPerson] = []) -> Bool {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastSearchCursor.swift",
+          "sha256": "164a397da40cfbc6708c20eb05295c77af35219756175d61d7faeb99be063a45",
+          "lines": 17,
+          "publicDeclarations": []
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastSearchRequest.swift",
+          "sha256": "f9ae66c580e005ace884fa9b8b6aaf456c3e301fd6f6698a122b9759003c13f4",
+          "lines": 28,
+          "publicDeclarations": [
+            "public struct PodcastSearchRequest: Codable, Sendable {",
+            "public var query: String",
+            "public var scope: String?",
+            "public var kind: String?",
+            "public var showId: String?",
+            "public var limit: Int?",
+            "public var cursor: String?",
+            "public init(query: String, scope: String? = nil, kind: String? = nil, showId: String? = nil, limit: Int? = nil, cursor: String? = nil) {",
+            "public func validate() throws {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastSearchResponse.swift",
+          "sha256": "94830e2323fd3cd1647c0c5013cd202723661a6de6c8a3faac56639e732364c0",
+          "lines": 29,
+          "publicDeclarations": [
+            "public struct PodcastSearchResponse: Codable, Sendable {",
+            "public var shows: [PodcastShow]",
+            "public var episodes: [PodcastEpisode]",
+            "public var cursor: String?",
+            "public var candidates: [PodcastDirectoryCandidate] = []",
+            "public var directoryLimit: Int? = nil",
+            "public var hasMore: Bool",
+            "public init(from decoder: any Decoder) throws {",
+            "public init(shows: [PodcastShow] = [], episodes: [PodcastEpisode] = [], cursor: String? = nil, hasMore: Bool = false) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastShow.swift",
+          "sha256": "abd2ccc01cd18ff037c9c0a50cce2de5c1845c7f0bca10bbf5d4627a38dd862e",
+          "lines": 39,
+          "publicDeclarations": [
+            "public struct PodcastShow: Codable, Sendable, Equatable {",
+            "public var id: String",
+            "public var title: String",
+            "public var description: String?",
+            "public var artworkUrl: String?",
+            "public var feedUrl: String?",
+            "public var sourceKind: String",
+            "public var sourceUri: String?",
+            "public var guid: String?",
+            "public var episodeCollection: String?",
+            "public var bridgeJobId: String?",
+            "public var bridgeStatus: String?",
+            "public var visibility: String? = nil",
+            "public var hosts: [PodcastPerson] = []",
+            "public init(from decoder: any Decoder) throws {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastStateSnapshot.swift",
+          "sha256": "1628865dfdd3055c8ef2b71256c2aaf68552b01378b725d427aee7b00ca5ca5f",
+          "lines": 8,
+          "publicDeclarations": [
+            "public struct PodcastStateSnapshot: Codable, Sendable {",
+            "public var revision: Int64",
+            "public var state: PodcastListenerState",
+            "public init(revision: Int64, state: PodcastListenerState) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastStoreError.swift",
+          "sha256": "1498fe8c206d7da60dfe1f4e527ddae76bb20cda2d73a519f685831287fb4506",
+          "lines": 3,
+          "publicDeclarations": [
+            "public enum PodcastStoreError: Error {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastTranscript.swift",
+          "sha256": "29dc5679c97133e5a05855f143675c7d364ce0e1bec977f44c33581ea16480bf",
+          "lines": 19,
+          "publicDeclarations": [
+            "public struct PodcastTranscript: Codable, Sendable, Equatable {",
+            "public var url: String",
+            "public var type: String",
+            "public var language: String?",
+            "public var text: String?",
+            "public var cues: [PodcastTranscriptCue]?",
+            "public init("
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastTranscriptCue.swift",
+          "sha256": "076572d6d50b2c63420d40049ec37fed0822cdce6af99f34fac25d78791ef083",
+          "lines": 12,
+          "publicDeclarations": [
+            "public struct PodcastTranscriptCue: Codable, Sendable, Equatable {",
+            "public var startSeconds: Double",
+            "public var endSeconds: Double?",
+            "public var text: String",
+            "public init(startSeconds: Double, endSeconds: Double? = nil, text: String) {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastTranscriptParser.swift",
+          "sha256": "e8336f1b5a015b07cd4899cacbabf5c2eccd2b9ec3f851d5d044eb6f7565c5b0",
+          "lines": 46,
+          "publicDeclarations": [
+            "public enum PodcastTranscriptParser {",
+            "public static func parse(_ data: Data, type: String) -> ("
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore+Metadata.swift",
+          "sha256": "3b3d308234ff1018b8af0b747527563d4b1b29f9ba2867da5b6e819b4b44d3c6",
+          "lines": 29,
+          "publicDeclarations": [
+            "public func updateMetadata(episode: PodcastEpisode, viewer: String?) async throws {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore+Private.swift",
+          "sha256": "963b007fa4d26f3a78a39c88af305c038abf2e0192c0464ba70021ce8c1f8433",
+          "lines": 183,
+          "publicDeclarations": [
+            "public func requirePrivateStorage() throws -> PodcastPrivateStorage {",
+            "public func stalePrivateFeeds(viewer: String, limit: Int = 2) async throws -> [String] {",
+            "public func queuedEpisodes(viewer: String) async throws -> [PodcastEpisode] {",
+            "public func ownsPrivateEpisodes(viewer: String, ids: [String]) async throws -> Bool {",
+            "public func savePrivateCatalog(",
+            "public func privateShows(viewer: String) async throws -> [PodcastShow] {",
+            "public func privateShow(viewer: String, id: String) async throws -> PodcastShow? {",
+            "public func privateFeed(viewer: String, id: String) async throws -> (url: String, refreshedAt: Date)? {",
+            "public func privateEpisode(viewer: String, id: String) async throws -> PodcastEpisode? {",
+            "public func privateEpisodes(viewer: String, showID: String, cursor: String?, limit: Int) async throws -> [PodcastEpisode] {",
+            "public func subscribedEpisodes(viewer: String, cursor: String?, limit: Int) async throws -> [PodcastEpisode] {",
+            "public func removePrivateSubscription(viewer: String, showID: String) async throws -> Bool {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore+Search.swift",
+          "sha256": "b5f6312498481d3cfe4751fb4d98f14de4a60a9d65fcd7db4904787315151bff",
+          "lines": 72,
+          "publicDeclarations": [
+            "public func search(viewer: String, request: PodcastSearchRequest) async throws -> PodcastSearchResponse {"
+          ]
+        },
+        {
+          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PostgresPodcastStore.swift",
+          "sha256": "69e8fc0ffef15f86cdded26e5846dafdef8ccfbcaca79252642e1c6a08f03383",
+          "lines": 297,
+          "publicDeclarations": [
+            "public actor PostgresPodcastStore {",
+            "public init(pool: PostgresClient, logger: Logger, privateStorageKey: String? = ProcessInfo.processInfo.environment[\"PODCAST_PRIVATE_STORAGE_KEY\"]) {",
+            "public func upsert(show: PodcastShow, episodes: [PodcastEpisode]) async throws {",
+            "public func alias(_ alias: String, canonical: String, kind: String) async throws {",
+            "public func show(id: String) async throws -> PodcastShow? {",
+            "public func shows(viewer: String) async throws -> [PodcastShow] {",
+            "public func episode(id: String) async throws -> PodcastEpisode? {",
+            "public func episodes(showID: String, cursor: String?, limit: Int) async throws -> [PodcastEpisode]",
+            "public func canonicalEpisodeIDs(_ ids: [String]) async throws -> [String: String] {",
+            "public func manualEpisodeAliases(links: [PodcastManualLink]) async throws -> [String: String] {",
+            "public func subscriptions(viewer: String, records: [(showID: String, uri: String)]) async throws {",
+            "public func state(viewer: String) async throws -> PodcastStateSnapshot {",
+            "public func saveState(viewer: String, expected: Int64, state: PodcastListenerState) async throws",
+            "public func enqueue(",
+            "public func job(",
+            "public func invalidateAnalysis(id: String, fingerprint: String) async throws {",
+            "public func retry(viewer: String, id: String) async throws -> Bool {",
+            "public func prepareClip(viewer: String, clip: PodcastClip, payload: String) async throws -> String",
+            "public func removeClip(viewer: String, clip: PodcastClip, payload: String) async throws {",
+            "public func createClip(viewer: String, clip: PodcastClip) async throws {",
+            "public func clips(viewer: String) async throws -> [PodcastClip] {",
+            "public func clip(id: String, viewer: String?, publishedOnly: Bool = false) async throws",
+            "public func publishClip(id: String, viewer: String, uri: String) async throws {",
+            "public func deleteClip(id: String, viewer: String) async throws {"
+          ]
         },
         {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/PostgresAppViewProjectionCacheStore.swift",
@@ -9145,46 +9582,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapChannelTransport.swift",
-          "sha256": "47dc445046fa069ceb9512ad11cb92bc2b189ed858498ba83f44d134607d0d23",
-          "lines": 270,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapConsumer.swift",
-          "sha256": "685defd62d8f4f415a49f4797dca320f415c17b1fad2d8436c1306136e18e1fa",
-          "lines": 523,
-          "publicDeclarations": [
-            "public actor TapConsumer {",
-            "public init(",
-            "public func runForever() async {",
-            "public func process("
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapConsumerConfiguration.swift",
-          "sha256": "2d7c09717080704812a075eac077b0de67b53ab5a94a6ef21387a0ef7d4a6b3a",
-          "lines": 140,
-          "publicDeclarations": [
-            "public enum TapConsumerMode: String, Sendable, Equatable {",
-            "public enum TapConsumerConfigurationError: Error, CustomStringConvertible, Equatable, Sendable {",
-            "public var description: String {",
-            "public struct TapConsumerConfiguration: Sendable, Equatable {",
-            "public static let registeredCollections = [",
-            "public let mode: TapConsumerMode",
-            "public let environment: String",
-            "public let baseURL: URL",
-            "public let channelURL: URL",
-            "public let adminPassword: String",
-            "public let collections: [String]",
-            "public let queueCapacity: Int",
-            "public let repoSyncIntervalSeconds: TimeInterval",
-            "public let repoSyncLimit: Int",
-            "public init(",
-            "public static func fromEnvironment("
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapEvent.swift",
           "sha256": "b4559abc081c5a91a24860018d032ff436d34a29fdd7c5ed0f6d8d69f46ee272",
           "lines": 161,
@@ -9213,48 +9610,6 @@
             "public var description: String {",
             "public enum TapEventParser {",
             "public static func parse(_ text: String) throws -> TapEvent {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapMessageRetry.swift",
-          "sha256": "92643ce9cf6997bff546b29d33eac54369cba30ac149461b0e97d177a69a888f",
-          "lines": 25,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapRepositoryRestorer.swift",
-          "sha256": "5dd536b11e27b9cc66ae979e908464f914022844ebc270595bfebbbb7bfc6824",
-          "lines": 135,
-          "publicDeclarations": [
-            "public protocol TapRepositoryRestorer: Sendable {",
-            "public func restoreCurrentRepository(repoDid: String, recovery: PDSRepositoryRecoveryContext)",
-            "public struct TapPDSRepositoryRestorer: TapRepositoryRestorer, Sendable {",
-            "public init(",
-            "public func restoreCurrentRepository(repoDid: String) async throws",
-            "public func restoreCurrentRepository(repoDid: String, recovery context: PDSRepositoryRecoveryContext)",
-            "public enum TapRepositoryRestorationError: Error, Sendable {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/TapRepositoryTracker.swift",
-          "sha256": "e4539dbc1fd7ce4a4b1382a11582ad61f58ccd8e3f02d8bcff93478c201fac60",
-          "lines": 188,
-          "publicDeclarations": [
-            "public protocol TapRepositoryAdminClient: Sendable {",
-            "public struct HTTPTapRepositoryAdminClient: TapRepositoryAdminClient, Sendable {",
-            "public init(httpClient: HTTPClient, baseURL: URL, adminPassword: String) {",
-            "public func addRepositories(_ dids: [String]) async throws {",
-            "public func removeRepositories(_ dids: [String]) async throws {",
-            "public actor TapRepositoryTracker {",
-            "public init(",
-            "public init(",
-            "public func runForever() async {",
-            "public func runOnce() async throws -> TapRepositoryReconciliationResult {",
-            "public struct TapRepositoryReconciliationResult: Sendable, Equatable {",
-            "public let desiredCount: Int",
-            "public let added: [String]",
-            "public let removed: [String]",
-            "public enum TapRepositoryTrackerError: Error, Equatable {"
           ]
         },
         {
@@ -9605,25 +9960,9 @@
           "publicDeclarations": []
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProactiveBackfillJob.swift",
-          "sha256": "ff180dcf3c1c5fc3ab61e9dabbd34d03c55d7558fe11b177f00230b4284ea4e0",
-          "lines": 87,
-          "publicDeclarations": [
-            "public struct ThinAppViewProactiveBackfillJob: Sendable {",
-            "public init(",
-            "public func runForever() async {"
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProjectionCacheWarmer.swift",
           "sha256": "e196dde871cee5c6d7a2554402121ac12f9c199e4c0edb8ff6a4ab37605453d3",
           "lines": 76,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewProjectionRepairJob.swift",
-          "sha256": "7b2a4ae60e17d4785effc7fd6710d9e523288506b3a7fa1d203298da05b46133",
-          "lines": 126,
           "publicDeclarations": []
         },
         {
@@ -9642,22 +9981,6 @@
             "public static func decode(_ cursor: String) -> (createdAt: Date, uri: String)? {",
             "public enum ThinAppViewQuerySupport {",
             "public enum ThinAppViewStoreError: Error {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewRecoveryJobRunner.swift",
-          "sha256": "dce6ddf2bf1e0e605fb07d13b19b12c5ba1cabe7b0b1324e229d5d51bf28d696",
-          "lines": 641,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewRssFeedPollJob.swift",
-          "sha256": "f9ae5fbf2d1cc954663f9b40a34f9b42d6edbcd877f7b9d3a8976e1581bbaed0",
-          "lines": 53,
-          "publicDeclarations": [
-            "public struct ThinAppViewRssFeedPollJob: Sendable {",
-            "public init(",
-            "public func runForever() async {"
           ]
         },
         {
@@ -9693,42 +10016,6 @@
           ]
         },
         {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewTtlCleanupJob.swift",
-          "sha256": "95093207482859b5564fdd9454b426050b24901faf20bffa69a920d9e0ed4e95",
-          "lines": 143,
-          "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewWorkerRole.swift",
-          "sha256": "fb1241ffc4d3df77e6a70e92d186f53c23e7df9c632aa461c21e8d764d0332a5",
-          "lines": 52,
-          "publicDeclarations": [
-            "public enum ThinAppViewWorkerRole: String, CaseIterable, Sendable, Equatable {",
-            "public struct ThinAppViewWorkerRuntimePlan: Sendable, Equatable {",
-            "public let runsLegacySubscriber: Bool",
-            "public let runsInboxProjection: Bool",
-            "public let runsProjectionRepair: Bool",
-            "public let runsTapConsumer: Bool",
-            "public let runsTtlCleanup: Bool",
-            "public let runsProactiveBackfill: Bool",
-            "public let runsRecovery: Bool",
-            "public let runsRssPolling: Bool",
-            "public let runsTelemetry: Bool",
-            "public let runsHeartbeat: Bool",
-            "public init(role: ThinAppViewWorkerRole) {"
-          ]
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewWorkerRuntime.swift",
-          "sha256": "1e4331e015f5eb9c79d2c6c3c71aeecd73e0f707254b06d8ecb1b50ee673d6ae",
-          "lines": 667,
-          "publicDeclarations": [
-            "public enum ThinAppViewWorkerRuntime {",
-            "public static func run(",
-            "public enum ThinAppViewWorkerRuntimeError: Error, Sendable, Equatable {"
-          ]
-        },
-        {
           "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/UnreadReadMutationEntry.swift",
           "sha256": "fb6b52251ed44434dc80ca68475d6842525fc2c87f3cd369ced1cc3b62f7fed6",
           "lines": 17,
@@ -9757,12 +10044,6 @@
           "sha256": "65ca54d54fa457687de990cd63edbf1feeed9196e65dd1900ecf29270f5d2c7b",
           "lines": 62,
           "publicDeclarations": []
-        },
-        {
-          "path": "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/WebSocketHeartbeatSupport.swift",
-          "sha256": "c73a6e14e82ed5bce5789c5b13fd2b8dda20030bfdb44494f8af6059f3eac008",
-          "lines": 88,
-          "publicDeclarations": []
         }
       ],
       "tests": [
@@ -9772,13 +10053,9 @@
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/BatchReadMarksTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/DatabaseBackendTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/FinanceSelectionTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/FirehoseLinuxWebSocketTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/HtmlTextDecoderTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamCursorTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamEndpointPoolTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamInboxProjectionWorkerTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/JetstreamV2ProjectionEventTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/LegacyJetstreamAuthorityLeaseTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/OperationsGapPersistenceTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/OperationsHeartbeatJobTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSBoundarySelectionPostgresIntegrationTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSDiagnosticNetworkSafetyTests.swift",
@@ -9791,10 +10068,20 @@
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSReadStateVerifiedRecordCacheTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSReconciliationScopeTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PDSRepositoryRecoveryTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastID3ChapterArtworkTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastMetadataTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastPrivateCatalogTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastPrivateStorageTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastRSSURLTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastSearchTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PodcastTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresConfigTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresFeedIntegrationTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresFinanceSelectionTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresJetstreamInboxIntegrationTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresPodcastIntegrationTests.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresPrivatePodcastIntegrationTests+Search.swift",
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresPrivatePodcastIntegrationTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresPublicationReadTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresReadAgePaginationTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/PostgresRepositoryRecoveryTests.swift",
@@ -9808,23 +10095,21 @@
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/RssFeedThumbnailExtractorTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/RssHtmlBodyFormatterTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/SportsSelectionTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapConsumerTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapMessageRetryTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapPDSRepositoryRestorerTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/TapRepositoryTrackerTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewEnrollBackfillTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewEntryPaginationTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewIndexerTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewTtlCleanupJobTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/ThinAppViewWorkerRuntimePlanTests.swift",
         "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/UnreadMutationQueryTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/UnreadReadMutationScopeTests.swift",
-        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/WebSocketHeartbeatSupportTests.swift"
+        "packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/UnreadReadMutationScopeTests.swift"
       ]
     },
     {
       "name": "WireCore",
+      "extracted": {
+        "name": "WireCore",
+        "repository": "https://github.com/Stygian-Tech/wire-core.git",
+        "revision": "a37340974f2d26d92faa70bfb048ab0681017b28"
+      },
       "source": "packages/swift/WireCore",
       "target": "packages/go/wirecore",
       "sources": [
@@ -10809,6 +11094,10 @@
           "sha256": "6b29a6bc010c7252643f33b59a0d2656fc32090113dd7de677aeaa4389f21142"
         },
         {
+          "path": "packages/lexicons/__tests__/podcastLexicons.test.ts",
+          "sha256": "ae20615f904c5e42236a420919e88506a91587387296b02941af895ac08dc25e"
+        },
+        {
           "path": "packages/lexicons/__tests__/readAgeLexicons.test.ts",
           "sha256": "a759236d5e7ade2b313cefad07ff8fc091101188f70c36e19e3587b1e7a9db65"
         },
@@ -11087,6 +11376,14 @@
         {
           "path": "packages/lexicons/app/thesocialwire/operations/updateGap.json",
           "sha256": "ca3465a5124b7a8f827c7073fcef522b1eeb71eaf2cf0e2257caf22b71819f6b"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/podcast/clip.json",
+          "sha256": "1c83acdef2e4a0984d93e6330e815f36bcb59a99ac68e7a31f118dbb6c516af9"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/podcast/source.json",
+          "sha256": "3b59a1b72fff022d415029a589c866a17a52f1e598fea8daa7b1c37f9ca92946"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/preferences.json",
@@ -11372,7 +11669,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-path-detection.test.ts",
-          "sha256": "b4a5fac6e3b52ccb4fb027ac3dc5982dfedf5480369fb53d541f46f06140acfb"
+          "sha256": "88dbf2bf9c039ac496797468d205925e50429ceab59cbdb9d52543a28a3c7bd6"
         },
         {
           "path": "packages/spec/__tests__/ci-postgres-preparation.test.ts",
@@ -11384,7 +11681,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "af2a7850f27131d9d598472bf36fbada2280000c0ebbb2f0765c20709b12d931"
+          "sha256": "787c50bc6b1252fd001c7590e8ee406d1edd2077bc7064d4c783cebbd0149ccb"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",
@@ -11436,7 +11733,7 @@
         },
         {
           "path": "packages/spec/__tests__/openapi-routes.test.ts",
-          "sha256": "ce101efeb4420524a25e4cbc0b0bf33fc31d39a072f72ca7009918c7be126a3c"
+          "sha256": "9eeb88ea9bd0ed6db6173ef452efb235817103050e0ecd7c08db4b4509365b2b"
         },
         {
           "path": "packages/spec/__tests__/operations-change-retention-postgres.test.ts",
@@ -11453,6 +11750,14 @@
         {
           "path": "packages/spec/__tests__/operations-trust-migration.test.ts",
           "sha256": "84dad613157065864a8128c5e82aa24ca31d93747a58ca60372fb72fd3e7d12f"
+        },
+        {
+          "path": "packages/spec/__tests__/podcast-contract.test.ts",
+          "sha256": "c6d0bd83b72894919a8b2684ce76e1f8cb657d881fdc0b4fa13144453a61b898"
+        },
+        {
+          "path": "packages/spec/__tests__/podcast-deployment.test.ts",
+          "sha256": "1fb13f05bbcbdffcfe3b6a76580c881e62af823bd06b6b25594da3dcb1803804"
         },
         {
           "path": "packages/spec/__tests__/postgres-replay-harness.test.ts",
@@ -11539,12 +11844,16 @@
           "sha256": "3b2e75bc567088c57e2ce24195891f7b730ed0ad8b774f479aa813b1af90b11b"
         },
         {
+          "path": "packages/spec/__tests__/wire-working-set-indexes-postgres.test.ts",
+          "sha256": "49958ae1d5a887bd1436e7429a64665f0239d3a9b7cfda28b0160e88b63f122e"
+        },
+        {
           "path": "packages/spec/endpoint-manifest.json",
-          "sha256": "9ffc7215fa4efbff2de2e7ddc4a69c2fe4f343bb4dedb55c9f315651ee1d8cfb"
+          "sha256": "f670bab0b2ddb7ae23d5504338c3d60e6661e2b5593c6ca5e048ef47f72cc263"
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "bb6dbaab080a1ddc95d8b654580b3152133076ca2925863857a50bad2cb3dccc"
+          "sha256": "51fd972966e88309f9db47b801f295a10c99f84654f82fea3cf65b1612c123c8"
         },
         {
           "path": "packages/spec/package.json",

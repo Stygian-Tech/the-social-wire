@@ -1,6 +1,6 @@
 # ThinAppViewCore
 
-Shared Swift package for the Thin AppView read index — used by **`services/appview`** (read routes, sidebar projection) and **Charybdis** at `services/appview-worker` (Jetstream ingestion and durable-inbox projection, RSS polling, proactive backfill).
+Shared Swift package for the Thin AppView read index — used by **`services/appview`** (read routes, sidebar projection) and **Gateway**. Background projection, RSS polling and recovery run in Go through `services/indexing-worker`.
 
 **Package:** [packages/swift/ThinAppViewCore](https://github.com/Stygian-Tech/the-social-wire/tree/main/packages/swift/ThinAppViewCore)  
 **Architecture:** [[Thin-AppView]]

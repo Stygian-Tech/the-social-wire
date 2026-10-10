@@ -17,6 +17,7 @@ import {
   SidebarResizeHandle,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { floatingSidebarClassName } from "@/components/shared/floatingSidebarStyles";
 import { Avatar } from "@/components/shared/Avatar";
 import { SidebarFoldersSection } from "./SidebarFoldersSection";
 import { SidebarListPublicationsSection } from "./SidebarListPublicationsSection";
@@ -40,6 +41,8 @@ import { rkeyFromURI } from "@/lib/pdsClient";
 import { type DiscoveredPublication } from "@/lib/atprotoClient";
 import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { PublicationTabs } from "./PublicationTabs";
+import { SidebarAudioSection } from "./SidebarAudioSection";
+import { podcastsEnabled } from "@/lib/podcasts/playback";
 import { SidebarTopicsSection } from "./SidebarTopicsSection";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
@@ -456,7 +459,10 @@ export function AppSidebar({
   if (sportsTopicIsVisible(displayPreferences.showSports, { enabled: sportsCatalog.confirmedEnabled })) visible.add("sports");
   if (financeTopicIsVisible(displayPreferences.showFinance, financeCatalog.data)) visible.add("finance");
 
+  if (podcastsEnabled()) visible.add("podcasts");
+
   const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
+    if (feed === "podcasts") { setOpenMobile(false); router.push("/podcasts"); return; }
     setSelectedFolderUri(null);
     if (feed === "readLater") {
       router.push("/saved");
@@ -562,6 +568,7 @@ export function AppSidebar({
             </SidebarMenu>
           </SidebarGroup>
           ) : null}
+          <SidebarAudioSection enabled={podcastsEnabled()} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} />
           <PublicationTabs
             visibleFeeds={visible}
             activeTab={
@@ -624,22 +631,22 @@ export function AppSidebar({
         </div>
         {showPublicationsRail && (selectedListUri || (
         currentFeed !== "wire" &&
-        currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports")) ? (
-        <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-var(--reader-shell-width,70rem))/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
-          <div className="hidden min-h-12 shrink-0 items-end px-4 pb-1 lg:flex">
+        currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "podcasts")) ? (
+        <div className={`${floatingSidebarClassName} mx-2 flex flex-col self-stretch lg:self-start gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:mx-0 lg:right-[max(0.5rem,calc((100vw-var(--reader-shell-width,70rem))/2+0.5rem))] lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:z-30 lg:w-60 lg:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto lg:overscroll-contain`}>
+          <div className="hidden shrink-0 items-center px-2 pb-2 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">
               Publications
             </p>
           </div>
-          <SidebarGroup className="px-3 pb-4 pt-1">
-            {!selectedListUri && currentFeed && currentFeed !== "wire" && currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" ? (
+          <SidebarGroup className="p-0">
+            {!selectedListUri && currentFeed && currentFeed !== "wire" && currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "podcasts" ? (
               <AllFeedSidebarButton
                 feed={currentFeed}
                 isActive={allFeedSelected}
                 onSelect={selectTopLevelFeed}
               />
             ) : null}
-            <SidebarMenu className="gap-2">
+            <SidebarMenu className="gap-1">
               {selectedListUri ? (
                 <SidebarListPublicationsSection
                   list={selectedList.data}

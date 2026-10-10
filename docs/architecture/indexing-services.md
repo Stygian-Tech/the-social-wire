@@ -32,11 +32,11 @@ Coordinator ×2
 
 ## Isolation and compatibility
 
-The Go intake-to-Postgres-inbox-to-Swift-projector boundary remains intact. A single Ingress Controller process hosts both intake lanes, but a lane failure restarts only that lane. `/status` reports lane state separately; `/startupz` and `/readyz` fail closed if a configured continuous lane is unhealthy.
+The Go intake-to-Postgres-inbox-to-Go-projector boundary remains intact. A single Ingress Controller process hosts both intake lanes, but a lane failure restarts only that lane. `/status` reports lane state separately; `/startupz` and `/readyz` fail closed if a configured continuous lane is unhealthy.
 
-The Swift `AppViewWorkerCore` and `WireWorkerCore` libraries expose their existing runtimes without merging their stores, database pools, or domain logic. Projection Pool independently supervises both runtimes and probes their loopback health listeners. A failed AppView projector does not terminate the Wire drain, and vice versa.
+The Go `appviewworkercore` and `wireworkercore` packages expose their runtimes without merging their stores, database pools, or domain logic. Projection Pool independently supervises both runtimes and probes their loopback health listeners. A failed AppView projector does not terminate the Wire drain, and vice versa.
 
-The old `AppViewWorker` and `WireWorker` executables remain buildable during the migration window. Their compatibility defaults are unchanged. They are rollback artifacts, not additional steady-state service classes.
+The old Swift executables are retired from current source after Development Go acceptance. Rollback requires a previously accepted Git revision. Shared Swift API packages remain in use by Gateway, AppView and Corpus Edge.
 
 ## Singleton fencing
 

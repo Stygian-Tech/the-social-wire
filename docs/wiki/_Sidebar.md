@@ -22,8 +22,10 @@
 - [[Lexicons]]
 - [[Database]]
 - [[Redis]]
-- [[Testing]]
+- [[Go-ingestion-and-ranking]]
+- [[Go-package-reference]]
 - [[Go-verification-and-deployment]]
+- [[Testing]]
 - [[Contributing]]
 
 ### Operators

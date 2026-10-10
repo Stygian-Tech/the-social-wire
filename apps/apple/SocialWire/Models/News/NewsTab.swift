@@ -5,6 +5,7 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
     case wire
     case circle
     case finance
+    case podcasts
     case sports
     case library
     case saved
@@ -17,6 +18,7 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
         case .wire: "The Wire"
         case .circle: "Your Circle"
         case .finance: "Finance"
+        case .podcasts: "Podcasts"
         case .sports: "Sports"
         case .library: "Library"
         case .saved: "Saved"
@@ -29,6 +31,7 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
         case .wire: "newspaper"
         case .circle: "person.2.wave.2"
         case .finance: "chart.line.uptrend.xyaxis"
+        case .podcasts: "headphones"
         case .sports: "sportscourt"
         case .library: "books.vertical"
         case .saved: "bookmark"
@@ -36,12 +39,13 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
         }
     }
 
-    static func available(wire: Bool, circle: Bool, finance: Bool = false, sports: Bool = false) -> [NewsTab] {
+    static func available(wire: Bool, circle: Bool, finance: Bool = false, sports: Bool = false, podcasts: Bool = false) -> [NewsTab] {
         allCases.filter { tab in
             switch tab {
             case .wire: wire
             case .circle: circle
             case .finance: finance
+            case .podcasts: podcasts
             case .sports: sports
             case .library, .saved, .search: true
             }
@@ -53,13 +57,15 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
         wireCatalog: WireFeedCatalog?,
         circleCatalog: CircleFeedCatalog?,
         financeAvailable: Bool = false,
-        sportsAvailable: Bool = false
+        sportsAvailable: Bool = false,
+        podcastsAvailable: Bool = false
     ) -> [NewsTab] {
         available(
             wire: preferences.showWire && wireCatalog?.isAvailable != false,
             circle: preferences.showCircle && circleCatalog?.enabled != false,
             finance: preferences.showFinance && financeAvailable,
-            sports: preferences.showSports && sportsAvailable
+            sports: preferences.showSports && sportsAvailable,
+            podcasts: podcastsAvailable
         )
     }
 

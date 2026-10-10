@@ -3,24 +3,32 @@ import SwiftUI
 /// Adaptive application shell with configurable feed tabs, Read Later, and a leading-edge sidebar.
 struct NewsShellView: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @SceneStorage("the-social-wire.news-window-id.v1") private var windowID = UUID().uuidString
     @State private var sceneModel = NewsSceneModel()
-    @State private var selectedSlot = NewsTabSlot.primaryOne
-    @State private var lastPrimarySlot = NewsTabSlot.primaryOne
+    @State private var selectedSlot = NewsTabSlot.wire
+    @State private var selectedSection = NewsRootSection.feeds
+    @State private var sectionSelections: [NewsRootSection: NewsTabSlot] = [
+        .readLater: .readLater,
+        .feeds: .wire,
+        .topics: .finance
+    ]
     @State private var slotFeeds: [NewsPrimaryFeed] = []
-    @State private var transientPrimaryFeed: NewsPrimaryFeed?
-    @State private var transientTransitionID = UUID()
     @State private var isTabConfigurationLoaded = false
     @State private var isProfilePresented = false
+    #if os(iOS)
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    #endif
 
     private var availableTabs: [NewsTab] {
         NewsTab.available(
-            preferences: appModel.feedPreferences,
-            wireCatalog: appModel.wireCatalog,
-            circleCatalog: appModel.circleCatalog,
-            financeAvailable: appModel.wireCatalog?.financeAvailable == true,
-            sportsAvailable: appModel.wireCatalog?.sportsAvailable == true
+            wire: appModel.feedPreferences.showWire,
+            circle: appModel.feedPreferences.showCircle,
+            finance: appModel.feedPreferences.showFinance,
+            sports: appModel.feedPreferences.showSports,
+            podcasts: false
         )
     }
 
@@ -31,14 +39,40 @@ struct NewsShellView: View {
     }
 
     private var activePrimaryFeed: NewsPrimaryFeed? {
-        if selectedSlot == .transient, let transientPrimaryFeed {
-            return transientPrimaryFeed
+        selectedSlot.primaryFeed
+    }
+
+    private var navigableFeeds: [NewsPrimaryFeed] {
+        let available = appModel.visiblePrimaryTabFeedChoices
+        return (slotFeeds + available.filter { !slotFeeds.contains($0) })
+            .filter { $0 != .podcasts }
+    }
+
+    private var feedDestinations: [NewsPrimaryFeed] {
+        [.wire, .circle, .subscribed, .following].filter(isVisibleInSettings)
+    }
+
+    private var topicDestinations: [NewsPrimaryFeed] {
+        [.finance, .sports].filter(isVisibleInSettings)
+    }
+
+    private func isVisibleInSettings(_ feed: NewsPrimaryFeed) -> Bool {
+        switch feed {
+        case .wire:
+            appModel.feedPreferences.showWire
+        case .circle:
+            appModel.feedPreferences.showCircle
+        case .finance:
+            appModel.feedPreferences.showFinance
+        case .sports:
+            appModel.feedPreferences.showSports
+        case .subscribed:
+            appModel.feedPreferences.visibleFeeds.contains(.subscribed)
+        case .following:
+            appModel.feedPreferences.visibleFeeds.contains(.following)
+        case .podcasts:
+            false
         }
-        let slot = selectedSlot.savedListSource == nil ? selectedSlot : lastPrimarySlot
-        guard let index = slot.primaryIndex, slotFeeds.indices.contains(index) else {
-            return slotFeeds.first
-        }
-        return slotFeeds[index]
     }
 
     /// LatrKit owns the archive; the Semble connector has no archived bucket to show.
@@ -57,7 +91,11 @@ struct NewsShellView: View {
             }
         }
         .task(bootstrap)
+        .task(id: NewsDestinationLoadContext(viewerDID: appModel.viewerDID, slot: selectedSlot)) {
+            await loadSelectedDestination(selectedSlot)
+        }
         .onChange(of: selectedSlot, selectedSlotChanged)
+        .onChange(of: selectedSection, selectedSectionChanged)
         .onChange(of: appModel.viewerDID, viewerDidChange)
         .onChange(of: appModel.primaryTabFeeds, primaryTabFeedsChanged)
         .onChange(of: appModel.feedPreferences) { _, _ in
@@ -86,116 +124,218 @@ struct NewsShellView: View {
     }
 
     private var detailStack: some View {
-        feedTabs
+        Group {
+            #if os(iOS)
+            if horizontalSizeClass == .regular {
+                regularWidthSplitView
+            } else {
+                feedTabs
+            }
+            #else
+            feedTabs
+            #endif
+        }
         .accessibilityIdentifier("news-detail-column")
     }
 
-    @ViewBuilder
-    private var feedTabs: some View {
-        #if os(iOS)
-        // One size-class rule for every device: regular width (iPad, an unfolded iPhone Duo)
-        // opens in the sidebar, compact width stays in the tab bar. macOS always has a sidebar,
-        // so all three platforms land on the same layout.
-        // Xcode 27's Swift 6.4 SDK introduces defaultTabBarPlacement; a runtime
-        // availability check alone cannot compile that member with Xcode 26.
-        #if compiler(>=6.4)
-        if #available(iOS 27.0, *) {
-            feedTabsContent
-                .defaultTabBarPlacement(preferredTabBarPlacement)
-                .defaultAdaptableTabBarPlacement(preferredTabBarPlacement)
-        } else {
-            feedTabsContent
-                .defaultAdaptableTabBarPlacement(preferredTabBarPlacement)
-        }
-        #else
-        feedTabsContent
-            .defaultAdaptableTabBarPlacement(preferredTabBarPlacement)
-        #endif
-        #else
-        feedTabsContent
-        #endif
-    }
-
     #if os(iOS)
-    private var preferredTabBarPlacement: AdaptableTabBarPlacement {
-        horizontalSizeClass == .regular ? .sidebar : .tabBar
+    private var regularWidthSplitView: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            NewsSidebarView(
+                availableTabs: availableTabs,
+                sceneModel: sceneModel,
+                onSelection: sidebarDestinationSelected,
+                onListsSelection: { selectedSection = .lists },
+                onStandardListSelection: { list in
+                    selectedSection = .lists
+                    Task { await appModel.standardReaderLists.select(list) }
+                }
+            )
+        } detail: {
+            if selectedSection == .lists {
+                StandardReaderListsWorkspace(usesExternalSidebar: true)
+                    .accessibilityIdentifier("news-tab-content-standardLists")
+            } else {
+                destinationContent(
+                    for: selectedSlot,
+                    navigationItems: navigationItems(for: selectedSection),
+                    selection: sectionSelectionBinding(for: selectedSection),
+                    usesSidebarNavigation: true
+                )
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
     }
     #endif
 
-    private var feedTabsContent: some View {
-        TabView(selection: $selectedSlot) {
-            // Every destination stays at the top level. A TabSection would add a sidebar
-            // title, but it also renders as one grouped entry in the iPadOS tab bar and
-            // carries a collapse chevron that no API suppresses.
-            ForEach(Array(NewsTabSlot.primarySlots.prefix(slotFeeds.count)), id: \.self) { slot in
-                if let index = slot.primaryIndex, slotFeeds.indices.contains(index) {
-                    let feed = slotFeeds[index]
-                    Tab(
-                        feed.title,
-                        systemImage: feed.systemImage,
-                        value: slot
-                    ) {
-                        if selectedSlot == slot {
-                            NewsFeedShellView(
-                                title: feed.title,
-                                tab: feed.newsTab,
-                                sceneModel: sceneModel,
-                                isProfilePresented: $isProfilePresented,
-                                supportsUnreadFilter: feed == .subscribed || feed == .following,
-                                bulkReadScope: bulkReadScope(for: feed)
-                            )
-                        }
-                    }
-                }
-            }
+    @ViewBuilder
+    private var feedTabs: some View {
+        feedTabsContent
+            .tabViewStyle(.sidebarAdaptable)
+    }
 
-            if let transientPrimaryFeed {
-                Tab(
-                    transientPrimaryFeed.title,
-                    systemImage: transientPrimaryFeed.systemImage,
-                    value: NewsTabSlot.transient
-                ) {
-                    if selectedSlot == .transient {
-                        NewsFeedShellView(
-                            title: transientPrimaryFeed.title,
-                            tab: transientPrimaryFeed.newsTab,
-                            sceneModel: sceneModel,
-                            isProfilePresented: $isProfilePresented,
-                            supportsUnreadFilter: transientPrimaryFeed == .subscribed || transientPrimaryFeed == .following,
-                            bulkReadScope: bulkReadScope(for: transientPrimaryFeed)
-                        )
-                    }
-                }
-            }
+    private var readLaterNavigationItems: [NewsNavigationItem] {
+        [NewsNavigationItem(slot: .readLater, title: "Read Later", systemImage: "bookmark")]
+            + (showsArchiveTab ? [NewsNavigationItem(slot: .archive, title: "Archive", systemImage: "archivebox")] : [])
+    }
 
-            savedTab(.readLater)
-            if showsArchiveTab {
-                savedTab(.archive)
-            }
-        }
-        .tabViewStyle(.sidebarAdaptable)
-        .tabViewSidebarHeader {
-            Text("The Social Wire")
-                .font(.headline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("news-sidebar-column")
+    private var standardListNavigationItems: [NewsNavigationItem] {
+        appModel.standardReaderLists.lists.map {
+            NewsNavigationItem(slot: .standardList($0.uri), title: $0.name, systemImage: "list.bullet")
         }
     }
 
-    private func savedTab(_ slot: NewsTabSlot) -> some TabContent<NewsTabSlot> {
-        let source = slot.savedListSource ?? .readLater
-        let title = source.rawValue
-        return Tab(title, systemImage: source.systemImage, value: slot) {
-            if selectedSlot == slot {
-                NewsFeedShellView(
-                    title: title,
-                    tab: .saved,
-                    sceneModel: sceneModel,
-                    isProfilePresented: $isProfilePresented,
-                    supportsUnreadFilter: false,
-                    bulkReadScope: .unavailable
-                )
+    @ViewBuilder
+    private func destinationContent(
+        for slot: NewsTabSlot,
+        navigationItems: [NewsNavigationItem],
+        selection: Binding<NewsTabSlot>,
+        usesSidebarNavigation: Bool = false
+    ) -> some View {
+        if let source = slot.savedListSource {
+            destinationView(
+                title: source.rawValue,
+                tab: .saved,
+                navigationItems: navigationItems,
+                selection: selection,
+                supportsUnreadFilter: false,
+                bulkReadScope: .unavailable,
+                usesSidebarNavigation: usesSidebarNavigation
+            )
+        } else if case .standardList(let uri) = slot,
+                  let list = appModel.standardReaderLists.lists.first(where: { $0.uri == uri }) {
+            destinationView(
+                title: list.name,
+                tab: .library,
+                navigationItems: navigationItems,
+                selection: selection,
+                supportsUnreadFilter: false,
+                bulkReadScope: .unavailable,
+                usesSidebarNavigation: usesSidebarNavigation
+            )
+        } else if let feed = selectedSlot.primaryFeed {
+            destinationView(
+                title: feed.title,
+                tab: feed.newsTab,
+                navigationItems: navigationItems,
+                selection: selection,
+                supportsUnreadFilter: feed == .subscribed || feed == .following,
+                bulkReadScope: bulkReadScope(for: feed),
+                usesSidebarNavigation: usesSidebarNavigation
+            )
+        }
+    }
+
+    private func destinationView(
+        title: String,
+        tab: NewsTab,
+        navigationItems: [NewsNavigationItem],
+        selection: Binding<NewsTabSlot>,
+        supportsUnreadFilter: Bool,
+        bulkReadScope: ReaderMarkReadScope,
+        usesSidebarNavigation: Bool = false
+    ) -> some View {
+        NewsFeedShellView(
+            title: title,
+            tab: tab,
+            sceneModel: sceneModel,
+            isProfilePresented: $isProfilePresented,
+            navigationItems: navigationItems,
+            selection: selection,
+            supportsUnreadFilter: supportsUnreadFilter,
+            bulkReadScope: bulkReadScope,
+            usesSidebarNavigation: usesSidebarNavigation
+        )
+    }
+
+    private var feedTabsContent: some View {
+        TabView(selection: $selectedSection) {
+            Tab("Read Later", systemImage: "bookmark", value: NewsRootSection.readLater) {
+                sectionPager(.readLater, items: readLaterNavigationItems)
             }
+            Tab("Feeds", systemImage: "newspaper", value: NewsRootSection.feeds) {
+                sectionPager(.feeds, items: feedDestinations.map(NewsNavigationItem.init(feed:)))
+            }
+            Tab("Topics", systemImage: "square.grid.2x2", value: NewsRootSection.topics) {
+                sectionPager(.topics, items: topicDestinations.map(NewsNavigationItem.init(feed:)))
+            }
+            Tab("Lists", systemImage: "list.bullet", value: NewsRootSection.lists) {
+                listsWorkspace
+            }
+        }
+    }
+
+    private var listsWorkspace: some View {
+        StandardReaderListsWorkspace()
+            .accessibilityIdentifier("news-tab-content-standardLists")
+    }
+
+    private func sectionPager(_ section: NewsRootSection, items: [NewsNavigationItem]) -> some View {
+        let selection = sectionSelectionBinding(for: section)
+        return NewsSectionPager(items: items, selection: selection) { slot in
+            destinationContent(for: slot, navigationItems: items, selection: selection)
+        } emptyContent: {
+            ContentUnavailableView(
+                section.emptyTitle,
+                systemImage: section.systemImage,
+                description: Text(section.emptyDescription)
+            )
+        }
+    }
+
+    private func sectionSelectionBinding(for section: NewsRootSection) -> Binding<NewsTabSlot> {
+        Binding(
+            get: {
+                let items = navigationItems(for: section)
+                if let remembered = sectionSelections[section], items.contains(where: { $0.slot == remembered }) {
+                    return remembered
+                }
+                return items.first?.slot ?? section.fallbackSlot
+            },
+            set: { slot in
+                sectionSelections[section] = slot
+                if selectedSection == section {
+                    selectedSlot = slot
+                }
+            }
+        )
+    }
+
+    private func navigationItems(for section: NewsRootSection) -> [NewsNavigationItem] {
+        switch section {
+        case .readLater:
+            readLaterNavigationItems
+        case .feeds:
+            feedDestinations.map(NewsNavigationItem.init(feed:))
+        case .topics:
+            topicDestinations.map(NewsNavigationItem.init(feed:))
+        case .lists:
+            standardListNavigationItems
+        }
+    }
+
+    private func selectedSectionChanged(_ oldValue: NewsRootSection, _ section: NewsRootSection) {
+        guard section != .lists else { return }
+        reconcileSectionSelection(section)
+    }
+
+    private func sidebarDestinationSelected() {
+        switch sceneModel.selectedTab {
+        case .finance, .sports: selectedSection = .topics
+        case .saved: selectedSection = .readLater
+        default: selectedSection = .feeds
+        }
+        sceneTabChanged(sceneModel.selectedTab, sceneModel.selectedTab)
+    }
+
+    private func reconcileSectionSelection(_ section: NewsRootSection) {
+        let items = navigationItems(for: section)
+        guard let slot = sectionSelections[section].flatMap({ remembered in
+            items.first(where: { $0.slot == remembered })?.slot
+        }) ?? items.first?.slot else { return }
+        sectionSelections[section] = slot
+        if selectedSection == section, selectedSlot != slot {
+            selectedSlot = slot
         }
     }
 
@@ -206,7 +346,7 @@ struct NewsShellView: View {
             appModel.feedPreferences = preferences
         }
         appModel.loadPrimaryTabPreferences()
-        slotFeeds = appModel.primaryTabFeeds
+        slotFeeds = appModel.primaryTabFeeds.filter { $0 != .podcasts }
         sceneModel.updateContext(viewerDID: appModel.viewerDID, availableTabs: availableTabs)
 
         if let viewerDID = appModel.viewerDID,
@@ -214,7 +354,7 @@ struct NewsShellView: View {
            slotFeeds.contains(lastFeed) {
             selectPrimaryFeed(lastFeed)
         } else if let firstFeed = slotFeeds.first {
-            selectedSlot = .primaryOne
+            selectedSlot = NewsTabSlot(firstFeed)
             activatePrimaryFeed(firstFeed)
         } else {
             selectedSlot = .readLater
@@ -226,30 +366,72 @@ struct NewsShellView: View {
     }
 
     private func selectedSlotChanged(_ oldValue: NewsTabSlot, _ slot: NewsTabSlot) {
+        if let section = rootSection(for: slot) {
+            sectionSelections[section] = slot
+            if selectedSection != section {
+                selectedSection = section
+            }
+        }
         if let source = slot.savedListSource {
             // Read Later and Archive are separate tabs now, so each owns its own source.
             sceneModel.prepareForReaderSourceChange(from: appModel.readerListSource, to: source)
             appModel.selectReaderListSource(source)
             sceneModel.select(.saved, availableTabs: availableTabs)
-        } else if slot == .transient {
-            guard let transientPrimaryFeed else { return }
-            activatePrimaryFeed(transientPrimaryFeed)
-        } else {
-            lastPrimarySlot = slot
-            guard let activePrimaryFeed else { return }
-            activatePrimaryFeed(activePrimaryFeed)
+        } else if case let .standardList(uri) = slot,
+                  let list = appModel.standardReaderLists.lists.first(where: { $0.uri == uri }) {
+            Task { await appModel.standardReaderLists.select(list) }
+        } else if let feed = slot.primaryFeed {
+            activatePrimaryFeed(feed)
         }
-        if oldValue == .transient, slot != .transient {
-            removeTransientFeedAfterSelection()
+    }
+
+    private func loadSelectedDestination(_ slot: NewsTabSlot) async {
+        guard let feed = slot.primaryFeed else { return }
+        switch feed {
+        case .wire:
+            if appModel.wireCatalog == nil {
+                await appModel.refreshWireCatalog()
+            }
+            await appModel.loadWireEdition()
+        case .circle:
+            if appModel.circleCatalog == nil {
+                await appModel.refreshCircleCatalog()
+            }
+            await appModel.loadCircleEdition()
+        case .finance:
+            async let feeds: Void = appModel.loadFinanceFeeds()
+            // Resolve interests before the story request captures its preference
+            // fingerprint; a concurrent selection load can otherwise discard it.
+            guard await appModel.loadFinanceSelections(), !Task.isCancelled else { return }
+            await feeds
+            guard !Task.isCancelled else { return }
+            async let customization: Void = appModel.loadFinanceCustomization(reconcilingSelections: false)
+            async let stories: Void = appModel.loadFinance()
+            _ = await (customization, stories)
+        case .sports:
+            let topic = appModel.sportsTopic
+            topic.bind(viewer: appModel.viewerDID)
+            await topic.loadCatalog()
+            async let stories: Void = topic.load(language: Locale.current.language.languageCode?.identifier ?? "en")
+            async let events: Void = topic.loadEvents()
+            _ = await (stories, events)
+        case .subscribed, .following, .podcasts:
+            break
         }
+    }
+
+    private func rootSection(for slot: NewsTabSlot) -> NewsRootSection? {
+        if slot.savedListSource != nil { return .readLater }
+        if case .standardList = slot { return .lists }
+        guard let feed = slot.primaryFeed else { return nil }
+        return [.finance, .sports].contains(feed) ? .topics : .feeds
     }
 
     private func viewerDidChange(_ oldValue: String?, _ viewerDID: String?) {
         isTabConfigurationLoaded = false
         sceneModel.updateContext(viewerDID: viewerDID, availableTabs: availableTabs)
         appModel.loadPrimaryTabPreferences()
-        slotFeeds = appModel.primaryTabFeeds
-        transientPrimaryFeed = nil
+        slotFeeds = appModel.primaryTabFeeds.filter { $0 != .podcasts }
         isTabConfigurationLoaded = true
     }
 
@@ -257,26 +439,17 @@ struct NewsShellView: View {
         _ oldValue: [NewsPrimaryFeed],
         _ feeds: [NewsPrimaryFeed]
     ) {
-        slotFeeds = Array(feeds.prefix(NewsTabSlot.primarySlots.count))
+        slotFeeds = feeds.filter { $0 != .podcasts }
+        guard selectedSection != .lists else { return }
 
-        if let transientPrimaryFeed,
-           let index = slotFeeds.firstIndex(of: transientPrimaryFeed) {
-            transientTransitionID = UUID()
-            self.transientPrimaryFeed = nil
-            selectedSlot = NewsTabSlot.primarySlots[index]
-            lastPrimarySlot = selectedSlot
-            activatePrimaryFeed(transientPrimaryFeed)
-            return
-        }
-
-        if let index = selectedSlot.primaryIndex, !slotFeeds.indices.contains(index) {
-            if feeds.isEmpty {
-                selectedSlot = .readLater
+        if let selectedFeed = selectedSlot.primaryFeed,
+           !appModel.visiblePrimaryTabFeedChoices.contains(selectedFeed) {
+            if let firstFeed = navigableFeeds.first {
+                selectPrimaryFeed(firstFeed)
             } else {
-                selectedSlot = .primaryOne
-                activatePrimaryFeed(feeds[0])
+                selectedSlot = .readLater
             }
-        } else if selectedSlot.savedListSource == nil, let activePrimaryFeed {
+        } else if let activePrimaryFeed {
             activatePrimaryFeed(activePrimaryFeed)
         }
     }
@@ -286,12 +459,14 @@ struct NewsShellView: View {
     }
 
     private func sceneTabChanged(_ oldValue: NewsTab, _ tab: NewsTab) {
-        guard isTabConfigurationLoaded else { return }
+        guard isTabConfigurationLoaded, selectedSection != .lists else { return }
         switch tab {
         case .wire:
             selectPrimaryFeed(.wire)
         case .finance:
             selectPrimaryFeed(.finance)
+        case .podcasts:
+            selectPrimaryFeed(.podcasts)
         case .sports:
             selectPrimaryFeed(.sports)
         case .circle:
@@ -322,6 +497,7 @@ struct NewsShellView: View {
         _ source: ReaderListSource
     ) {
         guard isTabConfigurationLoaded,
+              selectedSection != .lists,
               sceneModel.selectedTab == .library,
               let feed = primaryFeed(for: source)
         else { return }
@@ -358,61 +534,12 @@ struct NewsShellView: View {
         if selectedSlot == .archive, !showsArchiveTab {
             selectedSlot = .readLater
         }
-        if let transientPrimaryFeed,
-           !appModel.visiblePrimaryTabFeedChoices.contains(transientPrimaryFeed) {
-            self.transientPrimaryFeed = nil
-            transientTransitionID = UUID()
-            selectedSlot = slotFeeds.isEmpty ? .readLater : .primaryOne
-        }
-        // Reconcile even if the effective choices did not change the selected index.
         primaryTabFeedsChanged(slotFeeds, appModel.primaryTabFeeds)
     }
 
     private func selectPrimaryFeed(_ feed: NewsPrimaryFeed) {
-        if let index = slotFeeds.firstIndex(of: feed) {
-            selectedSlot = NewsTabSlot.primarySlots[index]
-        } else {
-            presentTransientFeed(feed)
-            return
-        }
-        if selectedSlot.primaryIndex != nil {
-            lastPrimarySlot = selectedSlot
-        }
+        selectedSlot = NewsTabSlot(feed)
         activatePrimaryFeed(feed)
-    }
-
-    private func presentTransientFeed(_ feed: NewsPrimaryFeed) {
-        guard transientPrimaryFeed != feed || selectedSlot != .transient else { return }
-        let transitionID = UUID()
-        transientTransitionID = transitionID
-
-        withAnimation(.easeInOut(duration: 0.2)) {
-            transientPrimaryFeed = feed
-        }
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(220))
-            guard transientTransitionID == transitionID,
-                  transientPrimaryFeed == feed else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedSlot = .transient
-            }
-            activatePrimaryFeed(feed)
-        }
-    }
-
-    private func removeTransientFeedAfterSelection() {
-        let transitionID = UUID()
-        transientTransitionID = transitionID
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(220))
-            guard transientTransitionID == transitionID,
-                  selectedSlot != .transient else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                transientPrimaryFeed = nil
-            }
-        }
     }
 
     private func activatePrimaryFeed(_ feed: NewsPrimaryFeed) {
@@ -444,7 +571,7 @@ struct NewsShellView: View {
         switch feed {
         case .subscribed, .following:
             return ReaderMarkReadScope.selectedFeed(appModel.feedSelection)
-        case .wire, .circle, .finance, .sports:
+        case .wire, .circle, .finance, .sports, .podcasts:
             return .unavailable
         }
     }
@@ -452,14 +579,22 @@ struct NewsShellView: View {
 
 private struct NewsFeedShellView: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    @Environment(\.openURL) private var openURL
     @State private var presentedSheet: NewsShellSheet?
+    @State private var suppressesContentTaps = false
+    @State private var tapGateReleaseTask: Task<Void, Never>?
+    @GestureState private var horizontalDragOffset: CGFloat = 0
+    @GestureState private var isSectionSwiping = false
 
     let title: String
     let tab: NewsTab
     let sceneModel: NewsSceneModel
     @Binding var isProfilePresented: Bool
+    let navigationItems: [NewsNavigationItem]
+    @Binding var selection: NewsTabSlot
     let supportsUnreadFilter: Bool
     let bulkReadScope: ReaderMarkReadScope
+    let usesSidebarNavigation: Bool
 
     private enum NewsShellSheet: String, Identifiable {
         case addPublication
@@ -470,6 +605,12 @@ private struct NewsFeedShellView: View {
     }
 
     private var effectiveTitle: String {
+        if tab == .finance {
+            return appModel.selectedFinanceFeed.title
+        }
+        if tab == .sports {
+            return appModel.sportsTopic.selectedTitle
+        }
         if tab == .library, let publication = appModel.selectedPublication {
             return publication.title
         }
@@ -478,8 +619,18 @@ private struct NewsFeedShellView: View {
 
     var body: some View {
         NavigationStack(path: pathBinding) {
-            NewsContentColumn(selectedTab: tab, sceneModel: sceneModel)
-                .navigationTitle(effectiveTitle)
+            ZStack {
+                NewsContentColumn(selectedTab: tab, sceneModel: sceneModel)
+                    .environment(
+                        \.suppressesNewsContentActions,
+                        isSectionSwiping || suppressesContentTaps
+                    )
+                    .environment(\.openURL, guardedOpenURLAction)
+                    .allowsHitTesting(!isSectionSwiping && !suppressesContentTaps)
+                    .offset(x: horizontalDragOffset)
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(usesSidebarNavigation ? nil : sectionSwipeGesture)
                 .toolbar { toolbarContent }
                 .navigationDestination(for: NewsRoute.self) { route in
                     NewsRouteDestination(route: route, tab: tab, sceneModel: sceneModel)
@@ -499,31 +650,41 @@ private struct NewsFeedShellView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: leadingPlacement) {
-            Button {
-                isProfilePresented = true
-            } label: {
-                ViewerProfileAvatar(size: 30)
+        ToolbarItem(placement: .principal) {
+            if usesSidebarNavigation {
+                Text(effectiveTitle)
+                    .font(.headline)
+            } else {
+                NewsHorizontalNavigationBar(items: navigationItems, selection: $selection)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Profile")
         }
-        if tab == .library && appModel.readerListSource == .subscribed {
-            ToolbarItem(placement: trailingPlacement) {
-                Menu {
-                    Button("Add Publication", systemImage: "plus.circle") {
-                        presentedSheet = .addPublication
-                    }
-                    Button("New Folder", systemImage: "folder.badge.plus") {
-                        presentedSheet = .newFolder
-                    }
-                    Button("Import OPML", systemImage: "square.and.arrow.down") {
-                        presentedSheet = .importOPML
-                    }
+        if !usesSidebarNavigation {
+            ToolbarItem(placement: leadingPlacement) {
+                Button {
+                    isProfilePresented = true
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    ViewerProfileAvatar(size: 30)
                 }
-                .help("Add a publication, folder, or OPML subscription list")
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profile")
+            }
+            if tab == .library && appModel.readerListSource == .subscribed {
+                ToolbarItem(placement: trailingPlacement) {
+                    Menu {
+                        Button("Add Publication", systemImage: "plus.circle") {
+                            presentedSheet = .addPublication
+                        }
+                        Button("New Folder", systemImage: "folder.badge.plus") {
+                            presentedSheet = .newFolder
+                        }
+                        Button("Import OPML", systemImage: "square.and.arrow.down") {
+                            presentedSheet = .importOPML
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus")
+                    }
+                    .help("Add a publication, folder, or OPML subscription list")
+                }
             }
         }
         if supportsUnreadFilter {
@@ -591,6 +752,191 @@ private struct NewsFeedShellView: View {
             appModel.folders.first { $0.uri.hasSuffix("/\(key)") }?.value.name ?? "This Folder"
         default:
             effectiveTitle
+        }
+    }
+
+    private var sectionSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                tapGateReleaseTask?.cancel()
+                suppressesContentTaps = true
+            }
+            .updating($horizontalDragOffset) { value, offset, _ in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                offset = value.translation.width
+            }
+            .updating($isSectionSwiping) { value, isSwiping, _ in
+                isSwiping = abs(value.translation.width) > abs(value.translation.height)
+            }
+            .onEnded { value in
+                releaseTapGateAfterSwipe()
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                let projectedWidth = value.predictedEndTranslation.width
+                let distance = abs(projectedWidth) > abs(value.translation.width)
+                    ? projectedWidth
+                    : value.translation.width
+                guard abs(distance) >= 60,
+                      let currentIndex = navigationItems.firstIndex(where: { $0.slot == selection })
+                else { return }
+
+                let destinationIndex = distance < 0 ? currentIndex + 1 : currentIndex - 1
+                guard navigationItems.indices.contains(destinationIndex) else { return }
+                withAnimation(.snappy) {
+                    selection = navigationItems[destinationIndex].slot
+                }
+            }
+    }
+
+    private var guardedOpenURLAction: OpenURLAction {
+        OpenURLAction { url in
+            guard !isSectionSwiping, !suppressesContentTaps else { return .discarded }
+            openURL(url)
+            return .handled
+        }
+    }
+
+    private func releaseTapGateAfterSwipe() {
+        tapGateReleaseTask?.cancel()
+        tapGateReleaseTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            suppressesContentTaps = false
+        }
+    }
+}
+
+private enum NewsRootSection: String, Hashable {
+    case readLater
+    case feeds
+    case topics
+    case lists
+
+    var systemImage: String {
+        switch self {
+        case .readLater: "bookmark"
+        case .feeds: "newspaper"
+        case .topics: "square.grid.2x2"
+        case .lists: "list.bullet"
+        }
+    }
+
+    var fallbackSlot: NewsTabSlot {
+        switch self {
+        case .readLater: .readLater
+        case .feeds: .wire
+        case .topics: .finance
+        case .lists: .standardList("")
+        }
+    }
+
+    var emptyTitle: LocalizedStringResource {
+        switch self {
+        case .readLater: "Nothing Saved"
+        case .feeds: "No Feeds"
+        case .topics: "No Topics"
+        case .lists: "No Lists"
+        }
+    }
+
+    var emptyDescription: LocalizedStringResource {
+        switch self {
+        case .readLater: "Saved articles will appear here."
+        case .feeds: "Available feeds will appear here."
+        case .topics: "Available topics will appear here."
+        case .lists: "Your reader lists will appear here."
+        }
+    }
+}
+
+private struct NewsDestinationLoadContext: Equatable {
+    let viewerDID: String?
+    let slot: NewsTabSlot
+}
+
+private struct NewsSectionPager<Content: View, EmptyContent: View>: View {
+    let items: [NewsNavigationItem]
+    @Binding var selection: NewsTabSlot
+    @ViewBuilder let content: (NewsTabSlot) -> Content
+    @ViewBuilder let emptyContent: () -> EmptyContent
+    var body: some View {
+        if items.isEmpty {
+            emptyContent()
+        } else {
+            content(selection)
+        }
+    }
+}
+
+private struct NewsNavigationItem: Identifiable, Hashable {
+    let slot: NewsTabSlot
+    let title: String
+    let systemImage: String
+
+    var id: NewsTabSlot { slot }
+
+    init(slot: NewsTabSlot, title: String, systemImage: String) {
+        self.slot = slot
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    init(feed: NewsPrimaryFeed) {
+        slot = NewsTabSlot(feed)
+        title = feed.title
+        systemImage = feed.systemImage
+    }
+}
+
+private struct NewsHorizontalNavigationBar: View {
+    let items: [NewsNavigationItem]
+    @Binding var selection: NewsTabSlot
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(items) { item in
+                        Button {
+                            selection = item.slot
+                        } label: {
+                            Label(item.title, systemImage: item.systemImage)
+                                .font(.subheadline.weight(selection == item.slot ? .semibold : .regular))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    selection == item.slot
+                                        ? AnyShapeStyle(Color.accentColor.opacity(0.18))
+                                        : AnyShapeStyle(.thinMaterial),
+                                    in: .capsule
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selection == item.slot ? .isSelected : [])
+                        .id(item.slot)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+            .scrollIndicators(.hidden)
+            .onAppear { scrollToSelection(using: proxy, animated: false) }
+            .onChange(of: selection) { _, _ in
+                scrollToSelection(using: proxy, animated: true)
+            }
+            .onChange(of: items) { _, _ in
+                scrollToSelection(using: proxy, animated: false)
+            }
+        }
+    }
+
+    private func scrollToSelection(using proxy: ScrollViewProxy, animated: Bool) {
+        if animated {
+            withAnimation(.snappy) {
+                proxy.scrollTo(selection, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(selection, anchor: .center)
         }
     }
 }

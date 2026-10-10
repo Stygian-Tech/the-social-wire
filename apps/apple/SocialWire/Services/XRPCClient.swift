@@ -56,8 +56,9 @@ final class XRPCClient {
         return try await sendWithDPoPRetry(request, session: session)
     }
 
-    func authorizedPost<Body: Encodable, T: Decodable>(_ base: URL, method: String, body: Body) async throws -> T {
+    func authorizedPost<Body: Encodable, T: Decodable>(_ base: URL, method: String, body: Body, expectedViewer: String? = nil) async throws -> T {
         let session = try await auth.validSession()
+        if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
         let url = try xrpcURL(base: base, method: method)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -247,21 +248,22 @@ final class XRPCClient {
         let session = try await auth.validSession()
         if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
         let body = PutRecordRequest(repo: session.did, collection: collection, rkey: rkey, record: AnyEncodable(record))
-        let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.putRecord", body: body)
+        let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.putRecord", body: body, expectedViewer: expectedViewer)
     }
 
     @discardableResult
-    func createRecord<Record: Encodable>(collection: String, record: Record) async throws -> String {
-        try await createRecordReference(collection: collection, record: record).uri
+    func createRecord<Record: Encodable>(collection: String, record: Record, expectedViewer: String? = nil) async throws -> String {
+        try await createRecordReference(collection: collection, record: record, expectedViewer: expectedViewer).uri
     }
 
-    func createRecordReference<Record: Encodable>(collection: String, record: Record) async throws -> StrongRef {
+    func createRecordReference<Record: Encodable>(collection: String, record: Record, expectedViewer: String? = nil) async throws -> StrongRef {
         let session = try await auth.validSession()
+        if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
         let body = CreateRecordRequest(repo: session.did, collection: collection, record: AnyEncodable(record))
         let response: CreateRecordResponse = try await authorizedPost(
             session.pdsURL,
             method: "com.atproto.repo.createRecord",
-            body: body
+            body: body, expectedViewer: expectedViewer
         )
         return StrongRef(uri: response.uri, cid: response.cid)
     }
@@ -283,7 +285,7 @@ final class XRPCClient {
         let session = try await auth.validSession()
         if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
         let body = DeleteRecordRequest(repo: session.did, collection: collection, rkey: rkey)
-        let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.deleteRecord", body: body)
+        let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.deleteRecord", body: body, expectedViewer: expectedViewer)
     }
 
     private func xrpcURL(base: URL, method: String, query: [String: String?] = [:]) throws -> URL {

@@ -1,9 +1,11 @@
 # Railway infrastructure partial
 
-`railway.ts` owns only the three consolidated indexing service classes in
+`railway.ts` owns the three consolidated indexing service classes in
 Development and Production: Ingress Controller, Projection Pool, and
-Coordinator. The stable partial name keeps omit-as-delete scoped to those
-resources while the compatibility fleet remains on grandfathered
+Coordinator. Development additionally includes the Podcast Media bucket and
+Podcast Media Worker through `podcasts.ts`; Production does not include or
+enable these resources. The stable partial name keeps omit-as-delete scoped to
+the resources owned by this graph while the compatibility fleet remains on grandfathered
 `railway/*.json` configuration during the rollback window. The graph aborts in
 every other environment.
 
@@ -27,6 +29,15 @@ The partial preserves database, Redis, API-key, HMAC, and migrator-reference
 variables already present on each target service. It does not copy values from
 compatibility services: seed the three targets before the first apply, then
 `preserve()` retains those values without printing secrets into source.
+
+Before applying Development podcast resources, seed the worker's Postgres URL,
+migrator-service reference, shared media secret and dedicated bridge credentials.
+The graph references the private bucket's endpoint, bucket name, region and keys.
+It enables one worker replica in `sfo`, tracking `dev`, with the Development
+Gateway as its public asset origin. Wait for Database Migrator success before
+starting consumers; GitHub push deployment ordering does not follow variable
+references. AppView's private worker URL and shared secret, and Web's build-time
+feature flag, are configured separately. Do not expose a public worker domain.
 
 Plan and apply from the repository root, explicitly linking the intended target:
 

@@ -20,7 +20,7 @@ afterAll(() => {
   }
 });
 const restores: (() => void)[] = [];
-afterEach(() => { cleanup(); for (const restore of restores.splice(0)) restore(); window.localStorage.clear(); });
+afterEach(async () => { await act(async () => { cleanup(); await new Promise(resolve => setTimeout(resolve, 0)); }); for (const restore of restores.splice(0)) restore(); window.localStorage.clear(); });
 
 function harness(viewerDID: string | undefined, signedIn = true, save = mock(async (args: { selection: Sports.SportsSelection; remove: boolean }) => { void args; return undefined; }), selections: Sports.SportsSelection[] = []) {
   const catalog = spyOn(Sports, "getSportsCatalog").mockResolvedValue({ enabled: true, available: true, eventsEnabled: false, version: "test", feeds: [], entities: [{ id: "tennis", name: "Tennis", kind: "sport", competitionIDs: [], aliases: [], active: true }, { id: "football", name: "Football", kind: "sport", competitionIDs: [], aliases: [], active: true }] });

@@ -3,6 +3,7 @@ import Foundation
 enum FeedSelection: Codable, Hashable {
     case topLevel(ReaderListSource)
     case folder(String)
+    case standardList(String)
     case publication(String)
     case savedSource(ReaderListSource, String)
 

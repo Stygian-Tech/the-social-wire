@@ -16,7 +16,7 @@ struct FinanceNamedFeed: Codable, Equatable, Identifiable, Sendable {
         case "crypto": "Crypto"
         case "index": "Indices"
         case "commodity": "Commodities"
-        default: kind == "sector" ? "Industries" : "Finance"
+        default: ["industry", "sector"].contains(kind) ? "Industries" : "Finance"
         }
     }
 
@@ -32,6 +32,21 @@ struct FinanceNamedFeed: Codable, Equatable, Identifiable, Sendable {
 
     func isVisible(hideCrypto: Bool) -> Bool {
         !hideCrypto || assetKind != "crypto"
+    }
+
+    static func followedFeeds(_ feeds: [FinanceNamedFeed], selections: [FinanceSelectionRecord], hideCrypto: Bool) -> [FinanceNamedFeed] {
+        let instruments = Set(selections.filter { $0.kind == "instrument" }.map(\.reference))
+        let sectors = Set(selections.filter { $0.kind == "sector" }.map(\.reference))
+        return feeds.filter { feed in
+            guard feed.isVisible(hideCrypto: hideCrypto) else { return false }
+            if feed.kind == "instrument", feed.instrumentIDs.count == 1 {
+                return instruments.contains(feed.instrumentIDs[0])
+            }
+            if ["industry", "sector"].contains(feed.kind), feed.sectorIDs.count == 1 {
+                return sectors.contains(feed.sectorIDs[0])
+            }
+            return false
+        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
     func resolvedInstrument(metadata: [String: FinanceInstrument], items: [FinanceFeedItem]) -> FinanceInstrument? {
