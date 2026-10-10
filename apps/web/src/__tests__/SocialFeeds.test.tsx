@@ -42,6 +42,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 describe("Social feed navigation", () => {
+  it("withholds cached saved names when moderation catalog refresh fails", () => {
+    const view = render(<SocialFeeds />);
+    expect(screen.getByRole("button", { name: custom.name })).toBeTruthy();
+    state = { ...state, isError: true };
+    view.rerender(<SocialFeeds />);
+    expect(screen.queryByRole("button", { name: custom.name }) === null).toBe(true);
+    expect(screen.queryByRole("button", { name: list.name }) === null).toBe(true);
+    expect(screen.getByRole("button", { name: "Following" })).toBeTruthy();
+  });
+
   it("preserves catalog order and navigates independently to custom and list feeds", async () => {
     params.set("list", list.uri);
     const selected = mock(() => undefined);

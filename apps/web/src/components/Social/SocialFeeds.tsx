@@ -12,7 +12,7 @@ export function SocialFeeds({ onSelect }: { onSelect?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const catalog = useBlueskySocialCatalog();
-  const feeds = catalog.data?.feeds ?? [SOCIAL_FOLLOWING_FEED];
+  const feeds = catalog.isError ? [SOCIAL_FOLLOWING_FEED] : catalog.data?.feeds ?? [SOCIAL_FOLLOWING_FEED];
   const selectedFeed = params.get("feed");
   const selectedList = params.get("list");
 

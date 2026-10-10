@@ -25,6 +25,22 @@ function labelerView(did: string) {
 }
 
 describe("Social feed contracts", () => {
+  for (const unsafe of ["blocked", "muted", "content label", "creator label"] as const) {
+    it(`withholds ${unsafe} generator and list names without losing saved routes`, async () => {
+      const creator = { did: "did:plc:other", handle: "other.example", viewer: { blocking: unsafe === "blocked" ? "at://did:plc:alice/app.bsky.graph.block/one" : undefined, muted: unsafe === "muted" }, labels: unsafe === "creator label" ? [{ src: baseLabeler, uri: "did:plc:other", val: "!hide", cts: "2026-10-09T00:00:00Z" }] : [] };
+      const labels = (uri: string) => unsafe === "content label" ? [{ src: baseLabeler, uri, val: "!hide", cts: "2026-10-09T00:00:00Z" }] : [];
+      const session = fakeSession(method => {
+        if (method === "app.bsky.actor.getPreferences") return { preferences: [{ $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: [{ id: "f", type: "feed", value: feedUri, pinned: true }, { id: "l", type: "list", value: listUri, pinned: false }] }] };
+        if (method === "app.bsky.labeler.getServices") return { views: [labelerView(baseLabeler)] };
+        if (method === "app.bsky.feed.getFeedGenerators") return { feeds: [{ uri: feedUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", did: "did:plc:feedservice", creator, displayName: "Unsafe Feed Name", labels: labels(feedUri), indexedAt: "2026-10-09T00:00:00Z" }] };
+        if (method === "app.bsky.graph.getList") return { list: { uri: listUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", creator, name: "Unsafe List Name", purpose: "app.bsky.graph.defs#curatelist", labels: labels(listUri), indexedAt: "2026-10-09T00:00:00Z" }, items: [] };
+        throw new Error(`Unexpected ${method}`);
+      });
+      const catalog = await getBlueskySocialCatalog(session);
+      expect(catalog.feeds.slice(1)).toEqual([{ kind: "feed", uri: feedUri, name: "Saved Feed", pinned: true }, { kind: "list", uri: listUri, name: "Saved List", pinned: false }]);
+    });
+  }
+
   it("keeps Following, pinned generators, and saved lists with correct routes", () => {
     const feeds = socialFeedsFromPreferences([
       { id: "t", type: "timeline", value: "following", pinned: true },

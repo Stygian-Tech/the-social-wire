@@ -1,4 +1,4 @@
-import { Agent, AppBskyFeedDefs, type AppBskyActorDefs, type ModerationOpts } from "@atproto/api";
+import { Agent, AppBskyFeedDefs, moderateFeedGenerator, moderateUserList, type ModerationDecision, type AppBskyActorDefs, type ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { getAtprotoNetwork } from "@/lib/atprotoNetwork";
 import { LocalAppViewAgent } from "@/lib/localAppViewAgent";
@@ -73,6 +73,14 @@ function throwIfAborted(signal?: AbortSignal): void {
   signal?.throwIfAborted();
 }
 
+/** Navigation exposes names only when both content and creator identity are safe. */
+function canDisplayCatalogName(decision: ModerationDecision): boolean {
+  return (["contentList", "contentView", "profileList", "displayName"] as const).every(context => {
+    const ui = decision.ui(context);
+    return !ui.filter && !ui.blur && !ui.noOverride;
+  });
+}
+
 export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal): Promise<BlueskySocialCatalog> {
   const agent = createAuthenticatedAppViewAgent(session);
   const preferences = await agent.getPreferences();
@@ -86,6 +94,7 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   for (const did of requiredLabelers) {
     if (!Object.hasOwn(labelDefs, did)) throw new Error("Your moderation settings could not be loaded. Please retry.");
   }
+  const moderation: ModerationOpts = { userDid: session.did, prefs: preferences.moderationPrefs, labelDefs };
   const feeds = socialFeedsFromPreferences(preferences.savedFeeds);
   const generators = feeds.filter(feed => feed.kind === "feed");
   const names = new Map<string, string>();
@@ -93,7 +102,9 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   for (let offset = 0; offset < generators.length; offset += 25) {
     try {
       const result = await agent.app.bsky.feed.getFeedGenerators({ feeds: generators.slice(offset, offset + 25).map(feed => feed.uri) }, { signal });
-      for (const feed of result.data.feeds) names.set(feed.uri, feed.displayName);
+      for (const feed of result.data.feeds) {
+        if (canDisplayCatalogName(moderateFeedGenerator(feed, moderation))) names.set(feed.uri, feed.displayName);
+      }
     } catch (error) {
       throwIfAborted(signal);
       if (isMissingOAuthScope(error)) throw error;
@@ -104,7 +115,7 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
     await Promise.all(lists.slice(offset, offset + 10).map(async feed => {
       try {
         const result = await agent.app.bsky.graph.getList({ list: feed.uri, limit: 1 }, { signal });
-        names.set(feed.uri, result.data.list.name);
+        if (canDisplayCatalogName(moderateUserList(result.data.list, moderation))) names.set(feed.uri, result.data.list.name);
       } catch (error) {
         throwIfAborted(signal);
         if (isMissingOAuthScope(error)) throw error;
@@ -114,7 +125,7 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   throwIfAborted(signal);
   return {
     feeds: feeds.map(feed => ({ ...feed, name: names.get(feed.uri) || feed.name })),
-    moderation: { userDid: session.did, prefs: preferences.moderationPrefs, labelDefs },
+    moderation,
   };
 }
 

@@ -36,6 +36,36 @@ beforeEach(() => {
 afterEach(() => { cleanup(); queryClient.clear(); restores.splice(0).forEach(restore => restore()); });
 
 describe("viewer profile public read boundary", () => {
+  it("rejects a changed OAuth identity before attempting the repository fallback", async () => {
+    let rejectPublic!: (error: Error) => void;
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => new Promise<Response>((_resolve, reject) => { rejectPublic = reject; }), { preconnect: globalThis.fetch.preconnect }));
+    restores.push(() => fetch.mockRestore());
+    renderHook(() => useViewerProfile(), { wrapper: Wrapper });
+    await waitFor(() => expect(typeof rejectPublic).toBe("function"));
+    viewer = bob;
+    rejectPublic(new Error("Public profile unavailable"));
+    await waitFor(() => expect(queryClient.getQueryState(["viewerProfile", alice])?.status).toBe("error"));
+    expect(queryClient.getQueryState(["viewerProfile", alice])?.error?.message).toContain("account changed");
+    expect(oauthFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back after an abandoned profile request fails", async () => {
+    let rejectPublic!: (error: Error) => void;
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(Object.assign((input: RequestInfo | URL) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.searchParams.get("actor") === bob) return Promise.resolve(Response.json({ did: bob, handle: "bob.test" }));
+      return new Promise<Response>((_resolve, reject) => { rejectPublic = reject; });
+    }, { preconnect: globalThis.fetch.preconnect }));
+    restores.push(() => fetch.mockRestore());
+    const { result, rerender } = renderHook(() => useViewerProfile(), { wrapper: Wrapper });
+    await waitFor(() => expect(typeof rejectPublic).toBe("function"));
+    viewer = bob;
+    rerender();
+    rejectPublic(new Error("Public profile unavailable"));
+    await waitFor(() => expect(result.current.data?.did).toBe(bob));
+    expect(oauthFetch).not.toHaveBeenCalled();
+  });
+
   it("reads actual banner and zero or nonzero statistics without sending OAuth to AppView", async () => {
     const fetch = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(input instanceof Request ? input.url : String(input));

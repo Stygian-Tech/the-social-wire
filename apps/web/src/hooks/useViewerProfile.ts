@@ -45,7 +45,7 @@ export function useViewerProfile() {
 
   return useQuery({
     queryKey: VIEWER_PROFILE_QUERY_KEY(did ?? ""),
-    queryFn: async (): Promise<ViewerProfileSlice | null> => {
+    queryFn: async ({ signal }): Promise<ViewerProfileSlice | null> => {
       if (!did) return null;
       if (dummyReaderDataEnabled) return dummyViewerProfile;
 
@@ -53,7 +53,8 @@ export function useViewerProfile() {
       try {
         const res = await appViewAgent.api.app.bsky.actor.getProfile({
           actor: did,
-        });
+        }, { signal });
+        signal.throwIfAborted();
         const d = res.data;
         return {
           did: d.did,
@@ -67,14 +68,17 @@ export function useViewerProfile() {
           postsCount: d.postsCount,
         };
       } catch {
+        signal.throwIfAborted();
         const oauthSession = getOAuthSession();
         if (!oauthSession) return null;
+        if (oauthSession.did !== did) throw new Error("Your account changed. Please reload your profile.");
         const pdsAgent = createOAuthAgent(oauthSession);
         const rec = await pdsAgent.api.com.atproto.repo.getRecord({
           repo: did,
           collection: "app.bsky.actor.profile",
           rkey: "self",
-        });
+        }, { signal });
+        signal.throwIfAborted();
         const val = rec.data.value as Record<string, unknown>;
         const str = (v: unknown): string | undefined =>
           typeof v === "string" ? v : undefined;
