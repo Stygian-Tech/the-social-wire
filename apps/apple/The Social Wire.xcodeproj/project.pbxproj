@@ -7,6 +7,28 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C94B6C749389CBF58005474E /* StandardReaderList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2620A6EED3C084723947C142 /* StandardReaderList.swift */; };
+		396743768B819655FBFCFDB0 /* StandardReaderList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2620A6EED3C084723947C142 /* StandardReaderList.swift */; };
+		CEAB4C191DAE26F0058C1BF5 /* StandardReaderListContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732181E991BB4F2BFC844814 /* StandardReaderListContract.swift */; };
+		DD8860BA69232032673946C7 /* StandardReaderListContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732181E991BB4F2BFC844814 /* StandardReaderListContract.swift */; };
+		2C2CD91B673975327547A3C8 /* StandardReaderListPublication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783A2C04F82FC4F66A28BD07 /* StandardReaderListPublication.swift */; };
+		F2E21C6DE8B6A6999D4050A9 /* StandardReaderListPublication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783A2C04F82FC4F66A28BD07 /* StandardReaderListPublication.swift */; };
+		734341378B8105B16D72077D /* StandardReaderListRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03119C5379B7398F172AC46F /* StandardReaderListRecord.swift */; };
+		8B268AB5AC2539273A8656B2 /* StandardReaderListRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03119C5379B7398F172AC46F /* StandardReaderListRecord.swift */; };
+		56ECFA6EA1BB091D0E62E1D1 /* StandardReaderListSaveRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F79AD47243AF68202A8465A5 /* StandardReaderListSaveRecord.swift */; };
+		74BE3059A59EFAAC3F1DF4DD /* StandardReaderListSaveRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F79AD47243AF68202A8465A5 /* StandardReaderListSaveRecord.swift */; };
+		A52219A50FCAD97F427BA000 /* StandardReaderListsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CD8BCE6470E9289308AE8C1 /* StandardReaderListsModel.swift */; };
+		CAD31FFBBF8ECB5108939497 /* StandardReaderListsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CD8BCE6470E9289308AE8C1 /* StandardReaderListsModel.swift */; };
+		5D2FCDB319FE7CDA82C6074E /* StandardReaderListsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD874A7EEC444CC635AB8CD /* StandardReaderListsPage.swift */; };
+		A76C7791D663D03D66A3AF30 /* StandardReaderListsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD874A7EEC444CC635AB8CD /* StandardReaderListsPage.swift */; };
+		7AE7D89C022479B69FE09AD6 /* StandardReaderListPDSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6A7136E604AE8D0D79CE477 /* StandardReaderListPDSService.swift */; };
+		43A249A6BB4B95E3484067C6 /* StandardReaderListPDSService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6A7136E604AE8D0D79CE477 /* StandardReaderListPDSService.swift */; };
+		35F37D7F0C491CE9CEFECF14 /* StandardReaderListsManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3AA007F3D0D05E3A915F8D6 /* StandardReaderListsManagementView.swift */; };
+		6FF5F1D3EE44113699ECCF2C /* StandardReaderListsManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3AA007F3D0D05E3A915F8D6 /* StandardReaderListsManagementView.swift */; };
+		60F9A5C89D682FC619EAA251 /* StandardReaderListsWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A52C080ACEE7042FE81ED0 /* StandardReaderListsWorkspace.swift */; };
+		FA9319038118203F561067AF /* StandardReaderListsWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A52C080ACEE7042FE81ED0 /* StandardReaderListsWorkspace.swift */; };
+		BDA8527088DDAB7D924C5F27 /* StandardReaderListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A634FF8C18290D603D9A66E /* StandardReaderListTests.swift */; };
+		CF95A16A5108BBCEF77C7232 /* StandardReaderListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A634FF8C18290D603D9A66E /* StandardReaderListTests.swift */; };
 		0060D7A3219ACD0188E96E73 /* SavedLinksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505250F2A4975ACD9C2016C4 /* SavedLinksView.swift */; };
 		01D829665B73EBB749C3F383 /* EntryDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B6E3837892E5D405BA285B2 /* EntryDetail.swift */; };
 		01F3DBAD29ADCF893294792F /* OptimisticSidebarMutation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3718722F7C9C97A7BD646B7F /* OptimisticSidebarMutation.swift */; };
@@ -828,6 +850,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		2620A6EED3C084723947C142 /* StandardReaderList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderList.swift; sourceTree = "<group>"; };
+		732181E991BB4F2BFC844814 /* StandardReaderListContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListContract.swift; sourceTree = "<group>"; };
+		783A2C04F82FC4F66A28BD07 /* StandardReaderListPublication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListPublication.swift; sourceTree = "<group>"; };
+		03119C5379B7398F172AC46F /* StandardReaderListRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListRecord.swift; sourceTree = "<group>"; };
+		F79AD47243AF68202A8465A5 /* StandardReaderListSaveRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListSaveRecord.swift; sourceTree = "<group>"; };
+		4CD8BCE6470E9289308AE8C1 /* StandardReaderListsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListsModel.swift; sourceTree = "<group>"; };
+		ABD874A7EEC444CC635AB8CD /* StandardReaderListsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListsPage.swift; sourceTree = "<group>"; };
+		A6A7136E604AE8D0D79CE477 /* StandardReaderListPDSService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListPDSService.swift; sourceTree = "<group>"; };
+		A3AA007F3D0D05E3A915F8D6 /* StandardReaderListsManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListsManagementView.swift; sourceTree = "<group>"; };
+		66A52C080ACEE7042FE81ED0 /* StandardReaderListsWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListsWorkspace.swift; sourceTree = "<group>"; };
+		6A634FF8C18290D603D9A66E /* StandardReaderListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListTests.swift; sourceTree = "<group>"; };
 		0147AAB6F7508BCF68B6F518 /* WireFeedCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireFeedCatalog.swift; sourceTree = "<group>"; };
 		017483570D3ACF792605B752 /* ArticleReadingWidth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleReadingWidth.swift; sourceTree = "<group>"; };
 		026C0C2F3E26CD3D93BD1810 /* DPoPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DPoPService.swift; sourceTree = "<group>"; };
@@ -1254,6 +1287,37 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		AF4A0B1FE88B385AACB3036B /* Lists */ = {
+			isa = PBXGroup;
+			children = (
+				2620A6EED3C084723947C142 /* StandardReaderList.swift */,
+				732181E991BB4F2BFC844814 /* StandardReaderListContract.swift */,
+				783A2C04F82FC4F66A28BD07 /* StandardReaderListPublication.swift */,
+				03119C5379B7398F172AC46F /* StandardReaderListRecord.swift */,
+				F79AD47243AF68202A8465A5 /* StandardReaderListSaveRecord.swift */,
+				4CD8BCE6470E9289308AE8C1 /* StandardReaderListsModel.swift */,
+				ABD874A7EEC444CC635AB8CD /* StandardReaderListsPage.swift */,
+			);
+			path = Lists;
+			sourceTree = "<group>";
+		};
+		41AA95491B65C64013443D17 /* Lists */ = {
+			isa = PBXGroup;
+			children = (
+				A6A7136E604AE8D0D79CE477 /* StandardReaderListPDSService.swift */,
+			);
+			path = Lists;
+			sourceTree = "<group>";
+		};
+		50459BA302A375DBAD3CB57B /* StandardReaderLists */ = {
+			isa = PBXGroup;
+			children = (
+				A3AA007F3D0D05E3A915F8D6 /* StandardReaderListsManagementView.swift */,
+				66A52C080ACEE7042FE81ED0 /* StandardReaderListsWorkspace.swift */,
+			);
+			path = StandardReaderLists;
+			sourceTree = "<group>";
+		};
 		012E751E2BDDAC349B609488 /* SavedLinks */ = {
 			isa = PBXGroup;
 			children = (
@@ -1305,6 +1369,7 @@
 		206EB97A8511039A9F09E35C /* SocialWireTests */ = {
 			isa = PBXGroup;
 			children = (
+				6A634FF8C18290D603D9A66E /* StandardReaderListTests.swift */,
 				519EDD3A08A342ABB9374540 /* PodcastListenerTests.swift */,
 				9BDE417FB4CE751015B42E0B /* ArticleFeedRhythmTests.swift */,
 				45174D2C52F5FCB25C08615A /* ArticleSocialContractTests.swift */,
@@ -1427,6 +1492,7 @@
 		4D407BCC35F7F0C80EA9DC89 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				41AA95491B65C64013443D17 /* Lists */,
 				56E8388BAFC7193DCD7E5BCE /* ATProtoOAuthService.swift */,
 				0FB9AEA3371D47E0E344B64B /* ATProtoResolver.swift */,
 				026C0C2F3E26CD3D93BD1810 /* DPoPService.swift */,
@@ -1563,6 +1629,7 @@
 		71F75ED212CC8522AA10A74F /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				AF4A0B1FE88B385AACB3036B /* Lists */,
 				60F94E68F6A8F8D90DF15CD3 /* JSONValue.swift */,
 				5F040BB571094D427C1733A9 /* Appearance */,
 				3A3DFD3EA1789BD35B2DF33D /* ATProto */,
@@ -1844,6 +1911,7 @@
 		DBC6D10AC1BC45968195DB42 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				50459BA302A375DBAD3CB57B /* StandardReaderLists */,
 				50160666ACBE36188557F195 /* AddPublicationView.swift */,
 				CBAB76AF7A801EC162FBE904 /* ArticleBodyUnavailableView.swift */,
 				31BFD0872FD9D6C71D80658C /* ArticleToolbar.swift */,
@@ -2196,6 +2264,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FA9319038118203F561067AF /* StandardReaderListsWorkspace.swift in Sources */,
+				6FF5F1D3EE44113699ECCF2C /* StandardReaderListsManagementView.swift in Sources */,
+				43A249A6BB4B95E3484067C6 /* StandardReaderListPDSService.swift in Sources */,
+				A76C7791D663D03D66A3AF30 /* StandardReaderListsPage.swift in Sources */,
+				CAD31FFBBF8ECB5108939497 /* StandardReaderListsModel.swift in Sources */,
+				74BE3059A59EFAAC3F1DF4DD /* StandardReaderListSaveRecord.swift in Sources */,
+				8B268AB5AC2539273A8656B2 /* StandardReaderListRecord.swift in Sources */,
+				F2E21C6DE8B6A6999D4050A9 /* StandardReaderListPublication.swift in Sources */,
+				DD8860BA69232032673946C7 /* StandardReaderListContract.swift in Sources */,
+				396743768B819655FBFCFDB0 /* StandardReaderList.swift in Sources */,
 				69D3A4C1F89F417CB6824782 /* Views/Podcasts/PodcastShowView.swift in Sources */,
 				097374C86944462594CDED0C /* Views/Podcasts/PodcastEpisodeRow.swift in Sources */,
 				9D4BD17E644E45B19458FF9C /* Views/Podcasts/PodcastEpisodeListView.swift in Sources */,
@@ -2569,6 +2647,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CF95A16A5108BBCEF77C7232 /* StandardReaderListTests.swift in Sources */,
 				99E4AA1EB05E47C3BDAE78CC /* PodcastListenerTests.swift in Sources */,
 				0CB5B4B32238F3E8BE68F12F /* ATProtoOAuthServiceTests.swift in Sources */,
 				5001A4B1D412EFD54BE8E9CB /* ATProtoSessionDPoPTests.swift in Sources */,
@@ -2608,6 +2687,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				60F9A5C89D682FC619EAA251 /* StandardReaderListsWorkspace.swift in Sources */,
+				35F37D7F0C491CE9CEFECF14 /* StandardReaderListsManagementView.swift in Sources */,
+				7AE7D89C022479B69FE09AD6 /* StandardReaderListPDSService.swift in Sources */,
+				5D2FCDB319FE7CDA82C6074E /* StandardReaderListsPage.swift in Sources */,
+				A52219A50FCAD97F427BA000 /* StandardReaderListsModel.swift in Sources */,
+				56ECFA6EA1BB091D0E62E1D1 /* StandardReaderListSaveRecord.swift in Sources */,
+				734341378B8105B16D72077D /* StandardReaderListRecord.swift in Sources */,
+				2C2CD91B673975327547A3C8 /* StandardReaderListPublication.swift in Sources */,
+				CEAB4C191DAE26F0058C1BF5 /* StandardReaderListContract.swift in Sources */,
+				C94B6C749389CBF58005474E /* StandardReaderList.swift in Sources */,
 				4EEDED253F2D45F2A6191372 /* Views/Podcasts/PodcastShowView.swift in Sources */,
 				8F14387D80F745549022BC2D /* Views/Podcasts/PodcastEpisodeRow.swift in Sources */,
 				055AE4F15F7E42EE81E1738D /* Views/Podcasts/PodcastEpisodeListView.swift in Sources */,
@@ -2972,6 +3061,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BDA8527088DDAB7D924C5F27 /* StandardReaderListTests.swift in Sources */,
 				6B89B40B1B39404EA17288F5 /* PodcastListenerTests.swift in Sources */,
 				A96FD7E9DC94ACFB4C9B18D2 /* ATProtoOAuthServiceTests.swift in Sources */,
 				B53246B0BA1039AEE8DDA9DF /* ATProtoSessionDPoPTests.swift in Sources */,

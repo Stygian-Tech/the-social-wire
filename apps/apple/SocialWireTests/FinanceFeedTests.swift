@@ -25,6 +25,30 @@ struct FinanceFeedTests {
         #expect(FinanceNamedFeed.all.isVisible(hideCrypto: true))
     }
 
+    @Test("server industry feeds appear under Industries and followed feeds preserve exact membership")
+    func followedFeedCatalog() {
+        let industry = FinanceNamedFeed(id: "industry:technology", title: "Technology", kind: "industry",
+                                        instrumentIDs: [], sectorIDs: ["technology"], description: "")
+        let equity = FinanceNamedFeed(id: "instrument:apple", title: "Apple", kind: "instrument",
+                                      instrumentIDs: ["apple"], sectorIDs: [], description: "", assetKind: "stock")
+        let crypto = FinanceNamedFeed(id: "instrument:coin", title: "Coin", kind: "instrument",
+                                      instrumentIDs: ["coin"], sectorIDs: [], description: "", assetKind: "crypto")
+        let group = FinanceNamedFeed(id: "group:technology", title: "Group", kind: "group",
+                                     instrumentIDs: ["apple"], sectorIDs: ["technology"], description: "")
+        let selections = [FinanceSelectionRecord(kind: "sector", reference: "technology", createdAt: "now", updatedAt: "now"),
+                          FinanceSelectionRecord(kind: "instrument", reference: "apple", createdAt: "now", updatedAt: "now"),
+                          FinanceSelectionRecord(kind: "instrument", reference: "coin", createdAt: "now", updatedAt: "now")]
+        #expect(industry.pickerGroup == "Industries")
+        let feeds = [industry, .all, crypto, group, equity]
+        #expect(FinanceNamedFeed.followedFeeds(feeds, selections: selections, hideCrypto: false).map(\.id)
+                == [equity.id, crypto.id, industry.id])
+        #expect(FinanceNamedFeed.followedFeeds(feeds, selections: selections, hideCrypto: true).map(\.id)
+                == [equity.id, industry.id])
+        #expect(FinanceNamedFeed.followedFeeds(feeds, selections: [], hideCrypto: false).isEmpty)
+        let wrongKind = FinanceSelectionRecord(kind: "instrument", reference: "technology", createdAt: "now", updatedAt: "now")
+        #expect(FinanceNamedFeed.followedFeeds([industry], selections: [wrongKind], hideCrypto: false).isEmpty)
+    }
+
     @Test("crypto exclusion remains explicit in server query and cache context")
     func cryptoQueryIsolation() {
         let query = SocialWireGatewayClient.financeQuery(language: "en", feed: "asset:crypto", cursor: "opaque", hideCrypto: true)

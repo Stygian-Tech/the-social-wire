@@ -54,7 +54,7 @@ struct NewsShellUITestHarness: View {
             if isShellConfigured {
                 NewsShellView()
                     .environment(fixtureModel)
-                    .safeAreaInset(edge: .bottom) {
+                    .safeAreaInset(edge: .top) {
                         if ProcessInfo.processInfo.arguments.contains("--ui-testing-shell-routing") {
                             HStack {
                                 Button("Hide Following") {
@@ -81,6 +81,22 @@ struct NewsShellUITestHarness: View {
                         fixtureModel.feedPreferences = ReaderFeedPreferences(
                             visibleFeeds: [.readLater, .archive, .subscribed, .following],
                             feedsWithUnreadCounts: [], showWire: false, showCircle: false)
+                        if ProcessInfo.processInfo.arguments.contains("--ui-testing-topics-lists") {
+                            fixtureModel.wireCatalog = WireFeedCatalog(
+                                financeAvailable: true, sportsAvailable: true,
+                                enabled: false, available: false, title: "The Wire", subtitle: "Fixture",
+                                supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil)
+                            fixtureModel.standardReaderLists.configureFixture(
+                                lists: [StandardReaderList(
+                                    uri: "at://did:plc:fixture/app.standard-reader.list/main",
+                                    name: "Fixture List", description: "Stories From Fixture Publications",
+                                    creatorDid: "did:plc:fixture", publications: [Self.fixturePublication.publicationId],
+                                    publicationDetails: nil, users: [], owned: true, saved: true)],
+                                entries: [Self.entry(index: 1)])
+                            if ProcessInfo.processInfo.arguments.contains("--ui-testing-empty-lists") {
+                                fixtureModel.standardReaderLists.configureFixture(lists: [], entries: [])
+                            }
+                        }
                         // Start from the default Subscribed selection; avoid live fetch work.
                         fixtureModel.readerListSource = .subscribed
                         fixtureModel.feedSelection = .topLevel(.subscribed)

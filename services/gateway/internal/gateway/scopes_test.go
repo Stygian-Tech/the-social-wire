@@ -9,11 +9,13 @@ import (
 	"testing"
 )
 
-// Baselines are the unchanged Production scopes at 76ca61584f5aa41f30008d9304e95df8e413f817.
+// Web baseline is the Production scope at 76ca61584f5aa41f30008d9304e95df8e413f817.
+// Native baseline includes the explicitly enabled Standard Reader Lists permissions
+// in the published native authorization request order.
 func TestPodcastDisabledMetadataKeepsProductionScope(t *testing.T) {
 	for _, fixture := range []struct{ path, scope, digest string }{
 		{"/oauth-client-metadata.json", webScope, "4f04e3f3d987b84c79ed8738268fefbd5905e7c91932fc300fd4a97e57751739"},
-		{"/ios-client-metadata.json", iosScope, "d85fdb91aa30e373c33f44e5f59a39ab19f1879222cf29d2bd1bd7c07e83ae66"},
+		{"/ios-client-metadata.json", iosScope, "7001b4367000f36cab50a5cf3e517f23353b9ef7cb37b90c4310661b761d4a9d"},
 	} {
 		for _, enabled := range []bool{false, true} {
 			s := Server{Config: Config{PodcastsEnabled: enabled}}

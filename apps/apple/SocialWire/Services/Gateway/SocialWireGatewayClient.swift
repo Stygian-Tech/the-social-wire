@@ -922,6 +922,19 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(Value.self, from: response.body)
     }
 
+    private struct ListsErrorEnvelope: Decodable { let message: String? }
+
+    func standardReaderListsRequest<Value: Decodable>(method: String = "GET", path: String,
+        query: [String: String] = [:], body: Data? = nil, expectedViewer: String) async throws -> Value {
+        let response = try await authorizedRequest(method: method, path: path, query: query,
+            body: body, contentType: body == nil ? nil : "application/json", expectedViewer: expectedViewer)
+        guard (200..<300).contains(response.statusCode) else {
+            let detail = try? JSONDecoder().decode(ListsErrorEnvelope.self, from: response.body).message
+            throw SocialWireError.badResponse(detail ?? "Lists could not load (\(response.statusCode)).")
+        }
+        return try JSONDecoder().decode(Value.self, from: response.body)
+    }
+
     private func authorizedRequest(
         method: String,
         path: String,

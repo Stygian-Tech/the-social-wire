@@ -23,6 +23,7 @@ struct SportsNewsView: View {
                         Label(selectedEntity?.displayName ?? topic.selectedTitle, systemImage: "sportscourt")
                             .font(.headline)
                     }
+                    .accessibilityIdentifier("sports-feed-picker")
                     Spacer()
                     Button("Customize", systemImage: "slider.horizontal.3") { showingCustomization = true }
                         .labelStyle(.iconOnly)
