@@ -2,11 +2,11 @@ import { expect, test } from "bun:test";
 import type { Query } from "@tanstack/react-query";
 import { shouldPersistEntriesQuery } from "@/lib/entriesQueryPersist";
 
-function query(key: unknown[], counts = [1], status = "success"): Pick<Query, "queryKey" | "state"> {
+function query(key: unknown[], counts = [1], status: Query["state"]["status"] = "success") {
   return {
     queryKey: key,
     state: { status, data: { pages: counts.map(count => ({ entries: Array(count).fill(null) })) } },
-  } as Pick<Query, "queryKey" | "state">;
+  };
 }
 
 test("persists private feeds only with a nonempty viewer key", () => {
@@ -30,7 +30,7 @@ test("persists only successful nonempty feeds within both cache bounds", () => {
   expect(shouldPersistEntriesQuery(query(["wireEntries"], [51, 50, 50]))).toBe(false);
   expect(shouldPersistEntriesQuery(query(["wireEntries"], [1, 1, 1, 1]))).toBe(false);
   expect(shouldPersistEntriesQuery(query(["wireEntries"], []))).toBe(false);
-  for (const status of ["pending", "error"]) {
+  for (const status of ["pending", "error"] as const) {
     expect(shouldPersistEntriesQuery(query(["wireEntries"], [1], status))).toBe(false);
   }
 });

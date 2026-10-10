@@ -3,7 +3,10 @@ import type { InfiniteData, Query } from "@tanstack/react-query";
 type EntryListPage = { entries: unknown[]; cursor?: string };
 
 /** Persist bounded successful feeds, requiring a viewer key for private feeds. */
-export function shouldPersistEntriesQuery(query: Pick<Query, "queryKey" | "state">): boolean {
+export function shouldPersistEntriesQuery(query: {
+  queryKey: Query["queryKey"];
+  state: Pick<Query["state"], "status" | "data">;
+}): boolean {
   const key = query.queryKey;
   if (!Array.isArray(key) || query.state.status !== "success") return false;
 
