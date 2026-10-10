@@ -6,6 +6,12 @@ import {
 } from "@/components/AppSidebar/appSidebarFeedSelection";
 
 describe("app sidebar feed selection", () => {
+  it("recognizes Social without selecting reader Following", () => {
+    expect(currentAppSidebarFeed({ pathname: "/social", feedParam: "at://did:plc:alice/app.bsky.feed.generator/news", folderParam: null, publicationTab: "following" })).toBe("social");
+    expect(currentAppSidebarFeed({ pathname: "/social/profile/alice", feedParam: null, folderParam: null, publicationTab: "subscribed" })).toBe("social");
+    expect(currentAppSidebarFeed({ pathname: "/socialized", feedParam: null, folderParam: null, publicationTab: "following" })).toBeNull();
+    expect(isAllFeedRouteSelected({ pathname: "/social", sourceParam: null, folderParam: null })).toBe(false);
+  });
   it("keeps Read Later selected while browsing a saved source", () => {
     expect(
       currentAppSidebarFeed({

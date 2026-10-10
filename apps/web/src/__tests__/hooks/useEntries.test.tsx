@@ -181,7 +181,7 @@ describe("useEntries", () => {
 
   it("uses dummy entries without an AppView request in local", async () => {
     process.env.NEXT_PUBLIC_APP_ENV = "local";
-    process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "false";
+    delete process.env.NEXT_PUBLIC_USE_DUMMY_DATA;
     const publication =
       dummyPublicationSidebarProjection.subscribedUnfoldered[0];
     expect(publication).toBeDefined();

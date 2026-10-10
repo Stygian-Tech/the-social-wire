@@ -1,5 +1,6 @@
 "use client";
 
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useSportsFeed } from "@/hooks/useSportsFeed";
@@ -74,7 +75,7 @@ export default function SportsExperience({ feedID = "sports", onFeedChange }: { 
       {!followEntity && (sports.catalog.data?.eventsEnabled || (feedID === "sports" && sports.catalog.isPending && !sports.catalog.data)) ? <SportsEventsStrip feedID={feedID} hidden={performanceHidden} entities={catalogEntities} selections={sports.selections} viewerDID={sports.viewerDID ?? "public"} selectionsLoading={sports.selectionsLoading || !!sports.selectionsError} catalogLoading={!sports.catalog.data} /> : null}
       <div className="grid min-w-0 gap-5 p-4 pt-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="@container/sports min-w-0">
-      <header className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/sports:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
+      <header className={`mb-4 grid grid-cols-2 items-center gap-2 p-3 @min-[24rem]/sports:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem] ${floatingGlassClasses}`}>
         <h1 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/sports:max-w-56">{selectedFeed ? displaySportsFeedTitle(selectedFeed, locale) : "Sports"}</h1>
         <div className="col-start-1 row-start-2 flex min-w-0 items-center text-sm @min-[24rem]/sports:col-start-2 @min-[24rem]/sports:row-start-1">
           <SportsFeedPicker entities={catalogEntities} definitions={definitions} feedID={feedID} entitySearch={entitySearch} onFeedChange={onFeedChange} />

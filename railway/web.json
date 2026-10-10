@@ -7,6 +7,7 @@
       "/apps/web/**",
       "/packages/read-state/**",
       "/packages/record-keys/**",
+      "/packages/vendor/**",
       "/package.json",
       "/bun.lock",
       "/turbo.json",

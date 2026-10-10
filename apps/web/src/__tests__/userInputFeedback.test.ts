@@ -102,6 +102,12 @@ describe("UserInput feedback", () => {
     ).rejects.toThrow(USER_INPUT_REAUTH_MESSAGE);
   });
 
+  it("accepts the minimal feedback grant and limits uploads to image MIME types", async () => {
+    const session = { getTokenInfo: async () => ({ scope: `atproto repo:app.userinput.discussion?action=create ${USER_INPUT_BLOB_OAUTH_SCOPE}` }) };
+    await expect(requireUserInputFeedbackScopes(session as never, ["image/png", "image/heic"])).resolves.toBeUndefined();
+    await expect(requireUserInputFeedbackScopes(session as never, ["application/pdf"])).rejects.toThrow(USER_INPUT_REAUTH_MESSAGE);
+  });
+
   it("requires blob access only when feedback includes photos", async () => {
     const withoutBlobAccess = {
       getTokenInfo: async () => ({

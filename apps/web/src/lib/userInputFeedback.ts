@@ -10,8 +10,9 @@ export const USER_INPUT_BOARD_URI =
 export const USER_INPUT_DISCUSSION_COLLECTION = "app.userinput.discussion";
 export const USER_INPUT_UPVOTE_COLLECTION = "app.userinput.upvote";
 
-export const USER_INPUT_OAUTH_SCOPE = "include:app.userinput.authFull";
-export const USER_INPUT_BLOB_OAUTH_SCOPE = "blob:*/*";
+export const USER_INPUT_OAUTH_SCOPE = "repo:app.userinput.discussion?action=create";
+export const USER_INPUT_UPVOTE_OAUTH_SCOPE = "repo:app.userinput.upvote?action=create&action=update";
+export const USER_INPUT_BLOB_OAUTH_SCOPE = "blob:image/*";
 export const MAX_USER_INPUT_PHOTOS = 4;
 
 export const USER_INPUT_REAUTH_MESSAGE =
@@ -98,7 +99,7 @@ export async function requireUserInputFeedbackScopes(
   const info = await session.getTokenInfo("auto");
   const scopes = String(info.scope ?? "").split(/\s+/).filter(Boolean);
   const hasPermissionSet = scopes.some(
-    (scope) => scopeName(scope) === USER_INPUT_OAUTH_SCOPE
+    (scope) => ["include:app.userinput.authFull", "include:app.userinput.authBasic"].includes(scopeName(scope))
   );
   const hasDiscussionCreate = scopes.some((scope) =>
     scopeAllowsRepoAction(scope, USER_INPUT_DISCUSSION_COLLECTION, "create")

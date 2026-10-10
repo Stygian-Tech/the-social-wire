@@ -7,6 +7,7 @@
 import { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
+import { getAtprotoNetwork } from "@/lib/atprotoNetwork";
 import { normalizeAppViewPublishedAt } from "@/lib/appViewPublishedAt";
 
 import {
@@ -18,7 +19,7 @@ import {
  * Public App View — identity (`resolveHandle`), graph, profile (`getProfile`).
  * Prefer this host over `bsky.social` for unauthenticated browser reads.
  */
-export const BSKY_APPVIEW_PUBLIC = "https://public.api.bsky.app";
+export const BSKY_APPVIEW_PUBLIC = getAtprotoNetwork().publicAppView;
 
 /**
  * Publication-shaped collections — probed first so the sidebar shows site/publication
@@ -276,7 +277,7 @@ async function resolveRepoDid(handleOrDid: string): Promise<string | null> {
 async function resolvePlcPdsEndpoint(did: string): Promise<string | null> {
   if (!did.startsWith("did:")) return null;
   try {
-    const url = `https://plc.directory/${encodeURIComponent(did)}`;
+    const url = `${getAtprotoNetwork().plcDirectory}/${encodeURIComponent(did)}`;
     const res = await fetch(url, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const doc = (await res.json()) as {

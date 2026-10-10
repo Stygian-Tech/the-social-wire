@@ -1,4 +1,5 @@
 "use client";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { SportsSchedulePanel } from "@/components/SportsSchedulePanel";
 import { useSpringStyle } from "@/hooks/useSpringStyle";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -84,7 +85,7 @@ export function SportsEventsStrip({ feedID, hidden, entities = [], selections = 
     const timestamps = data?.events.map(event => Date.parse(event.startsAt)) ?? [];
     return timestamps.length ? [new Date(Math.min(...timestamps)).toLocaleDateString(), new Date(Math.max(...timestamps)).toLocaleDateString()] : [];
   }, [data?.events]);
-  return <section ref={element => { sectionRef.current = element; compactSpring(element); }} data-topic-topbar data-compact={compact} aria-label="Sports Events" className="sticky top-0 z-20 border-b bg-background p-3">
+  return <section ref={element => { sectionRef.current = element; compactSpring(element); }} data-topic-topbar data-compact={compact} aria-label="Sports Events" className={`sticky top-2 z-20 m-2 shrink-0 p-3 ${floatingGlassClasses}`}>
     <div className="mb-2 flex items-center justify-between gap-3 text-sm">
       <h2 className="min-w-0 font-medium [overflow-wrap:anywhere]">Schedules and Results</h2>
       <div className="flex items-center gap-2">

@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-// Web baseline is the Production scope at 76ca61584f5aa41f30008d9304e95df8e413f817.
+// Web baseline includes the reviewed least-privilege Social and Articles grants.
 // Native baseline includes the explicitly enabled Standard Reader Lists permissions
 // in the published native authorization request order.
 func TestPodcastDisabledMetadataKeepsProductionScope(t *testing.T) {
 	for _, fixture := range []struct{ path, scope, digest string }{
-		{"/oauth-client-metadata.json", webScope, "4f04e3f3d987b84c79ed8738268fefbd5905e7c91932fc300fd4a97e57751739"},
+		{"/oauth-client-metadata.json", webScope, "7bb76547bd50807e63ddb4ad28d0fc0772f5839b7cb0e0104d22f7e051a4644d"},
 		{"/ios-client-metadata.json", iosScope, "7001b4367000f36cab50a5cf3e517f23353b9ef7cb37b90c4310661b761d4a9d"},
 	} {
 		for _, enabled := range []bool{false, true} {

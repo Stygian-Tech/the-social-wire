@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { cn } from "@/lib/utils";
 
 type FeedHeaderProps = {
@@ -19,7 +20,8 @@ export function FeedHeader({
   return (
     <header
       className={cn(
-        "flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border/70 bg-background px-2 py-1 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4",
+        floatingGlassClasses,
+        "relative z-20 m-2 flex min-h-12 shrink-0 flex-wrap items-center gap-2 px-2 py-1 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4",
         className,
       )}
     >

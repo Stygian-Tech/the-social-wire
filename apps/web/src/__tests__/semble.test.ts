@@ -20,6 +20,16 @@ const grants = [
     `repo:${collection}?action=create&action=update&action=delete`,
 );
 
+const requiredGrants = [
+  "repo:network.cosmik.card?action=create",
+  "repo:network.cosmik.card?action=update",
+  "repo:network.cosmik.collectionLink?action=create",
+  "repo:network.cosmik.collectionLink?action=delete",
+  "repo:network.cosmik.collectionLinkRemoval?action=create",
+  "repo:network.cosmik.connection?action=create",
+  "repo:network.cosmik.connection?action=update",
+];
+
 describe("Semble provider contracts", () => {
   it("normalizes URLs for direct-PDS card deduplication", () => {
     expect(normalizeSembleUrl("HTTP://Example.COM:80/#section")).toBe(
@@ -42,10 +52,45 @@ describe("Semble provider contracts", () => {
     ).toBe("at://did:plc:author/network.cosmik.card/card");
   });
 
-  it("requires all five explicit Semble repo grants", () => {
+  it("accepts only the actions used by Semble without collection writes", () => {
+    expect(tokenScopesAllowSemble(requiredGrants.join(" "))).toBe(true);
+    expect(
+      tokenScopesAllowSemble(
+        "repo:network.cosmik.card?action=create&action=update " +
+          "repo:network.cosmik.collectionLink?action=create&action=delete " +
+          "repo:network.cosmik.collectionLinkRemoval?action=create " +
+          "repo:network.cosmik.connection?action=create&action=update",
+      ),
+    ).toBe(true);
+  });
+
+  it("continues accepting broader existing collection and wildcard grants", () => {
     expect(tokenScopesAllowSemble(grants.join(" "))).toBe(true);
+    expect(tokenScopesAllowSemble("repo:*")).toBe(true);
+    expect(
+      tokenScopesAllowSemble("repo:*?action=create&action=update&action=delete"),
+    ).toBe(true);
+  });
+
+  it.each(requiredGrants)("requires the implemented action %s", (requiredGrant) => {
+    expect(
+      tokenScopesAllowSemble(
+        requiredGrants.filter((grant) => grant !== requiredGrant).join(" "),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects missing or insufficient grants", () => {
+    expect(tokenScopesAllowSemble(undefined)).toBe(false);
+    expect(tokenScopesAllowSemble("repo:*?action=create")).toBe(false);
     expect(tokenScopesAllowSemble("include:network.cosmik.authFull")).toBe(false);
-    expect(tokenScopesAllowSemble(grants.slice(0, -1).join(" "))).toBe(false);
+    expect(
+      tokenScopesAllowSemble(
+        requiredGrants
+          .join(" ")
+          .replace("repo:network.cosmik.card", "repo:network.cosmik.collection"),
+      ),
+    ).toBe(false);
   });
 
   it("scopes caches by viewer, provider, and collection", () => {

@@ -13,6 +13,7 @@ import {
 } from "@/lib/sidebarWidthStorage"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -229,7 +230,12 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-[min(92vw,var(--sidebar-width))] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className={cn(
+            "w-[min(92vw,var(--sidebar-width))] p-0 text-sidebar-foreground [&>button]:hidden",
+            variant === "floating"
+              ? `${floatingGlassClasses} data-[side=left]:inset-y-2 data-[side=right]:inset-y-2 data-[side=left]:left-2 data-[side=right]:right-2 data-[side=left]:h-[calc(100svh-1rem)] data-[side=right]:h-[calc(100svh-1rem)]`
+              : "bg-sidebar"
+          )}
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -286,7 +292,10 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="relative flex size-full min-h-0 min-w-0 flex-col overflow-x-hidden bg-sidebar group-data-[variant=floating]:rounded-2xl group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className={cn(
+            "relative flex size-full min-h-0 min-w-0 flex-col overflow-x-hidden",
+            variant === "floating" ? floatingGlassClasses : "bg-sidebar"
+          )}
         >
           {children}
         </div>
