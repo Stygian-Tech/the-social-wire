@@ -1,4 +1,5 @@
 "use client";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import Link from "next/link";
 import { Pause, Play } from "lucide-react";
 import type { PlayerContext } from "./PodcastPlayerProvider";
@@ -24,7 +25,7 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
   const title = <div className="min-w-0"><Link href="/podcasts" className="block truncate text-sm font-semibold">{episode.title}</Link>
     {chapter ? <p className="truncate text-xs text-muted-foreground">{chapter.title}</p> : null}</div>;
   const error = player.error ? <p role="alert" className="text-sm text-destructive">{player.error}<button type="button" className="ml-2 min-h-9 underline" onClick={player.clearError}>Dismiss</button></p> : null;
-  return <aside aria-label="Podcast Player" className="relative z-20 shrink-0 border-t bg-background px-3 py-2">
+  return <aside aria-label="Podcast Player" className={`${floatingGlassClasses} relative z-20 m-2 shrink-0 px-3 py-2`}>
     <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center gap-2"><div className="size-10 shrink-0"><PodcastArtwork src={artwork} fallbackSources={[episode.artworkUrl, episode.showArtworkUrl]} alt={artworkLabel} size={40} /></div>{title}</div>
       {transport}

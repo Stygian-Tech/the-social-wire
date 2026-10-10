@@ -211,7 +211,8 @@ describe("WireNewsEditionLayout", () => {
       .getByRole("heading", { name: "Trending Stories" })
       .closest("aside");
     expect(trending?.getAttribute("tabindex")).toBe("0");
-    expect(trending?.className).toContain("rounded-xl");
+    expect(trending?.className).toContain("rounded-2xl");
+    expect(trending?.className).toContain("floating-glass");
     expect(trending?.className).toContain("p-3");
     expect(trending?.className).toContain("xl:overflow-y-auto");
     expect(trending?.className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-5rem)]");

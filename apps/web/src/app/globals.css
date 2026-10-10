@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@stygian/markdown-editor/styles";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -387,4 +388,28 @@ html[data-bold-text="true"] {
 }
 @media (prefers-reduced-motion: reduce) {
   .podcast-waveform-indicator { animation: none; }
+}
+
+
+.floating-glass {
+  background-color: var(--background);
+  background-image: linear-gradient(135deg, oklch(1 0 0 / 0.025), transparent 65%);
+  box-shadow: 0 2px 10px -6px oklch(0 0 0 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.035);
+}
+
+@supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {
+  .floating-glass {
+    background-color: color-mix(in oklch, var(--background) 90%, transparent);
+    -webkit-backdrop-filter: blur(12px) saturate(110%);
+    backdrop-filter: blur(12px) saturate(110%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .floating-glass {
+    background-color: var(--background);
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }

@@ -19,7 +19,7 @@ import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 import { normalizeAppEnv, readAppEnvRaw } from "@/lib/appEnv";
 import { resolveHostedOAuthClientId } from "@/lib/oauthClientMetadata";
-import { BSKY_APPVIEW_PUBLIC } from "@/lib/atprotoClient";
+import { atprotoScopesForNetwork, getAtprotoNetwork, localLoopbackOAuthScopes, authorizationScopesForClient } from "@/lib/atprotoNetwork";
 
 export { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 
@@ -190,7 +190,7 @@ function resolveClientId(): string {
       redirect_uris: explicitRedirect
         ? [explicitRedirect]
         : [buildDefaultLocalCallbackUrl()],
-      scope: AT_PROTO_OAUTH_SCOPES,
+      scope: localLoopbackOAuthScopes(atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES)),
     });
   }
   return resolveHostedClientId();
@@ -366,7 +366,8 @@ export async function getOAuthClient(): Promise<BrowserOAuthClient> {
   if (!_clientPromise) {
     const load = BrowserOAuthClient.load({
       clientId: resolveClientId(),
-      handleResolver: BSKY_APPVIEW_PUBLIC,
+      handleResolver: getAtprotoNetwork().handleResolver,
+      plcDirectoryUrl: getAtprotoNetwork().plcDirectory,
       fetch: createFetchWithDeadline(OAUTH_FETCH_DEADLINE_MS),
       responseMode: resolveOAuthResponseMode(),
       onDelete: (did, cause) => invalidateOAuthSession(did, cause),
@@ -416,7 +417,8 @@ export async function signIn(handle: string): Promise<void> {
 
   const client = await getOAuthClient();
   await client.signInRedirect(handle, {
-    scope: AT_PROTO_OAUTH_SCOPES,
+    // Provider scope validation compares literal strings with client metadata.
+    scope: authorizationScopesForClient(atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES), client.clientMetadata.client_id),
   });
   // Browser is redirected — execution stops here.
 }

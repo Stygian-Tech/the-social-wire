@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { LogOut, Bookmark, Archive } from "lucide-react";
+import { LogOut, Bookmark, Archive, FilePenLine } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
@@ -41,6 +40,7 @@ import { rkeyFromURI } from "@/lib/pdsClient";
 import { type DiscoveredPublication } from "@/lib/atprotoClient";
 import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { PublicationTabs } from "./PublicationTabs";
+import { SidebarSocialSection } from "./SidebarSocialSection";
 import { SidebarAudioSection } from "./SidebarAudioSection";
 import { podcastsEnabled } from "@/lib/podcasts/playback";
 import { SidebarTopicsSection } from "./SidebarTopicsSection";
@@ -57,6 +57,7 @@ import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import { savedFeedSources } from "@/lib/savedFeedSources";
 import { SavedFeedSourcesSection } from "./SavedFeedSourcesSection";
 import { activeReadFeedScope } from "@/lib/activeReadFeedScope";
+import { useDesktopPublicationRail } from "@/hooks/useDesktopPublicationRail";
 import { useClientHydrated } from "@/hooks/useClientHydrated";
 import { AllFeedSidebarButton } from "./AllFeedSidebarButton";
 import {
@@ -70,9 +71,8 @@ import { useStandardReaderList, useStandardReaderLists } from "@/hooks/useStanda
 import type { StandardReaderList } from "@/lib/standardReaderListsClient";
 import { AppSidebarBrandHeader } from "./AppSidebarBrandHeader";
 import { useFinanceCatalog } from "@/hooks/useFinanceCatalog";
-import { financeTopicIsVisible } from "@/lib/financeFeedClient";
+import { topicNavigationIsVisible } from "@/lib/topicNavigationVisibility";
 import { useSportsCatalog } from "@/hooks/useSportsCatalog";
-import { sportsTopicIsVisible } from "@/lib/sportsFeedClient";
 import { useWireFeedCatalog } from "@/hooks/useWireFeed";
 import {
   loadReaderFeedSelection,
@@ -114,6 +114,7 @@ export function AppSidebar({
   }, [selectedListUri]);
   useEffect(() => { queueMicrotask(() => { setCreatorResults([]); setListsSearching(false); }); }, [session?.did]);
   const clientHydrated = useClientHydrated();
+  const desktopPublicationRail = useDesktopPublicationRail();
   const [loggingOut, setLoggingOut] = useState(false);
   const {
     selectedFolderUri,
@@ -456,12 +457,14 @@ export function AppSidebar({
   const displayPreferences = clientHydrated ? feedPreferences : DEFAULT_FEED_DISPLAY_PREFERENCES;
   if (displayPreferences.showWire) visible.add("wire");
   if (displayPreferences.showCircle) visible.add("circle");
-  if (sportsTopicIsVisible(displayPreferences.showSports, { enabled: sportsCatalog.confirmedEnabled })) visible.add("sports");
-  if (financeTopicIsVisible(displayPreferences.showFinance, financeCatalog.data)) visible.add("finance");
+  if (topicNavigationIsVisible(displayPreferences.showSports, sportsCatalog.confirmedEnabled)) visible.add("sports");
+  if (topicNavigationIsVisible(displayPreferences.showFinance, financeCatalog.data?.enabled)) visible.add("finance");
 
   if (podcastsEnabled()) visible.add("podcasts");
+  visible.add("social");
 
   const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
+    if (feed === "social") { setOpenMobile(false); router.push("/social"); return; }
     if (feed === "podcasts") { setOpenMobile(false); router.push("/podcasts"); return; }
     setSelectedFolderUri(null);
     if (feed === "readLater") {
@@ -503,135 +506,9 @@ export function AppSidebar({
     }
   }, [currentFeed, setPublicationTab]);
 
-  return (
-    <>
-    <Sidebar
-      className="transition-[width] [&_[data-slot=sidebar-inner]]:bg-background"
-      style={{
-        left:
-          "max(0px, calc((100vw - var(--reader-shell-width, 70rem)) / 2))",
-      }}
-    >
-      <AppSidebarBrandHeader />
-
-      <SidebarContent className="overflow-y-auto overflow-x-hidden">
-        <div className="shrink-0">
-          {visible.has("readLater") || visible.has("archive") ? (
-          <SidebarGroup className="pb-1">
-            <SidebarGroupLabel>
-              {usingSemble
-                ? configuredReadLater.sembleConnection?.collectionName || "Read Later"
-                : "Read Later"}
-            </SidebarGroupLabel>
-            <SidebarMenu className="gap-0.5">
-              {visible.has("readLater") ? <SidebarMenuItem>
-                <SidebarMenuButton
-                  type="button"
-                  tooltip={
-                    usingSemble
-                      ? configuredReadLater.sembleConnection?.collectionName || "Semble Collection"
-                      : "Read Later Links"
-                  }
-                  isActive={currentFeed === "readLater"}
-                  onClick={() => selectTopLevelFeed("readLater")}
-                  className={readLaterSidebarButtonClassName({
-                    usingSemble,
-                    count: displayedReadLaterUnread,
-                  })}
-                >
-                  <Bookmark />
-                  <span>
-                    {usingSemble
-                      ? configuredReadLater.sembleConnection?.collectionName || "Saved"
-                      : "Saved"}
-                  </span>
-                  <ReadLaterSidebarBadge
-                    count={displayedReadLaterUnread}
-                  />
-                </SidebarMenuButton>
-              </SidebarMenuItem> : null}
-              {visible.has("archive") ? <SidebarMenuItem>
-                <SidebarMenuButton
-                  type="button"
-                  tooltip="Archived Read Later Links"
-                  isActive={currentFeed === "archive"}
-                  onClick={() => selectTopLevelFeed("archive")}
-                  className={displayedArchiveUnread > 0 ? "relative pr-8" : undefined}
-                >
-                  <Archive />
-                  <span>Archive</span>
-                  <ReadLaterSidebarBadge
-                    count={displayedArchiveUnread}
-                  />
-                </SidebarMenuButton>
-              </SidebarMenuItem> : null}
-            </SidebarMenu>
-          </SidebarGroup>
-          ) : null}
-          <SidebarAudioSection enabled={podcastsEnabled()} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} />
-          <PublicationTabs
-            visibleFeeds={visible}
-            activeTab={
-              currentFeed === "subscribed" || currentFeed === "following"
-                ? currentFeed
-                : null
-            }
-            onTabChange={selectTopLevelFeed}
-            subscribedUnread={subscribedUnread}
-            followingUnread={followingUnread}
-            showSubscribedUnreadCount={showFeedCount("subscribed")}
-            showFollowingUnreadCount={showFeedCount("following")}
-            subscribedPublications={subscribedPublications}
-            followingPublications={followingTabPublications}
-            wireActive={currentFeed === "wire"}
-            onWireSelect={() => selectTopLevelFeed("wire")}
-            circleActive={currentFeed === "circle"}
-            onCircleSelect={() => selectTopLevelFeed("circle")}
-          />
-          <SidebarTopicsSection
-            visibleFeeds={visible}
-            sportsEnabled={sportsCatalog.confirmedEnabled}
-            sportsActive={currentFeed === "sports"}
-            onSportsSelect={() => selectTopLevelFeed("sports")}
-            financeActive={currentFeed === "finance"}
-            onFinanceSelect={() => selectTopLevelFeed("finance")}
-          />
-          <SidebarListsSection
-            key={session?.did || "signed-out"}
-            lists={readerLists.lists}
-            creatorResults={creatorResults}
-            selectedUri={selectedListUri}
-            loading={readerLists.signedIn && readerLists.query.isPending}
-            searching={listsSearching}
-            saving={readerLists.saving}
-            error={readerLists.error instanceof Error ? readerLists.error.message : readerLists.error ? "Couldn't Load Lists." : null}
-            onSelect={uri => { setOpenMobile(false); router.push(`/read?list=${encodeURIComponent(uri)}`); }}
-            onSearchCreator={async creator => { const epoch = ++creatorSearchEpoch.current; setListsSearching(true); try { const results = await readerLists.searchCreator(creator); if (viewerDidRef.current === session?.did && epoch === creatorSearchEpoch.current) setCreatorResults(results); } finally { if (epoch === creatorSearchEpoch.current) setListsSearching(false); } }}
-            onAdd={async input => { const list = await readerLists.resolveList(input); await readerLists.saveList(list.uri); }}
-            onRemove={readerLists.removeList}
-            onDelete={async (uri) => {
-              const leaveDeletedList = () => {
-                if (viewerDidRef.current === session?.did && selectedListUriRef.current === uri) {
-                  router.push("/read");
-                }
-              };
-              try {
-                await readerLists.deleteList(uri);
-              } catch (failure) {
-                if ((failure as { originalDeleted?: boolean } | null)?.originalDeleted === true) leaveDeletedList();
-                throw failure;
-              }
-              leaveDeletedList();
-            }}
-            onCreate={readerLists.createList}
-            onResolveCreator={readerLists.resolveCreator}
-            publications={listCreationPublications}
-            onRefresh={readerLists.refresh}
-          />
-        </div>
-        {showPublicationsRail && (selectedListUri || (
+  const publicationsRail = showPublicationsRail && (selectedListUri || (
         currentFeed !== "wire" &&
-        currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "podcasts")) ? (
+        currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "social" && currentFeed !== "podcasts")) ? (
         <div className={`${floatingSidebarClassName} mx-2 flex flex-col self-stretch lg:self-start gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:mx-0 lg:right-[max(0.5rem,calc((100vw-var(--reader-shell-width,70rem))/2+0.5rem))] lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:z-30 lg:w-60 lg:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto lg:overscroll-contain`}>
           <div className="hidden shrink-0 items-center px-2 pb-2 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">
@@ -639,7 +516,7 @@ export function AppSidebar({
             </p>
           </div>
           <SidebarGroup className="p-0">
-            {!selectedListUri && currentFeed && currentFeed !== "wire" && currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "podcasts" ? (
+            {!selectedListUri && currentFeed && currentFeed !== "wire" && currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "social" && currentFeed !== "podcasts" ? (
               <AllFeedSidebarButton
                 feed={currentFeed}
                 isActive={allFeedSelected}
@@ -732,11 +609,152 @@ export function AppSidebar({
             </SidebarMenu>
           </SidebarGroup>
         </div>
-        ) : null}
+        ) : null;
+
+  return (
+    <>
+    <Sidebar
+      variant="floating"
+      className="transition-[width]"
+      style={{
+        left:
+          "max(0px, calc((100vw - var(--reader-shell-width, 70rem)) / 2))",
+      }}
+    >
+      <AppSidebarBrandHeader />
+
+      <SidebarContent className="overflow-y-auto overflow-x-hidden">
+        <div className="shrink-0">
+          {visible.has("readLater") || visible.has("archive") ? (
+          <SidebarGroup className="pb-1">
+            <SidebarGroupLabel>
+              {usingSemble
+                ? configuredReadLater.sembleConnection?.collectionName || "Read Later"
+                : "Read Later"}
+            </SidebarGroupLabel>
+            <SidebarMenu className="gap-0.5">
+              {visible.has("readLater") ? <SidebarMenuItem>
+                <SidebarMenuButton
+                  type="button"
+                  tooltip={
+                    usingSemble
+                      ? configuredReadLater.sembleConnection?.collectionName || "Semble Collection"
+                      : "Read Later Links"
+                  }
+                  isActive={currentFeed === "readLater"}
+                  onClick={() => selectTopLevelFeed("readLater")}
+                  className={readLaterSidebarButtonClassName({
+                    usingSemble,
+                    count: displayedReadLaterUnread,
+                  })}
+                >
+                  <Bookmark />
+                  <span>
+                    {usingSemble
+                      ? configuredReadLater.sembleConnection?.collectionName || "Saved"
+                      : "Saved"}
+                  </span>
+                  <ReadLaterSidebarBadge
+                    count={displayedReadLaterUnread}
+                  />
+                </SidebarMenuButton>
+              </SidebarMenuItem> : null}
+              {visible.has("archive") ? <SidebarMenuItem>
+                <SidebarMenuButton
+                  type="button"
+                  tooltip="Archived Read Later Links"
+                  isActive={currentFeed === "archive"}
+                  onClick={() => selectTopLevelFeed("archive")}
+                  className={displayedArchiveUnread > 0 ? "relative pr-8" : undefined}
+                >
+                  <Archive />
+                  <span>Archive</span>
+                  <ReadLaterSidebarBadge
+                    count={displayedArchiveUnread}
+                  />
+                </SidebarMenuButton>
+              </SidebarMenuItem> : null}
+            </SidebarMenu>
+          </SidebarGroup>
+          ) : null}
+          <SidebarSocialSection
+            active={currentFeed === "social"}
+            activeSection={pathname.split("/")[2] || "home"}
+            onNavigate={href => { setOpenMobile(false); router.push(href); }}
+            onHome={() => { setOpenMobile(false); router.push("/social"); }}
+          />
+          <SidebarAudioSection enabled={podcastsEnabled()} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} />
+          <PublicationTabs
+            visibleFeeds={visible}
+            activeTab={
+              currentFeed === "subscribed" || currentFeed === "following"
+                ? currentFeed
+                : null
+            }
+            onTabChange={selectTopLevelFeed}
+            subscribedUnread={subscribedUnread}
+            followingUnread={followingUnread}
+            showSubscribedUnreadCount={showFeedCount("subscribed")}
+            showFollowingUnreadCount={showFeedCount("following")}
+            subscribedPublications={subscribedPublications}
+            followingPublications={followingTabPublications}
+            wireActive={currentFeed === "wire"}
+            onWireSelect={() => selectTopLevelFeed("wire")}
+            circleActive={currentFeed === "circle"}
+            onCircleSelect={() => selectTopLevelFeed("circle")}
+          />
+          <SidebarTopicsSection
+            visibleFeeds={visible}
+            sportsEnabled={visible.has("sports")}
+            sportsActive={currentFeed === "sports"}
+            onSportsSelect={() => selectTopLevelFeed("sports")}
+            financeActive={currentFeed === "finance"}
+            onFinanceSelect={() => selectTopLevelFeed("finance")}
+          />
+          <SidebarListsSection
+            key={session?.did || "signed-out"}
+            lists={readerLists.lists}
+            creatorResults={creatorResults}
+            selectedUri={selectedListUri}
+            loading={readerLists.signedIn && readerLists.query.isPending}
+            searching={listsSearching}
+            saving={readerLists.saving}
+            error={readerLists.error instanceof Error ? readerLists.error.message : readerLists.error ? "Couldn't Load Lists." : null}
+            onSelect={uri => { setOpenMobile(false); router.push(`/read?list=${encodeURIComponent(uri)}`); }}
+            onSearchCreator={async creator => { const epoch = ++creatorSearchEpoch.current; setListsSearching(true); try { const results = await readerLists.searchCreator(creator); if (viewerDidRef.current === session?.did && epoch === creatorSearchEpoch.current) setCreatorResults(results); } finally { if (epoch === creatorSearchEpoch.current) setListsSearching(false); } }}
+            onAdd={async input => { const list = await readerLists.resolveList(input); await readerLists.saveList(list.uri); }}
+            onRemove={readerLists.removeList}
+            onDelete={async (uri) => {
+              const leaveDeletedList = () => {
+                if (viewerDidRef.current === session?.did && selectedListUriRef.current === uri) {
+                  router.push("/read");
+                }
+              };
+              try {
+                await readerLists.deleteList(uri);
+              } catch (failure) {
+                if ((failure as { originalDeleted?: boolean } | null)?.originalDeleted === true) leaveDeletedList();
+                throw failure;
+              }
+              leaveDeletedList();
+            }}
+            onCreate={readerLists.createList}
+            onResolveCreator={readerLists.resolveCreator}
+            publications={listCreationPublications}
+            onRefresh={readerLists.refresh}
+          />
+        </div>
+        {!desktopPublicationRail ? publicationsRail : null}
       </SidebarContent>
 
       <div className="px-3 pb-2">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
+              <FilePenLine />
+              <span>Articles</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <FeedbackDialog />
           </SidebarMenuItem>
@@ -757,9 +775,9 @@ export function AppSidebar({
           ) : (
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Your Profile & Publications"
+                tooltip="Your Profile"
                 isActive={pathname.startsWith("/me")}
-                render={<Link href="/me#publications" prefetch />}
+                render={<a href="/me#profile" onClick={() => setOpenMobile(false)} />}
                 className="h-auto min-h-0 items-start gap-2 overflow-visible py-1.5 pl-1 whitespace-normal"
               >
                 <Avatar
@@ -797,6 +815,7 @@ export function AppSidebar({
       </SidebarFooter>
       <SidebarResizeHandle />
     </Sidebar>
+    {desktopPublicationRail ? publicationsRail : null}
     <MobileFeedNavigation
       currentFeed={currentFeed}
       listsActive={!!selectedListUri}

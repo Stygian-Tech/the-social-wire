@@ -149,7 +149,7 @@ describe("Schedule presentation", () => {
   await waitFor(()=>expect(screen.getByText("Upcoming Fixture")).toBeTruthy());
   const button=screen.getByRole("button",{name:"Collapse Schedules"});
   const section=screen.getByRole("region",{name:"Sports Events"});
-  expect(section.classList.contains("sticky")).toBe(true);expect(section.classList.contains("top-0")).toBe(true);expect(section.classList.contains("bg-background")).toBe(true);
+  expect(section.classList.contains("sticky")).toBe(true);expect(section.classList.contains("top-2")).toBe(true);expect(section.classList.contains("m-2")).toBe(true);expect(section.classList.contains("border")).toBe(true);expect(section.classList.contains("border-b")).toBe(false);
   const body=document.getElementById(button.getAttribute("aria-controls")!)!;
   expect((body.querySelector("[data-schedule-body]") as HTMLElement)?.style.minHeight).toBe("");
   fireEvent.click(button);

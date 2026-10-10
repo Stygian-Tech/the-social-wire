@@ -65,6 +65,11 @@ describe("Finance Ticker Marquee", () => {
     });
     it("loads one official script only after visibility, without private configuration", async () => {
         const { container } = render(<FinanceTickerMarquee hidden={false} feed={feed([appleID])} />);
+        const strip = screen.getByRole("region", { name: "Market Ticker" });
+        expect(strip.classList.contains("floating-glass")).toBe(true);
+        expect(strip.classList.contains("m-2")).toBe(true);
+        expect(strip.classList.contains("top-2")).toBe(true);
+        expect(strip.classList.contains("border-b")).toBe(false);
         expect(container.querySelector("script")).toBeNull();
         const script = await showTicker(container);
         expect(script.src).toBe("https://widgets.tradingview-widget.com/w/en/tv-ticker-tape.js");
@@ -75,7 +80,7 @@ describe("Finance Ticker Marquee", () => {
         expect(tape.getAttribute("theme")).toBe("light");
         expect(tape.getAttribute("item-size")).toBe("compact");
         expect(tape.getAttributeNames().sort()).toEqual(["aria-label", "item-size", "style", "symbols", "theme"]);
-        expect(screen.getByRole("region", { name: "Market Ticker" }).className).toContain("sticky top-0");
+        expect(screen.getByRole("region", { name: "Market Ticker" }).className).toContain("sticky top-2");
         expect(screen.queryByRole("link", { name: "Ticker Tape by TradingView" })).toBeNull();
     });
     it("replaces the embed on theme and feed changes and removes it when hidden", async () => {

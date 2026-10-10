@@ -72,6 +72,7 @@ filter_changed() {
 
 filter_changed web \
   'apps/web/**' \
+  'packages/vendor/**' \
   'packages/record-keys/**' \
   'packages/read-state/**' \
   'package.json' \

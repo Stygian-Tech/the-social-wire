@@ -1,5 +1,6 @@
 "use client";
 
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { useEffect, useRef, useState } from "react";
 import type { FinanceFeedDefinition } from "@/lib/financeFeedClient";
 import { financeTickerSymbols, type FinanceTickerSymbol } from "@/lib/financeTickerSymbols";
@@ -27,7 +28,7 @@ export function FinanceTickerMarquee({ feed, hidden }: { feed?: FinanceFeedDefin
     const staticDisplay = paused || reducedMotion;
     const config = JSON.stringify({ symbols: symbols.map(symbol => symbol.proName).join(","), theme });
     return (
-        <section data-topic-topbar aria-label="Market Ticker" className="sticky top-0 z-20 border-b bg-background dark:bg-[#080808] [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]">
+        <section data-topic-topbar aria-label="Market Ticker" className={`sticky top-2 z-20 m-2 shrink-0 overflow-hidden ${floatingGlassClasses} [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]`}>
             {staticDisplay ? (
                 <nav aria-label="Ticker Stocks" className="flex gap-4 overflow-x-auto px-4 py-3 text-sm">
                     {symbols.map(symbol => <TickerLink key={symbol.instrumentID} symbol={symbol} />)}

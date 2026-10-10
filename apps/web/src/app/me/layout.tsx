@@ -39,7 +39,7 @@ export default function MeLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider className={`mx-auto ${appViewportHeightClasses} max-w-[70rem] overflow-hidden overscroll-none`}>
+    <SidebarProvider className={`mx-auto ${appViewportHeightClasses} max-w-[80rem] overflow-hidden overscroll-none [--reader-shell-width:80rem]`}>
       <PublicationSidebarProvider>
       <ReadRouteProvider>
         <Suspense fallback={null}>
@@ -51,7 +51,7 @@ export default function MeLayout({ children }: { children: React.ReactNode }) {
             showPublicationsRail={false}
           />
         </Suspense>
-        <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses} lg:mr-64 lg:border-r lg:border-sidebar-border/70`}>
+        <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses}`}>
           <AccountHeader />
           <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
         </SidebarInset>

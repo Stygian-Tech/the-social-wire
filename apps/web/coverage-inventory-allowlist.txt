@@ -9,31 +9,16 @@ src/app/layout.tsx
 src/app/me/layout.tsx
 src/app/me/page.tsx
 src/app/me/publications/page.tsx
-src/app/me/settings/page.tsx
 src/app/read/ClosePublicationsSheetOnMobilePubRoute.tsx
 src/app/read/[...pubId]/page.tsx
 src/app/read/layout.tsx
 src/app/saved/layout.tsx
 src/app/saved/page.tsx
 src/app/saved/settings/page.tsx
-src/components/Account/AccountHeader.tsx
-src/components/Account/MyPublicationsSection.tsx
-src/components/AppSidebar/AddPublication/AddPublicationInner.tsx
-src/components/AppSidebar/AddPublication/PublicationAuthFields.tsx
-src/components/AppSidebar/AddPublicationDialog.tsx
-src/components/AppSidebar/AppSidebar.tsx
 src/components/AppSidebar/AppSidebarSkeleton.tsx
 src/components/AppSidebar/AssignFolderDialog.tsx
-src/components/AppSidebar/CollapsibleSidebarSubSection.tsx
-src/components/AppSidebar/EditFolderDialog.tsx
-src/components/AppSidebar/EditFolderForm.tsx
-src/components/AppSidebar/FeedbackDialog.tsx
-src/components/AppSidebar/FolderBranch.tsx
 src/components/AppSidebar/NewFolder/types.ts
 src/components/AppSidebar/PublicationTabButton.tsx
-src/components/AppSidebar/SavedFeedSourcesSection.tsx
-src/components/AppSidebar/SidebarFoldersSection.tsx
-src/components/AppSidebar/SidebarPublicationsSection.tsx
 src/components/AppSidebar/UnreadSidebarBadge.tsx
 src/components/EntryDetail/EntryArticleEmbed.tsx
 src/components/EntryDetail/EntryArticleEmbedInner.tsx
@@ -49,18 +34,15 @@ src/components/SavedLinks/SavedLinksBrowser.tsx
 src/components/shared/EnvironmentBanner.tsx
 src/components/shared/ListColumnError.tsx
 src/components/shared/ResizableListColumn.tsx
-src/hooks/useCrossClientReadSync.ts
 src/hooks/useLoginHandleSuggestions.ts
 src/hooks/usePublicationSidebarProjection.ts
 src/hooks/useSavedLinkPublication.ts
 src/hooks/useSavedLinkSocialEntry.ts
-src/hooks/useViewerProfile.ts
 src/lib/embedProbeCache.ts
 src/lib/latrGatewayDebugClient.ts
 src/lib/oEmbedCache.ts
 src/lib/oEmbedClient.ts
 src/lib/sanitizeOEmbedHtml.ts
-src/lib/savedFeedSources.ts
 
 # TSW-107: Existing authenticated integration surfaces awaiting rendered coverage.
 # Circle query/action provider integration with the editorial layout; feed/action contracts are covered.
@@ -77,3 +59,7 @@ src/app/podcasts/layout.tsx
 src/app/podcasts/page.tsx
 src/components/Podcasts/PodcastBridgeStatus.tsx
 src/lib/podcasts/publicClip.ts
+
+# Articles domain types contain only erased TypeScript declarations.
+src/lib/articles/articleDraftTypes.ts
+src/lib/articles/articlePublishingTypes.ts

@@ -25,11 +25,18 @@ afterEach(() => {
 });
 
 describe("dummyReaderData", () => {
-  it("is always enabled in the local app environment", () => {
+  it("is enabled by default in the local app environment", () => {
+    env.NEXT_PUBLIC_APP_ENV = "local";
+    delete env.NEXT_PUBLIC_USE_DUMMY_DATA;
+
+    expect(isDummyReaderDataEnabled()).toBe(true);
+  });
+
+  it("can be explicitly disabled for real local ATProto sessions", () => {
     env.NEXT_PUBLIC_APP_ENV = "local";
     env.NEXT_PUBLIC_USE_DUMMY_DATA = "false";
 
-    expect(isDummyReaderDataEnabled()).toBe(true);
+    expect(isDummyReaderDataEnabled()).toBe(false);
   });
 
   it("can still be explicitly enabled outside the local environment", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { useMemo, useState } from "react";
 import { Pencil, Plus, Tags, Trash2 } from "lucide-react";
 
@@ -125,7 +126,7 @@ export function SavedLinksTagToolbar({
 
   return (
     <>
-      <div className="flex shrink-0 flex-col gap-2 border-b border-border/70 px-3 py-2">
+      <div className={`m-2 flex shrink-0 flex-col gap-2 px-3 py-2 ${floatingGlassClasses}`}>
         <div className="flex items-center gap-2 overflow-x-auto">
           <Button
             type="button"
