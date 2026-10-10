@@ -5,6 +5,7 @@ import {
   AT_PROTO_OAUTH_SCOPES,
   BLUESKY_SOCIAL_PERMISSION_SCOPES,
   BLUESKY_SOCIAL_REPO_SCOPES,
+  BLUESKY_SOCIAL_RPC_SCOPES,
   SKYREADER_REPO_SCOPES,
   SOCIAL_WIRE_REPO_SCOPES,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
@@ -18,6 +19,13 @@ import {
 import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 
 describe("atprotoOAuthScopes", () => {
+  it("grants viewer-aware Social reads at the AppView audience without generic permissions", () => {
+    for (const method of ["app.bsky.feed.getTimeline", "app.bsky.feed.getFeed", "app.bsky.feed.getFeedSkeleton", "app.bsky.feed.getFeedGenerators", "app.bsky.feed.getListFeed", "app.bsky.labeler.getServices"]) {
+      const scope = `rpc:${method}?aud=did:web:api.bsky.app%23bsky_appview`;
+      expect([...BLUESKY_SOCIAL_RPC_SCOPES] as string[]).toContain(scope);
+      expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(scope);
+    }
+  });
   it("matches public client-metadata.json scope string", () => {
     const metadataPath = join(
       import.meta.dir,

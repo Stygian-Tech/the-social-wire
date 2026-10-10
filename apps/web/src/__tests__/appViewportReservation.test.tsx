@@ -31,8 +31,8 @@ test("bounded account and reader panes use the whole viewport without podcast re
   }
   expect(shell?.className).not.toContain("podcast-player-height");
   const inset = shell?.querySelector('[data-slot="sidebar-inset"]');
-  // Only fixed mobile navigation needs padding outside the Podcasts route.
-  expect(inset?.classList.contains("pb-[calc(4rem+env(safe-area-inset-bottom))]")).toBe(true);
+  // Reserve the mobile bar plus its floating inset and safe area.
+  expect(inset?.classList.contains("pb-[calc(5rem+env(safe-area-inset-bottom))]")).toBe(true);
   expect(inset?.classList.contains("pb-16")).toBe(false);
   expect(inset?.classList.contains("md:pb-0")).toBe(true);
 });

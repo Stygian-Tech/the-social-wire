@@ -1,3 +1,4 @@
+import { atprotoScopesForNetwork } from "@/lib/atprotoNetwork";
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 
 /**
@@ -27,7 +28,7 @@ export function buildWebOAuthClientMetadata(origin: string) {
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
     redirect_uris: [`${base}/callback`],
-    scope: AT_PROTO_OAUTH_SCOPES,
+    scope: atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES),
     token_endpoint_auth_method: "none",
     dpop_bound_access_tokens: true,
     client_name: "The Social Wire",

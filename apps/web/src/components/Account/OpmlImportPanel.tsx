@@ -188,7 +188,7 @@ export function OpmlImportPanel({
           id={inputId}
           type="file"
           accept=".opml,.xml,text/x-opml,application/xml,text/xml"
-          className="peer sr-only"
+          className="peer sr-only w-px"
           disabled={pending}
           onChange={(event) => {
             const input = event.currentTarget;

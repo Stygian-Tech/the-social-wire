@@ -15,6 +15,7 @@ import type { PublicationSidebarProjection } from "@/lib/publicationProjectionCl
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
 import { shouldPersistFinanceQuery } from "@/lib/financeQueryPersist";
 import { CircleViewerCacheCleanup } from "@/components/Circle/CircleViewerCacheCleanup";
+import { SocialViewerCacheCleanup } from "@/components/Social/SocialViewerCacheCleanup";
 
 /** IndexedDB key for dehydrated React Query cache (sidebar + bounded entry lists). */
 const QUERY_PERSIST_KEY = "the-social-wire.react-query.v2";
@@ -148,6 +149,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       >
         <AuthProvider>
           <CircleViewerCacheCleanup />
+          <SocialViewerCacheCleanup />
           <PodcastPlayerProvider>{children}</PodcastPlayerProvider>
         </AuthProvider>
       </PersistQueryClientProvider>

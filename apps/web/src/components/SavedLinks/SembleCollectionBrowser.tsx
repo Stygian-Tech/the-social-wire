@@ -1,5 +1,6 @@
 "use client";
 
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { useMemo, useState } from "react";
 import { ExternalLink, Link2, NotebookPen, Trash2 } from "lucide-react";
 
@@ -361,7 +362,7 @@ export function SembleCollectionBrowser({
   return (
     <>
       <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden border-x border-border/70 bg-background">
-        <header className="border-b p-4">
+        <header className={`m-2 shrink-0 p-4 ${floatingGlassClasses}`}>
           <div className="flex items-baseline justify-between gap-4">
             <div>
               <h2 className="text-base font-bold">{collectionName}</h2>

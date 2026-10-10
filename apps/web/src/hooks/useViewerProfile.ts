@@ -15,13 +15,17 @@ import {
 export const VIEWER_PROFILE_QUERY_KEY = (did: string) =>
   ["viewerProfile", did] as const;
 
-/** Fields read by the sidebar; sourced from App View or repo fallback. */
+/** Profile fields sourced from AppView; repository fallback supplies only available text. */
 export type ViewerProfileSlice = {
   did: string;
   handle?: string;
   displayName?: string;
   avatar?: string;
   description?: string;
+  banner?: string;
+  followersCount?: number;
+  followsCount?: number;
+  postsCount?: number;
 };
 
 /**
@@ -57,6 +61,10 @@ export function useViewerProfile() {
           displayName: d.displayName,
           avatar: d.avatar,
           description: d.description,
+          banner: d.banner,
+          followersCount: d.followersCount,
+          followsCount: d.followsCount,
+          postsCount: d.postsCount,
         };
       } catch {
         const oauthSession = getOAuthSession();

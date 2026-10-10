@@ -1,6 +1,7 @@
 "use client";
 
-import { Headphones, Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
+import { Headphones, Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MessagesSquare, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -15,6 +16,7 @@ import { useOptionalPodcastPlayer } from "@/components/Podcasts/PodcastPlayerPro
 import { PodcastPlaybackWaveform } from "@/components/Podcasts/PodcastPlaybackWaveform";
 
 const FEED_ITEMS = [
+  { feed: "social", label: "Social", icon: MessagesSquare },
   { feed: "podcasts", label: "Podcasts", icon: Headphones },
   { feed: "wire", label: "The Wire", icon: Rss },
   { feed: "circle", label: "Your Circle", icon: Network },
@@ -59,7 +61,7 @@ export function MobileFeedNavigation({
   return (
     <nav
       aria-label="Feed Navigation"
-      className="fixed inset-x-0 bottom-0 z-40 grid border-t border-border/70 bg-background/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+      className={`${floatingGlassClasses} fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-40 grid px-1 md:hidden`}
       style={{ gridTemplateColumns: `repeat(${primaryItems.length + (overflowItems.length > 0 || onOpenLists ? 1 : 0)}, minmax(0, 1fr))` }}
     >
       {primaryItems.map(({ feed, label: defaultLabel, icon: Icon }) => {

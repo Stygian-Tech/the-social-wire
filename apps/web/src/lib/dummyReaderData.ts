@@ -20,6 +20,7 @@ import { getAppEnv } from "@/lib/appEnv";
 export const DUMMY_VIEWER_DID = "did:plc:socialwire-dummy-viewer";
 
 export function isDummyReaderDataEnabled(): boolean {
+  if (process.env.NEXT_PUBLIC_USE_DUMMY_DATA === "false") return false;
   return (
     getAppEnv() === "local" ||
     process.env.NEXT_PUBLIC_USE_DUMMY_DATA === "true"
