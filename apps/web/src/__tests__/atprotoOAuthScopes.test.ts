@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   AT_PROTO_OAUTH_SCOPES,
-  BLUESKY_SOCIAL_PERMISSION_SCOPES,
+  ARTICLE_PUBLISHING_SCOPES,
   BLUESKY_SOCIAL_REPO_SCOPES,
   BLUESKY_SOCIAL_RPC_SCOPES,
   SKYREADER_REPO_SCOPES,
   SOCIAL_WIRE_REPO_SCOPES,
+  SEMBLE_REPO_OAUTH_SCOPES,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
   WIRE_FEEDBACK_REPO_SCOPE,
   WIRE_MODERATION_RPC_SCOPES,
@@ -47,8 +48,8 @@ describe("atprotoOAuthScopes", () => {
     expect(AT_PROTO_OAUTH_SCOPES).not.toContain(
       "com.thesocialwire.entryReadState"
     );
-    expect(AT_PROTO_OAUTH_SCOPES).toContain("com.thesocialwire.folder");
-    expect(AT_PROTO_OAUTH_SCOPES).toContain("app.bsky.authCreatePosts");
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("repo:com.thesocialwire.");
+    expect(AT_PROTO_OAUTH_SCOPES).toContain("repo:app.bsky.feed.post?action=create");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.bsky.feed.like");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.bsky.feed.repost");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("link.latr.saved.external");
@@ -73,19 +74,29 @@ describe("atprotoOAuthScopes", () => {
             scope.startsWith("blob:")
         )
     ).toBe(true);
-    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(8);
+    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(5);
+    expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain("repo:app.thesocialwire.preferences?action=create&action=update");
+    expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain("repo:app.thesocialwire.readState?action=create&action=update");
     expect(WIRE_FEEDBACK_REPO_SCOPE).toContain(
       "app.thesocialwire.wireFeedback"
     );
-    expect(BLUESKY_SOCIAL_PERMISSION_SCOPES).toEqual([
-      "include:app.bsky.authCreatePosts?aud=did:web:api.bsky.app%23bsky_appview",
-      "include:app.bsky.authDeleteContent?aud=did:web:api.bsky.app%23bsky_appview",
+    expect(BLUESKY_SOCIAL_REPO_SCOPES).toEqual([
+      "repo:app.bsky.feed.post?action=create",
+      "repo:app.bsky.graph.list?action=create&action=update&action=delete",
+      "repo:app.bsky.graph.listitem?action=create&action=delete",
+      "repo:app.bsky.feed.like?action=create&action=delete",
+      "repo:app.bsky.feed.repost?action=create&action=delete",
     ]);
-    expect(
-      BLUESKY_SOCIAL_REPO_SCOPES.every((scope) =>
-        scope.startsWith("repo:app.bsky.")
-      )
-    ).toBe(true);
+    expect(ARTICLE_PUBLISHING_SCOPES).toEqual([
+      "repo:site.standard.document?action=create",
+      "repo:app.offprint.document.article?action=create",
+      "repo:blog.pckt.document?action=create",
+      "blob:text/markdown",
+      "blob:application/json",
+    ]);
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("include:app.bsky.authCreatePosts");
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("include:app.bsky.authDeleteContent");
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("blob:*/*");
     expect(STANDARD_SITE_SOCIAL_PERMISSION_SCOPE).toBe(
       "include:site.standard.authSocial"
     );
@@ -93,8 +104,9 @@ describe("atprotoOAuthScopes", () => {
     expect(SKYREADER_REPO_SCOPES).toEqual([
       "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
     ]);
-    expect(USER_INPUT_OAUTH_SCOPE).toBe("include:app.userinput.authFull");
-    expect(USER_INPUT_BLOB_OAUTH_SCOPE).toBe("blob:*/*");
+    expect(USER_INPUT_OAUTH_SCOPE).toBe("repo:app.userinput.discussion?action=create");
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("include:app.userinput.authFull");
+    expect(USER_INPUT_BLOB_OAUTH_SCOPE).toBe("blob:image/*");
     expect(WIRE_MODERATION_RPC_SCOPES).toEqual([
       "rpc:app.bsky.actor.getPreferences?aud=did:web:api.bsky.app%23bsky_appview",
       "rpc:app.bsky.graph.getBlocks?aud=did:web:api.bsky.app%23bsky_appview",
@@ -105,18 +117,15 @@ describe("atprotoOAuthScopes", () => {
     ]);
   });
 
-  it("grants direct viewer-PDS access for every Semble provider record", () => {
-    for (const collection of [
-      "network.cosmik.card",
-      "network.cosmik.collection",
-      "network.cosmik.collectionLink",
-      "network.cosmik.collectionLinkRemoval",
-      "network.cosmik.connection",
-    ]) {
-      expect(AT_PROTO_OAUTH_SCOPES).toContain(
-        `repo:${collection}?action=create&action=update&action=delete`
-      );
-    }
+  it("grants only implemented Semble writes and no collection administration", () => {
+    expect(SEMBLE_REPO_OAUTH_SCOPES).toEqual([
+      "repo:network.cosmik.card?action=create&action=update",
+      "repo:network.cosmik.collectionLink?action=create&action=delete",
+      "repo:network.cosmik.collectionLinkRemoval?action=create",
+      "repo:network.cosmik.connection?action=create&action=update",
+    ]);
+    for (const scope of SEMBLE_REPO_OAUTH_SCOPES) expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(scope);
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("repo:network.cosmik.collection?");
   });
 });
 

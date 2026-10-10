@@ -33,7 +33,7 @@ describe("local ATProto network", () => {
     expect(scopes).not.toContain("did:web:api.bsky.app");
     expect(scopes).toContain("rpc:app.bsky.feed.getTimeline?aud=did:web:appview.atmosbox.test%23bsky_appview");
     expect(scopes).toContain("rpc:app.bsky.feed.getFeedSkeleton?aud=did:web:appview.atmosbox.test%23bsky_appview");
-    expect(scopes).toContain("include:app.bsky.authCreatePosts?aud=did:web:appview.atmosbox.test%23bsky_appview");
+    expect(scopes).toContain("repo:app.bsky.feed.post?action=create");
     expect(scopes.split(" ").filter(s => s.startsWith("repo:"))).toEqual(AT_PROTO_OAUTH_SCOPES.split(" ").filter(s => s.startsWith("repo:")));
     expect(atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES, resolveAtprotoNetwork("prod"))).toBe(AT_PROTO_OAUTH_SCOPES);
   });
