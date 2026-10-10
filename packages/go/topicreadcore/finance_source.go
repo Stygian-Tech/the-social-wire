@@ -80,7 +80,8 @@ func (s *FinanceStore) source(ctx context.Context, language string, now time.Tim
 	var source corpuscore.FinanceGeneration
 	var raw []byte
 	var provenance string
-	err := s.DB.QueryRowContext(ctx, `SELECT generation_id::text,generated_at,expires_at,payload::text,serving_source FROM finance_generations WHERE language=$1 AND expires_at>$2 ORDER BY is_active DESC,generated_at DESC LIMIT 1`, language, now).Scan(&source.GenerationID, &source.GeneratedAt, &source.ExpiresAt, &raw, &provenance)
+	// Select narrow generation identities before detoasting presentation payloads.
+	err := s.DB.QueryRowContext(ctx, `WITH selected AS MATERIALIZED (SELECT generation_id FROM finance_generations WHERE language=$1 AND expires_at>$2 ORDER BY is_active DESC,generated_at DESC LIMIT 1) SELECT generation.generation_id::text,generation.generated_at,generation.expires_at,generation.payload::text,generation.serving_source FROM selected JOIN finance_generations generation USING(generation_id)`, language, now).Scan(&source.GenerationID, &source.GeneratedAt, &source.ExpiresAt, &raw, &provenance)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s.fallback(ctx, language, now)
 	}

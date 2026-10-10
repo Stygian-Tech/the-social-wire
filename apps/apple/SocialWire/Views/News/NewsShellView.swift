@@ -400,9 +400,14 @@ struct NewsShellView: View {
             await appModel.loadCircleEdition()
         case .finance:
             async let feeds: Void = appModel.loadFinanceFeeds()
-            async let customization: Void = appModel.loadFinanceCustomization()
+            // Resolve interests before the story request captures its preference
+            // fingerprint; a concurrent selection load can otherwise discard it.
+            guard await appModel.loadFinanceSelections(), !Task.isCancelled else { return }
+            await feeds
+            guard !Task.isCancelled else { return }
+            async let customization: Void = appModel.loadFinanceCustomization(reconcilingSelections: false)
             async let stories: Void = appModel.loadFinance()
-            _ = await (feeds, customization, stories)
+            _ = await (customization, stories)
         case .sports:
             let topic = appModel.sportsTopic
             topic.bind(viewer: appModel.viewerDID)

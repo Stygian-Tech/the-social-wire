@@ -96,7 +96,8 @@ func (s *SportsStore) source(ctx context.Context, lang string, now time.Time) (c
 		}
 		slog.Warn("Sports corpus unavailable; checking retained generation")
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT generation_id::text,generated_at,expires_at,payload::text,serving_source FROM sports_generations WHERE language=$1 AND expires_at>$2 ORDER BY is_active DESC,generated_at DESC LIMIT 10`, lang, now)
+	// Bound retained identities before detoasting their presentation payloads.
+	rows, err := s.DB.QueryContext(ctx, `WITH selected AS MATERIALIZED (SELECT generation_id,is_active,generated_at FROM sports_generations WHERE language=$1 AND expires_at>$2 ORDER BY is_active DESC,generated_at DESC LIMIT 10) SELECT generation.generation_id::text,generation.generated_at,generation.expires_at,generation.payload::text,generation.serving_source FROM selected JOIN sports_generations generation USING(generation_id) ORDER BY selected.is_active DESC,selected.generated_at DESC`, lang, now)
 	if err != nil {
 		return corpuscore.SportsGeneration{}, err
 	}
