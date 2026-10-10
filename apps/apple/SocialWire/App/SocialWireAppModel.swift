@@ -1682,10 +1682,13 @@ final class SocialWireAppModel {
         }
     }
 
-    func loadFinanceCustomization() async {
+    func loadFinanceCustomization(reconcilingSelections: Bool = true) async {
         guard let viewerDID else { return }
         let context = financeContextEpoch
-        guard await loadFinanceSelections(), self.viewerDID == viewerDID, context == financeContextEpoch else { return }
+        if reconcilingSelections {
+            guard await loadFinanceSelections() else { return }
+        }
+        guard self.viewerDID == viewerDID, context == financeContextEpoch, !Task.isCancelled else { return }
         let records = financeSelections
         do {
             let sectors = try await gateway.fetchFinanceSectors()
