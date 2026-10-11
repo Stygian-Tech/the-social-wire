@@ -1,4 +1,4 @@
-import { parseMarkdownBlocks, type MarkdownBlock } from "@stygian/markdown-editor/model";
+import { markdownCodeText, markdownHeadingText, parseMarkdownBlocks, type MarkdownBlock } from "@stygian/markdown-editor/model";
 import type { ArticleHost, ArticleImageAsset, ArticleRecord } from "./articlePublishingTypes";
 
 const bytes = (text: string) => new TextEncoder().encode(text).length;
@@ -43,8 +43,8 @@ export function buildArticleNativeContent(host: ArticleHost, markdown: string, a
     if (b.kind === "image") return b.alt;
     if (b.kind === "embed") return b.url;
     if (b.kind === "thematic-break" || b.kind === "empty") return "";
-    if (b.kind === "code") return b.source.replace(/^\s*`{3,}[^\n]*\n?/, "").replace(/\n?\s*`{3,}\s*$/, "");
-    const source = b.kind === "heading" ? b.source.replace(/^\s*#{1,6}\s+/, "") : b.kind === "quote" ? b.source.split("\n").map(line => line.replace(/^\s*>\s?/, "")).join("\n") : b.kind === "unordered-list" || b.kind === "ordered-list" ? b.source.replace(/^\s*(?:[-*+]|\d+\.)\s*(?:\[[ xX]\]\s*)?/, "") : b.source;
+    if (b.kind === "code") return markdownCodeText(b.source);
+    const source = b.kind === "heading" ? markdownHeadingText(b.source) : b.kind === "quote" ? b.source.split("\n").map(line => line.replace(/^\s*>\s?/, "")).join("\n") : b.kind === "unordered-list" || b.kind === "ordered-list" ? b.source.replace(/^\s*(?:[-*+]|\d+\.)\s*(?:\[[ xX]\]\s*)?/, "") : b.source;
     return String(articleRichText(source, "at.markpub.richtext.facet").plaintext);
   };
   const textContent = blocks.map(plainBlock).filter(Boolean).join("\n\n");
@@ -58,13 +58,13 @@ export function buildArticleNativeContent(host: ArticleHost, markdown: string, a
   const text = (source: string) => ({ $type: `${blockNs}.text`, ...rich(source) });
   const convert = (b: MarkdownBlock): ArticleRecord => {
     switch (b.kind) {
-      case "heading": return { $type: `${blockNs}.${host === "leaflet" ? "header" : "heading"}`, level: host === "offprint" ? Math.min(3, b.headingLevel) : b.headingLevel, ...rich(b.source.replace(/^\s*#{1,6}\s+/, "")) };
+      case "heading": return { $type: `${blockNs}.${host === "leaflet" ? "header" : "heading"}`, level: host === "offprint" ? Math.min(3, b.headingLevel) : b.headingLevel, ...rich(markdownHeadingText(b.source)) };
       case "quote": {
         const lines = b.source.split("\n").map(line => line.replace(/^\s*>\s?/, ""));
         return host === "leaflet" ? { $type: `${blockNs}.blockquote`, ...rich(lines.join("\n")) } : { $type: `${blockNs}.blockquote`, content: lines.map(text) };
       }
       case "code": {
-        const value = b.source.replace(/^\s*`{3,}[^\n]*\n?/, "").replace(/\n?\s*`{3,}\s*$/, "");
+        const value = markdownCodeText(b.source);
         let language = b.language?.trim().toLowerCase();
         while (language && bytes(language) > 50) language = language.slice(0, -1);
         return { $type: `${blockNs}.${host === "leaflet" ? "code" : "codeBlock"}`, [host === "offprint" ? "code" : "plaintext"]: value, ...(language ? { language } : {}) };

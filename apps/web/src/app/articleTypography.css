@@ -1,0 +1,25 @@
+/* Scoped to Articles so reader and Social typography retain their own layouts. */
+.article-body {
+  overflow-wrap: anywhere;
+}
+
+.article-body :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 650;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+
+.article-body h1 { font-size: 1.875rem; }
+.article-body h2 { font-size: 1.5rem; }
+.article-body h3 { font-size: 1.25rem; }
+
+.article-content .typeset > * + * { margin-top: 1rem; }
+.article-content .typeset > :is(h1, h2, h3, h4, h5, h6) { margin-top: 1.5rem; }
+.article-content .typeset > :first-child { margin-top: 0; }
+.article-content :is(p, li, blockquote) { line-height: 1.75; }
+.article-content :is(ul, ol) { padding-left: 1.5rem; }
+.article-content li > :is(ul, ol) { margin-top: 0.25rem; }
+.article-content blockquote { border-left: 3px solid var(--border); padding-left: 1rem; }
+.article-content hr { margin-block: 1.5rem; border-color: var(--border); }
+.article-body pre { max-width: 100%; overflow-x: auto; }
+.article-content a { color: var(--primary); text-decoration: underline; text-underline-offset: 0.15em; }

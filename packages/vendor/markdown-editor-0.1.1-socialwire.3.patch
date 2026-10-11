@@ -1,0 +1,430 @@
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@stygian/markdown-editor",
+-  "version": "0.1.0",
++  "version": "0.1.1-socialwire.3",
+   "description": "A reusable React block editor backed by portable Markdown.",
+   "type": "module",
+   "sideEffects": [
+--- a/src/model/markdown-blocks.ts
++++ b/src/model/markdown-blocks.ts
+@@ -49,47 +49,72 @@
+     .map(parseMarkdownBlock);
+ }
+ 
++function isThematicBreak(line: string) {
++  return /^ {0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/.test(line);
++}
++
++function isAtxHeading(line: string) {
++  return /^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line);
++}
++
+ function splitBlockSources(markdown: string) {
+   const blocks: string[] = [];
+   let current: string[] = [];
+   let fence: string | null = null;
+-
+   const flush = () => {
+-    const source = current.join("\n").replace(/^\n+|\n+$/g, "");
+-    if (source.trim()) {
+-      blocks.push(source);
+-    }
++    if (current.some(line => line.trim())) blocks.push(current.join("\n"));
+     current = [];
+   };
+-
+   for (const line of markdown.split("\n")) {
+-    const fenceMatch = line.match(/^\s{0,3}(`{3,})/);
++    const opening = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+     if (fence) {
+       current.push(line);
+-      if (fenceMatch && fenceMatch[1]!.length >= fence.length && line.slice(fenceMatch[0].length).trim() === "") {
++      if (new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \\t]*$`).test(line)) {
+         fence = null;
+         flush();
+       }
+       continue;
+     }
+-
+-    if (fenceMatch) {
+-      flush();
+-      fence = fenceMatch[1] ?? "```";
+-      current.push(line);
+-      continue;
+-    }
+-
+-    if (!line.trim()) {
+-      flush();
+-      continue;
+-    }
+-
++    if (opening && !(opening[1].startsWith("`") && opening[2].includes("`"))) {
++      flush(); fence = opening[1]; current.push(line); continue;
++    }
++    if (!line.trim()) { flush(); continue; }
++    const first = current[0] ?? "";
++    const inList = isListItemStart(first);
++    const inQuote = /^ {0,3}>/.test(first);
++    // Setext underlines belong to preceding paragraph text; standalone --- is a rule.
++    if (current.length && !inList && !inQuote && /^ {0,3}(?:=+|-+)[ \t]*$/.test(line)) {
++      current.push(line); flush(); continue;
++    }
++    if (isAtxHeading(line) || isThematicBreak(line) || /^!\[[^\]]*\]\(\S+\)$/.test(line.trim()) || /^@\[embed\]\(https?:\/\/[^\s)]+\)$/i.test(line.trim())) {
++      flush(); current.push(line); flush(); continue;
++    }
++    const quote = /^ {0,3}>/.test(line);
++    const list = isListItemStart(line);
++    if (quote !== inQuote && (quote || inQuote)) flush();
++    if (list && current.length && !inList) flush();
++    // Keep indented list continuations; a new unindented paragraph ends the list.
++    if (inList && !list && !quote && !/^(?: {2,}|\t)/.test(line)) flush();
+     current.push(line);
+   }
+-
+   flush();
+   return blocks;
++}
++
++/** Display helpers derive text without rewriting the retained Markdown source. */
++export function markdownHeadingText(source: string): string {
++  const lines = source.replace(/\r\n?/g, "\n").trim().split("\n");
++  if (lines.length > 1 && /^ {0,3}(?:=+|-+)[ \t]*$/.test(lines.at(-1)!)) return lines.slice(0, -1).join("\n");
++  return lines.join("\n").replace(/^#{1,6}(?:[ \t]+|$)/, "").replace(/[ \t]+#+[ \t]*$/, "");
++}
++
++export function markdownCodeText(source: string): string {
++  const lines = source.replace(/\r\n?/g, "\n").split("\n");
++  const fence = /^ {0,3}(`{3,}|~{3,})/.exec(lines[0] ?? "")?.[1];
++  if (!fence) return source;
++  lines.shift();
++  if (lines.length && new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \\t]*$`).test(lines.at(-1)!)) lines.pop();
++  return lines.join("\n");
+ }
+ 
+ export function parseMarkdownBlock(source: string): MarkdownBlock {
+@@ -99,9 +124,9 @@
+     return { kind: "empty", source };
+   }
+ 
+-  const code = trimmed.match(/^```([^\s`]*)\n?[\s\S]*```$/);
+-  if (code) {
+-    return { kind: "code", source: rawSource, language: code[1] || undefined };
++  const code = /^ {0,3}(`{3,}|~{3,})([^\n]*)/.exec(rawSource);
++  if (code && !(code[1].startsWith("`") && code[2].includes("`"))) {
++    return { kind: "code", source: rawSource, language: code[2]?.trim().split(/\s+/)[0] || undefined };
+   }
+ 
+   const image = trimmed.match(/^!\[([^\]]*)\]\((\S+)\)$/);
+@@ -116,11 +141,14 @@
+ 
+   const rawLines = rawSource.split("\n");
+   const lines = rawLines.filter((line) => line.trim());
+-  if (/^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/.test(rawSource)) {
++  if (isThematicBreak(rawSource)) {
+     return { kind: "thematic-break", source: rawSource };
+   }
+ 
+-  const heading = rawLines[0]?.trim().match(/^(#{1,6})\s+(.+)$/);
++  const setext = rawLines.length > 1 && /^ {0,3}(=+|-+)[ \t]*$/.exec(rawLines.at(-1)!);
++  if (setext) return { kind: "heading", source: rawSource, headingLevel: setext[1][0] === "=" ? 1 : 2 };
++
++  const heading = rawLines[0]?.match(/^ {0,3}(#{1,6})(?:[ \t]+|$)/);
+   if (heading) {
+     return { kind: "heading", source: rawSource, headingLevel: heading[1]?.length ?? 1 };
+   }
+--- a/src/react/block-renderer.tsx
++++ b/src/react/block-renderer.tsx
+@@ -2,7 +2,7 @@
+ 
+ import * as React from "react";
+ import { SquareCheckIcon, SquareIcon } from "lucide-react";
+-import { orderedListOrdinalAt, type BlockDocument, type MarkdownBlock } from "../model/index.js";
++import { markdownCodeText, markdownHeadingText, type BlockDocument, type MarkdownBlock } from "../model/index.js";
+ import { cn } from "../utils.js";
+ import { SyntaxHighlightedCode } from "./syntax-highlighted-code.js";
+ 
+@@ -17,19 +17,40 @@
+   className?: string;
+   resolveImageURL?: ImageURLResolver;
+ }) {
+-  return (
+-    <div className={cn("typeset typeset-block-editor", className)}>
+-      {document.blocks.map((block, index) => (
+-        <MarkdownBlockPreview
+-          key={block.id}
+-          block={block}
+-          orderedListOrdinal={block.kind === "ordered-list" ? orderedListOrdinalAt(document.blocks, index) : undefined}
+-          onToggleTask={() => undefined}
+-          resolveImageURL={resolveImageURL}
+-        />
+-      ))}
+-    </div>
+-  );
++  const blocks = document.blocks;
++  let index = 0;
++  const isList = (block: MarkdownBlock | undefined): block is Extract<MarkdownBlock, { kind: "ordered-list" | "unordered-list" }> => !!block && (block.kind === "ordered-list" || block.kind === "unordered-list");
++  function renderList(): React.ReactNode {
++    const first = blocks[index];
++    if (!isList(first)) return null;
++    const level = first.listLevel;
++    const ordered = first.kind === "ordered-list";
++    const items: React.ReactNode[] = [];
++    while (index < blocks.length) {
++      const block = blocks[index];
++      if (!isList(block) || block.listLevel !== level || (block.kind === "ordered-list") !== ordered) break;
++      index++;
++      const source = block.source.replace(/^[ \t]*(?:[-*+]|\d+\.)\s*/, "").trimEnd();
++      const task = /^\[([ xX])\]\s*([\s\S]*)$/.exec(source);
++      const children: React.ReactNode[] = [];
++      while (isList(blocks[index]) && (blocks[index] as Extract<MarkdownBlock, { kind: "ordered-list" | "unordered-list" }>).listLevel > level) children.push(renderList());
++      items.push(<li key={block.id} data-list-level={level} className={task ? "list-none" : undefined}>
++        {task ? <span role="checkbox" aria-checked={task[1] !== " "} aria-disabled="true" aria-label={task[2] || "Task item"} className="mr-2 inline-block align-middle">{task[1] === " " ? <SquareIcon className="size-4" /> : <SquareCheckIcon className="size-4" />}</span> : null}
++        {renderMarkdownLines((task ? task[2] : source).split("\n"), true)}
++        {children}
++      </li>);
++    }
++    return ordered
++      ? <ol key={first.id} start={first.listStart} className="list-outside pl-6 text-base leading-7" style={{ listStyleType: orderedListStyleForLevel(level) }}>{items}</ol>
++      : <ul key={first.id} className="list-outside pl-6 text-base leading-7" style={{ listStyleType: level === 0 ? "disc" : level % 2 ? "circle" : "square" }}>{items}</ul>;
++  }
++  const children: React.ReactNode[] = [];
++  while (index < blocks.length) {
++    const block = blocks[index];
++    if (isList(block)) children.push(renderList());
++    else { index++; children.push(<MarkdownBlockPreview key={block.id} block={block} resolveImageURL={resolveImageURL} interactiveLinks />); }
++  }
++  return <div className={cn("typeset typeset-block-editor", className)}>{children}</div>;
+ }
+ 
+ export function MarkdownBlockPreview({
+@@ -37,10 +58,12 @@
+   orderedListOrdinal,
+   onToggleTask,
+   resolveImageURL,
++  interactiveLinks = false,
+ }: {
+   block: MarkdownBlock;
+   orderedListOrdinal?: number;
+   onToggleTask?: (itemIndex: number) => void;
++  interactiveLinks?: boolean;
+   resolveImageURL?: ImageURLResolver;
+ }) {
+   const trimmed = block.source.trim();
+@@ -50,7 +73,7 @@
+   }
+ 
+   if (block.kind === "code") {
+-    const code = trimmed.replace(/^```[^\n`]*\n?/, "").replace(/\n?```$/, "");
++    const code = markdownCodeText(block.source);
+     return <SyntaxHighlightedCode code={code} language={block.language} />;
+   }
+ 
+@@ -69,7 +92,7 @@
+     return (
+       <div className="rounded-md border bg-muted/30 px-4 py-3">
+         <span className="text-muted-foreground block text-xs font-medium uppercase tracking-wide">Embedded link</span>
+-        <a href={block.url} className="mt-1 block truncate underline underline-offset-2" onClick={(event) => event.preventDefault()}>
++        <a href={block.url} className="mt-1 block truncate underline underline-offset-2" onClick={interactiveLinks ? undefined : (event) => event.preventDefault()}>
+           {block.url}
+         </a>
+       </div>
+@@ -77,18 +100,19 @@
+   }
+ 
+   if (block.kind === "heading") {
+-    const text = trimmed.replace(/^#{1,6}\s+/, "");
++    const text = markdownHeadingText(block.source);
+     const level = block.headingLevel;
+     if (level === 1) {
+-      return <h1 className="text-2xl font-semibold leading-tight">{renderMarkdownLines(text.split("\n"))}</h1>;
++      return <h1 className="text-2xl font-semibold leading-tight">{renderMarkdownLines(text.split("\n"), interactiveLinks)}</h1>;
+     }
+     if (level === 2) {
+-      return <h2 className="text-xl font-semibold leading-tight">{renderMarkdownLines(text.split("\n"))}</h2>;
++      return <h2 className="text-xl font-semibold leading-tight">{renderMarkdownLines(text.split("\n"), interactiveLinks)}</h2>;
+     }
+     if (level === 3) {
+-      return <h3 className="text-lg font-semibold leading-tight">{renderMarkdownLines(text.split("\n"))}</h3>;
+-    }
+-    return <h4 className="text-base font-semibold leading-tight">{renderMarkdownLines(text.split("\n"))}</h4>;
++      return <h3 className="text-lg font-semibold leading-tight">{renderMarkdownLines(text.split("\n"), interactiveLinks)}</h3>;
++    }
++    const Heading = `h${Math.max(4, Math.min(6, level))}` as "h4" | "h5" | "h6";
++    return <Heading className="text-base font-semibold leading-tight">{renderMarkdownLines(text.split("\n"), interactiveLinks)}</Heading>;
+   }
+ 
+   if (block.kind === "thematic-break") {
+@@ -98,7 +122,7 @@
+   if (block.kind === "quote") {
+     return (
+       <blockquote className="text-muted-foreground border-l-2 pl-3 text-base leading-7">
+-        {renderMarkdownLines(trimmed.split("\n").map((line) => line.replace(/^\s{0,3}>\s?/, "")))}
++        {renderMarkdownLines(trimmed.split("\n").map((line) => line.replace(/^\s{0,3}>\s?/, "")), interactiveLinks)}
+       </blockquote>
+     );
+   }
+@@ -113,7 +137,7 @@
+     if (block.kind === "ordered-list") {
+       return (
+         <ol className="list-inside text-base leading-7" start={orderedListOrdinal ?? block.listStart} style={{ listStyleType: orderedListStyleForLevel(block.listLevel) }}>
+-          <li>{renderMarkdownLines(item.split("\n"))}</li>
++          <li>{renderMarkdownLines(item.split("\n"), interactiveLinks)}</li>
+         </ol>
+       );
+     }
+@@ -149,13 +173,13 @@
+                   />
+                 </span>
+               )}
+-              <span className="min-w-0 flex-1">{renderMarkdownLines((task ? task[2] ?? "" : item).split("\n"))}</span>
++              <span className="min-w-0 flex-1">{renderMarkdownLines((task ? task[2] ?? "" : item).split("\n"), interactiveLinks)}</span>
+         </li>
+       </ul>
+     );
+   }
+ 
+-  return <p className="text-base leading-7">{renderMarkdownLines(trimmed.split("\n"))}</p>;
++  return <p className="text-base leading-7">{renderMarkdownLines(trimmed.split("\n"), interactiveLinks)}</p>;
+ }
+ 
+ export function MarkdownListEditingMarker({
+@@ -219,16 +243,16 @@
+   return "text-foreground size-2 shrink-0 rounded-full border-[1.5px] border-current opacity-100";
+ }
+ 
+-function renderMarkdownLines(lines: string[]) {
++function renderMarkdownLines(lines: string[], interactiveLinks = false) {
+   return lines.map((line, index) => (
+     <React.Fragment key={`${line}-${index}`}>
+       {index > 0 ? <br /> : null}
+-      {renderInlineMarkdown(line)}
++      {renderInlineMarkdown(line, interactiveLinks)}
+     </React.Fragment>
+   ));
+ }
+ 
+-function renderInlineMarkdown(text: string) {
++function renderInlineMarkdown(text: string, interactiveLinks = false) {
+   const nodes: React.ReactNode[] = [];
+   // Consume escapes before syntax so literal imported text cannot become a link or style.
+   const pattern = /\\[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]|!?\[(?:\\.|[^\]\\])+\]\((?:\\.|[^)\\])+\)|`[^`]+`|\*\*(?:\\.|[^*\\])+\*\*|__(?:\\.|[^_\\])+__|~~(?:\\.|[^~\\])+~~|\+\+(?:\\.|[^+\\])+\+\+|\*(?:\\.|[^*\\])+\*|_(?:\\.|[^_\\])+_/g;
+@@ -241,7 +265,7 @@
+       nodes.push(text.slice(lastIndex, index));
+     }
+ 
+-    nodes.push(renderInlineToken(token, nodes.length));
++    nodes.push(renderInlineToken(token, nodes.length, interactiveLinks));
+     lastIndex = index + token.length;
+   }
+ 
+@@ -252,7 +276,7 @@
+   return nodes.length ? nodes : text;
+ }
+ 
+-function renderInlineToken(token: string, key: number) {
++function renderInlineToken(token: string, key: number, interactiveLinks = false) {
+   if (token.startsWith("\\")) {
+     return token.slice(1);
+   }
+@@ -270,7 +294,7 @@
+       return <span key={key}>{label}</span>;
+     }
+     return (
+-      <a key={key} href={href} className="underline underline-offset-2" onClick={(event) => event.preventDefault()}>
++      <a key={key} href={href} className="underline underline-offset-2" onClick={interactiveLinks ? undefined : (event) => event.preventDefault()}>
+         {label}
+       </a>
+     );
+--- a/src/react/markdown-block-editor.tsx
++++ b/src/react/markdown-block-editor.tsx
+@@ -98,6 +98,23 @@
+     startX: number;
+     targetListLevel?: number;
+   } | null>(null);
++  const currentValue = React.useRef(value);
++  React.useLayoutEffect(() => {
++    if (currentValue.current === value) return;
++    currentValue.current = value;
++    setBlocks(parseMarkdownBlocks(value));
++    setActiveBlockIndex(null);
++    setPendingCaret(null);
++    setDraggedBlockIndex(null);
++    setDragInsertionIndex(null);
++    dragStateRef.current = null;
++  }, [value]);
++
++  const emitChange = React.useCallback((markdown: string) => {
++    currentValue.current = markdown;
++    onChange(markdown);
++  }, [onChange]);
++
+   const draggedSubtreeEnd = draggedBlockIndex === null
+     ? null
+     : getMarkdownBlockSubtreeEnd(blocks, draggedBlockIndex);
+@@ -113,13 +130,13 @@
+     const committedBlocks = nextBlocks.filter((block, index) => block.source.trim() || preservedIndexes.has(index));
+ 
+     setBlocks(committedBlocks);
+-    onChange(joinMarkdownBlocks(committedBlocks));
++    emitChange(joinMarkdownBlocks(committedBlocks));
+   }
+ 
+   function deleteEmptyBlocks() {
+     const compactedBlocks = compactMarkdownBlocks(blocks);
+     setBlocks(compactedBlocks);
+-    onChange(joinMarkdownBlocks(compactedBlocks));
++    if (compactedBlocks.length !== blocks.length) emitChange(joinMarkdownBlocks(compactedBlocks));
+     setActiveBlockIndex(null);
+   }
+ 
+@@ -128,7 +145,7 @@
+     const compactedBlocks = compactMarkdownBlocks(blocks);
+     if (compactedBlocks.length !== blocks.length) {
+       setBlocks(compactedBlocks);
+-      onChange(joinMarkdownBlocks(compactedBlocks));
++      emitChange(joinMarkdownBlocks(compactedBlocks));
+     }
+     setActiveBlockIndex(Math.min(index, compactedBlocks.length - 1));
+   }
+@@ -142,7 +159,7 @@
+     nextBlocks.splice(insertAt, 0, parseMarkdownBlock(""));
+ 
+     setBlocks(nextBlocks);
+-    onChange(joinMarkdownBlocks(nextBlocks));
++    emitChange(joinMarkdownBlocks(nextBlocks));
+     setActiveBlockIndex(insertAt);
+   }
+ 
+@@ -155,10 +172,10 @@
+       const nextBlocks = [...compactedBlocks];
+       nextBlocks.splice(insertAt, 0, parseMarkdownBlock(markdown));
+       setBlocks(nextBlocks);
+-      onChange(joinMarkdownBlocks(nextBlocks));
++      emitChange(joinMarkdownBlocks(nextBlocks));
+       setActiveBlockIndex(null);
+     },
+-  }), [activeBlockIndex, blocks, onChange]);
++  }), [activeBlockIndex, blocks, emitChange]);
+ 
+   function imageFilesFromTransfer(transfer: DataTransfer | null) {
+     return Array.from(transfer?.files ?? []).filter((file) => file.type.startsWith("image/"));
+@@ -208,14 +225,14 @@
+ 
+     const movedBlocks = moveMarkdownBlock(blocks, fromIndex, toIndex, { targetListLevel });
+     setBlocks(movedBlocks);
+-    onChange(joinMarkdownBlocks(movedBlocks));
++    emitChange(joinMarkdownBlocks(movedBlocks));
+     setActiveBlockIndex((currentIndex) => reindexAfterMove(currentIndex, fromIndex, toIndex));
+   }
+ 
+   function moveBlockToInsertion(fromIndex: number, insertionIndex: number, targetListLevel?: number) {
+     const movedBlocks = moveMarkdownBlockToInsertion(blocks, fromIndex, insertionIndex, { targetListLevel });
+     setBlocks(movedBlocks);
+-    onChange(joinMarkdownBlocks(movedBlocks));
++    emitChange(joinMarkdownBlocks(movedBlocks));
+     setActiveBlockIndex(null);
+   }
+ 

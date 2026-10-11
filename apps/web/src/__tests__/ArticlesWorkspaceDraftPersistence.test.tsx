@@ -23,7 +23,7 @@ beforeEach(() => {
   const history = spyOn(Publishing, "listPublishedArticles").mockResolvedValue([]); restores.push(() => history.mockRestore());
 });
 afterEach(() => { cleanup(); client.clear(); restores.splice(0).reverse().forEach(restore => restore()); if (originalIDB) Object.defineProperty(globalThis, "indexedDB", originalIDB); else Reflect.deleteProperty(globalThis, "indexedDB"); });
-it("keeps a newly entered title through immediate mode changes, body edits, Save Draft, and Preview", async () => {
+it("keeps a newly entered title through immediate mode changes, body edits, Save Draft, and Article Viewer", async () => {
   await act(async () => { render(<QueryClientProvider client={client}><SidebarProvider><ArticlesWorkspace /></SidebarProvider></QueryClientProvider>); });
   await waitFor(() => expect((screen.getByRole("button", { name: "New Article" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "New Article" }));
@@ -38,8 +38,8 @@ it("keeps a newly entered title through immediate mode changes, body edits, Save
     expect(rows[0]).toMatchObject({ title: "Retained New Article Title", markdown: "# A New Body\n\nSaved Article Content." });
   });
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Draft" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-  expect((screen.getByLabelText("Article Title") as HTMLInputElement).value).toBe("Retained New Article Title");
+  fireEvent.click(screen.getByRole("button", { name: "Article Viewer" }));
+  expect(screen.getByRole("heading", { name: "Retained New Article Title" })).toBeTruthy();
   expect(screen.getByText("Saved Article Content.")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Retained New Article Title" })).toBeTruthy();
   cleanup(); client.clear();

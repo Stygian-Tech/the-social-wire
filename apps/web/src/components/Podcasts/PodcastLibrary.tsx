@@ -336,7 +336,7 @@ function PodcastViewerLibrary() {
         {!searching && loading ? <p role="status" className="text-sm text-muted-foreground">Loading Episodes…</p> : null}
         <ul className="space-y-3">
           {displayed.map((item) => (
-            <li key={item.id} data-played={!!player.state.progress[item.id]?.completed} className="rounded-xl border p-4 transition-colors data-[played=true]:border-border/60 data-[played=true]:bg-muted/40">
+            <li key={item.id} data-played={!!player.state.progress[item.id]?.completed} className="rounded-xl border p-4 transition-colors hover:bg-accent/30 focus-within:bg-accent/30 data-[played=true]:border-border/60 data-[played=true]:bg-muted/40 data-[played=true]:hover:bg-accent/30 data-[played=true]:focus-within:bg-accent/30">
               <PodcastEpisodeDetailsDialog episode={item} played={!!player.state.progress[item.id]?.completed} showName={showNames.get(item.showId)} onTimecode={seconds => {
                 if (player.episode?.id === item.id) player.seek(seconds);
                 else void player.play(item, seconds);

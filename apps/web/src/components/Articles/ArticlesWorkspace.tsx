@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Private original image blobs retain their format. */
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BlockDocumentRenderer, MarkdownBlockEditor, importMarkdownDocument, type BlockEditorHandle } from "@stygian/markdown-editor";
+import type { BlockEditorHandle } from "@stygian/markdown-editor";
 import { ChevronDown, Plus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useArticleDrafts } from "@/hooks/articles/useArticleDrafts";
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ArticleImageInput, articleImageDimensions } from "./ArticleImageInput";
+import { ArticleBodyViews, type ArticleBodyMode } from "./ArticleBodyViews";
 
 export function ArticlesWorkspace() {
   const { session } = useAuth();
@@ -34,7 +35,7 @@ function ArticlesViewer({ did }: { did: string }) {
   const editor = useRef<BlockEditorHandle>(null);
   const cache = useQueryClient();
   const [tab, setTab] = useState<"drafts" | "published">("drafts");
-  const [mode, setMode] = useState<"editor" | "markdown" | "preview">("editor");
+  const [mode, setMode] = useState<ArticleBodyMode>("editor");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string>();
   const [publishing, setPublishing] = useState(false);
@@ -121,10 +122,9 @@ function ArticlesViewer({ did }: { did: string }) {
         <section aria-label="Article Editor" aria-busy={busy} className="min-w-0 shrink-0 p-4 sm:p-6 md:min-h-0 md:flex-1 md:overflow-y-auto">
           <div className="mb-4 flex flex-wrap items-center gap-2"><p role="status" className="mr-auto text-xs text-muted-foreground">{local.status}</p><Button variant="outline" size="sm" disabled={busy} onClick={() => { void perform(local.persist); }}>Save Draft</Button><Button size="sm" disabled={busy || !publication || !draft.title.trim() || !draft.markdown.trim() || !!draft.publishedUri} onClick={() => setPublishing(true)}>Publish Article</Button></div>
           {draft.publishedUri ? <p className="mb-4 rounded-lg bg-muted p-3 text-sm">Published to Your PDS. {publishedUrl ? <a href={publishedUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Open Article</a> : null} Published article editing will be available in a later phase.</p> : null}
-          <label className="mb-5 block"><span className="mb-2 block text-sm font-medium">Title</span><Input aria-label="Article Title" placeholder="Untitled Article" value={draft.title} disabled={busy || !!draft.publishedUri} onChange={event => local.update({ title: event.target.value })} className="h-auto py-2 text-xl font-semibold" /></label>
+          {mode === "viewer" ? <header className="mb-5 space-y-2"><h1 className="break-words text-3xl font-semibold leading-tight">{draft.title || "Untitled Article"}</h1>{draft.excerpt ? <p className="whitespace-pre-wrap text-muted-foreground">{draft.excerpt}</p> : null}</header> : <label className="mb-5 block"><span className="mb-2 block text-sm font-medium">Title</span><Input aria-label="Article Title" placeholder="Untitled Article" value={draft.title} disabled={busy || !!draft.publishedUri} onChange={event => local.update({ title: event.target.value })} className="h-auto py-2 text-xl font-semibold" /></label>}
           {draft.coverAssetId && assetUrls[draft.coverAssetId] ? <img src={assetUrls[draft.coverAssetId]} alt={assets.find(asset => asset.id === draft.coverAssetId)?.alt ?? ""} className="mb-5 max-h-72 w-full rounded-xl object-cover" /> : null}
-          <div className="mb-4 flex flex-wrap items-center gap-2">{(["editor", "markdown", "preview"] as const).map(value => <Button key={value} variant={mode === value ? "secondary" : "ghost"} size="sm" onClick={() => setMode(value)}>{value === "editor" ? "Editor" : value === "markdown" ? "Markdown" : "Preview"}</Button>)}<ArticleImageInput label="Add Images" multiple disabled={busy || !!draft.publishedUri} onFiles={files => addImages(files)} /></div>
-          <div className={busy || draft.publishedUri ? "pointer-events-none opacity-80" : ""}>{mode === "editor" ? <MarkdownBlockEditor ref={editor} value={draft.markdown} onChange={markdown => local.update({ markdown })} resolveImageURL={resolveImage} onImageFiles={(files, index) => addImages(files, index)} /> : mode === "markdown" ? <textarea aria-label="Article Markdown" value={draft.markdown} onChange={event => local.update({ markdown: event.target.value })} disabled={busy || !!draft.publishedUri} className="min-h-80 w-full resize-y rounded-lg border bg-background p-3 font-mono text-sm" /> : <BlockDocumentRenderer document={importMarkdownDocument(draft.markdown)} resolveImageURL={resolveImage} />}</div>
+          <ArticleBodyViews draftId={draft.id} markdown={draft.markdown} mode={mode} onModeChange={setMode} onChange={markdown => local.update({ markdown })} editorRef={editor} resolveImageURL={resolveImage} onImageFiles={(files, index) => addImages(files, index)} readOnly={busy || !!draft.publishedUri} busy={busy} controls={<ArticleImageInput label="Add Images" multiple disabled={busy || !!draft.publishedUri} onFiles={files => addImages(files)} />} />
         </section>
         <aside aria-label="Article Details" className={`${floatingGlassClasses} m-2 min-h-0 shrink-0 space-y-4 p-4 md:overflow-y-auto lg:w-64`}>
           <h2 className="text-sm font-semibold">Article Details</h2>

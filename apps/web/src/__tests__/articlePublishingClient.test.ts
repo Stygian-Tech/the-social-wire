@@ -29,6 +29,16 @@ function agent(pub = publication()) {
 const blob = { $type: "blob" as const, ref: { $link: "bafkreie3zvlvg43mywvbvld32d7sk6xkgvjphhhgtjgwqhzfmvf6xnuw2m" }, mimeType: "image/png", size: 3 };
 const asset: ArticleImageAsset = { id: "image", blob, width: 640, height: 480, alt: "An image", url: "https://pds.test/xrpc/com.atproto.sync.getBlob?cid=example" };
 describe("native article content", () => {
+  it("publishes setext headings and variable-length fences without Markdown delimiters", () => {
+    const native = buildArticleNativeContent("offprint", "Setext Heading\n====\nFollowing paragraph\n\n````ts\n```literal\n````\n\n~~~\nUnclosed code", []);
+    expect(native.content.items).toMatchObject([
+      { $type: "app.offprint.block.heading", level: 1, plaintext: "Setext Heading" },
+      { $type: "app.offprint.block.text", plaintext: "Following paragraph" },
+      { $type: "app.offprint.block.codeBlock", code: "```literal", language: "ts" },
+      { $type: "app.offprint.block.codeBlock", code: "Unclosed code" },
+    ]);
+    expect(native.textContent).toBe("Setext Heading\n\nFollowing paragraph\n\n```literal\n\nUnclosed code");
+  });
   it("counts rich facet ranges in UTF-8 plaintext and rejects unsafe link facets", () => {
     const rich = articleRichText("😀 **é** and [safe](https://example.com) [bad](javascript:alert)", "pub.leaflet.richtext.facet");
     expect(rich.plaintext).toBe("😀 é and safe bad");
