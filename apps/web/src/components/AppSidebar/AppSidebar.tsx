@@ -711,6 +711,17 @@ export function AppSidebar({
             financeActive={currentFeed === "finance"}
             onFinanceSelect={() => selectTopLevelFeed("finance")}
           />
+          <SidebarGroup className="pb-1 pt-1">
+            <SidebarGroupLabel>Tools</SidebarGroupLabel>
+            <SidebarMenu className="gap-0.5" role="tablist" aria-label="Tools">
+              <SidebarMenuItem>
+                <SidebarMenuButton type="button" role="tab" aria-selected={pathname.startsWith("/articles")} tooltip="Articles" isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
+                  <FilePenLine />
+                  <span>Articles</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
           <SidebarListsSection
             key={session?.did || "signed-out"}
             lists={readerLists.lists}
@@ -749,12 +760,6 @@ export function AppSidebar({
 
       <SidebarFooter className="border-t border-sidebar-border/70 px-2 py-3">
         <SidebarMenu className="gap-0.5 px-1">
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Articles" isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
-              <FilePenLine />
-              <span>Articles</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           {profileLoading ? (
             <SidebarMenuItem>
               <div className="flex min-w-0 flex-1 items-start gap-2 px-1 py-1">
