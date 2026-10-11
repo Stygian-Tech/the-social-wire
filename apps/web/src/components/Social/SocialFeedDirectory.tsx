@@ -8,7 +8,8 @@ import Link from "next/link";
 import { moderateFeedGenerator, type AppBskyFeedDefs } from "@atproto/api";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { useSocialFeedDirectory } from "@/hooks/useSocialFeedDirectory";
-import { socialErrorMessage, socialFeedHref } from "@/lib/blueskySocialClient";
+import { safeSocialFeedAvatarUrl, socialErrorMessage, socialFeedHref } from "@/lib/blueskySocialClient";
+import { Avatar } from "@/components/shared/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -28,8 +29,10 @@ function SocialFeedDirectoryViewer() {
     const decision = moderateFeedGenerator(feed, catalog.data.moderation);
     if (["contentList", "contentView", "profileList"].some(context => { const ui = decision.ui(context as "contentList"); return ui.filter || ui.blur || ui.noOverride; })) return null;
     const saved = catalog.data.feeds.find(item => item.uri === feed.uri);
+    const avatar = decision.ui("avatar");
+    const avatarSource = avatar.filter || avatar.blur || avatar.noOverride ? undefined : safeSocialFeedAvatarUrl(feed.avatar);
     return <article key={feed.uri} className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-      <div><h2 className="font-semibold">{feed.displayName}</h2><p className="text-sm text-muted-foreground">By @{(decision.ui("displayName").blur || decision.ui("displayName").noOverride) ? "hidden" : feed.creator.handle}</p></div>
+      <div className="flex min-w-0 items-center gap-3"><Avatar src={avatarSource} alt="" size={40} className="shrink-0" /><div className="min-w-0"><h2 className="break-words font-semibold">{feed.displayName}</h2><p className="break-all text-sm text-muted-foreground">By @{(decision.ui("displayName").blur || decision.ui("displayName").noOverride) ? "hidden" : feed.creator.handle}</p></div></div>
       {feed.description ? <p className="whitespace-pre-wrap break-words text-sm">{feed.description}</p> : null}
       <div className="flex flex-wrap gap-2">
         <Link className="rounded-md border px-3 py-2 text-sm hover:bg-muted" href={socialFeedHref({ kind: "feed", uri: feed.uri, name: feed.displayName, pinned: saved?.pinned ?? false })}>Open Feed</Link>

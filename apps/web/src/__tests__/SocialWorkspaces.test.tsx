@@ -8,6 +8,7 @@ import * as Auth from "@/hooks/useAuth";
 import * as Catalog from "@/lib/blueskySocialClient";
 import * as Lists from "@/lib/socialListsClient";
 import * as Feeds from "@/lib/socialFeedDirectoryClient";
+import * as ImageCache from "@/hooks/useCachedImageUrl";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { SocialLists } from "@/components/Social/SocialLists";
 import { SocialFeedDirectory } from "@/components/Social/SocialFeedDirectory";
@@ -85,6 +86,23 @@ it("Feed directory searches, paginates, and sends real save/pin mutations", asyn
   expect(changed.mock.calls[1].slice(1)).toEqual([feed.uri, "pin"]);
   fireEvent.click(screen.getByRole("button", { name: "Load More" }));
   await screen.findByText("Second Feed");
+});
+it("shows cached feed avatars in saved and discover cards from their existing generator data", async () => {
+  const recommended = { ...feed, avatar: "https://example.test/recommended.png" };
+  const saved = { ...feed, uri: `${feed.uri}saved`, displayName: "Saved Science", avatar: "https://example.test/saved.png" };
+  restore(spyOn(Feeds, "getSocialFeedDirectory").mockResolvedValue({ feeds: [recommended, { ...feed, uri: `${feed.uri}missing`, displayName: "Missing Avatar" }] }));
+  restore(spyOn(Feeds, "getSocialSavedGenerators").mockResolvedValue([saved]));
+  const cache = restore(spyOn(ImageCache, "useCachedImageUrl").mockImplementation(src => ({ objectUrl: src ?? undefined, failed: false })));
+  const { container } = render(<SocialFeedDirectory />, { wrapper: Wrapper });
+  await screen.findByText("Saved Science");
+  await screen.findByText("Science Feed");
+  expect(container.querySelector(`article img[src="${recommended.avatar}"]`)).toBeTruthy();
+  expect(container.querySelector(`article img[src="${saved.avatar}"]`)).toBeTruthy();
+  expect(cache.mock.calls.some(([src]) => src === recommended.avatar)).toBe(true);
+  expect(cache.mock.calls.some(([src]) => src === saved.avatar)).toBe(true);
+  expect(screen.getByText("Missing Avatar").closest("article")?.querySelector("img")).toBeNull();
+  fireEvent.error(container.querySelector(`article img[src="${recommended.avatar}"]`)!);
+  expect(screen.getByText("Science Feed").closest("article")?.querySelector("img")).toBeNull();
 });
 it("workspace drafts and list selections reset when the active account changes", async () => {
   let viewer = did;
