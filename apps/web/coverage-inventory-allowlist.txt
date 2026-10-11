@@ -33,7 +33,6 @@ src/components/SavedLinks/SavedLinksBrowser.tsx
 src/components/shared/EnvironmentBanner.tsx
 src/components/shared/ListColumnError.tsx
 src/components/shared/ResizableListColumn.tsx
-src/hooks/useLoginHandleSuggestions.ts
 src/hooks/usePublicationSidebarProjection.ts
 src/hooks/useSavedLinkPublication.ts
 src/hooks/useSavedLinkSocialEntry.ts
