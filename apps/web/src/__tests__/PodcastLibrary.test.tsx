@@ -171,6 +171,9 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   expect(unsubscribe.className).toContain("min-h-8");
   expect(unsubscribe.className).toContain("pointer-coarse:min-h-11");
   fireEvent.click(unsubscribe);
+  const confirmation = await screen.findByRole("dialog");
+  expect(write).not.toHaveBeenCalled();
+  fireEvent.click(within(confirmation).getByRole("button", { name: "Unsubscribe" }));
   await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, true));
   expect(changes).toEqual([{ subscriptions: [] }]);
 });

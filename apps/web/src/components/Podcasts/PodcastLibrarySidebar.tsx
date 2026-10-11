@@ -1,12 +1,13 @@
 "use client";
 
 import { floatingSidebarClassName, floatingSidebarRowClassName } from "@/components/shared/floatingSidebarStyles";
-import { Clock, Download, ListMusic, Search } from "lucide-react";
+import { Clock, Download, ListMusic, Search, Trash2 } from "lucide-react";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { PodcastArtwork } from "./PodcastArtwork";
 import type { PodcastShow } from "@/lib/podcasts/client";
 import type { PodcastFeed } from "@/lib/podcasts/library";
 
-export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, downloadCount, queueCount, onSelect, discoverActive = false, onDiscover }: {
+export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, downloadCount, queueCount, onSelect, discoverActive = false, onDiscover, onUnsubscribe, busy = false }: {
   feed: PodcastFeed;
   showId: string | null;
   shows: PodcastShow[];
@@ -16,6 +17,8 @@ export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, down
   onSelect: (feed: PodcastFeed, showId?: string) => void;
   discoverActive?: boolean;
   onDiscover?: () => void;
+  onUnsubscribe?: (show: PodcastShow) => void;
+  busy?: boolean;
 }) {
   const rows = [
     { id: "recent" as const, label: "Recently Added", Icon: Clock },
@@ -44,12 +47,19 @@ export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, down
         <h2 className="mb-1 px-2 text-xs font-medium text-muted-foreground">Subscribed Shows</h2>
         {subscribed.length ? <ul className="space-y-1">{subscribed.map((show) => (
           <li key={show.id}>
-            <button type="button" aria-current={!discoverActive && feed === "show" && showId === show.id ? "page" : undefined}
-              onClick={() => onSelect("show", show.id)}
-              className={`${floatingSidebarRowClassName} w-full text-left ${!discoverActive && feed === "show" && showId === show.id ? "bg-accent" : "hover:bg-accent/60"}`}>
-              <PodcastArtwork src={show.artworkUrl} alt="" size={32} className="size-8 rounded" />
-              <span className="min-w-0 break-words">{show.title}{show.visibility === "private" ? <span className="block text-xs text-muted-foreground">Private Feed</span> : null}</span>
-            </button>
+            <ContextMenu>
+              <ContextMenuTrigger render={<button type="button" />} aria-current={!discoverActive && feed === "show" && showId === show.id ? "page" : undefined}
+                onClick={() => onSelect("show", show.id)}
+                className={`${floatingSidebarRowClassName} w-full text-left ${!discoverActive && feed === "show" && showId === show.id ? "bg-accent" : "hover:bg-accent/60"}`}>
+                <PodcastArtwork src={show.artworkUrl} alt="" size={32} className="size-8 rounded" />
+                <span className="min-w-0 break-words">{show.title}{show.visibility === "private" ? <span className="block text-xs text-muted-foreground">Private Feed</span> : null}</span>
+              </ContextMenuTrigger>
+              {onUnsubscribe ? <ContextMenuContent>
+                <ContextMenuItem variant="destructive" disabled={busy} onClick={() => onUnsubscribe(show)}>
+                  <Trash2 aria-hidden="true" />Unsubscribe
+                </ContextMenuItem>
+              </ContextMenuContent> : null}
+            </ContextMenu>
           </li>
         ))}</ul> : <p className="px-2 text-sm text-muted-foreground">Your Subscribed Shows Will Appear Here</p>}
       </section>
