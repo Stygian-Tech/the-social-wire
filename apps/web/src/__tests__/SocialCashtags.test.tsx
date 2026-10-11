@@ -25,7 +25,7 @@ afterEach(() => {
   if (oldMedia) Object.defineProperty(window, "matchMedia", oldMedia); else Reflect.deleteProperty(window, "matchMedia");
   document.documentElement.classList.remove("dark");
 });
-const record = { text: "$AAPL $NVDA", createdAt: "2026-10-10T00:00:00Z" };
+const record = { $type: "app.bsky.feed.post" as const, text: "$AAPL $NVDA", createdAt: "2026-10-10T00:00:00Z" };
 it("reuses compact official ticker markup only after entering the viewport", async () => {
   const { container, unmount } = render(<SocialCashtags record={record} />);
   expect(container.querySelector("tv-ticker-tape")).toBeNull();
