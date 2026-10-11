@@ -1,7 +1,8 @@
-import { LABELS, type AppBskyFeedDefs, type InterpretedLabelValueDefinition } from "@atproto/api";
+import { LABELS, moderateProfile, type AppBskyFeedDefs, type InterpretedLabelValueDefinition } from "@atproto/api";
+import { safeSocialFeedAvatarUrl } from "@/lib/blueskySocialClient";
 import type { SocialModerationOpts } from "@/lib/socialModerationTypes";
 
-export type SocialPostLabel = { key: string; source: string; self: boolean; avatar?: string; definition: InterpretedLabelValueDefinition };
+export type SocialPostLabel = { key: string; source: string; self: boolean; avatar?: string; displayName?: string; handle?: string; definition: InterpretedLabelValueDefinition };
 
 /** Display only active labels with definitions from a subscribed service or the SDK. */
 export function socialPostLabels(post: AppBskyFeedDefs.PostView, moderation: SocialModerationOpts, now = Date.now()): SocialPostLabel[] {
@@ -20,7 +21,20 @@ export function socialPostLabels(post: AppBskyFeedDefs.PostView, moderation: Soc
     const definition = moderation.labelDefs?.[label.src]?.find(item => item.identifier === label.val)
       ?? (Object.hasOwn(LABELS, label.val) ? LABELS[label.val as keyof typeof LABELS] : undefined);
     if (!definition || (self && definition.flags.includes("no-self"))) continue;
-    result.push({ key, source: label.src, self, avatar: self ? undefined : moderation.labelerAvatars?.[label.src], definition });
+    const profile = self ? post.author : moderation.labelerProfiles?.[label.src];
+    const authorDecision = self ? moderateProfile(post.author, moderation) : undefined;
+    const showAuthorName = !authorDecision || (["profileList", "displayName"] as const).every(context => {
+      const ui = authorDecision.ui(context);
+      return !ui.filter && !ui.blur && !ui.noOverride;
+    });
+    const avatarUi = authorDecision?.ui("avatar");
+    const showAuthorAvatar = showAuthorName && (!avatarUi || (!avatarUi.filter && !avatarUi.blur && !avatarUi.noOverride));
+    result.push({
+      key, source: label.src, self, definition,
+      displayName: showAuthorName ? profile?.displayName?.trim() || undefined : undefined,
+      handle: profile?.handle,
+      avatar: self ? (showAuthorAvatar ? safeSocialFeedAvatarUrl(post.author.avatar) : undefined) : moderation.labelerAvatars?.[label.src],
+    });
   }
   return result;
 }
