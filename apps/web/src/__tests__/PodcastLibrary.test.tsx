@@ -332,7 +332,8 @@ it("opens viewer-wide Clips without fetching episodes and returns to Search", as
   const paths: string[] = [];
   const authMock = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
   const playerMock = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state: client.initialPodcastState(), episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
-  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+  let completeDownloads: (value: offline.PodcastDownload[]) => void = () => {};
+  const local = spyOn(offline, "listPodcastDownloads").mockImplementation(() => new Promise(resolve => { completeDownloads = resolve; }));
   const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
     paths.push(path);
     if (path === "shows") return { shows: [] } as T;
@@ -341,10 +342,12 @@ it("opens viewer-wide Clips without fetching episodes and returns to Search", as
   });
   restores.push(() => authMock.mockRestore(), () => playerMock.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
   render(<PodcastLibrary />);
-  await waitFor(() => expect(paths).toContain("episodes"));
+  await screen.findByText("Subscribe to a Podcast to See New Episodes");
   paths.length = 0;
   fireEvent.click(screen.getByRole("button", { name: "Clips" }));
   await screen.findByText("My Prepared Clip");
+  // Complete the earlier library bootstrap while Clips is already active.
+  await act(async () => { completeDownloads([]); });
   expect(screen.getByRole("button", { name: "Clips" }).getAttribute("aria-current")).toBe("page");
   expect(paths).toContain("clips");
   expect(paths.some(path => path.startsWith("episodes"))).toBe(false);
