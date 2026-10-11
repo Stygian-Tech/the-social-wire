@@ -1,16 +1,17 @@
 import { beforeEach, afterEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import * as Auth from "@/hooks/useAuth";
 import * as Client from "@/lib/blueskyPostClient";
 import { InteractiveSocialPost } from "@/components/Social/InteractiveSocialPost";
 import { SocialPostCard } from "@/components/Social/SocialPostCard";
+import { SocialPostLink } from "@/components/Social/SocialPostLink";
 import { SocialPostMenu } from "@/components/Social/SocialPostMenu";
 
 const did = "did:plc:viewer";
 const moderation: ModerationOpts = { userDid: did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } };
-const post: AppBskyFeedDefs.PostView = { uri: "at://did:plc:other/app.bsky.feed.post/test", cid: "bafyreia", author: { did: "did:plc:other", handle: "other.test" }, record: { $type: "app.bsky.feed.post", text: "Tap This Post", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: "2026-10-10T00:00:00Z", replyCount: 1 };
+const post: AppBskyFeedDefs.PostView & { $type: "app.bsky.feed.defs#postView" } = { $type: "app.bsky.feed.defs#postView", uri: "at://did:plc:other/app.bsky.feed.post/test", cid: "bafyreia", author: { did: "did:plc:other", handle: "other.test" }, record: { $type: "app.bsky.feed.post", text: "Tap This Post", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: "2026-10-10T00:00:00Z", replyCount: 1 };
 const restore: (() => void)[] = [];
 beforeEach(() => {
  for (const [name, value] of Object.entries({ HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, Element: window.Element, Node: window.Node, MutationObserver: window.MutationObserver, DOMRect: window.DOMRect, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
@@ -20,12 +21,74 @@ beforeEach(() => {
  }
 });
 afterEach(() => { cleanup(); restore.splice(0).forEach(fn => fn()); });
-function show() {
+function show(item: AppBskyFeedDefs.FeedViewPost = { post }) {
  const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }), oauthSessionReloadSeq: 0 } as unknown as ReturnType<typeof Auth.useAuth>);
  restore.push(() => auth.mockRestore());
- return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })}><InteractiveSocialPost item={{ post }} moderation={moderation} /></QueryClientProvider>);
+ return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })}><InteractiveSocialPost item={item} moderation={moderation} /></QueryClientProvider>);
 }
 describe("Social Post Interactions", () => {
+ it("shows the reply parent and opens it in the internal viewer", async () => {
+  const parent = { ...post, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Original Parent", createdAt: "2026-10-10T00:00:00Z" } };
+  const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post: parent } });
+  restore.push(() => fetch.mockRestore());
+  show({ post, reply: { parent, root: parent } });
+  expect(screen.getByRole("region", { name: "Replying To" }).textContent).toContain("Original Parent");
+  fireEvent.click(screen.getByText("Original Parent"));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  expect(fetch.mock.calls[0]![0].uri).toBe(parent.uri);
+  expect(within(screen.getByRole("dialog")).getByText("Original Parent")).toBeTruthy();
+ });
+ it("withholds muted reply parents and preserves unavailable context", () => {
+  const parent = { ...post, uri: `${post.uri}parent`, author: { ...post.author, viewer: { muted: true } }, record: { $type: "app.bsky.feed.post", text: "Secret Parent", createdAt: "2026-10-10T00:00:00Z" } };
+  const view = show({ post, reply: { parent, root: parent } });
+  expect(screen.queryByText("Secret Parent")).toBeNull();
+  expect(screen.getByText("Original post withheld by your moderation settings.")).toBeTruthy();
+  view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: parent.uri, notFound: true }, root: parent } }} moderation={moderation} /></QueryClientProvider>);
+  expect(screen.getByText("Original post unavailable.")).toBeTruthy();
+ });
+ it("navigates conversation parents and replies inside one dialog", async () => {
+  const parent = { ...post, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Thread Parent", createdAt: "2026-10-10T00:00:00Z" } };
+  const reply = { ...post, uri: `${post.uri}reply`, record: { $type: "app.bsky.feed.post", text: "Thread Reply", createdAt: "2026-10-10T00:00:00Z" } };
+  const fetch = spyOn(Client, "getBlueskyPostThread").mockImplementation(async args => ({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post: args.uri === parent.uri ? parent : args.uri === reply.uri ? reply : post, parent: args.uri === post.uri ? { $type: "app.bsky.feed.defs#threadViewPost", post: parent } : undefined, replies: args.uri === post.uri || args.uri === parent.uri ? [{ $type: "app.bsky.feed.defs#threadViewPost", post: reply }] : [] } }));
+  restore.push(() => fetch.mockRestore());
+  show(); fireEvent.click(screen.getByText("Tap This Post"));
+  fireEvent.click(await screen.findByText("Thread Parent"));
+  await waitFor(() => expect(fetch.mock.calls.at(-1)![0].uri).toBe(parent.uri));
+  fireEvent.click(await screen.findByText("Thread Reply"));
+  await waitFor(() => expect(fetch.mock.calls.at(-1)![0].uri).toBe(reply.uri));
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+ });
+ it("opens quoted content internally without opening the enclosing post", async () => {
+  const quote = { $type: "app.bsky.embed.record#viewRecord", uri: `${post.uri}quote`, cid: post.cid, author: post.author, value: { $type: "app.bsky.feed.post", text: "Quoted Content", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: post.indexedAt };
+  const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#notFoundPost", uri: quote.uri, notFound: true } });
+  restore.push(() => fetch.mockRestore());
+  show({ post: { ...post, embed: { $type: "app.bsky.embed.record#view", record: quote } } });
+  fireEvent.click(screen.getByText("Quoted Content"));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  expect(fetch.mock.calls[0]![0].uri).toBe(quote.uri);
+  await waitFor(() => expect(within(screen.getByRole("dialog")).queryByText("Quoted Content")).toBeNull());
+  expect(within(screen.getByRole("dialog")).queryByRole("button", { name: "Like" })).toBeNull();
+  expect(within(screen.getByRole("dialog")).getByText("This conversation is unavailable.")).toBeTruthy();
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+ });
+ it("removes stale content and actions when the current thread is blocked", async () => {
+  const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#blockedPost", uri: post.uri, blocked: true, author: { did: post.author.did } } });
+  restore.push(() => fetch.mockRestore());
+  show(); fireEvent.click(screen.getByText("Tap This Post"));
+  await waitFor(() => expect(within(screen.getByRole("dialog")).getByText("This conversation is unavailable.")).toBeTruthy());
+  expect(within(screen.getByRole("dialog")).queryByText("Tap This Post")).toBeNull();
+  expect(within(screen.getByRole("dialog")).queryByRole("button", { name: "More Post Actions" })).toBeNull();
+ });
+ it("opens URI-only notification links in the internal viewer", async () => {
+  const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }), oauthSessionReloadSeq: 0 } as unknown as ReturnType<typeof Auth.useAuth>);
+  const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post } });
+  restore.push(() => auth.mockRestore(), () => fetch.mockRestore());
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SocialPostLink uri={post.uri} moderation={moderation} /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Open Post" }));
+  await waitFor(() => expect(within(screen.getByRole("dialog")).getByText("Tap This Post")).toBeTruthy());
+  expect(fetch.mock.calls[0]![0].uri).toBe(post.uri);
+ });
+
  it("offers message sharing as a draft and copies the canonical link explicitly", async () => {
   const copy = mock(async () => {});
   const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");

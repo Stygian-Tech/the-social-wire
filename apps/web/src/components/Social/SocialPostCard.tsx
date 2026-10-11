@@ -20,12 +20,14 @@ export function SocialPostCard({
   onOpen,
   actions,
   detailedTimestamp = false,
+  onOpenPost,
 }: {
   item: AppBskyFeedDefs.FeedViewPost;
   moderation: ModerationOpts;
   onOpen?: () => void;
   actions?: ReactNode;
   detailedTimestamp?: boolean;
+  onOpenPost?: (post: AppBskyFeedDefs.PostView) => void;
 }) {
   const post = item.post;
   const record = AppBskyFeedPost.validateRecord(post.record);
@@ -69,7 +71,7 @@ export function SocialPostCard({
     <article className="flex min-w-0 shrink-0 flex-col gap-3 rounded-2xl border bg-card p-4 text-card-foreground"
       onClick={onOpen ? event => {
         const target = event.target;
-        if (target instanceof Element && !target.closest('a, button, input, video, audio, [role="dialog"]') && !window.getSelection()?.toString()) onOpen();
+        if (target instanceof Element && event.currentTarget.contains(target) && !target.closest('a, button, input, video, audio') && !window.getSelection()?.toString()) { event.stopPropagation(); onOpen(); }
       } : undefined}>
       {repost ? (
         <p className="text-xs text-muted-foreground">
@@ -126,7 +128,7 @@ export function SocialPostCard({
         media.blur || media.filter || media.noOverride ? (
           <p className="text-sm text-muted-foreground">Media withheld.</p>
         ) : (
-          <SocialPostEmbed embed={post.embed} moderation={moderation} />
+          <SocialPostEmbed embed={post.embed} moderation={moderation} onOpenPost={onOpenPost} />
         )
       ) : null}
       {detailedTimestamp && !Number.isNaN(date.getTime()) ? (

@@ -10,11 +10,12 @@ import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { useSocialNotifications, useSocialNotificationUnread, useMarkSocialNotificationsSeen } from "@/hooks/useSocialDiscovery";
 import { notificationIdentity, notificationPostUri, socialDiscoveryErrorMessage } from "@/lib/blueskySocialDiscoveryClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { SocialPostLink } from "./SocialPostLink";
 import { InteractiveSocialPost } from "./InteractiveSocialPost";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
-import { socialHttpsUrl, socialPostUrl, socialProfileUrl } from "./socialUrls";
+import { socialHttpsUrl, socialProfileUrl } from "./socialUrls";
 
 const reasons: Record<string, string> = { like: "Liked Your Post", repost: "Reposted Your Post", follow: "Followed You", mention: "Mentioned You", reply: "Replied to Your Post", quote: "Quoted Your Post", "starterpack-joined": "Joined Your Starter Pack", verified: "Verified Your Account", unverified: "Removed Your Verification", "like-via-repost": "Liked a Post You Reposted", "repost-via-repost": "Reposted a Post You Reposted", "subscribed-post": "Posted an Update", "contact-match": "Joined Bluesky" };
 
@@ -66,7 +67,6 @@ function SocialNotificationsViewer() {
           {rows.map(notification => {
             const uri = notificationPostUri(notification);
             const post = uri ? posts.get(uri) : undefined;
-            const postHref = uri ? socialPostUrl(uri) : undefined;
             const name = notification.author.displayName || notification.author.handle;
             const avatarHidden = moderateProfile(notification.author, moderation).ui("avatar").blur;
             return <section key={notificationIdentity(notification)} aria-label={`${name}: ${reasons[notification.reason] ?? "Sent a Notification"}`} className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
@@ -79,7 +79,7 @@ function SocialNotificationsViewer() {
                 </div>
                 {!notification.isRead ? <span className="text-xs font-semibold text-primary">Unread</span> : null}
               </div>
-              {post ? <InteractiveSocialPost item={{ post }} moderation={moderation} /> : postHref ? <a href={postHref} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">View Post on Bluesky</a> : null}
+              {post ? <InteractiveSocialPost item={{ post }} moderation={moderation} /> : uri ? <SocialPostLink uri={uri} moderation={moderation} /> : null}
             </section>;
           })}
           {!rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">No notifications to show.</p> : null}

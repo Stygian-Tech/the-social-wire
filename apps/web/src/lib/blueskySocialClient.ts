@@ -9,6 +9,7 @@ export type SocialFeed = {
   uri: string;
   name: string;
   pinned: boolean;
+  avatar?: string;
 };
 
 export const SOCIAL_FOLLOWING_FEED: SocialFeed = {
@@ -81,6 +82,24 @@ function canDisplayCatalogName(decision: ModerationDecision): boolean {
   });
 }
 
+export function safeSocialFeedAvatarUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function canDisplayCatalogAvatar(decision: ModerationDecision): boolean {
+  if (!canDisplayCatalogName(decision)) return false;
+  return (["contentMedia", "avatar"] as const).every(context => {
+    const ui = decision.ui(context);
+    return !ui.filter && !ui.blur && !ui.noOverride;
+  });
+}
+
 export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal): Promise<BlueskySocialCatalog> {
   const agent = createAuthenticatedAppViewAgent(session);
   const preferences = await agent.getPreferences();
@@ -98,12 +117,16 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   const feeds = socialFeedsFromPreferences(preferences.savedFeeds);
   const generators = feeds.filter(feed => feed.kind === "feed");
   const names = new Map<string, string>();
+  const avatars = new Map<string, string>();
   // Metadata is optional: deleted/unavailable saved feeds remain navigable entries.
   for (let offset = 0; offset < generators.length; offset += 25) {
     try {
       const result = await agent.app.bsky.feed.getFeedGenerators({ feeds: generators.slice(offset, offset + 25).map(feed => feed.uri) }, { signal });
       for (const feed of result.data.feeds) {
-        if (canDisplayCatalogName(moderateFeedGenerator(feed, moderation))) names.set(feed.uri, feed.displayName);
+        const decision = moderateFeedGenerator(feed, moderation);
+        if (canDisplayCatalogName(decision)) names.set(feed.uri, feed.displayName);
+        const avatar = safeSocialFeedAvatarUrl(feed.avatar);
+        if (avatar && canDisplayCatalogAvatar(decision)) avatars.set(feed.uri, avatar);
       }
     } catch (error) {
       throwIfAborted(signal);
@@ -115,7 +138,10 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
     await Promise.all(lists.slice(offset, offset + 10).map(async feed => {
       try {
         const result = await agent.app.bsky.graph.getList({ list: feed.uri, limit: 1 }, { signal });
-        if (canDisplayCatalogName(moderateUserList(result.data.list, moderation))) names.set(feed.uri, result.data.list.name);
+        const decision = moderateUserList(result.data.list, moderation);
+        if (canDisplayCatalogName(decision)) names.set(feed.uri, result.data.list.name);
+        const avatar = safeSocialFeedAvatarUrl(result.data.list.avatar);
+        if (avatar && canDisplayCatalogAvatar(decision)) avatars.set(feed.uri, avatar);
       } catch (error) {
         throwIfAborted(signal);
         if (isMissingOAuthScope(error)) throw error;
@@ -124,7 +150,7 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   }
   throwIfAborted(signal);
   return {
-    feeds: feeds.map(feed => ({ ...feed, name: names.get(feed.uri) || feed.name })),
+    feeds: feeds.map(feed => ({ ...feed, name: names.get(feed.uri) || feed.name, ...(avatars.has(feed.uri) ? { avatar: avatars.get(feed.uri) } : {}) })),
     moderation,
   };
 }

@@ -42,6 +42,33 @@ beforeEach(() => {
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 describe("Social feed navigation", () => {
+  it("shows feed and list avatars with decorative alt text and falls back on load errors", () => {
+    state.data = { feeds: [SOCIAL_FOLLOWING_FEED, { ...custom, avatar: "https://images.example/feed.png" }, { ...list, avatar: "https://images.example/list.png" }] };
+    render(<SocialFeeds />);
+    const feedButton = screen.getByRole("button", { name: custom.name });
+    const listButton = screen.getByRole("button", { name: list.name });
+    const image = feedButton.querySelector("img")!;
+    expect(image.getAttribute("src")).toBe("https://images.example/feed.png");
+    expect(image.getAttribute("alt")).toBe("");
+    expect(listButton.querySelector("img")?.getAttribute("src")).toBe("https://images.example/list.png");
+    expect(screen.getByRole("button", { name: "Following" }).querySelector("img")).toBeNull();
+    fireEvent.error(image);
+    expect(feedButton.querySelector("img")).toBeNull();
+    expect(feedButton.querySelector("svg")).toBeTruthy();
+  });
+
+  it("uses icons for unavailable or unsafe avatars and loads a replacement after failure", () => {
+    state.data = { feeds: [{ ...custom, avatar: "https://images.example/broken.png" }, { ...list, avatar: "javascript:alert(1)" }] };
+    const view = render(<SocialFeeds />);
+    const feedButton = screen.getByRole("button", { name: custom.name });
+    fireEvent.error(feedButton.querySelector("img")!);
+    expect(screen.getByRole("button", { name: list.name }).querySelector("img")).toBeNull();
+    expect(feedButton.querySelector("svg")).toBeTruthy();
+    state.data = { feeds: [{ ...custom, avatar: "https://images.example/replacement.png" }, list] };
+    view.rerender(<SocialFeeds />);
+    expect(feedButton.querySelector("img")?.getAttribute("src")).toBe("https://images.example/replacement.png");
+  });
+
   it("withholds cached saved names when moderation catalog refresh fails", () => {
     const view = render(<SocialFeeds />);
     expect(screen.getByRole("button", { name: custom.name })).toBeTruthy();

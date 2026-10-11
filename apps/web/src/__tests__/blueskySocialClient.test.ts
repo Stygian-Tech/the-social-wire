@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
-import { flattenSocialPages, getBlueskySocialCatalog, getBlueskySocialPage, nextSocialCursor, SOCIAL_FOLLOWING_FEED, socialFeedFromSearchParams, socialFeedHref, socialFeedsFromPreferences } from "@/lib/blueskySocialClient";
+import { flattenSocialPages, getBlueskySocialCatalog, getBlueskySocialPage, nextSocialCursor, SOCIAL_FOLLOWING_FEED, socialFeedFromSearchParams, socialFeedHref, socialFeedsFromPreferences, safeSocialFeedAvatarUrl } from "@/lib/blueskySocialClient";
 
 const feedUri = "at://did:plc:feeds/app.bsky.feed.generator/news";
 const listUri = "at://did:plc:lists/app.bsky.graph.list/friends";
@@ -25,6 +25,26 @@ function labelerView(did: string) {
 }
 
 describe("Social feed contracts", () => {
+  it("accepts only HTTPS avatar URLs without credentials", () => {
+    expect(safeSocialFeedAvatarUrl("https://images.example/feed.png")).toBe("https://images.example/feed.png");
+    for (const value of [undefined, "http://images.example/feed.png", "javascript:alert(1)", "data:image/png;base64,abc", "/image.png", "https://user:password@images.example/feed.png"]) {
+      expect(safeSocialFeedAvatarUrl(value)).toBeUndefined();
+    }
+  });
+
+  for (const profileLabel of [undefined, "porn"] as const) {
+    it(`loads safe list avatars while withholding moderated creator avatars (${profileLabel ?? "unlabeled"})`, async () => {
+      const session = fakeSession(method => {
+        if (method === "app.bsky.actor.getPreferences") return { preferences: [{ $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: [{ id: "l", type: "list", value: listUri, pinned: false }] }] };
+        if (method === "app.bsky.labeler.getServices") return { views: [labelerView(baseLabeler)] };
+        if (method === "app.bsky.graph.getList") return { list: { uri: listUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", creator: { did: "did:plc:lists", handle: "lists.example", labels: profileLabel ? [{ src: baseLabeler, uri: "at://did:plc:lists/app.bsky.actor.profile/self", val: profileLabel, cts: "2026-10-09T00:00:00Z" }] : [] }, name: "Friends", avatar: "https://images.example/list.png", purpose: "app.bsky.graph.defs#curatelist", indexedAt: "2026-10-09T00:00:00Z" }, items: [] };
+        throw new Error(`Unexpected ${method}`);
+      });
+      const catalog = await getBlueskySocialCatalog(session);
+      expect(catalog.feeds[1]?.avatar).toBe(profileLabel ? undefined : "https://images.example/list.png");
+    });
+  }
+
   for (const unsafe of ["blocked", "muted", "content label", "creator label"] as const) {
     it(`withholds ${unsafe} generator and list names without losing saved routes`, async () => {
       const creator = { did: "did:plc:other", handle: "other.example", viewer: { blocking: unsafe === "blocked" ? "at://did:plc:alice/app.bsky.graph.block/one" : undefined, muted: unsafe === "muted" }, labels: unsafe === "creator label" ? [{ src: baseLabeler, uri: "did:plc:other", val: "!hide", cts: "2026-10-09T00:00:00Z" }] : [] };
@@ -32,8 +52,8 @@ describe("Social feed contracts", () => {
       const session = fakeSession(method => {
         if (method === "app.bsky.actor.getPreferences") return { preferences: [{ $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: [{ id: "f", type: "feed", value: feedUri, pinned: true }, { id: "l", type: "list", value: listUri, pinned: false }] }] };
         if (method === "app.bsky.labeler.getServices") return { views: [labelerView(baseLabeler)] };
-        if (method === "app.bsky.feed.getFeedGenerators") return { feeds: [{ uri: feedUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", did: "did:plc:feedservice", creator, displayName: "Unsafe Feed Name", labels: labels(feedUri), indexedAt: "2026-10-09T00:00:00Z" }] };
-        if (method === "app.bsky.graph.getList") return { list: { uri: listUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", creator, name: "Unsafe List Name", purpose: "app.bsky.graph.defs#curatelist", labels: labels(listUri), indexedAt: "2026-10-09T00:00:00Z" }, items: [] };
+        if (method === "app.bsky.feed.getFeedGenerators") return { feeds: [{ uri: feedUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", did: "did:plc:feedservice", creator, displayName: "Unsafe Feed Name", avatar: "https://images.example/hidden-feed.png", labels: labels(feedUri), indexedAt: "2026-10-09T00:00:00Z" }] };
+        if (method === "app.bsky.graph.getList") return { list: { uri: listUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", creator, name: "Unsafe List Name", avatar: "https://images.example/hidden-list.png", purpose: "app.bsky.graph.defs#curatelist", labels: labels(listUri), indexedAt: "2026-10-09T00:00:00Z" }, items: [] };
         throw new Error(`Unexpected ${method}`);
       });
       const catalog = await getBlueskySocialCatalog(session);
@@ -87,11 +107,12 @@ describe("Social feed contracts", () => {
         { $type: "app.bsky.actor.defs#labelersPref", labelers: [{ did: customLabeler }] },
       ] };
       if (method === "app.bsky.labeler.getServices") return { views: [labelerView(baseLabeler), labelerView(customLabeler)] };
-      if (method === "app.bsky.feed.getFeedGenerators") return { feeds: [{ uri: feedUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", did: "did:plc:feedservice", creator: { did: "did:plc:feeds", handle: "feeds.example" }, displayName: "Network News", indexedAt: "2026-10-09T00:00:00Z" }] };
+      if (method === "app.bsky.feed.getFeedGenerators") return { feeds: [{ uri: feedUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", did: "did:plc:feedservice", creator: { did: "did:plc:feeds", handle: "feeds.example" }, displayName: "Network News", avatar: "https://images.example/feed.png", indexedAt: "2026-10-09T00:00:00Z" }] };
       throw new Error(`Unexpected ${method}`);
     });
     const catalog = await getBlueskySocialCatalog(session);
     expect(catalog.feeds[1]?.name).toBe("Network News");
+    expect(catalog.feeds[1]?.avatar).toBe("https://images.example/feed.png");
     expect(catalog.moderation.userDid).toBe("did:plc:alice");
     expect(catalog.moderation.labelDefs).toHaveProperty(customLabeler);
     expect(methods).toEqual(["app.bsky.actor.getPreferences", "app.bsky.labeler.getServices", "app.bsky.feed.getFeedGenerators"]);
