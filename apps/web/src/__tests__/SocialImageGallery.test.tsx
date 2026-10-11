@@ -130,6 +130,30 @@ describe("Social Image Gallery", () => {
       within(await screen.findByRole("dialog")).getByText("100%"),
     ).toBeTruthy();
   });
+  it("shows badges only for described images and opens alt text independently of the image viewer", async () => {
+    imageFetch();
+    const postClick = mock(() => undefined);
+    render(<div onClick={postClick}><SocialImageGallery images={[
+      image,
+      { ...image, thumb: "https://publisher.example/blank.jpg", alt: " \n\t" },
+    ]} /></div>);
+    const badge = screen.getByRole("button", { name: "View Image 1 Alt Text" });
+    expect(screen.queryByRole("button", { name: "View Image 2 Alt Text" })).toBeNull();
+    expect(badge.parentElement?.tagName).toBe("DIV");
+    fireEvent.click(badge);
+    const dialog = await screen.findByRole("dialog", { name: "Alt Text" });
+    expect(within(dialog).getByText(image.alt)).toBeTruthy();
+    expect(within(dialog).queryByRole("img")).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Zoom In" })).toBeNull();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(postClick).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Open Image 1: A portrait" }));
+    const viewer = await screen.findByRole("dialog");
+    expect(within(viewer).getByRole("img").getAttribute("src")).toBe(image.fullsize);
+  });
   it("reports unsupported clipboard rather than claiming an image was copied", async () => {
     imageFetch();
     const original = Object.getOwnPropertyDescriptor(

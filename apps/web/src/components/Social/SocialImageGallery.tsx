@@ -4,6 +4,7 @@
 import { useState } from "react";
 import type { AppBskyEmbedImages } from "@atproto/api";
 import { socialHttpsUrl } from "./socialUrls";
+import { SocialAltTextBadge } from "./SocialAltTextBadge";
 import { SocialImageDialog } from "./SocialImageDialog";
 
 export function SocialImageGallery({
@@ -24,11 +25,11 @@ export function SocialImageGallery({
         }
       >
         {safeImages.map((image, index) => (
+          <div key={`${image.thumb}:${index}`} className="relative min-w-0">
           <button
-            key={`${image.thumb}:${index}`}
             type="button"
             aria-label={`Open Image ${index + 1}${image.alt ? `: ${image.alt}` : ""}`}
-            className="block min-w-0 self-start overflow-hidden rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+            className="block w-full min-w-0 self-start overflow-hidden rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
             onClick={(event) => {
               event.stopPropagation();
               setSelected(index);
@@ -44,6 +45,8 @@ export function SocialImageGallery({
               className="block h-auto w-full"
             />
           </button>
+          <SocialAltTextBadge alt={image.alt} label={`View Image ${index + 1} Alt Text`} />
+          </div>
         ))}
       </div>
       {selected !== null ? (

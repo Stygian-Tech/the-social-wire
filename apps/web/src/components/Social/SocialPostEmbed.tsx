@@ -11,6 +11,7 @@ import {
   type ModerationOpts,
 } from "@atproto/api";
 import { moderateSocialPost } from "./socialModeration";
+import { SocialVideoPlayer } from "./SocialVideoPlayer";
 import { SocialImageGallery } from "./SocialImageGallery";
 import { SocialRichText } from "./SocialRichText";
 import { socialHttpsUrl, socialPostUrl, socialProfileUrl } from "./socialUrls";
@@ -72,28 +73,7 @@ export function SocialPostEmbed({
   if (AppBskyEmbedVideo.isView(embed)) {
     const src = socialHttpsUrl(embed.playlist);
     if (!src) return null;
-    return (
-      <video
-        controls
-        playsInline
-        preload="metadata"
-        src={src}
-        poster={socialHttpsUrl(embed.thumbnail)}
-        aria-label={embed.alt || "Post Video"}
-        width={embed.aspectRatio?.width}
-        height={embed.aspectRatio?.height}
-        style={
-          embed.aspectRatio &&
-          embed.aspectRatio.width > 0 &&
-          embed.aspectRatio.height > 0
-            ? {
-                aspectRatio: `${embed.aspectRatio.width} / ${embed.aspectRatio.height}`,
-              }
-            : undefined
-        }
-        className="block h-auto w-full rounded-xl"
-      />
-    );
+    return <SocialVideoPlayer key={src} video={embed} src={src} />;
   }
   if (AppBskyEmbedRecordWithMedia.isView(embed))
     return (
