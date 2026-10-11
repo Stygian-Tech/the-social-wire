@@ -42,6 +42,13 @@ export const ARTICLE_PUBLISHING_SCOPES = [
   "blob:application/json",
 ] as const;
 
+/** Streamplace writes go directly to the viewer PDS; keys contain only public material. */
+export const STREAMPLACE_REPO_SCOPES = [
+  "repo:place.stream.key?action=create",
+  "repo:place.stream.livestream?action=create&action=update",
+  "repo:place.stream.chat.message?action=create",
+] as const;
+
 /** Published Bluesky bundles grant unused gate/video/post-delete powers. */
 export const BLUESKY_SOCIAL_REPO_SCOPES = [
   "repo:app.bsky.feed.post?action=create",
@@ -132,6 +139,7 @@ export const AT_PROTO_OAUTH_SCOPES = [
   "atproto",
   ...SOCIAL_WIRE_REPO_SCOPES,
   ...ARTICLE_PUBLISHING_SCOPES,
+  ...STREAMPLACE_REPO_SCOPES,
   ...BLUESKY_SOCIAL_RPC_SCOPES,
   ...BLUESKY_CHAT_RPC_SCOPES,
   ...WIRE_MODERATION_RPC_SCOPES,

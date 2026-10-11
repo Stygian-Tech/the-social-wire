@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { LogOut, Bookmark, Archive, FilePenLine, Radio } from "lucide-react";
+import { LogOut, Bookmark, Archive } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
@@ -44,6 +44,7 @@ import { PublicationTabs } from "./PublicationTabs";
 import { SidebarSocialSection } from "./SidebarSocialSection";
 import { SidebarAudioSection } from "./SidebarAudioSection";
 import { podcastsEnabled } from "@/lib/podcasts/playback";
+import { SidebarToolsSection } from "./SidebarToolsSection";
 import { SidebarTopicsSection } from "./SidebarTopicsSection";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
@@ -711,23 +712,7 @@ export function AppSidebar({
             financeActive={currentFeed === "finance"}
             onFinanceSelect={() => selectTopLevelFeed("finance")}
           />
-          <SidebarGroup className="pb-1 pt-1">
-            <SidebarGroupLabel>Tools</SidebarGroupLabel>
-            <SidebarMenu className="gap-0.5" role="tablist" aria-label="Tools">
-              <SidebarMenuItem>
-                <SidebarMenuButton type="button" role="tab" aria-selected={pathname.startsWith("/articles")} tooltip="Articles" isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
-                  <FilePenLine />
-                  <span>Articles</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton type="button" role="tab" aria-selected={pathname.startsWith("/live-post")} tooltip="Live Post" isActive={pathname.startsWith("/live-post")} onClick={() => { setOpenMobile(false); router.push("/live-post"); }}>
-                  <Radio />
-                  <span>Live Post</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
+          <SidebarToolsSection pathname={pathname} onNavigate={href => { setOpenMobile(false); router.push(href); }} />
           <SidebarListsSection
             key={session?.did || "signed-out"}
             lists={readerLists.lists}
