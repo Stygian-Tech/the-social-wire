@@ -23,16 +23,14 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
   const lock = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const [replyText, setReplyText] = useState<string>();
+  const [reply, setReply] = useState<{ id: string; text: string }>();
   const [text, setText] = useState(draft);
   const [actionError, setActionError] = useState<string>();
   const [deleteId, setDeleteId] = useState<string>();
   const chat = useBlueskyMessages(convoId);
   const catalog = useBlueskySocialCatalog({ enabled: chat.available });
   const moderation = !catalog.isError && catalog.data?.moderation.userDid === viewerDid ? catalog.data?.moderation : undefined;
-  const quoted = replyText === undefined ? undefined : [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(replyText)].map(segment => segment.segment);
-  const excerpt = quoted ? quoted.slice(0, 200).join("") + (quoted.length > 200 ? "…" : "") : undefined;
-  const outgoing = excerpt === undefined ? text : `> ${excerpt.replace(/\n/g, "\n> ")}\n\n${text}`;
+  const outgoing = text;
   function assertViewer() { if (!mounted.current || getOAuthSession()?.did !== viewerDid) throw new Error("Your account changed. Please reload Messages."); }
   const convos = [...new Map((chat.conversations.data?.pages.flatMap(page => page.convos) ?? []).map(convo => [convo.id, convo])).values()];
   const active = convos.find(convo => convo.id === convoId);
@@ -81,31 +79,31 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
       const result = await chat.perform(action);
       assertViewer();
       if (action.kind === "start" && "convo" in result) setConvoId(result.convo.id);
-      if (action.kind === "send") { setText(""); setReplyText(undefined); }
+      if (action.kind === "send") { setText(""); setReply(undefined); }
       if (action.kind === "delete") setDeleteId(undefined);
     } catch (failure) { if (mounted.current) setActionError(socialErrorMessage(failure)); }
     finally { lock.current = false; }
   }
   return <div className="flex min-h-0 flex-1 flex-col">
     <FeedHeader title={header?.name ?? "Messages"} subtitle={activeMembers.length > 1 ? `${activeMembers.length + 1} Participants` : active ? "Private Conversation" : "Private Conversations"} leading={header ? <Avatar src={header.avatar} alt="" size={36} className="shrink-0" /> : undefined} />
-    {!chat.available ? <section role="status" className="space-y-2 p-6"><h2 className="font-semibold">Messages Unavailable Locally</h2><p className="text-sm text-muted-foreground">{LOCAL_CHAT_UNAVAILABLE}</p></section> : <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+    {!chat.available ? <section role="status" className="space-y-2 p-6"><h2 className="font-semibold">Messages Unavailable Locally</h2><p className="text-sm text-muted-foreground">{LOCAL_CHAT_UNAVAILABLE}</p></section> : <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4">
       {error ? <section role="alert" className="mb-4 rounded-lg border p-3"><p className="text-sm">{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" onClick={() => { void chat.conversations.refetch(); if (convoId) void chat.messages.refetch(); }}>Retry</Button>}</section> : null}
-      <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="space-y-3" aria-label="Conversations">
-          <SocialNewConversationDialog initialMessage={text} disabled={chat.action.isPending} perform={chat.perform} assertViewer={assertViewer} onSent={id => { setConvoId(id); setText(""); setReplyText(undefined); setActionError(undefined); }} />
+      <div className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 md:grid-cols-[240px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)]">
+        <aside className="max-h-40 min-h-0 space-y-3 overflow-y-auto md:max-h-none" aria-label="Conversations">
+          <SocialNewConversationDialog initialMessage={text} disabled={chat.action.isPending} perform={chat.perform} assertViewer={assertViewer} onSent={id => { setConvoId(id); setText(""); setReply(undefined); setActionError(undefined); }} />
           {chat.conversations.isPending ? <p role="status" className="text-sm text-muted-foreground">Loading Conversations…</p> : !convos.length && !chat.conversations.isError ? <p className="text-sm text-muted-foreground">No Conversations Yet.</p> : null}
           {convos.map(convo => {
             const contacts = convo.members.filter(member => member.did !== viewerDid);
             const safeContacts = contacts.map(contact);
             const name = safeContacts.map(contact => contact.name).join(", ") || "Conversation";
-            return <Button key={convo.id} variant={convo.id === convoId ? "secondary" : "ghost"} className="h-auto w-full justify-start gap-2 whitespace-normal py-2 text-left" disabled={chat.action.isPending} onClick={() => { setConvoId(convo.id); setActionError(undefined); setDeleteId(undefined); setReplyText(undefined); }}><Avatar src={safeContacts[0]?.avatar} alt="" size={32} className="shrink-0" /><span className="min-w-0"><span className="block break-words text-sm">{name}</span>{convo.unreadCount > 0 ? <span className="block text-xs text-muted-foreground">{convo.unreadCount} Unread</span> : null}</span></Button>;
+            return <Button key={convo.id} variant={convo.id === convoId ? "secondary" : "ghost"} className="h-auto w-full justify-start gap-2 whitespace-normal py-2 text-left" disabled={chat.action.isPending} onClick={() => { setConvoId(convo.id); setActionError(undefined); setDeleteId(undefined); setReply(undefined); }}><Avatar src={safeContacts[0]?.avatar} alt="" size={32} className="shrink-0" /><span className="min-w-0"><span className="block break-words text-sm">{name}</span>{convo.unreadCount > 0 ? <span className="block text-xs text-muted-foreground">{convo.unreadCount} Unread</span> : null}</span></Button>;
           })}
           {chat.conversations.hasNextPage ? <Button variant="outline" disabled={chat.conversations.isFetchingNextPage} onClick={() => { void chat.conversations.fetchNextPage(); }}>More Conversations</Button> : null}
         </aside>
-        <section className="min-w-0 space-y-3" aria-label="Messages">
+        <section className="flex min-h-0 min-w-0 flex-col gap-3" aria-label="Messages">
           {!convoId ? <p className="py-8 text-center text-sm text-muted-foreground">Select a Conversation.</p> : <>
             <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={chat.action.isPending} onClick={() => { void perform({ kind: active?.muted ? "unmute" : "mute", convoId }); }}>{active?.muted ? "Unmute" : "Mute"}</Button><Button variant="outline" size="sm" disabled={chat.action.isPending} onClick={() => { void perform({ kind: "read", convoId }); }}>Mark As Read</Button></div>
-            <div ref={viewport} role="log" aria-label="Conversation History" className="flex max-h-[60vh] min-h-32 flex-col gap-2 overflow-y-auto overscroll-contain" onTouchStart={event => {
+            <div ref={viewport} role="log" aria-label="Conversation History" className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain pb-2" onTouchStart={event => {
               const point = event.touches[0];
               touch.current = event.touches.length === 1 && point && event.currentTarget.scrollTop <= 32 ? { x: point.clientX, y: point.clientY } : undefined;
             }} onTouchMove={event => {
@@ -124,10 +122,10 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
               if (upward && top <= 32) void loadOlder();
             }}>
             {chat.messages.isFetchingNextPage ? <p role="status" className="text-center text-xs text-muted-foreground">Loading Older Messages…</p> : null}
-            {chat.messages.isPending ? <p role="status">Loading Messages…</p> : messages.length ? messages.map(message => <SocialChatMessage key={String(message.id)} message={message} viewerDid={viewerDid} pending={chat.action.isPending} moderation={moderation} onDelete={setDeleteId} onReply={value => { setReplyText(value); document.getElementById("chat-message")?.focus(); }} onReaction={(messageId, value, remove) => { void perform({ kind: remove ? "removeReaction" : "addReaction", convoId, messageId, value }); }} />) : !chat.messages.isError ? <p className="text-sm text-muted-foreground">No Messages Yet.</p> : null}
+            {chat.messages.isPending ? <p role="status">Loading Messages…</p> : messages.length ? messages.map(message => <SocialChatMessage key={String(message.id)} message={message} viewerDid={viewerDid} pending={chat.action.isPending} moderation={moderation} onDelete={setDeleteId} onReply={value => { setReply(value); document.getElementById("chat-message")?.focus(); }} onReaction={(messageId, value, remove) => { void perform({ kind: remove ? "removeReaction" : "addReaction", convoId, messageId, value }); }} />) : !chat.messages.isError ? <p className="text-sm text-muted-foreground">No Messages Yet.</p> : null}
             </div>
             {deleteId ? <div role="alert" className="space-y-2 rounded-lg border p-3"><p className="text-sm">Delete This Message For You? Other Participants Keep Their Copy.</p><div className="flex gap-2"><Button variant="destructive" disabled={chat.action.isPending} onClick={() => { void perform({ kind: "delete", convoId, messageId: deleteId }); }}>Delete For Me</Button><Button variant="outline" onClick={() => setDeleteId(undefined)}>Cancel</Button></div></div> : null}
-            <form className="flex flex-col gap-2" onSubmit={event => { event.preventDefault(); void perform({ kind: "send", convoId, text: outgoing }); }}>{replyText !== undefined ? <div className="flex items-start gap-2 rounded-md border p-2 text-xs"><div className="min-w-0 flex-1"><span className="font-medium">Reply · Quoted Text</span><p className="line-clamp-2 whitespace-pre-wrap break-words text-muted-foreground">{replyText}</p></div><Button type="button" variant="ghost" size="sm" disabled={chat.action.isPending} onClick={() => setReplyText(undefined)}>Cancel Reply</Button></div> : null}<SocialMessageInput id="chat-message" label="Message" text={text} onChange={setText} pending={chat.action.isPending} valid={!!text.trim() && ChatBskyConvoDefs.validateMessageInput({ text: outgoing.trim() }).success} onSend={() => { void perform({ kind: "send", convoId, text: outgoing }); }} /></form>
+            <form className="flex shrink-0 flex-col gap-2" onSubmit={event => { event.preventDefault(); void perform({ kind: "send", convoId, text: outgoing, replyTo: reply?.id }); }}>{reply !== undefined ? <div className="flex items-start gap-2 rounded-md border p-2 text-xs"><div className="min-w-0 flex-1"><span className="font-medium">Replying To</span><p className="line-clamp-2 whitespace-pre-wrap break-words text-muted-foreground">{reply.text}</p></div><Button type="button" variant="ghost" size="sm" disabled={chat.action.isPending} onClick={() => setReply(undefined)}>Cancel Reply</Button></div> : null}<SocialMessageInput id="chat-message" label="Message" text={text} onChange={setText} pending={chat.action.isPending} valid={!!text.trim() && ChatBskyConvoDefs.validateMessageInput({ text: outgoing.trim() }).success} onSend={() => { void perform({ kind: "send", convoId, text: outgoing, replyTo: reply?.id }); }} /></form>
           </>}
         </section>
       </div>

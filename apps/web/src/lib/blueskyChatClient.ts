@@ -1,5 +1,6 @@
-import { Agent, ChatBskyConvoDefs } from "@atproto/api";
+import { Agent, ChatBskyConvoDefs, RichText } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
+import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
 import { getAtprotoNetwork } from "@/lib/atprotoNetwork";
 
 export const LOCAL_CHAT_UNAVAILABLE = "This local ATProto stack has no chat service configured. Messages require a chat.bsky service; local accounts are never sent to the public Bluesky chat service.";
@@ -22,7 +23,7 @@ export async function getBlueskyMessages(args: { session: OAuthSession; viewerDi
 
 export type ChatAction =
   | { kind: "start"; members: string[] }
-  | { kind: "send"; convoId: string; text: string }
+  | { kind: "send"; convoId: string; text: string; replyTo?: string }
   | { kind: "read"; convoId: string; messageId?: string }
   | { kind: "delete"; convoId: string; messageId: string }
   | { kind: "addReaction" | "removeReaction"; convoId: string; messageId: string; value: string }
@@ -50,9 +51,16 @@ export async function performBlueskyChatAction(session: OAuthSession, viewerDid:
   if (!action.convoId) throw new Error("Select a conversation.");
   switch (action.kind) {
     case "send": {
-      const message = { text: action.text.trim() };
+      if (action.replyTo !== undefined && !action.replyTo.trim()) throw new Error("Select a message to reply to.");
+      // The current chat schema supports replies; the installed SDK types lag this field.
+      const message = { text: action.text.trim(), ...(action.replyTo ? { replyTo: { messageId: action.replyTo } } : {}) };
       if (!message.text || !ChatBskyConvoDefs.validateMessageInput(message).success) throw new Error("Enter a message of at most 1,000 characters.");
-      return (await convo.sendMessage({ convoId: action.convoId, message })).data;
+      const richText = new RichText({ text: message.text });
+      if (/@[a-z0-9-]+(?:\.[a-z0-9-]+)+|https:\/\//i.test(message.text)) {
+        await richText.detectFacets(createAuthenticatedAppViewAgent(session));
+        assertViewer?.();
+      }
+      return (await convo.sendMessage({ convoId: action.convoId, message: { ...message, ...(richText.facets?.length ? { facets: richText.facets } : {}) } })).data;
     }
     case "read": return (await convo.updateRead({ convoId: action.convoId, messageId: action.messageId })).data;
     case "delete":
