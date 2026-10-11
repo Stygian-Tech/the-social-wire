@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ModerationOpts } from "@atproto/api";
+import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import * as Navigation from "next/navigation";
 import * as Auth from "@/hooks/useAuth";
 import * as Catalog from "@/hooks/useBlueskySocialCatalog";
 import * as Client from "@/lib/blueskyPostClient";
 import * as Bookmarks from "@/lib/blueskyBookmarksClient";
+import * as ThreadNavigation from "@/hooks/useSocialThreadNavigation";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import SocialPostPage from "@/app/social/post/page";
 import { safeSocialPostReturnPath, socialPostPageHref } from "@/lib/socialPostNavigation";
@@ -16,7 +17,11 @@ const did = "did:plc:viewer";
 const moderation: ModerationOpts = { userDid: did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } };
 const post = { uri: "at://did:plc:other/app.bsky.feed.post/test", cid: "bafyreia", author: { did: "did:plc:other", handle: "other.test" }, record: { $type: "app.bsky.feed.post", text: "Selected Post", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: "2026-10-10T00:00:00Z" };
 const push = mock(() => {});
-const replace = mock(() => {});
+const replace = mock((href: string) => { void href; });
+const openThread = mock((uri: string, container: HTMLElement | null) => { void uri; void container; });
+const threadBack = mock(() => replace(safeSocialPostReturnPath(params.get("returnTo"))));
+const restoreThread = mock((container: HTMLElement | null) => { void container; return true; });
+let focused = false;
 let params: URLSearchParams;
 let catalogError: Error | undefined;
 const restores: (() => void)[] = [];
@@ -32,18 +37,78 @@ beforeEach(() => {
   }
   params = new URLSearchParams({ uri: post.uri, returnTo: "/social?feed=original" });
   catalogError = undefined; push.mockClear(); replace.mockClear();
+  focused = false; openThread.mockClear(); threadBack.mockClear(); restoreThread.mockClear();
   cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   const router = spyOn(Navigation, "useRouter").mockReturnValue({ push, replace } as unknown as ReturnType<typeof Navigation.useRouter>);
   const path = spyOn(Navigation, "usePathname").mockReturnValue("/social/post");
   const search = spyOn(Navigation, "useSearchParams").mockImplementation(() => params as ReturnType<typeof Navigation.useSearchParams>);
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }), oauthSessionReloadSeq: 0 } as unknown as ReturnType<typeof Auth.useAuth>);
   const catalog = spyOn(Catalog, "useBlueskySocialCatalog").mockImplementation(() => ({ data: { feeds: [], moderation }, isError: !!catalogError, error: catalogError, refetch: mock(async () => undefined) } as unknown as ReturnType<typeof Catalog.useBlueskySocialCatalog>));
-  restores.push(() => router.mockRestore(), () => path.mockRestore(), () => search.mockRestore(), () => auth.mockRestore(), () => catalog.mockRestore());
+  const threadNavigation = spyOn(ThreadNavigation, "useSocialThreadNavigation").mockImplementation(() => ({ openThread, back: threadBack, restore: restoreThread, focused }));
+  restores.push(() => router.mockRestore(), () => path.mockRestore(), () => search.mockRestore(), () => auth.mockRestore(), () => catalog.mockRestore(), () => threadNavigation.mockRestore());
 });
 afterEach(() => { cleanup(); cache.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
 function show() { return render(<QueryClientProvider client={cache}><SidebarProvider><SocialPostPage /></SidebarProvider></QueryClientProvider>); }
+function deepConversation() {
+  type Thread = AppBskyFeedDefs.ThreadViewPost & { $type: "app.bsky.feed.defs#threadViewPost" };
+  const root: Thread = { $type: "app.bsky.feed.defs#threadViewPost", post, replies: [] };
+  const nodes: Thread[] = [];
+  let parent = root;
+  for (let depth = 0; depth < 6; depth++) {
+    const node: Thread = { $type: "app.bsky.feed.defs#threadViewPost", post: { ...post, uri: `${post.uri}depth${depth}`, record: { ...post.record, text: `Reply Depth ${depth}` } }, replies: [] };
+    parent.replies = [node];
+    nodes.push(node); parent = node;
+  }
+  const sibling: Thread = { $type: "app.bsky.feed.defs#threadViewPost", post: { ...post, uri: `${post.uri}sibling`, record: { ...post.record, text: "Following Sibling" } }, replies: [] };
+  root.replies!.push(sibling);
+  return { root, nodes, sibling };
+}
 
 describe("on-page post viewer", () => {
+  it("opens Show More at the boundary card while preserving following siblings", async () => {
+    const { root, nodes } = deepConversation();
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: root });
+    restores.push(() => fetch.mockRestore());
+    const view = show();
+    await screen.findByText("Reply Depth 3");
+    expect(screen.queryByText("Reply Depth 4")).toBeNull();
+    expect(screen.queryByText("Reply Depth 5")).toBeNull();
+    expect(screen.getByText("Following Sibling")).toBeTruthy();
+    const row = view.container.querySelector('[data-reply-depth="3"]') as HTMLElement;
+    expect(row.dataset.threadPostUri).toBe(nodes[3]!.post.uri);
+    const more = within(row).getByRole("button", { name: "Show More" });
+    expect(screen.getAllByRole("button", { name: "Show More" })).toHaveLength(1);
+    fireEvent.click(more);
+    const container = screen.getByRole("region", { name: "Post Conversation" }).parentElement;
+    expect(openThread).toHaveBeenCalledWith(nodes[3]!.post.uri, container);
+    expect(push).not.toHaveBeenCalled();
+    expect(restoreThread).toHaveBeenCalledTimes(1);
+    expect(restoreThread).toHaveBeenCalledWith(container);
+  });
+  for (const state of ["muted", "invalid"] as const) it(`withholds Show More for a ${state} boundary post`, async () => {
+    const { root, nodes } = deepConversation();
+    if (state === "muted") nodes[3]!.post.author = { ...nodes[3]!.post.author, viewer: { muted: true } };
+    else nodes[3]!.post.record = {};
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: root });
+    restores.push(() => fetch.mockRestore());
+    show();
+    await screen.findByText("Following Sibling");
+    expect(screen.queryByRole("button", { name: "Show More" })).toBeNull();
+    expect(screen.queryByText("Reply Depth 3")).toBeNull();
+    expect(screen.queryByText("Reply Depth 4")).toBeNull();
+  });
+  it("starts a focused conversation at its selected post while retaining immediate-parent context", async () => {
+    focused = true;
+    const parent = { ...post, uri: `${post.uri}parent`, author: { did: "did:plc:earlier", handle: "earlier.test" }, record: { ...post.record, text: "Earlier Ancestor" } };
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post, parent: { $type: "app.bsky.feed.defs#threadViewPost", post: parent } } });
+    restores.push(() => fetch.mockRestore());
+    show();
+    await screen.findByText("Selected Post");
+    expect(screen.queryByText("Earlier Ancestor")).toBeNull();
+    expect(screen.getByText("@earlier.test")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(threadBack).toHaveBeenCalledTimes(1);
+  });
   it("indents nested replies, retains sibling order, and identifies the immediate parent", async () => {
     const first = { ...post, uri: `${post.uri}first`, author: { did: "did:plc:first", handle: "first.test" }, record: { ...post.record, text: "First Reply" } };
     const nested = { ...post, uri: `${post.uri}nested`, record: { ...post.record, text: "Nested Reply" } };

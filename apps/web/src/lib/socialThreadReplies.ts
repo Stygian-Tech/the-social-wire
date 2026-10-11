@@ -3,8 +3,9 @@ import { AppBskyFeedDefs } from "@atproto/api";
 export interface SocialThreadReply {
   post: AppBskyFeedDefs.PostView;
   parent: AppBskyFeedDefs.PostView;
-  /** Direct replies start at zero; visual indentation can be capped separately. */
+  /** Direct replies start at zero; deeper branches open as focused conversations. */
   depth: number;
+  hasMore: boolean;
 }
 
 export function collectSocialThreadReplies(
@@ -15,12 +16,14 @@ export function collectSocialThreadReplies(
   const rows: SocialThreadReply[] = [];
   const seen = new Set([root.post.uri, ...excludedUris]);
   const pending = (root.replies ?? []).map(node => ({ node, parent: root.post, depth: 0 })).reverse();
-  // An explicit stack preserves API order without limiting logical thread depth.
+  // Preserve API order while keeping each visible branch within the indent limit.
   while (pending.length && rows.length < 100) {
     const { node, parent, depth } = pending.pop()!;
     if (!AppBskyFeedDefs.isThreadViewPost(node) || seen.has(node.post.uri)) continue;
     seen.add(node.post.uri);
-    rows.push({ post: node.post, parent, depth });
+    const hasMore = depth === 3 && (node.replies ? node.replies.length > 0 : (node.post.replyCount ?? 0) > 0);
+    rows.push({ post: node.post, parent, depth, hasMore });
+    if (depth === 3) continue;
     for (const child of (node.replies ?? []).toReversed()) {
       pending.push({ node: child, parent: node.post, depth: depth + 1 });
     }

@@ -31,7 +31,7 @@ describe("conversation reply rows", () => {
       { $type: "app.bsky.feed.defs#blockedPost", uri: "at://blocked", blocked: true, author: { did: "did:plc:blocked" } },
       available,
     ]);
-    expect(collectSocialThreadReplies(root)).toEqual([{ post: available.post, parent: root.post, depth: 0 }]);
+    expect(collectSocialThreadReplies(root)).toEqual([{ post: available.post, parent: root.post, depth: 0, hasMore: false }]);
     expect(collectSocialThreadReplies(undefined)).toEqual([]);
   });
 
@@ -43,7 +43,7 @@ describe("conversation reply rows", () => {
     expect(collectSocialThreadReplies(root, [ancestor.post.uri]).map(row => row.post.uri)).toEqual([child.post.uri]);
   });
 
-  it("retains deep logical depth while bounding rows and visual indentation", () => {
+  it("stops at the last indent level and keeps following sibling branches", () => {
     const root = thread("root");
     let parent = root;
     for (let depth = 0; depth < 120; depth++) {
@@ -52,11 +52,38 @@ describe("conversation reply rows", () => {
       parent = child;
     }
     const rows = collectSocialThreadReplies(root);
-    expect(rows).toHaveLength(100);
-    expect(rows[99]?.depth).toBe(99);
+    expect(rows).toHaveLength(4);
+    expect(rows.map(row => row.depth)).toEqual([0, 1, 2, 3]);
+    expect(rows.map(row => row.hasMore)).toEqual([false, false, false, true]);
+    const sibling = thread("sibling");
+    root.replies!.push(sibling);
+    expect(collectSocialThreadReplies(root).at(-1)).toMatchObject({ post: sibling.post, depth: 0, hasMore: false });
     expect(socialThreadReplyIndent(0)).toBe("");
     expect(socialThreadReplyIndent(1)).toBe("ml-3 sm:ml-5");
     expect(socialThreadReplyIndent(2)).toBe("ml-6 sm:ml-10");
     expect(socialThreadReplyIndent(99)).toBe(socialThreadReplyIndent(3));
+  });
+
+  it("detects omitted replies at the boundary without inventing continuations for known empty replies", () => {
+    const root = thread("root");
+    let parent = root;
+    for (let depth = 0; depth < 4; depth++) {
+      const child = thread(`reply${depth}`);
+      parent.replies = [child];
+      parent = child;
+    }
+    parent.post.replyCount = 2;
+    expect(collectSocialThreadReplies(root).at(-1)?.hasMore).toBe(false);
+    parent.replies = undefined;
+    expect(collectSocialThreadReplies(root).at(-1)?.hasMore).toBe(true);
+    parent.post.replyCount = 0;
+    expect(collectSocialThreadReplies(root).at(-1)?.hasMore).toBe(false);
+  });
+
+  it("bounds a wide thread to 100 reply rows", () => {
+    const root = thread("root", Array.from({ length: 120 }, (_, index) => thread(`reply${index}`)));
+    const rows = collectSocialThreadReplies(root);
+    expect(rows).toHaveLength(100);
+    expect(rows.at(-1)?.post.uri).toEndWith("/reply99");
   });
 });
