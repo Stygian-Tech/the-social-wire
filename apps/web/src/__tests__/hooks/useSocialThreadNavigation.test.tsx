@@ -73,8 +73,8 @@ describe("deep thread navigation", () => {
   it("never uses another viewer's return token and safely exits a direct focused link", () => {
     const { result, rerender } = renderHook(useSocialThreadNavigation); result.current.openThread(deep, container().element);
     navigate(push.mock.calls[0]![0] as string); did = "did:plc:another"; rerender(); result.current.back();
-    expect(replace).toHaveBeenLastCalledWith("/social?feed=original");
+    expect(replace).toHaveBeenLastCalledWith("/social?feed=original", { scroll: false });
     params = new URLSearchParams({ uri: deep, focusThread: "1", returnTo: "//evil.test" }); rerender(); result.current.back();
-    expect(replace).toHaveBeenLastCalledWith("/social");
+    expect(replace).toHaveBeenLastCalledWith("/social", { scroll: false });
   });
 });

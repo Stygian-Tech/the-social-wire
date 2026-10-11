@@ -56,10 +56,10 @@ export default function SocialLayout({ children }: { children: React.ReactNode }
           <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses}`}>
             <div className="flex min-h-0 flex-1 overflow-hidden">
               <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
-              {!isMessages ? <aside aria-label="Social Feed Sidebar" className="hidden w-72 shrink-0 overflow-y-auto overscroll-contain p-3 lg:block">
-                <div className={floatingSidebarClassName}>
-                  <h2 className="mb-2 px-2 text-sm font-semibold">Feeds</h2>
-                  <Suspense fallback={null}><SocialFeeds /></Suspense>
+              {!isMessages ? <aside aria-label="Social Feed Sidebar" className="hidden min-h-0 w-72 shrink-0 overflow-hidden p-3 lg:flex lg:flex-col">
+                <div className={`${floatingSidebarClassName} flex min-h-0 w-full flex-col overflow-hidden`}>
+                  <h2 className="mb-2 shrink-0 px-2 text-sm font-semibold">Feeds</h2>
+                  <div className="min-h-0 overflow-y-auto overscroll-contain"><Suspense fallback={null}><SocialFeeds /></Suspense></div>
                 </div>
               </aside> : null}
             </div>
