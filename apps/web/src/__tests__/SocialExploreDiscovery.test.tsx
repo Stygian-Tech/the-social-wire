@@ -1,5 +1,5 @@
 import { afterEach, expect, it, mock, spyOn } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { type AppBskyFeedDefs, type ModerationOpts } from "@atproto/api";
 import * as AvatarComponent from "@/components/shared/Avatar";
 import * as Hook from "@/hooks/useSocialExploreDiscovery";
@@ -20,7 +20,9 @@ function state(overrides: Record<string, unknown> = {}) {
 it("uses topic search and existing Open/Save feed actions", () => {
   const { mutate } = state(); let searched = "";
   render(<SocialExploreDiscovery moderation={moderation} savedFeeds={[]} enabled search={value => { searched = value; }} />);
-  fireEvent.click(screen.getByRole("button", { name: "Space News" }));
+  const topics = screen.getByRole("list", { name: "Trending Topics" });
+  expect(within(topics).getAllByRole("listitem")).toHaveLength(1);
+  fireEvent.click(within(topics).getByRole("button", { name: "Space News" }));
   expect(searched).toBe("space news");
   expect(screen.getByRole("link", { name: "Open Feed" }).getAttribute("href")).toBe(`/social?feed=${encodeURIComponent(feed.uri)}`);
   fireEvent.click(screen.getByRole("button", { name: "Save Feed" }));

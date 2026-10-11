@@ -20,6 +20,11 @@ export function SocialComposeButton() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const [posted, setPosted] = useState(false);
+  useEffect(() => {
+    if (!posted) return;
+    const timer = setTimeout(() => setPosted(false), 3300);
+    return () => clearTimeout(timer);
+  }, [posted]);
   const busy = useRef(false);
   const currentDid = useRef(session?.did);
   useEffect(() => {
@@ -63,7 +68,7 @@ export function SocialComposeButton() {
 
   if (!session) return null;
   return <div className="absolute bottom-4 right-4 z-20 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6">
-    {posted ? <p role="status" className="rounded-xl border bg-popover/95 px-3 py-2 text-sm shadow-sm">Post Published</p> : null}
+    {posted ? <p role="status" className="animate-out fade-out-0 rounded-xl border bg-popover/95 px-3 py-2 text-sm shadow-sm duration-300 [animation-delay:3s] [animation-fill-mode:forwards] motion-reduce:animate-none">Post Published</p> : null}
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger aria-label="Compose Post" className="inline-flex size-14 items-center justify-center rounded-full border border-primary/30 bg-primary text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"><SquarePen aria-hidden="true" className="size-6" /></DialogTrigger>
       <DialogContent className="sm:max-w-lg" showCloseButton={!pending}>
