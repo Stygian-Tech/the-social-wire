@@ -16,6 +16,16 @@ struct PodcastSubscriptionMatchTests {
         #expect(!PodcastSubscriptionMatch.matches(.object(["category": .string("podcast"), "feedUrl": .string("https://other.example/feed.xml")]), show: show))
     }
 
+    @Test("Imported Podcast subscriptions match AppView feed normalization")
+    func normalizedFeedMatching() throws {
+        let show = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"show","title":"Show","sourceKind":"rss","feedUrl":"https://example.com/rss"}"#.utf8))
+        for feed in ["https://example.com/rss/", "https://example.com/rss#episodes", "https://example.com/rss/#episodes", "http://example.com/rss", " example.com/rss/ "] {
+            #expect(PodcastSubscriptionMatch.matches(.object(["category": .string("podcast"), "feedUrl": .string(feed)]), show: show))
+            #expect(!PodcastSubscriptionMatch.matches(.object(["category": .string("news"), "feedUrl": .string(feed)]), show: show))
+        }
+        #expect(!PodcastSubscriptionMatch.matches(.object(["category": .string("podcast"), "feedUrl": .string("https://example.com/rss?edition=other")]), show: show))
+    }
+
     @Test("Legacy subscriptions require an explicit supported native Podcast source")
     func legacyProtocolClassification() {
         for collection in ["org.atpodcasting.podcast", "place.pod.show", "live.voxport.podcast.series"] {

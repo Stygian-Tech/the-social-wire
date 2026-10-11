@@ -14,7 +14,26 @@ enum PodcastSubscriptionMatch {
 
     static func matches(_ value: JSONValue, show: PodcastShow) -> Bool {
         guard isPodcast(value), let record = value.object else { return false }
-        return show.feedUrl != nil && record["feedUrl"]?.string == show.feedUrl
-            || show.sourceUri != nil && record["externalRef"]?.string == show.sourceUri
+        if let feed = show.feedUrl.flatMap(normalizedFeedURL),
+           let subscribedFeed = record["feedUrl"]?.string.flatMap(normalizedFeedURL),
+           feed == subscribedFeed { return true }
+        return show.sourceUri != nil && record["externalRef"]?.string == show.sourceUri
+    }
+
+    private static func normalizedFeedURL(_ raw: String) -> String? {
+        // Match AppView's NormalizeFeedURL so imported records retain their original rkeys.
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let hasScheme = trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://")
+        guard var components = URLComponents(string: hasScheme ? trimmed : "https://\(trimmed)"),
+              let host = components.host, !host.isEmpty,
+              let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        if scheme == "http" { components.scheme = "https" }
+        components.fragment = nil
+        components.user = nil
+        components.password = nil
+        guard var normalized = components.string else { return nil }
+        if normalized.hasSuffix("/") { normalized.removeLast() }
+        return normalized
     }
 }
