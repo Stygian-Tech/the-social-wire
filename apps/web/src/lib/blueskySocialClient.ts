@@ -118,10 +118,17 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
     if (!Object.hasOwn(labelDefs, did)) throw new Error("Your moderation settings could not be loaded. Please retry.");
   }
   const labelerAvatars: Record<string, string> = {};
-  const moderation: SocialModerationOpts = { userDid: session.did, prefs: preferences.moderationPrefs, labelDefs, labelerAvatars };
+  const labelerProfiles: NonNullable<SocialModerationOpts["labelerProfiles"]> = {};
+  const moderation: SocialModerationOpts = { userDid: session.did, prefs: preferences.moderationPrefs, labelDefs, labelerAvatars, labelerProfiles };
   for (const service of services) {
+    const decision = moderateProfile(service.creator, moderation);
+    // Handles identify the service even when its display name is moderated.
+    labelerProfiles[service.creator.did] = {
+      handle: service.creator.handle,
+      ...(canDisplayCatalogName(decision) && service.creator.displayName?.trim() ? { displayName: service.creator.displayName.trim() } : {}),
+    };
     const avatar = safeSocialFeedAvatarUrl(service.creator.avatar);
-    if (avatar && canDisplayCatalogAvatar(moderateProfile(service.creator, moderation))) labelerAvatars[service.creator.did] = avatar;
+    if (avatar && canDisplayCatalogAvatar(decision)) labelerAvatars[service.creator.did] = avatar;
   }
   // Brand engagement needs viewer moderation without saved-feed navigation grants.
   if (options.includeFeeds === false) return { feeds: [], moderation };

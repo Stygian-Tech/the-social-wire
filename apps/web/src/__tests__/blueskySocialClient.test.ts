@@ -139,7 +139,7 @@ describe("Social feed contracts", () => {
     await expect(getBlueskySocialCatalog(session)).rejects.toThrow("moderation settings");
   });
 
-  it("reuses the definitions response for safe labeler avatars and withholds blocked avatars", async () => {
+  it("reuses the definitions response for labeler identities and withholds blocked names and avatars", async () => {
     for (const blocked of [false, true]) {
       let serviceRequests = 0;
       const session = fakeSession(method => {
@@ -147,12 +147,13 @@ describe("Social feed contracts", () => {
         if (method === "app.bsky.labeler.getServices") {
           serviceRequests += 1;
           const service = labelerView(baseLabeler);
-          return { views: [{ ...service, creator: { ...service.creator, avatar: "https://images.example/labeler.png", viewer: blocked ? { blocking: "at://did:plc:alice/app.bsky.graph.block/one" } : {} } }] };
+          return { views: [{ ...service, creator: { ...service.creator, displayName: "  Example Labeler  ", avatar: "https://images.example/labeler.png", viewer: blocked ? { blocking: "at://did:plc:alice/app.bsky.graph.block/one" } : {} } }] };
         }
         throw new Error(`Unexpected ${method}`);
       });
       const catalog = await getBlueskySocialCatalog(session);
       expect(catalog.moderation.labelerAvatars?.[baseLabeler]).toBe(blocked ? undefined : "https://images.example/labeler.png");
+      expect(catalog.moderation.labelerProfiles?.[baseLabeler]).toEqual(blocked ? { handle: "labeler.example" } : { displayName: "Example Labeler", handle: "labeler.example" });
       expect(serviceRequests).toBe(1);
     }
   });
