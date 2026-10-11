@@ -12,6 +12,7 @@ import {
 import { moderateSocialPost } from "./socialModeration";
 import { SocialPostEmbed } from "./SocialPostEmbed";
 import { SocialRichText } from "./SocialRichText";
+import { SocialReplyLabel } from "./SocialReplyLabel";
 import { SocialPostLabels } from "./SocialPostLabels";
 import { SocialCashtags } from "./SocialCashtags";
 import { SocialPostTimestamp } from "./SocialPostTimestamp";
@@ -95,7 +96,7 @@ export function SocialPostCard({
         </p>
       ) : null}
       {item.reply ? (
-        <p className="text-xs text-muted-foreground">Reply</p>
+        <SocialReplyLabel reply={item.reply} moderation={moderation} />
       ) : null}
       <div className="flex items-center gap-3">
         <Link href={socialProfilePageHref(post.author.did)} aria-label={`Open Profile: ${name}`} className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-ring">{image ? (

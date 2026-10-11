@@ -36,6 +36,18 @@ function show(item: AppBskyFeedDefs.FeedViewPost = { post }) {
  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })}><InteractiveSocialPost item={item} moderation={moderation} /></QueryClientProvider>);
 }
 describe("Social Post Interactions", () => {
+ it("compacts engagement text while preserving exact accessible counts", () => {
+  const view = show({ post: { ...post, replyCount: 1_199, repostCount: 12_999, likeCount: 120_999 } });
+  const reply = screen.getByRole("button", { name: "Open Replies (1199)" });
+  expect(reply.textContent).toBe("1.1k");
+  expect(reply.getAttribute("title")).toBe("1199 Replies");
+  expect(screen.getByRole("button", { name: "Repost (12999)" }).textContent).toBe("12k");
+  expect(screen.getByRole("button", { name: "Like (120999)" }).textContent).toBe("120k");
+  fireEvent.click(reply);
+  expect(push).toHaveBeenCalledWith(socialPostPageHref(post.uri, "/social"));
+  view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post: { ...post, replyCount: 999 } }} moderation={moderation} /></QueryClientProvider>);
+  expect(screen.getByRole("button", { name: "Open Replies (999)" }).textContent).toBe("999");
+ });
  it("renders parent and reply in one card and omits a later standalone parent", () => {
   const parent = { ...post, replyCount: 99, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Grouped Parent", createdAt: "2026-10-10T00:00:00Z" } };
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }), oauthSessionReloadSeq: 0 } as unknown as ReturnType<typeof Auth.useAuth>);
@@ -43,10 +55,13 @@ describe("Social Post Interactions", () => {
   render(<QueryClientProvider client={new QueryClient()}><SocialFeedPosts items={[{ post, reply: { parent, root: parent } }, { post: parent }]} moderation={moderation} /></QueryClientProvider>);
   const group = screen.getByLabelText("Post Conversation");
   expect(group.classList.contains("border")).toBe(true);
-  expect(screen.getByText("Thread · 2 Posts")).toBeTruthy();
+  expect(screen.getByText("Conversation")).toBeTruthy();
   expect(group.querySelectorAll("article")).toHaveLength(2);
   expect([...group.querySelectorAll("article")].every(article => !article.classList.contains("border"))).toBe(true);
   expect(screen.getAllByText("Grouped Parent")).toHaveLength(1);
+  const articles = group.querySelectorAll("article");
+  expect(articles[0]!.textContent).not.toContain("Replying To");
+  expect(articles[1]!.textContent).toContain("Replying To @other.test");
   fireEvent.click(screen.getByText("Grouped Parent"));
   expect(push).toHaveBeenCalledWith(socialPostPageHref(parent.uri, "/social"));
  });
@@ -62,11 +77,10 @@ describe("Social Post Interactions", () => {
   const view = show({ post, reply: { parent, root: parent } });
   expect(screen.queryByText("Secret Parent")).toBeNull();
   expect(screen.getByText("Original post withheld by your moderation settings.")).toBeTruthy();
-  expect(screen.getByText("Thread")).toBeTruthy();
-  expect(screen.queryByText("Thread · 2 Posts")).toBeNull();
+  expect(screen.getByText("Conversation")).toBeTruthy();
   view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: parent.uri, notFound: true }, root: parent } }} moderation={moderation} /></QueryClientProvider>);
   expect(screen.getByText("Original post unavailable.")).toBeTruthy();
-  expect(screen.getByText("Thread")).toBeTruthy();
+  expect(screen.getByText("Conversation")).toBeTruthy();
  });
  it("opens quoted content internally without opening the enclosing post", () => {
   const quote = { $type: "app.bsky.embed.record#viewRecord", uri: `${post.uri}quote`, cid: post.cid, author: post.author, value: { $type: "app.bsky.feed.post", text: "Quoted Content", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: post.indexedAt };
