@@ -33,11 +33,12 @@ describe("atprotoOAuthScopes", () => {
     expect(AT_PROTO_OAUTH_SCOPES).not.toContain("rpc:place.stream");
   });
   it("grants only the chat reaction methods at the chat audience", () => {
-    for (const method of ["addReaction", "removeReaction"]) {
+    for (const method of ["addReaction", "removeReaction", "acceptConvo", "leaveConvo"]) {
       const scope = `rpc:chat.bsky.convo.${method}?aud=did:web:api.bsky.chat%23bsky_chat`;
       expect([...BLUESKY_CHAT_RPC_SCOPES] as string[]).toContain(scope);
       expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(scope);
     }
+    expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain("rpc:com.atproto.moderation.createReport?aud=did:plc:ar7c4by46qjdydhdevvrndac%23atproto_labeler");
     expect(AT_PROTO_OAUTH_SCOPES).not.toContain("include:chat.bsky.authFull");
   });
   it("grants viewer-aware Social reads at the AppView audience without generic permissions", () => {
@@ -107,6 +108,7 @@ describe("atprotoOAuthScopes", () => {
       "repo:app.bsky.graph.listitem?action=create&action=delete",
       "repo:app.bsky.feed.like?action=create&action=delete",
       "repo:app.bsky.feed.repost?action=create&action=delete",
+      "repo:app.bsky.graph.block?action=create&action=delete",
     ]);
     expect(ARTICLE_PUBLISHING_SCOPES).toEqual([
       "repo:site.standard.document?action=create&action=update",
