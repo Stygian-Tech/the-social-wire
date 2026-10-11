@@ -61,6 +61,15 @@ describe("deep thread navigation", () => {
     params = new URLSearchParams({ uri, returnTo: "/social?feed=original" }); rerender();
     const empty = document.createElement("div"); result.current.restore(empty); expect(empty.scrollTop).toBe(700);
   });
+  it("prefers the latest departure over a stale restore token on repeated browser Back", () => {
+    const { result, rerender } = renderHook(useSocialThreadNavigation); const { element, anchor } = container();
+    result.current.openThread(deep, element); navigate(push.mock.calls[0]![0]); rerender();
+    result.current.back(); const sourceHref = replace.mock.calls[0]![0]; navigate(sourceHref); rerender(); result.current.restore(element);
+    element.scrollTop = 780; anchor.getBoundingClientRect = () => ({ top: 70 }) as DOMRect;
+    result.current.openThread(deep, element); navigate(push.mock.calls[1]![0]); rerender();
+    navigate(sourceHref); rerender(); element.scrollTop = 0; anchor.getBoundingClientRect = () => ({ top: 850 }) as DOMRect;
+    result.current.restore(element); expect(element.scrollTop).toBe(780);
+  });
   it("never uses another viewer's return token and safely exits a direct focused link", () => {
     const { result, rerender } = renderHook(useSocialThreadNavigation); result.current.openThread(deep, container().element);
     navigate(push.mock.calls[0]![0] as string); did = "did:plc:another"; rerender(); result.current.back();

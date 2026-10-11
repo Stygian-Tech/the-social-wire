@@ -35,7 +35,9 @@ export function useSocialThreadNavigation() {
     if (!container || !session || !isSocialPostUri(uri)) return false;
     const explicit = readSocialThreadReturnPoint(session.did, params?.get("threadRestore"));
     const pending = consumePendingSocialThreadReturn(session.did, uri, token ?? undefined);
-    const point = explicit?.uri === uri && explicit.parentToken === (token ?? undefined) && explicit.focused === focused ? explicit : pending;
+    const validExplicit = explicit?.uri === uri && explicit.parentToken === (token ?? undefined) && explicit.focused === focused ? explicit : undefined;
+    // A new departure supersedes an older restore token retained in the source URL.
+    const point = pending?.focused === focused ? pending : validExplicit;
     if (!point) return true;
     const anchor = findAnchor(container, point.anchorUri);
     container.scrollTop = anchor ? container.scrollTop + anchor.getBoundingClientRect().top - container.getBoundingClientRect().top - point.anchorOffset : point.scrollTop;
