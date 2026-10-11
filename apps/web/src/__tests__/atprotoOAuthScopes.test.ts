@@ -6,6 +6,7 @@ import {
   ARTICLE_PUBLISHING_SCOPES,
   BLUESKY_SOCIAL_REPO_SCOPES,
   BLUESKY_SOCIAL_RPC_SCOPES,
+  BLUESKY_CHAT_RPC_SCOPES,
   SKYREADER_REPO_SCOPES,
   SOCIAL_WIRE_REPO_SCOPES,
   SEMBLE_REPO_OAUTH_SCOPES,
@@ -20,6 +21,14 @@ import {
 import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 
 describe("atprotoOAuthScopes", () => {
+  it("grants only the chat reaction methods at the chat audience", () => {
+    for (const method of ["addReaction", "removeReaction"]) {
+      const scope = `rpc:chat.bsky.convo.${method}?aud=did:web:api.bsky.chat%23bsky_chat`;
+      expect([...BLUESKY_CHAT_RPC_SCOPES] as string[]).toContain(scope);
+      expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(scope);
+    }
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("include:chat.bsky.authFull");
+  });
   it("grants viewer-aware Social reads at the AppView audience without generic permissions", () => {
     for (const method of ["app.bsky.feed.getTimeline", "app.bsky.feed.getFeed", "app.bsky.feed.getFeedSkeleton", "app.bsky.feed.getFeedGenerators", "app.bsky.feed.getListFeed", "app.bsky.labeler.getServices"]) {
       const scope = `rpc:${method}?aud=did:web:api.bsky.app%23bsky_appview`;

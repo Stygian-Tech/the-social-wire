@@ -1,10 +1,11 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Navigation from "next/navigation";
 import * as Auth from "@/hooks/useAuth";
 import * as Network from "@/lib/atprotoNetwork";
+import * as Catalog from "@/hooks/useBlueskySocialCatalog";
 import * as Chat from "@/lib/blueskyChatClient";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { SocialMessages } from "@/components/Social/SocialMessages";
@@ -21,7 +22,16 @@ beforeAll(() => { Object.defineProperty(window, "matchMedia", { configurable: tr
 afterAll(() => { if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia); else Reflect.deleteProperty(window, "matchMedia"); });
 beforeEach(() => {
   viewer = alice; oauth = alice;
+  for (const [name, value] of Object.entries({ HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, Element: window.Element, Node: window.Node, MutationObserver: window.MutationObserver, DOMRect: window.DOMRect, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+    restores.push(() => { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
+  }
+  const catalog = spyOn(Catalog, "useBlueskySocialCatalog").mockReturnValue({ data: { moderation: { userDid: alice, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } } }, isError: false } as unknown as ReturnType<typeof Catalog.useBlueskySocialCatalog>); restores.push(() => catalog.mockRestore());
   params = new URLSearchParams();
+  const router = spyOn(Navigation, "useRouter").mockReturnValue({ push: mock(() => {}), replace: mock(() => {}) } as unknown as ReturnType<typeof Navigation.useRouter>);
+  const path = spyOn(Navigation, "usePathname").mockReturnValue("/social/messages");
+  restores.push(() => router.mockRestore(), () => path.mockRestore());
   const search = spyOn(Navigation, "useSearchParams").mockImplementation(() => params as ReturnType<typeof Navigation.useSearchParams>); restores.push(() => search.mockRestore());
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   const auth = spyOn(Auth, "useAuth").mockImplementation(() => ({ session: { did: viewer }, getOAuthSession: () => ({ did: oauth } as OAuthSession), oauthSessionReloadSeq: 0 } as ReturnType<typeof Auth.useAuth>)); restores.push(() => auth.mockRestore());
@@ -52,7 +62,8 @@ describe("Messages workspace", () => {
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "read")).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "Mute" }));
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "mute")).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Delete For Me" }));
+    fireEvent.click(screen.getByRole("button", { name: "Message Actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete For Me" }));
     expect(write.mock.calls.some(call => call[2].kind === "delete")).toBe(false);
     fireEvent.click(screen.getAllByRole("button", { name: "Delete For Me" }).at(-1)!);
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "delete" && call[2].messageId === "m")).toBe(true));
@@ -75,14 +86,68 @@ describe("Messages workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: /bob.test/ }));
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(draft);
     expect(write).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("Recipient Handle Or DID"), { target: { value: bob } });
     fireEvent.click(screen.getByRole("button", { name: "New Conversation" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Recipient Handle Or DID"), { target: { value: bob } });
+    expect((screen.getByLabelText("First Message") as HTMLTextAreaElement).value).toBe(draft);
+    expect(write).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole("button", { name: "Send Message" }).at(-1)!);
     await waitFor(() => expect(write.mock.calls[0]![2].kind).toBe("start"));
-    await waitFor(() => expect((screen.getByLabelText("Recipient Handle Or DID") as HTMLInputElement).value).toBe(""));
-    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(draft);
-    expect(write.mock.calls.some(call => call[2].kind === "send")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Send Message" }));
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "send" && call[2].text === draft)).toBe(true));
+    await waitFor(() => expect(screen.queryByRole("dialog") === null).toBe(true));
+  });
+  it("quotes a bounded reply and adds/removes reactions through the selected conversation", async () => {
+    const original = "👩‍💻".repeat(990);
+    const message = { $type: "chat.bsky.convo.defs#messageView" as const, id: "m", rev: "2", text: original, sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z", reactions: [{ value: "👍", sender: { did: alice }, createdAt: "2026-10-10T00:00:00Z" }] };
+    const list = spyOn(Chat, "getBlueskyConversations").mockResolvedValue({ convos: [convo] }); restores.push(() => list.mockRestore());
+    const messages = spyOn(Chat, "getBlueskyMessages").mockResolvedValue({ messages: [message] }); restores.push(() => messages.mockRestore());
+    const write = spyOn(Chat, "performBlueskyChatAction").mockResolvedValue({ convo }); restores.push(() => write.mockRestore());
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /bob.test/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Message Actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Reply" }));
+    expect(screen.getByText("Reply · Quoted Text")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Short reply" } });
+    expect((screen.getByRole("button", { name: "Send Message" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    const action = write.mock.calls[0]![2];
+    expect(action.kind).toBe("send");
+    if (action.kind === "send") expect(action.text).toBe(`> ${"👩‍💻".repeat(200)}…\n\nShort reply`);
+    await waitFor(() => expect((screen.getByRole("button", { name: "Message Actions" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Reaction 👍" }));
+    await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "removeReaction" && call[2].messageId === "m" && call[2].value === "👍")).toBe(true));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Message Actions" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Message Actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "React ❤️" }));
+    await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "addReaction" && call[2].messageId === "m" && call[2].value === "❤️")).toBe(true));
+  });
+  for (const gesture of ["wheel", "touch"]) it(`loads older messages only after an upward ${gesture} gesture and preserves the visible position`, async () => {
+    const message = { $type: "chat.bsky.convo.defs#messageView" as const, id: "new", rev: "1", text: "Recent message", sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z" };
+    const list = spyOn(Chat, "getBlueskyConversations").mockResolvedValue({ convos: [convo] }); restores.push(() => list.mockRestore());
+    const messages = spyOn(Chat, "getBlueskyMessages").mockImplementation(async args => args.cursor ? { messages: [{ ...message, id: "old", text: "Older message" }] } : { messages: [message], cursor: "older" }); restores.push(() => messages.mockRestore());
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /bob.test/ }));
+    await screen.findByText("Recent message");
+    const log = screen.getByRole("log", { name: "Conversation History" });
+    Object.defineProperty(log, "scrollHeight", { configurable: true, get: () => log.textContent?.includes("Older message") ? 400 : 200 });
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 100 });
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Older Messages" }) === null).toBe(true);
+    log.scrollTop = 0;
+    if (gesture === "wheel") { fireEvent.wheel(log, { deltaY: -10 }); fireEvent.wheel(log, { deltaY: -10 }); }
+    else {
+      fireEvent.touchStart(log, { touches: [{ clientX: 100, clientY: 100 }] });
+      fireEvent.touchMove(log, { touches: [{ clientX: 150, clientY: 105 }] });
+      expect(messages).toHaveBeenCalledTimes(1);
+      fireEvent.touchStart(log, { touches: [{ clientX: 100, clientY: 100 }] });
+      fireEvent.touchMove(log, { touches: [{ clientX: 102, clientY: 150 }] });
+      fireEvent.touchMove(log, { touches: [{ clientX: 102, clientY: 180 }] });
+    }
+    await screen.findByText("Older message");
+    expect(messages).toHaveBeenCalledTimes(2);
+    expect(messages.mock.calls[1]![0].cursor).toBe("older");
+    await waitFor(() => expect(log.scrollTop).toBe(200));
   });
   it("rejects noncanonical and unsafe post draft URLs", async () => {
     const list = spyOn(Chat, "getBlueskyConversations").mockResolvedValue({ convos: [convo] }); restores.push(() => list.mockRestore());

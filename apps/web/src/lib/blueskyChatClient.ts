@@ -25,9 +25,11 @@ export type ChatAction =
   | { kind: "send"; convoId: string; text: string }
   | { kind: "read"; convoId: string; messageId?: string }
   | { kind: "delete"; convoId: string; messageId: string }
+  | { kind: "addReaction" | "removeReaction"; convoId: string; messageId: string; value: string }
   | { kind: "mute" | "unmute"; convoId: string };
 
-export async function performBlueskyChatAction(session: OAuthSession, viewerDid: string, action: ChatAction) {
+export async function performBlueskyChatAction(session: OAuthSession, viewerDid: string, action: ChatAction, assertViewer?: () => void) {
+  assertViewer?.();
   const convo = createAuthenticatedChatAgent(session, viewerDid).chat.bsky.convo;
   if (action.kind === "start") {
     const didPattern = /^did:(plc:[a-z2-7]{24}|web:[^\s/?#]+)$/;
@@ -41,6 +43,7 @@ export async function performBlueskyChatAction(session: OAuthSession, viewerDid:
       if (!didPattern.test(response.data.did)) throw new Error("The recipient handle could not be resolved.");
       return response.data.did;
     }));
+    assertViewer?.();
     const members = [...new Set(resolved)];
     return (await convo.getConvoForMembers({ members })).data;
   }
@@ -55,6 +58,10 @@ export async function performBlueskyChatAction(session: OAuthSession, viewerDid:
     case "delete":
       if (!action.messageId) throw new Error("Select a message.");
       return (await convo.deleteMessageForSelf({ convoId: action.convoId, messageId: action.messageId })).data;
+    case "addReaction":
+    case "removeReaction":
+      if (!action.messageId || !["❤️", "👍", "😂", "😮", "😢", "🙏"].includes(action.value)) throw new Error("Select a valid message reaction.");
+      return (await convo[action.kind]({ convoId: action.convoId, messageId: action.messageId, value: action.value })).data;
     case "mute": return (await convo.muteConvo({ convoId: action.convoId })).data;
     case "unmute": return (await convo.unmuteConvo({ convoId: action.convoId })).data;
   }

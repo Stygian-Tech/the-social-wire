@@ -14,7 +14,12 @@ import { moderateSocialPost } from "./socialModeration";
 import { SocialVideoPlayer } from "./SocialVideoPlayer";
 import { SocialImageGallery } from "./SocialImageGallery";
 import { SocialRichText } from "./SocialRichText";
-import { socialHttpsUrl, socialPostUrl, socialProfileUrl } from "./socialUrls";
+import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
+import { socialExternalGif } from "./socialExternalGif";
+import { socialGalleryImages } from "./socialGalleryImages";
+import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
+import Link from "next/link";
+import { SocialCashtags } from "./SocialCashtags";
 
 type Embed = AppBskyFeedDefs.PostView["embed"] | AppBskyEmbedRecord.View;
 
@@ -38,9 +43,13 @@ export function SocialPostEmbed({
     );
   if (AppBskyEmbedImages.isView(embed))
     return <SocialImageGallery images={embed.images} />;
+  const gallery = socialGalleryImages(embed);
+  if (gallery) return <SocialImageGallery images={gallery} />;
   if (AppBskyEmbedExternal.isView(embed)) {
     const href = socialHttpsUrl(embed.external.uri);
     if (!href) return null;
+    const gif = socialExternalGif(embed.external);
+    if (gif) return <SocialImageGallery images={[gif]} />;
     const thumb = socialHttpsUrl(embed.external.thumb);
     return (
       <a
@@ -154,16 +163,15 @@ export function SocialPostEmbed({
       profileList.noOverride ? (
         <p className="text-sm text-muted-foreground">Account</p>
       ) : (
-        <a
-          href={socialProfileUrl(quote.author.did)}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          href={socialProfilePageHref(quote.author.did)}
           className="text-sm font-medium hover:underline"
         >
           {quote.author.displayName || quote.author.handle}
-        </a>
+        </Link>
       )}
       <SocialRichText record={record.value} />
+      {!media.blur && !media.filter && !media.noOverride ? <SocialCashtags record={record.value} /> : null}
       {media.blur || media.filter || media.noOverride ? (
         <p className="text-sm text-muted-foreground">Media withheld.</p>
       ) : (

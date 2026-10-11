@@ -59,6 +59,30 @@ describe("real chat protocol transport", () => {
     } } as unknown as OAuthSession;
     expect(await performBlueskyChatAction(session, did, { kind: "start", members: ["@bob.test"] })).toEqual({ convo });
   });
+  it("uses narrow real reaction RPCs and rejects unsupported values before writing", async () => {
+    configure("did:web:chat.local.test");
+    const calls: { method: string; body: unknown }[] = [];
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      const url = new URL(path, "https://pds.test");
+      expect(new Headers(init?.headers).get("atproto-proxy")).toBe("did:web:chat.local.test#bsky_chat");
+      calls.push({ method: url.pathname.split(".").at(-1)!, body: JSON.parse(await new Response(init?.body).text()) });
+      return Response.json({ message: { ...message, $type: "chat.bsky.convo.defs#messageView" } });
+    } } as unknown as OAuthSession;
+    await performBlueskyChatAction(session, did, { kind: "addReaction", convoId: "c", messageId: "m", value: "❤️" });
+    await performBlueskyChatAction(session, did, { kind: "removeReaction", convoId: "c", messageId: "m", value: "❤️" });
+    expect(calls).toEqual([{ method: "addReaction", body: { convoId: "c", messageId: "m", value: "❤️" } }, { method: "removeReaction", body: { convoId: "c", messageId: "m", value: "❤️" } }]);
+    await expect(performBlueskyChatAction(session, did, { kind: "addReaction", convoId: "c", messageId: "m", value: "invalid" })).rejects.toThrow("valid message reaction");
+    expect(calls).toHaveLength(2);
+  });
+  it("checks the live viewer again after handle resolution before opening a conversation", async () => {
+    configure("did:web:chat.local.test");
+    let current = true;
+    const resolve = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async () => { current = false; return Response.json({ did: peer }); }, { preconnect: globalThis.fetch.preconnect })); restores.push(() => resolve.mockRestore());
+    let writes = 0;
+    const session = { did, fetchHandler: async () => { writes++; return Response.json({ convo }); } } as unknown as OAuthSession;
+    await expect(performBlueskyChatAction(session, did, { kind: "start", members: ["bob.test"] }, () => { if (!current) throw new Error("Your account changed"); })).rejects.toThrow("account changed");
+    expect(writes).toBe(0);
+  });
   it("rejects empty/oversized messages and malformed recipients before RPC", async () => {
     configure("did:web:chat.local.test");
     const session = { did, fetchHandler: async () => { throw new Error("unexpected transport"); } } as unknown as OAuthSession;

@@ -73,10 +73,86 @@ function imageFetch() {
   ) as typeof fetch;
 }
 
+function pointer(target: Element, type: string, x: number, y: number, id = 1) {
+  const event = new window.Event(type, { bubbles: true, cancelable: true });
+  for (const [key, value] of Object.entries({ clientX: x, clientY: y, pointerId: id, pointerType: "touch", button: 0 })) Object.defineProperty(event, key, { value });
+  fireEvent(target, event);
+  return event;
+}
+const secondImage = { ...image, thumb: "https://publisher.example/two.jpg", fullsize: "https://publisher.example/two-original.jpg", alt: "Second Photo" };
+
 describe("Social Image Gallery", () => {
+  it("navigates one uncropped photo at a time using arrows, dots, and keyboard", () => {
+    render(<SocialImageGallery images={[image, secondImage]} />);
+    expect(screen.getAllByRole("img")).toHaveLength(1);
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Previous Photo" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Next Photo" }));
+    expect(screen.getByRole("img").getAttribute("src")).toBe(secondImage.thumb);
+    expect(screen.getByRole("button", { name: "Show Photo 2" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "View Image 2 Alt Text" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("group", { name: "Post Images" }), { key: "ArrowLeft" });
+    expect(screen.getByRole("img").getAttribute("src")).toBe(image.thumb);
+    fireEvent.click(screen.getByRole("button", { name: "Show Photo 2" }));
+    fireEvent.keyDown(screen.getByRole("group", { name: "Post Images" }), { key: "Home" });
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("swipes horizontally without stealing vertical scroll or opening the viewer after dragging", () => {
+    render(<SocialImageGallery images={[image, secondImage]} />);
+    const button = screen.getByRole("button", { name: "Open Image 1: A portrait" });
+    const container = button.parentElement!;
+    const capture = mock(() => {});
+    Object.defineProperty(container, "setPointerCapture", { value: capture });
+    expect(container.style.touchAction).toBe("pan-y");
+    pointer(button, "pointerdown", 150, 50);
+    const vertical = pointer(container, "pointermove", 145, 120);
+    pointer(container, "pointerup", 145, 120);
+    expect(vertical.defaultPrevented).toBe(false);
+    expect(capture).not.toHaveBeenCalled();
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    pointer(button, "pointerdown", 150, 50);
+    pointer(button, "pointerdown", 140, 60, 2);
+    pointer(container, "pointermove", 60, 55, 2);
+    pointer(container, "pointerup", 60, 55, 2);
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    pointer(button, "pointerdown", 150, 50);
+    const horizontal = pointer(container, "pointermove", 60, 55);
+    pointer(container, "pointerup", 60, 55);
+    expect(horizontal.defaultPrevented).toBe(true);
+    expect(capture).toHaveBeenCalledWith(1);
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open Image 2: Second Photo" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("navigates the full-screen carousel at normal zoom and keeps arrow panning when zoomed", async () => {
+    imageFetch();
+    render(<SocialImageGallery images={[image, secondImage]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Image 1: A portrait" }));
+    let dialog = await screen.findByRole("dialog");
+    fireEvent.keyDown(within(dialog).getByRole("group", { name: "Image Viewer" }), { key: "ArrowRight" });
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("img").getAttribute("src")).toBe(secondImage.fullsize));
+    dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Zoom In" }));
+    fireEvent.keyDown(within(dialog).getByRole("group", { name: "Image Viewer" }), { key: "ArrowLeft" });
+    expect(within(dialog).getByRole("img").getAttribute("src")).toBe(secondImage.fullsize);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset Zoom" }));
+    const viewport = within(dialog).getByRole("group", { name: "Image Viewer" });
+    pointer(viewport, "pointerdown", 50, 50);
+    pointer(viewport, "pointermove", 150, 55);
+    pointer(viewport, "pointerup", 150, 55);
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("img").getAttribute("src")).toBe(image.fullsize));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+  });
+
   it("fills a single column with uncropped independently rounded intrinsic-ratio images", () => {
     const one = renderToStaticMarkup(<SocialImageGallery images={[image]} />);
-    expect(one).toContain("grid-cols-1");
+    expect(one).toContain("Post Images");
+    expect(one).not.toContain("Next Photo");
     expect(one).not.toContain("grid-cols-2");
     expect(one).toContain('width="600" height="1200"');
     expect(one).toContain("h-auto w-full");
@@ -90,8 +166,9 @@ describe("Social Image Gallery", () => {
         ]}
       />,
     );
-    expect(many).toContain("grid-cols-2 items-start");
-    expect(many.match(/rounded-xl/g)?.length).toBe(2);
+    expect(many).toContain("carousel");
+    expect(many).toContain("Next Photo");
+    expect(many.match(/<img /g)?.length).toBe(1);
   });
   it("opens the full-size dialog, resets zoom on reopen and does not navigate the post", async () => {
     imageFetch();

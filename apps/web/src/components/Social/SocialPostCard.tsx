@@ -2,6 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Remote PDS media preserve publisher formats. */
 import type { ReactNode } from "react";
+import Link from "next/link";
 import {
   AppBskyFeedDefs,
   AppBskyFeedPost,
@@ -12,8 +13,10 @@ import { moderateSocialPost } from "./socialModeration";
 import { SocialPostEmbed } from "./SocialPostEmbed";
 import { SocialRichText } from "./SocialRichText";
 import { SocialPostLabels } from "./SocialPostLabels";
+import { SocialCashtags } from "./SocialCashtags";
 import { SocialPostTimestamp } from "./SocialPostTimestamp";
-import { socialHttpsUrl, socialPostUrl, socialProfileUrl } from "./socialUrls";
+import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
+import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
 
 export function SocialPostCard({
   item,
@@ -93,7 +96,7 @@ export function SocialPostCard({
         <p className="text-xs text-muted-foreground">Reply</p>
       ) : null}
       <div className="flex items-center gap-3">
-        {image ? (
+        <Link href={socialProfilePageHref(post.author.did)} aria-label={`Open Profile: ${name}`} className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-ring">{image ? (
           <img
             src={image}
             alt=""
@@ -108,16 +111,14 @@ export function SocialPostCard({
             className="size-10 shrink-0 rounded-full bg-muted"
             aria-hidden="true"
           />
-        )}
+        )}</Link>
         <div className="min-w-0 flex-1">
-          <a
-            href={socialProfileUrl(post.author.did)}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href={socialProfilePageHref(post.author.did)}
             className="block truncate text-sm font-semibold hover:underline"
           >
             {name}
-          </a>
+          </Link>
           {!identity.blur && !identity.filter && !identity.noOverride ? (
             <p className="truncate text-xs text-muted-foreground">
               @{post.author.handle}
@@ -128,6 +129,7 @@ export function SocialPostCard({
       </div>
       <SocialPostLabels post={post} moderation={moderation} />
       <SocialRichText record={record.value} />
+      {!media.blur && !media.filter && !media.noOverride ? <SocialCashtags record={record.value} /> : null}
       {post.embed ? (
         media.blur || media.filter || media.noOverride ? (
           <p className="text-sm text-muted-foreground">Media withheld.</p>

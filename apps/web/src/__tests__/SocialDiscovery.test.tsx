@@ -8,6 +8,7 @@ import * as Auth from "@/hooks/useAuth";
 import * as Navigation from "next/navigation";
 import * as Catalog from "@/lib/blueskySocialClient";
 import * as Client from "@/lib/blueskySocialDiscoveryClient";
+import * as ExploreDiscovery from "@/lib/socialExploreDiscoveryClient";
 import * as Interactive from "@/components/Social/InteractiveSocialPost";
 import { SocialExplore } from "@/components/Social/SocialExplore";
 import { SocialNotifications } from "@/components/Social/SocialNotifications";
@@ -30,6 +31,8 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 function restoreSpy(spy: { mockRestore(): void }) { restores.push(() => spy.mockRestore()); return spy; }
 beforeEach(() => {
   replaceRoute.mockClear();
+  restoreSpy(spyOn(ExploreDiscovery, "getSocialTrendingTopics").mockResolvedValue({ topics: [{ topic: "Trending Science", link: "/search?q=science" }], suggested: [] }));
+  restoreSpy(spyOn(ExploreDiscovery, "getSocialRecommendedFeeds").mockResolvedValue([]));
   restoreSpy(spyOn(Navigation, "useRouter").mockReturnValue({ replace: replaceRoute, push: () => {} } as unknown as ReturnType<typeof Navigation.useRouter>));
   restoreSpy(spyOn(Navigation, "useSearchParams").mockReturnValue(new URLSearchParams() as ReturnType<typeof Navigation.useSearchParams>));
   viewer = alice; oauthDid = alice;
@@ -188,4 +191,15 @@ it("notification mark-seen failure retains unread rows and allows another attemp
   expect(screen.getByText("Unread")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Mark All As Read" }));
   await waitFor(() => expect(mark).toHaveBeenCalledTimes(2));
+});
+
+
+it("Trending Topics updates Posts search and the shareable Explore URL", async () => {
+  const fetch = spyOn(Client, "getSocialExplorePage").mockResolvedValue({ actors: [], posts: [] }); restoreSpy(fetch);
+  render(<SocialExplore />, { wrapper: Wrapper });
+  fireEvent.click(await screen.findByRole("button", { name: "Trending Science" }));
+  await waitFor(() => expect(fetch.mock.calls.some(call => call[0].query === "science" && call[0].kind === "posts")).toBe(true));
+  expect(replaceRoute).toHaveBeenCalledWith("/social/explore?q=science&type=posts", { scroll: false });
+  expect((screen.getByRole("textbox", { name: "Search Bluesky" }) as HTMLInputElement).value).toBe("science");
+  expect(screen.queryByText("Trending Topics")).toBeNull();
 });

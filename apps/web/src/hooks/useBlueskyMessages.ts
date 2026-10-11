@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { getBlueskyConversations, getBlueskyMessages, performBlueskyChatAction, type ChatAction } from "@/lib/blueskyChatClient";
@@ -13,12 +14,15 @@ function nextCursor(page: { cursor?: string }, params: unknown[]) {
 export function useBlueskyMessages(convoId?: string) {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
   const client = useQueryClient();
+  const currentViewer = useRef(session?.did);
+  const mounted = useRef(true);
+  useLayoutEffect(() => { currentViewer.current = session?.did; mounted.current = true; return () => { mounted.current = false; }; }, [session?.did]);
   const prefix = ["blueskySocial", session?.did ?? "", "messages", oauthSessionReloadSeq] as const;
   const available = !!getAtprotoNetwork().chatServiceDid;
   function requireSession(did = session?.did) {
     const oauth = getOAuthSession();
     if (!oauth) throw new Error(SCOPE_RECOVERY_MESSAGE);
-    if (!did || oauth.did !== did) throw new Error("Your account changed. Please reload Messages.");
+    if (!mounted.current || !did || oauth.did !== did || currentViewer.current !== did) throw new Error("Your account changed. Please reload Messages.");
     return oauth;
   }
   const conversations = useInfiniteQuery({
@@ -36,7 +40,7 @@ export function useBlueskyMessages(convoId?: string) {
     retry: false, staleTime: 3_000, refetchInterval: 5_000,
   });
   const action = useMutation({
-    mutationFn: ({ did, action }: { did: string; action: ChatAction }) => performBlueskyChatAction(requireSession(did), did, action),
+    mutationFn: ({ did, action }: { did: string; action: ChatAction }) => performBlueskyChatAction(requireSession(did), did, action, () => { requireSession(did); }),
     onSuccess: (_result, variables) => {
       if (getOAuthSession()?.did !== variables.did) return;
       void client.invalidateQueries({ queryKey: ["blueskySocial", variables.did, "messages"] });

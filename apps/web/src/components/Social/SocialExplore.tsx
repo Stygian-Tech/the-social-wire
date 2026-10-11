@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { moderateProfile } from "@atproto/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,10 +16,12 @@ import { useSocialExplore } from "@/hooks/useSocialDiscovery";
 import { socialDiscoveryErrorMessage, type SocialExploreKind } from "@/lib/blueskySocialDiscoveryClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { InteractiveSocialPost } from "./InteractiveSocialPost";
+import { SocialExploreDiscovery } from "./SocialExploreDiscovery";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
-import { socialHttpsUrl, socialProfileUrl } from "./socialUrls";
+import { socialHttpsUrl } from "./socialUrls";
+import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
 
 export function SocialExplore() {
   const { session } = useAuth();
@@ -75,6 +78,7 @@ function SocialExploreViewer() {
           <Button variant={kind === "posts" ? "default" : "outline"} aria-pressed={kind === "posts"} onClick={() => search(query, "posts")}>Posts</Button>
           <Button variant={kind === "people" ? "default" : "outline"} aria-pressed={kind === "people"} onClick={() => search(query, "people")}>People</Button>
         </div>
+        <SocialExploreDiscovery moderation={moderation} savedFeeds={catalog.data?.feeds ?? []} enabled={!query} search={value => { setDraft(value); search(value, "posts"); }} />
         {error ? <section role="alert" className="flex flex-col items-start gap-3 py-4">
           <h2 className="text-lg font-semibold">Explore Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>
           {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={() => { void refresh(); }}>Retry</Button>}
@@ -83,10 +87,10 @@ function SocialExploreViewer() {
           {posts.map(post => <InteractiveSocialPost key={post.uri} item={{ post }} moderation={moderation} />)}
           {actors.map(actor => {
             const avatarHidden = moderateProfile(actor, moderation).ui("avatar").blur;
-            return <a key={actor.did} href={socialProfileUrl(actor.did)} target="_blank" rel="noopener noreferrer" className="flex items-start gap-3 rounded-2xl border bg-card p-4">
+            return <Link key={actor.did} href={socialProfilePageHref(actor.did, `/social/explore${params?.toString() ? `?${params.toString()}` : ""}`)} className="flex items-start gap-3 rounded-2xl border bg-card p-4">
               <Avatar src={avatarHidden ? undefined : socialHttpsUrl(actor.avatar)} alt="" size={40} />
               <div className="min-w-0 flex-1"><p className="break-words font-semibold">{actor.displayName || actor.handle}</p><p className="break-all text-sm text-muted-foreground">@{actor.handle}</p>{actor.description ? <p className="mt-2 whitespace-pre-wrap break-words text-sm">{actor.description}</p> : null}</div>
-            </a>;
+            </Link>;
           })}
           {!posts.length && !actors.length ? <p className="py-8 text-center text-sm text-muted-foreground">{query ? "No matching results to show." : "No suggestions to show right now."}</p> : null}
           {results.hasNextPage ? <Button variant="outline" disabled={results.isFetchingNextPage} onClick={() => { void results.fetchNextPage(); }}>{results.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}

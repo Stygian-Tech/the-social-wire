@@ -1,15 +1,34 @@
 "use client";
 
-import { ChatBskyConvoDefs, type ChatBskyConvoGetMessages } from "@atproto/api";
-import { Button } from "@/components/ui/button";
+import { AppBskyEmbedRecord, ChatBskyConvoDefs, type ChatBskyConvoGetMessages, type ModerationOpts } from "@atproto/api";
+import { MoreHorizontal, Reply, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useSocialPostNavigation } from "@/hooks/useSocialPostNavigation";
+import { SocialChatRichText } from "./SocialChatRichText";
+import { SocialChatPostPreview } from "./SocialChatPostPreview";
+import { SocialPostEmbed } from "./SocialPostEmbed";
 
+export const CHAT_REACTIONS = ["❤️", "👍", "😂", "😮", "😢", "🙏"] as const;
 type Message = ChatBskyConvoGetMessages.OutputSchema["messages"][number];
-export function SocialChatMessage({ message, viewerDid, pending, onDelete }: { message: Message; viewerDid: string; pending: boolean; onDelete: (id: string) => void }) {
-  if (ChatBskyConvoDefs.isDeletedMessageView(message)) return <p className="py-2 text-sm italic text-muted-foreground">Message Deleted</p>;
-  if (!ChatBskyConvoDefs.isMessageView(message)) return <p className="py-2 text-sm text-muted-foreground">Conversation Updated</p>;
+export function SocialChatMessage({ message, viewerDid, pending, moderation, onDelete, onReply, onReaction }: { message: Message; viewerDid: string; pending: boolean; moderation?: ModerationOpts; onDelete: (id: string) => void; onReply: (text: string) => void; onReaction: (messageId: string, value: string, remove: boolean) => void }) {
+  const navigation = useSocialPostNavigation();
+  if (ChatBskyConvoDefs.isDeletedMessageView(message)) return <p className="py-1 text-xs italic text-muted-foreground">Message Deleted</p>;
+  if (!ChatBskyConvoDefs.isMessageView(message)) return <p className="py-1 text-xs text-muted-foreground">Conversation Updated</p>;
   const own = message.sender.did === viewerDid;
-  return <article className={`flex flex-col gap-1 rounded-lg p-3 ${own ? "ml-8 bg-primary/10" : "mr-8 bg-muted"}`}>
-    <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
-    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><time dateTime={message.sentAt}>{new Date(message.sentAt).toLocaleString()}</time><Button variant="ghost" size="sm" disabled={pending} onClick={() => onDelete(message.id)}>Delete For Me</Button></div>
-  </article>;
+  const reactions = [...new Set(message.reactions?.map(reaction => reaction.value))];
+  const reacted = (value: string) => !!message.reactions?.some(reaction => reaction.value === value && reaction.sender.did === viewerDid);
+  const stamp = new Date(message.sentAt);
+  return <div className={`flex ${own ? "justify-end" : "justify-start"}`}><article aria-label={own ? "Sent Message" : "Received Message"} className={`flex w-fit min-w-0 max-w-[85%] flex-col gap-1 rounded-xl px-3 py-2 ${own ? "bg-primary/10" : "bg-muted"}`}>
+    <SocialChatRichText message={message} />
+    {!message.embed ? <SocialChatPostPreview text={message.text} moderation={moderation} /> : null}
+    {message.embed ? AppBskyEmbedRecord.isView(message.embed) && moderation?.userDid === viewerDid ? <div className="mt-1"><SocialPostEmbed embed={message.embed} moderation={moderation} onOpenPost={post => navigation.openPost(post.uri)} /></div> : <p className="text-xs text-muted-foreground">Attachment unavailable.</p> : null}
+    {reactions.length ? <div className="flex flex-wrap gap-1">{reactions.map(value => <button key={value} type="button" disabled={pending} aria-label={`${reacted(value) ? "Remove" : "Add"} Reaction ${value}`} aria-pressed={reacted(value)} onClick={() => onReaction(message.id, value, reacted(value))} className="rounded-full border px-2 py-0.5 text-xs hover:bg-accent">{value} {message.reactions?.filter(reaction => reaction.value === value).length}</button>)}</div> : null}
+    <div className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">{!Number.isNaN(stamp.getTime()) ? <time dateTime={message.sentAt} title={stamp.toLocaleString()}>{stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time> : null}
+      <DropdownMenu><DropdownMenuTrigger disabled={pending} aria-label="Message Actions" className="flex min-h-7 min-w-7 items-center justify-center rounded hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"><MoreHorizontal className="size-3.5" /></DropdownMenuTrigger><DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onReply(message.text)}><Reply className="size-4" />Reply</DropdownMenuItem>
+        {CHAT_REACTIONS.map(value => <DropdownMenuItem key={value} onClick={() => onReaction(message.id, value, reacted(value))}>{reacted(value) ? "Remove" : "React"} {value}</DropdownMenuItem>)}
+        <DropdownMenuItem variant="destructive" onClick={() => onDelete(message.id)}><Trash2 className="size-4" />Delete For Me</DropdownMenuItem>
+      </DropdownMenuContent></DropdownMenu>
+    </div>
+  </article></div>;
 }

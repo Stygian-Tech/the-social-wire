@@ -7,8 +7,10 @@ import { MyPublicationsSection } from "./MyPublicationsSection";
 import { ProfileTimeline } from "./ProfileTimeline";
 import type { ProfileSection } from "@/lib/blueskyProfileClient";
 
-const sections = ["posts", "replies", "media", "likes", "publications"] as const;
-export function ProfileContent() {
+const ownSections = ["posts", "replies", "media", "likes", "publications"] as const;
+const otherSections = ["posts", "replies", "media", "likes"] as const;
+export function ProfileContent({ actor, own = true }: { actor?: string; own?: boolean }) {
+  const sections = own ? ownSections : otherSections;
   const [selected, setSelected] = useState<ProfileSection | "publications">("posts");
   useEffect(() => {
     const sync = () => {
@@ -18,7 +20,7 @@ export function ProfileContent() {
     sync();
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
-  }, []);
+  }, [sections]);
   return <>
     <nav aria-label="Profile Content" className={`sticky top-2 z-10 m-2 p-3 ${floatingGlassClasses}`}>
       <div className="mx-auto flex max-w-2xl gap-2 overflow-x-auto">
@@ -31,7 +33,7 @@ export function ProfileContent() {
       </div>
     </nav>
     <section aria-label={`${selected.charAt(0).toUpperCase() + selected.slice(1)} Content`}>
-      {selected === "publications" ? <MyPublicationsSection /> : <ProfileTimeline key={selected} section={selected} />}
+      {selected === "publications" ? <MyPublicationsSection /> : <ProfileTimeline key={`${actor ?? "viewer"}:${selected}`} section={selected} actor={actor} />}
     </section>
   </>;
 }

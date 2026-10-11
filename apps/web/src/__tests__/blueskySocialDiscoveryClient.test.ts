@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
-import type { Agent, AppBskyActorDefs, ModerationOpts } from "@atproto/api";
+import type { Agent, AppBskyActorDefs, AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as BaseClient from "@/lib/blueskySocialClient";
 import { getSocialExplorePage, getSocialNotificationsPage, getSocialNotificationUnread, markSocialNotificationsSeen, notificationPostUri, nextDiscoveryCursor, type SocialNotification } from "@/lib/blueskySocialDiscoveryClient";
@@ -17,7 +17,7 @@ function agent() {
     actors: mock(async () => ({ data: { actors: [actor] } })),
     search: mock(async () => ({ data: { posts: [] } })),
     notifications: mock(async () => ({ data: { notifications: [] as SocialNotification[], cursor: "next", seenAt: "2026-10-10T00:00:00Z" } })),
-    posts: mock(async (_params: { uris: string[] }, _options: { signal?: AbortSignal }) => { void _params; void _options; return { data: { posts: [] } }; }),
+    posts: mock(async (_params: { uris: string[] }, _options: { signal?: AbortSignal }) => { void _params; void _options; return { data: { posts: [] as AppBskyFeedDefs.PostView[] } }; }),
     unread: mock(async () => ({ data: { count: 3 } })),
     seen: mock(async () => ({ success: true })),
   };
@@ -89,4 +89,27 @@ describe("authenticated discovery clients", () => {
     expect(nextDiscoveryCursor({ cursor: "loop" }, [undefined, "loop"])).toBeUndefined();
     expect(nextDiscoveryCursor({ cursor: "next" }, [undefined])).toBe("next");
   });
+});
+
+
+it("hydrates the nested reply and immediate parent, never the thread root", async () => {
+  const calls = agent();
+  const replyUri = "at://did:plc:other/app.bsky.feed.post/nested";
+  const parentUri = "at://did:plc:viewer/app.bsky.feed.post/parent";
+  const rootUri = "at://did:plc:third/app.bsky.feed.post/root";
+  const reply = { ...notification("reply", replyUri), reasonSubject: rootUri, record: { $type: "app.bsky.feed.post", text: "Nested reply", createdAt: "2026-10-10T00:00:00Z", reply: { parent: { uri: parentUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku" }, root: { uri: rootUri, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku" } } } };
+  calls.notifications.mockResolvedValue({ data: { notifications: [reply], cursor: "next", seenAt: "2026-10-10T00:00:00Z" } });
+  expect(notificationPostUri(reply)).toBe(replyUri);
+  for (const reason of ["mention", "quote", "subscribed-post"]) expect(notificationPostUri({ ...reply, reason })).toBe(replyUri);
+  await getSocialNotificationsPage({ session, moderation });
+  expect(calls.posts.mock.calls[0]![0].uris).toEqual([replyUri, parentUri]);
+});
+
+it("discards mismatched hydration results instead of using a parent for a missing reply", async () => {
+  const calls = agent();
+  calls.notifications.mockResolvedValue({ data: { notifications: [notification()], cursor: "next", seenAt: "2026-10-10T00:00:00Z" } });
+  calls.posts.mockResolvedValue({ data: { posts: [{ uri: "at://did:plc:viewer/app.bsky.feed.post/parent", cid: "bafyreia", author: { ...actor, $type: "app.bsky.actor.defs#profileViewBasic" }, record: {}, indexedAt: "2026-10-10T00:00:00Z" }] } });
+  const page = await getSocialNotificationsPage({ session, moderation });
+  expect(page.posts).toEqual([]);
+  expect(notificationPostUri(page.notifications[0]!)).toBe(notification().uri);
 });
