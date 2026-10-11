@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
+import * as authStorage from "@/lib/auth";
 import * as client from "@/lib/podcasts/client";
 import * as player from "@/components/Podcasts/PodcastPlayerProvider";
 import { PodcastClips } from "@/components/Podcasts/PodcastClips";
@@ -16,10 +17,11 @@ afterEach(() => {
   cleanup();
   for (const restore of restores.splice(0).reverse()) restore();
 });
-describe("Podcast clip caption exports", () => {
-  for (const includeCaptions of [true, false]) {
-    it(`prepares exports with publisher captions ${includeCaptions ? "enabled by default" : "explicitly disabled"}`, async () => {
+describe("Static podcast clip exports", () => {
+  it("prepares a static artwork export without changing caption frames", async () => {
       const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+      const stored = spyOn(authStorage, "getStoredOAuthDid").mockReturnValue(oauth.did);
+      restores.push(() => stored.mockRestore());
       const getOAuthSession = () => oauth;
       const authSpy = spyOn(auth, "useAuth").mockReturnValue({
         session: { did: "did:plc:viewer" },
@@ -51,11 +53,7 @@ describe("Podcast clip caption exports", () => {
           }}
         />,
       );
-      const captions = screen.getByRole("checkbox", {
-        name: /Include Captions/,
-      }) as HTMLInputElement;
-      expect(captions.checked).toBe(true);
-      if (!includeCaptions) fireEvent.click(captions);
+      expect(screen.queryByRole("checkbox", { name: /Include Captions/ })).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Prepare Exports" }));
       await waitFor(() =>
         expect(requests).toHaveBeenCalledWith(
@@ -63,20 +61,21 @@ describe("Podcast clip caption exports", () => {
           "clips",
           "POST",
           expect.objectContaining({
-            includeCaptions,
+            includeCaptions: false,
             startSeconds: 0,
             endSeconds: 30,
           }),
         ),
       );
-    });
-  }
+  });
 });
 
 const episode = { id: "episode", showId: "show", title: "Episode", audioUrl: "https://publisher.example/audio.mp3", durationSeconds: 120, publishedAt: "2026-10-04T12:00:00Z", transcripts: [] };
 const draft: client.PodcastClip = { id: "draft", episodeId: episode.id, title: "Alice Private Draft", startSeconds: 0, endSeconds: 30, status: "pending", createdAt: "2026-10-05" };
 function clipFixture() {
   const oauth = { did: "did:alice" } as unknown as OAuthSession;
+  const stored = spyOn(authStorage, "getStoredOAuthDid").mockReturnValue(oauth.did);
+  restores.push(() => stored.mockRestore());
   const getOAuthSession = () => oauth;
   const authSpy = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
   const playerSpy = spyOn(player, "usePodcastPlayer").mockReturnValue({ duration: 120, position: 0, playing: false } as ReturnType<typeof player.usePodcastPlayer>);
@@ -151,4 +150,26 @@ it("removes loaded private draft rows immediately on account change", async () =
   view.rerender(<PodcastClips episode={episode} />);
   expect(screen.queryByText(draft.title)).toBeNull();
   expect(requests).toHaveBeenCalledTimes(1);
+});
+
+it("invalidates deferred polling synchronously across cross-tab A to B to A identity changes", async () => {
+  clipFixture();
+  let resolveOld: (result: { clips: client.PodcastClip[] }) => void = () => {};
+  let oldSignal: AbortSignal | undefined;
+  const requests = spyOn(client, "podcastRequest").mockImplementation(<T,>(_oauth: OAuthSession, _path: string, _method?: string, _body?: unknown, signal?: AbortSignal) => {
+    if (!oldSignal) {
+      oldSignal = signal;
+      return new Promise<T>(resolve => { resolveOld = result => resolve(result as T); });
+    }
+    return Promise.resolve({ clips: [{ ...draft, id: "fresh", title: "Fresh Account Clip" }] } as T);
+  });
+  restores.push(() => requests.mockRestore());
+  render(<PodcastClips episode={episode} />);
+  await waitFor(() => expect(requests).toHaveBeenCalledTimes(1));
+  fireEvent(window, new window.StorageEvent("storage", { key: "@@atproto/oauth-client-browser(sub)", newValue: "did:bob" }));
+  expect(oldSignal?.aborted).toBe(true);
+  fireEvent(window, new window.StorageEvent("storage", { key: "@@atproto/oauth-client-browser(sub)", newValue: "did:alice" }));
+  await screen.findByText("Fresh Account Clip");
+  resolveOld({ clips: [draft] });
+  await waitFor(() => expect(screen.queryByText(draft.title)).toBeNull());
 });

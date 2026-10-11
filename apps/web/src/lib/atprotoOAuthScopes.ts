@@ -50,7 +50,7 @@ export const STREAMPLACE_REPO_SCOPES = [
   "repo:place.stream.chat.message?action=create",
 ] as const;
 
-/** Published Bluesky bundles grant unused gate/video/post-delete powers. */
+/** Published Bluesky bundles grant unused gate/post-delete powers. */
 export const BLUESKY_SOCIAL_REPO_SCOPES = [
   "repo:app.bsky.feed.post?action=create",
   "repo:app.bsky.graph.list?action=create&action=update&action=delete",
@@ -135,6 +135,13 @@ export const PDS_READ_STATE_REPO_SCOPES = [
   "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
 ] as const;
 
+/** Video service delegates blob upload back to the dynamically discovered viewer PDS. */
+export const BLUESKY_PODCAST_VIDEO_SCOPES = [
+  "blob:video/mp4",
+  "rpc:com.atproto.repo.uploadBlob?aud=*",
+  "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app",
+] as const;
+
 export const AT_PROTO_OAUTH_SCOPES = [
   ...PDS_READ_STATE_REPO_SCOPES,
   "atproto",
@@ -156,5 +163,6 @@ export const AT_PROTO_OAUTH_SCOPES = [
   USER_INPUT_OAUTH_SCOPE,
   USER_INPUT_UPVOTE_OAUTH_SCOPE,
   USER_INPUT_BLOB_OAUTH_SCOPE,
+  ...BLUESKY_PODCAST_VIDEO_SCOPES,
   "repo:app.thesocialwire.podcast.clip?action=create&action=update&action=delete",
 ].join(" ");
