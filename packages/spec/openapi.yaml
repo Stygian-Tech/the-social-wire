@@ -1262,6 +1262,31 @@ components:
         database: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
       additionalProperties: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
 
+    OperationsTabUsage:
+      type: object
+      additionalProperties: false
+      required: [observedAt, trackingStart, dau, wau, mau, tabs]
+      properties:
+        sourceEnvironment: { type: string, enum: [local, dev, prod] }
+        observedAt: { type: string, format: date-time }
+        trackingStart: { type: [string, "null"], format: date-time }
+        dau: { type: integer, minimum: 0 }
+        wau: { type: integer, minimum: 0 }
+        mau: { type: integer, minimum: 0 }
+        tabs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [tab, dau, wau, mau, opens, dwellMs]
+            properties:
+              tab: { type: string, enum: [home, explore, notifications, messages, bookmarks, lists, feeds, saved, archive, wire, circle, finance, sports, subscribed, following, podcasts, articles, live-post, livestream, brand-accounts, analytics, profile, content-calendar] }
+              dau: { type: integer, minimum: 0 }
+              wau: { type: integer, minimum: 0 }
+              mau: { type: integer, minimum: 0 }
+              opens: { type: integer, minimum: 0 }
+              dwellMs: { type: number, minimum: 0 }
+
     OperationsOverview:
       type: object
       additionalProperties: false
@@ -1303,6 +1328,7 @@ components:
         evidence: { $ref: "#/components/schemas/OperationsOverviewEvidence" }
         capabilities: { $ref: "#/components/schemas/OperationsCapabilities" }
         counts: { $ref: "#/components/schemas/OperationsLifecycleCounts" }
+        tabUsage: { anyOf: [{ $ref: "#/components/schemas/OperationsTabUsage" }, { type: "null" }] }
         viewers: { anyOf: [{ $ref: "#/components/schemas/OperationsViewerCounts" }, { type: "null" }] }
         viewerHistory:
           type: array
@@ -2913,28 +2939,40 @@ paths:
   /v1/telemetry/client-performance:
     post:
       operationId: recordClientPerformance
-      summary: Record bounded reader performance telemetry
+      summary: Record bounded reader performance or tab usage telemetry
       description: |
         Accepts allowlisted aggregate measurements only. DIDs, publication IDs, URLs,
-        entry IDs, titles, and arbitrary dimensions are not accepted.
+        entry IDs, titles, and arbitrary dimensions are not accepted. Tab usage stores only a
+        secret-derived pseudonym with the UTC day and allowlisted tab, retained for 30 days.
       tags: [Telemetry]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [event, durationMs, feedType, cacheState, outcome, environment]
-              properties:
-                event:
-                  type: string
-                  enum: [cached_feed_paint, uncached_feed_paint, feed_switch, fresh_merge, feed_error]
-                durationMs: { type: number, minimum: 0, maximum: 60000 }
-                feedType: { type: string, enum: [aggregate, publication] }
-                cacheState: { type: string, enum: [hit, miss] }
-                outcome: { type: string, enum: [success, error] }
-                environment: { type: string, enum: [local, dev, test, production] }
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [event, durationMs, feedType, cacheState, outcome, environment]
+                  properties:
+                    event: { type: string, enum: [cached_feed_paint, uncached_feed_paint, feed_switch, fresh_merge, feed_error] }
+                    durationMs: { type: number, minimum: 0, maximum: 60000 }
+                    feedType: { type: string, enum: [aggregate, publication] }
+                    cacheState: { type: string, enum: [hit, miss] }
+                    outcome: { type: string, enum: [success, error] }
+                    environment: { type: string, enum: [local, dev, test, production] }
+                - type: object
+                  additionalProperties: false
+                  required: [event, tab, durationMs, environment]
+                  properties:
+                    event: { type: string, enum: [tab_open, tab_dwell] }
+                    tab: { type: string, enum: [home, explore, notifications, messages, bookmarks, lists, feeds, saved, archive, wire, circle, finance, sports, subscribed, following, podcasts, articles, live-post, livestream, brand-accounts, analytics, profile, content-calendar] }
+                    durationMs:
+                      type: number
+                      minimum: 0
+                      maximum: 60000
+                      description: Exactly zero for tab_open; greater than zero for tab_dwell.
+                    environment: { type: string, enum: [local, dev, test, production] }
       responses:
         "202":
           description: Sample accepted into the bounded telemetry buffer.

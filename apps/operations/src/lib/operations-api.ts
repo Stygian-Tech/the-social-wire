@@ -1,3 +1,4 @@
+import { assertTabUsage } from "@/lib/tab-usage-contract"
 import type { OAuthSession } from "@/lib/auth"
 import { authFetch } from "@/lib/auth"
 import { operationsEnvironment } from "@/lib/app-environment"
@@ -536,6 +537,7 @@ function assertOverviewResponse(value: unknown): asserts value is Overview {
   )
     throw new Error("Operations overview failed runtime contract validation")
 
+  if (value.tabUsage !== undefined) assertTabUsage(value.tabUsage)
   assertCapabilities(value.capabilities)
   assertCounts(value.counts)
   if (

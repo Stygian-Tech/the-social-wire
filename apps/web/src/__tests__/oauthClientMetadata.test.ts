@@ -1,3 +1,4 @@
+import { skejScopesForEnvironment } from "@/lib/skej/skejEnvironment";
 import { describe, expect, it } from "bun:test";
 
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
@@ -16,7 +17,7 @@ describe("buildWebOAuthClientMetadata", () => {
     expect(metadata.redirect_uris).toEqual([
       "https://preview.example.com/callback",
     ]);
-    expect(metadata.scope).toBe(AT_PROTO_OAUTH_SCOPES);
+    expect(metadata.scope).toBe(skejScopesForEnvironment(AT_PROTO_OAUTH_SCOPES));
   });
 });
 

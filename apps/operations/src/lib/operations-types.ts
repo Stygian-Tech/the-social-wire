@@ -376,6 +376,7 @@ export type Overview = {
   alerts: Alert[]
   recentTraces: Span[]
   metricRollups: MetricRollup[]
+  tabUsage?: TabUsageSummary
   database?: DatabaseObservabilitySnapshot
   refreshedAt: string
   evidence: OverviewEvidence
@@ -461,3 +462,6 @@ export type AppViewOperationsResponse = {
   services: ServiceState[]
   evidence: EvidenceEnvelope
 }
+
+export type TabUsageRow = { tab: string; dau: number; wau: number; mau: number; opens: number; dwellMs: number }
+export type TabUsageSummary = { sourceEnvironment?: "local" | "dev" | "prod"; observedAt: string; trackingStart: string | null; dau: number; wau: number; mau: number; tabs: TabUsageRow[] }

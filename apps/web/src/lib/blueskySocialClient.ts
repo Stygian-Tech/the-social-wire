@@ -101,7 +101,7 @@ function canDisplayCatalogAvatar(decision: ModerationDecision): boolean {
   });
 }
 
-export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal): Promise<BlueskySocialCatalog> {
+export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal, options: { includeFeeds?: boolean } = {}): Promise<BlueskySocialCatalog> {
   const agent = createAuthenticatedAppViewAgent(session);
   const preferences = await agent.getPreferences();
   throwIfAborted(signal);
@@ -123,6 +123,8 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
     const avatar = safeSocialFeedAvatarUrl(service.creator.avatar);
     if (avatar && canDisplayCatalogAvatar(moderateProfile(service.creator, moderation))) labelerAvatars[service.creator.did] = avatar;
   }
+  // Brand engagement needs viewer moderation without saved-feed navigation grants.
+  if (options.includeFeeds === false) return { feeds: [], moderation };
   const feeds = socialFeedsFromPreferences(preferences.savedFeeds);
   const generators = feeds.filter(feed => feed.kind === "feed");
   const names = new Map<string, string>();

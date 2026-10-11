@@ -7,6 +7,7 @@ import {
   type OAuthSession,
 } from "@atproto/oauth-client-browser"
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types"
+import { operationsOAuthNetwork } from "@/lib/operations-oauth-network"
 import { operationsOAuthClientMetadataUrl } from "@/lib/operations-oauth-client-metadata"
 import {
   capturePdsSessionAttestationNonce,
@@ -68,7 +69,10 @@ export function getOAuthClient() {
   if (!clientPromise)
     clientPromise = BrowserOAuthClient.load({
       clientId: clientId(),
-      handleResolver: "https://bsky.social",
+      ...operationsOAuthNetwork(typeof window === "undefined" ? "" : window.location.hostname, {
+        handleResolver: process.env.NEXT_PUBLIC_LOCAL_ATPROTO_HANDLE_RESOLVER_URL,
+        plcDirectory: process.env.NEXT_PUBLIC_LOCAL_ATPROTO_PLC_URL,
+      }),
       responseMode: isLocal() ? "query" : "fragment",
       onDelete: (did, cause) => notifySessionInvalidated(did, cause),
     })

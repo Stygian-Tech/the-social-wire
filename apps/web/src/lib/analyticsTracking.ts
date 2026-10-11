@@ -3,6 +3,7 @@ export type AnalyticsEvent = { subjectUri: string; event: "impression" | "view" 
 
 const surfaces = new Set<AnalyticsSurface>(["social-feed", "article-feed", "post-viewer", "article-reader", "messages"]);
 export function analyticsSubject(element: Element): { subjectUri: string; surface: AnalyticsSurface } | undefined {
+  if (element.closest("[data-analytics-ignore]")) return;
   const subjectUri = element.getAttribute("data-analytics-subject") ?? "";
   const surface = element.getAttribute("data-analytics-surface") as AnalyticsSurface;
   if (!/^at:\/\/did:[a-z]+:[^/?#\s]+\/(app\.bsky\.feed\.post|site\.standard\.document)\/[a-zA-Z0-9._~:-]{1,512}$/.test(subjectUri) || !surfaces.has(surface)) return;

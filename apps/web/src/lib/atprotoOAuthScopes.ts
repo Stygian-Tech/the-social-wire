@@ -1,3 +1,4 @@
+import { SKEJ_SCHEDULING_SCOPES } from "@/lib/skej/skejEnvironment";
 import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 import { LATR_REPO_OAUTH_SCOPES } from "@/lib/latrCollections";
 import {
@@ -140,6 +141,7 @@ export const AT_PROTO_OAUTH_SCOPES = [
   ...SOCIAL_WIRE_REPO_SCOPES,
   ...ARTICLE_PUBLISHING_SCOPES,
   ...STREAMPLACE_REPO_SCOPES,
+  ...SKEJ_SCHEDULING_SCOPES,
   ...BLUESKY_SOCIAL_RPC_SCOPES,
   ...BLUESKY_CHAT_RPC_SCOPES,
   ...WIRE_MODERATION_RPC_SCOPES,

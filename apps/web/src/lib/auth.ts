@@ -9,6 +9,7 @@
 
 import {
   BrowserOAuthClient,
+  OAuthClient,
   OAuthResponseError,
   OAuthSession,
   TokenInvalidError,
@@ -19,7 +20,11 @@ import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 import { normalizeAppEnv, readAppEnvRaw } from "@/lib/appEnv";
 import { resolveHostedOAuthClientId } from "@/lib/oauthClientMetadata";
-import { atprotoScopesForNetwork, getAtprotoNetwork, localLoopbackOAuthScopes, authorizationScopesForClient } from "@/lib/atprotoNetwork";
+import { atprotoScopesForNetwork, getAtprotoNetwork, localLoopbackOAuthScopes, authorizationScopesForClient, compactLoopbackClientId } from "@/lib/atprotoNetwork";
+
+import { BRAND_ACCOUNT_OAUTH_SCOPES } from "@/lib/brandAccounts/brandAccountScopes";
+import { BrandAwareOAuthClient } from "@/lib/brandAccounts/BrandAwareOAuthClient";
+import { BRAND_ACCOUNTS_PATH, BRAND_LINK_STATE_PREFIX, cancelBrandLinkIntent, completeBrandLinkIntent, readBrandLinkIntent } from "@/lib/brandAccounts/brandAccountStorage";
 
 export { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 
@@ -179,19 +184,19 @@ export function localLoopbackCanonicalHref(currentHref: string): string | null {
  *
  * **Disabling loopback overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` skips the parameterized client.
  */
-function resolveClientId(): string {
+function resolveClientId(scopes = AT_PROTO_OAUTH_SCOPES): string {
   if (isLocalOAuthMode()) {
     if (typeof window === "undefined") {
       throw new Error("Local OAuth client ID resolution is browser-only.");
     }
 
     const explicitRedirect = process.env.NEXT_PUBLIC_LOCAL_REDIRECT_URI?.trim();
-    return buildAtprotoLoopbackClientId({
+    return compactLoopbackClientId(buildAtprotoLoopbackClientId({
       redirect_uris: explicitRedirect
         ? [explicitRedirect]
         : [buildDefaultLocalCallbackUrl()],
-      scope: localLoopbackOAuthScopes(atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES)),
-    });
+      scope: localLoopbackOAuthScopes(atprotoScopesForNetwork(scopes)),
+    }));
   }
   return resolveHostedClientId();
 }
@@ -217,8 +222,9 @@ type OAuthSessionInvalidationListener = (did: string, cause: unknown) => void;
 const oauthSessionInvalidationListeners =
   new Set<OAuthSessionInvalidationListener>();
 
-export function clearStoredOAuthSessionHint(): void {
+export function clearStoredOAuthSessionHint(expectedDid?: string): void {
   try {
+    if (expectedDid && localStorage.getItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY) !== expectedDid) return;
     localStorage.removeItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY);
     if (typeof window !== "undefined") window.dispatchEvent(new window.Event("the-social-wire.oauth-viewer-changed"));
   } catch {
@@ -227,7 +233,7 @@ export function clearStoredOAuthSessionHint(): void {
 }
 
 export function invalidateOAuthSession(did: string, cause: unknown): void {
-  clearStoredOAuthSessionHint();
+  clearStoredOAuthSessionHint(did);
   for (const listener of oauthSessionInvalidationListeners) {
     listener(did, cause);
   }
@@ -364,14 +370,14 @@ export async function getOAuthClient(): Promise<BrowserOAuthClient> {
     throw new Error("getOAuthClient is browser-only");
   }
   if (!_clientPromise) {
-    const load = BrowserOAuthClient.load({
+    const load = BrandAwareOAuthClient.loadForAccounts({
       clientId: resolveClientId(),
       handleResolver: getAtprotoNetwork().handleResolver,
       plcDirectoryUrl: getAtprotoNetwork().plcDirectory,
       fetch: createFetchWithDeadline(OAUTH_FETCH_DEADLINE_MS),
       responseMode: resolveOAuthResponseMode(),
       onDelete: (did, cause) => invalidateOAuthSession(did, cause),
-    });
+    }, getStoredOAuthDid);
     _clientPromise = raceWithTimeout(
       load,
       OAUTH_CLIENT_LOAD_TIMEOUT_MS,
@@ -382,6 +388,23 @@ export async function getOAuthClient(): Promise<BrowserOAuthClient> {
     });
   }
   return _clientPromise;
+}
+
+const scopedClientPromises = new Map<string, Promise<BrowserOAuthClient>>();
+/** Loopback embeds requested permissions, so a brand keeps its own exact client ID. */
+export async function getOAuthClientForScopes(scopes: string): Promise<BrowserOAuthClient> {
+  const clientId = resolveClientId(scopes);
+  if (clientId === resolveClientId()) return getOAuthClient();
+  let promise = scopedClientPromises.get(clientId);
+  if (!promise) {
+    promise = BrandAwareOAuthClient.loadForAccounts({ clientId,
+      handleResolver: getAtprotoNetwork().handleResolver, plcDirectoryUrl: getAtprotoNetwork().plcDirectory,
+      fetch: createFetchWithDeadline(OAUTH_FETCH_DEADLINE_MS), responseMode: resolveOAuthResponseMode(),
+      onDelete: (did, cause) => invalidateOAuthSession(did, cause),
+    }, getStoredOAuthDid).catch(error => { scopedClientPromises.delete(clientId); throw error; });
+    scopedClientPromises.set(clientId, promise);
+  }
+  return promise;
 }
 
 export async function redirectToCanonicalLocalOAuthOrigin(): Promise<boolean> {
@@ -405,6 +428,7 @@ export async function redirectToCanonicalLocalOAuthOrigin(): Promise<boolean> {
  * Redirects the browser to the user's PDS authorization endpoint.
  */
 export async function signIn(handle: string): Promise<void> {
+  cancelBrandLinkIntent();
   if (typeof window !== "undefined") {
     const canonicalHref = localLoopbackCanonicalHref(window.location.href);
     if (canonicalHref) {
@@ -429,10 +453,16 @@ export async function signIn(handle: string): Promise<void> {
  * Returns the resolved OAuthSession on success.
  */
 let handleCallbackInflight: Promise<OAuthSession> | null = null;
+let callbackDestination: string | null = null;
+/** Brand linking returns to its workspace while normal sign-in keeps its return path. */
+export function consumeOAuthCallbackDestination(): string | null {
+  const destination = callbackDestination; callbackDestination = null; return destination;
+}
 
 export async function handleCallback(): Promise<OAuthSession> {
   if (handleCallbackInflight) return handleCallbackInflight;
 
+  callbackDestination = null;
   handleCallbackInflight = (async () => {
     const params = readOAuthCallbackParamsFromWindow();
     if (!params) {
@@ -443,16 +473,38 @@ export async function handleCallback(): Promise<OAuthSession> {
 
     const work = (async () => {
       _clientPromise = null;
-      const client = await getOAuthClient();
+      const pendingLink = readBrandLinkIntent();
+      if (pendingLink) callbackDestination = BRAND_ACCOUNTS_PATH;
+      const client = pendingLink ? await getOAuthClientForScopes(BRAND_ACCOUNT_OAUTH_SCOPES) : await getOAuthClient();
+      if (pendingLink && pendingLink.clientId !== client.clientMetadata.client_id) throw new Error("Your Account Link Configuration Changed. Start Linking Again.");
       const redirectUri =
         client.findRedirectUrl() ??
         process.env.NEXT_PUBLIC_LOCAL_REDIRECT_URI?.trim() ??
         buildDefaultLocalCallbackUrl();
-      const { session } = await client.initCallback(
-        params,
-        redirectUri as Parameters<BrowserOAuthClient["initCallback"]>[1]
-      );
-      return session;
+      // The core callback verifies OAuth state/PKCE/issuer and saves the session
+      // in SDK IndexedDB, without BrowserOAuthClient's active-DID side effect.
+      window.history.replaceState(null, "", window.location.pathname);
+      try {
+        const { session, state } = await client.callback(params, {
+          redirect_uri: redirectUri as Parameters<BrowserOAuthClient["initCallback"]>[1],
+        });
+        if (state?.startsWith(BRAND_LINK_STATE_PREFIX)) {
+          callbackDestination = BRAND_ACCOUNTS_PATH;
+          completeBrandLinkIntent(state, session.did, getStoredOAuthDid());
+        } else {
+          callbackDestination = null;
+          localStorage.setItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY, session.did);
+        }
+        return session;
+      } catch (error) {
+        // SDK errors carry the validated appState, never trust callback query
+        // parameters to decide whether this was an additive account link.
+        const state = error && typeof error === "object" && "state" in error ? error.state : null;
+        if (typeof state === "string" && state.startsWith(BRAND_LINK_STATE_PREFIX)) {
+          callbackDestination = BRAND_ACCOUNTS_PATH; cancelBrandLinkIntent();
+        }
+        throw error;
+      }
     })();
 
     return await raceWithTimeout(
@@ -464,6 +516,9 @@ export async function handleCallback(): Promise<OAuthSession> {
 
   try {
     return await handleCallbackInflight;
+  } catch (error) {
+    if (callbackDestination === BRAND_ACCOUNTS_PATH) cancelBrandLinkIntent();
+    throw error;
   } finally {
     handleCallbackInflight = null;
   }
@@ -508,12 +563,12 @@ export async function getSession(): Promise<OAuthSession | null> {
 export async function signOut(did: string): Promise<void> {
   try {
     const client = await getOAuthClient();
-    await client.revoke(did);
+    await OAuthClient.prototype.revoke.call(client, did);
   } catch (err) {
     console.warn("OAuth revoke failed during sign-out", err);
   } finally {
     try {
-      clearStoredOAuthSessionHint();
+      clearStoredOAuthSessionHint(did);
     } catch {
       //
     }

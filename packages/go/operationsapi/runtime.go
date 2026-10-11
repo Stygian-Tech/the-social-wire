@@ -58,6 +58,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	}, false)
 	schedule(1500*time.Millisecond, "Operations evidence event unavailable", evidence.Observe, false)
 	schedule(time.Hour, "Operations viewer history unavailable", r.Store.RecordViewerHistory, false)
+	schedule(time.Hour, "Operations tab usage retention unavailable", r.Store.PruneTabUsage, false)
 	for group, interval := range databaseCostIntervals {
 		schedule(interval, "Operations database cost observation unavailable", func(ctx context.Context, at time.Time) error {
 			return r.Store.RecordDatabaseCostTelemetry(ctx, group, at)

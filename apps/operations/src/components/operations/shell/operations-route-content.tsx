@@ -18,6 +18,7 @@ import { ServiceTable } from "@/components/operations/dashboard/service-table"
 import { ServiceHealthOverTime } from "@/components/operations/dashboard/service-health-over-time"
 import { SubscribedFeedPerformance } from "@/components/operations/dashboard/subscribed-feed-performance"
 import { TraceDetail } from "@/components/operations/traces/trace-detail"
+import { TabUsage } from "@/components/operations/dashboard/tab-usage"
 import { UserCounts } from "@/components/operations/dashboard/user-counts"
 import type { Runbook } from "@/components/operations/shell/operations-view-types"
 import { metricWindowReference } from "@/lib/collection-metrics"
@@ -128,6 +129,7 @@ export function OperationsRouteContent({
       <HealthStrip overview={data} referenceTime={referenceTime} />
       <ServiceHealthOverTime metricRollups={data.metricRollups ?? []} />
       <UserCounts overview={data} referenceTime={referenceTime} />
+      <TabUsage usage={data.tabUsage} />
       <CapabilityStatus overview={data} />
       <EvidenceInventory overview={data} referenceTime={referenceTime} />
       <LiveStream data={data} environment={environment} mutationsEnabled={recoveryEnabled} referenceTime={referenceTime} />

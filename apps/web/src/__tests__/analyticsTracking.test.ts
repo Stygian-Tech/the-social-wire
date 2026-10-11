@@ -30,6 +30,12 @@ it("validates canonical content identifiers and labels only measured surfaces", 
   card.dataset.analyticsSubject = "https://publisher.example"; expect(analyticsSubject(card)).toBeUndefined();
   card.dataset.analyticsSubject = uri; card.dataset.analyticsSurface = "private-chat"; expect(analyticsSubject(card)).toBeUndefined();
 });
+it("excludes content inside an account management workspace", () => {
+  const workspace = document.createElement("div"); workspace.dataset.analyticsIgnore = "";
+  const card = document.createElement("article"); card.dataset.analyticsSubject = uri; card.dataset.analyticsSurface = "post-viewer";
+  workspace.append(card);
+  expect(analyticsSubject(card)).toBeUndefined();
+});
 it("requires useful horizontal and vertical exposure even for tall cards", () => {
   expect(analyticsExposureVisible({ isIntersecting: true, boundingClientRect: { height: 2000, width: 600 }, intersectionRect: { height: 201, width: 600 } } as IntersectionObserverEntry)).toBe(true);
   expect(analyticsExposureVisible({ isIntersecting: true, boundingClientRect: { height: 2000, width: 600 }, intersectionRect: { height: 180, width: 600 } } as IntersectionObserverEntry)).toBe(false);

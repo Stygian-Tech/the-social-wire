@@ -22,6 +22,7 @@ type Database interface {
 type PostgresStore struct {
 	DB                   Database
 	Environment          string
+	TabUsageEnvironment  string
 	InboxCache           InboxObservationCache
 	DatabaseObservations DatabaseObservations
 	FingerprintSecret    string

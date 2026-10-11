@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { handleCallback, OAUTH_CALLBACK_TIMEOUT_MS } from "@/lib/auth";
+import { handleCallback, consumeOAuthCallbackDestination, OAUTH_CALLBACK_TIMEOUT_MS } from "@/lib/auth";
 import { consumeOAuthReturnPath } from "@/lib/oauthScopeRecovery";
 
 const WATCHDOG_MS = OAUTH_CALLBACK_TIMEOUT_MS + 15_000;
@@ -19,15 +19,16 @@ export default function CallbackPage() {
     handleCallback()
       .then(() => {
         flowFinished.current = true;
-        window.location.replace(consumeOAuthReturnPath());
+        window.location.replace(consumeOAuthCallbackDestination() ?? consumeOAuthReturnPath());
       })
       .catch((err) => {
         flowFinished.current = true;
-        console.error("OAuth callback error:", err);
+        console.error("OAuth callback failed.");
         const message =
           err instanceof Error ? err.message : "OAuth callback failed.";
+        const destination = consumeOAuthCallbackDestination() ?? "/login";
         window.location.replace(
-          `/login?error=callback_failed&message=${encodeURIComponent(
+          `${destination}?error=callback_failed&message=${encodeURIComponent(
             message.slice(0, 280)
           )}`
         );

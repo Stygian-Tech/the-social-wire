@@ -118,6 +118,20 @@ describe("Social feed contracts", () => {
     expect(methods).toEqual(["app.bsky.actor.getPreferences", "app.bsky.labeler.getServices", "app.bsky.feed.getFeedGenerators"]);
   });
 
+  it("loads brand moderation without requiring saved-feed navigation grants", async () => {
+    const methods: string[] = [];
+    const session = fakeSession(method => {
+      methods.push(method);
+      if (method === "app.bsky.actor.getPreferences") return { preferences: [{ $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: [{ id: "f", type: "feed", value: feedUri, pinned: true }] }] };
+      if (method === "app.bsky.labeler.getServices") return { views: [labelerView(baseLabeler)] };
+      throw new Error(`Unexpected brand grant ${method}`);
+    });
+    const catalog = await getBlueskySocialCatalog(session, undefined, { includeFeeds: false });
+    expect(catalog.feeds).toEqual([]);
+    expect(catalog.moderation.userDid).toBe(session.did);
+    expect(methods).toEqual(["app.bsky.actor.getPreferences", "app.bsky.labeler.getServices"]);
+  });
+
   it("fails closed when a subscribed moderation service is missing", async () => {
     const session = fakeSession(method => method === "app.bsky.actor.getPreferences"
       ? { preferences: [{ $type: "app.bsky.actor.defs#labelersPref", labelers: [{ did: customLabeler }] }] }

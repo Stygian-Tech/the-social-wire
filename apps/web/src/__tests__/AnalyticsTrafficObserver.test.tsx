@@ -4,6 +4,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Auth from "@/hooks/useAuth";
 import * as Tracking from "@/lib/analyticsTracking";
 import * as Gateway from "@/lib/socialWireGatewayClient";
+import * as BrandStorage from "@/lib/brandAccounts/brandAccountStorage";
 import { AnalyticsTrafficObserver } from "@/components/AnalyticsTrafficObserver";
 
 let did: string | undefined; let oauthDid: string | undefined;
@@ -37,6 +38,14 @@ it("sends only the canonical event fields without destination URLs or message co
   expect(init?.method).toBe("POST"); expect(JSON.parse(init?.body as string)).toEqual(event);
   expect(Object.keys(JSON.parse(init?.body as string)).sort()).toEqual(["event", "subjectUri", "surface"]);
   expect(init?.signal).toBeInstanceOf(AbortSignal);
+});
+it("excludes a viewer's linked brand content from traffic measurements", async () => {
+  const brands = spyOn(BrandStorage, "listBrandAccounts").mockReturnValue(["did:plc:brand"]); restores.push(() => brands.mockRestore());
+  const { fetch } = setup(); render(<AnalyticsTrafficObserver />);
+  act(() => emit({ ...event, subjectUri: "at://did:plc:brand/app.bsky.feed.post/abc" }));
+  await act(async () => {}); expect(fetch).not.toHaveBeenCalled();
+  act(() => emit(event)); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  expect(brands).toHaveBeenCalledWith("did:plc:alice");
 });
 it("aborts in-flight events and discards queued old-account events on account switch", async () => {
   const { fetch } = setup(); let finish!: (response: Response) => void;

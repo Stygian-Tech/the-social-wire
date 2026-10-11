@@ -1,10 +1,12 @@
-import { ChartNoAxesCombined, FilePenLine, Radio, Video } from "lucide-react";
+import { CalendarDays, ChartNoAxesCombined, FilePenLine, Radio, UsersRound, Video } from "lucide-react";
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 
 const tools = [
   { title: "Articles", href: "/articles", icon: FilePenLine },
   { title: "Live Post", href: "/live-post", icon: Radio },
   { title: "Livestream", href: "/livestream", icon: Video },
+  { title: "Brand Accounts", href: "/brand-accounts", icon: UsersRound },
+  { title: "Content Calendar", href: "/content-calendar", icon: CalendarDays },
   { title: "Analytics", href: "/analytics", icon: ChartNoAxesCombined },
 ] as const;
 

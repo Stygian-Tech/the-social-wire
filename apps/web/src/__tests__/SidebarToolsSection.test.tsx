@@ -10,7 +10,7 @@ afterEach(cleanup);
 it("groups all tool workspaces and navigates to the selected destination", async () => {
   const onNavigate = mock(() => {});
   await act(async () => { render(<SidebarProvider><SidebarToolsSection pathname="/livestream" onNavigate={onNavigate} /></SidebarProvider>); });
-  for (const title of ["Articles", "Live Post", "Livestream", "Analytics"]) expect(screen.getByRole("button", { name: title })).toBeTruthy();
+  for (const title of ["Articles", "Live Post", "Livestream", "Brand Accounts", "Content Calendar", "Analytics"]) expect(screen.getByRole("button", { name: title })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Livestream" }).getAttribute("aria-current")).toBe("page");
   expect(screen.getByRole("button", { name: "Analytics" }).getAttribute("aria-current")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Analytics" }));
