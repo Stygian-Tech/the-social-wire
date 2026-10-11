@@ -77,6 +77,7 @@ test("hides private calendar rows immediately after unlink while keeping the sel
   state = { ...state, schedules: { ...state.schedules, data: [{ ...item, did: brand }] } } as typeof state;
   const view = mount(<ContentCalendarPage />);
   fireEvent.change(screen.getByRole("combobox", { name: "Account" }), { target: { value: brand } });
+  if (localCalendarDate(time) !== localCalendarDate(new Date())) fireEvent.click(screen.getByRole("button", { name: new RegExp(time.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })) }));
   expect(screen.getByText("Planned Content")).toBeTruthy();
   spyOn(Accounts, "useBrandAccounts").mockReturnValue([]);
   view.rerender(<QueryClientProvider client={cache}><ContentCalendarPage /></QueryClientProvider>);
