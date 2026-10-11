@@ -65,7 +65,7 @@ export function EditFolderForm({
       <DialogHeader>
         <DialogTitle>Edit Folder</DialogTitle>
         <DialogDescription>
-          Change the folder name and choose the icon shown in the sidebar.
+          Change the folder name and choose the icon or emoji shown in the sidebar.
         </DialogDescription>
       </DialogHeader>
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -80,10 +80,11 @@ export function EditFolderForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label id={iconLabelId}>Icon</Label>
+          <Label id={iconLabelId}>Icon or Emoji</Label>
           <FolderIconPicker
             labelledBy={iconLabelId}
             value={icon}
+          disabled={pending}
             onChange={setIcon}
           />
         </div>
