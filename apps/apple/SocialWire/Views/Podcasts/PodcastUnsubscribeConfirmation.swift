@@ -7,7 +7,10 @@ struct PodcastUnsubscribeConfirmation: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog("Unsubscribe from Podcast?", item: $show, titleVisibility: .visible) { show in
+            .confirmationDialog("Unsubscribe from Podcast?", isPresented: Binding(
+                get: { show != nil },
+                set: { if !$0 { show = nil } }
+            ), titleVisibility: .visible, presenting: show) { show in
                 Button("Unsubscribe", role: .destructive) {
                     guard let viewer = library.viewer else { return }
                     Task {
