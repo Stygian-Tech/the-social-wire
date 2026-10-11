@@ -1,6 +1,6 @@
 import { Agent, ChatBskyConvoDefs, RichText } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
-import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
+import { createAuthenticatedAppViewAgent, socialErrorMessage } from "@/lib/blueskySocialClient";
 import { getAtprotoNetwork } from "@/lib/atprotoNetwork";
 
 export const BLUESKY_CHAT_MODERATION_DID = "did:plc:ar7c4by46qjdydhdevvrndac";
@@ -49,7 +49,7 @@ export type ChatAction =
   | { kind: "delete"; convoId: string; messageId: string }
   | { kind: "addReaction" | "removeReaction"; convoId: string; messageId: string; value: string }
   | { kind: "mute" | "unmute" | "accept" | "leave"; convoId: string }
-  | { kind: "block" | "unblock"; convoId: string; subjectDid: string }
+  | { kind: "block" | "unblock"; convoId: string; subjectDid: string; blockingUri?: string }
   | { kind: "report"; convoId: string; messageId?: string; senderDid: string; reasonType: string; reason?: string };
 
 export async function performBlueskyChatAction(session: OAuthSession, viewerDid: string, action: ChatAction, assertViewer?: () => void) {
@@ -101,9 +101,10 @@ export async function performBlueskyChatAction(session: OAuthSession, viewerDid:
       if (action.kind === "block") {
         return (await pds.com.atproto.repo.createRecord({ repo: viewerDid, collection: "app.bsky.graph.block", record: { $type: "app.bsky.graph.block", subject: action.subjectDid, createdAt: new Date().toISOString() } })).data;
       }
-      const profile = (await createAuthenticatedAppViewAgent(session).app.bsky.actor.getProfile({ actor: action.subjectDid })).data;
+      // A freshly created block may not have reached the AppView replica yet.
+      // Use its PDS-returned URI when the caller has it, otherwise discover it.
+      const blocking = action.blockingUri ?? (await createAuthenticatedAppViewAgent(session).app.bsky.actor.getProfile({ actor: action.subjectDid })).data.viewer?.blocking;
       assertViewer?.();
-      const blocking = profile.viewer?.blocking;
       if (!blocking) return { unblocked: true };
       const match = /^at:\/\/([^/]+)\/app\.bsky\.graph\.block\/([^/?#]+)$/.exec(blocking);
       if (!match || match[1] !== viewerDid) throw new Error("The block record does not belong to your account.");
@@ -130,4 +131,11 @@ export async function performBlueskyChatAction(session: OAuthSession, viewerDid:
     case "mute": return (await convo.muteConvo({ convoId: action.convoId })).data;
     case "unmute": return (await convo.unmuteConvo({ convoId: action.convoId })).data;
   }
+}
+
+export function chatErrorMessage(error: unknown): string {
+  const social = socialErrorMessage(error);
+  if (social !== "This social feed could not be loaded. Please retry.") return social;
+  if (error instanceof Error && /^(This ATProto network has no chat moderation|Select a |Enter a |Report details must |Your account changed|The block record does not|This conversation is not)/.test(error.message)) return error.message;
+  return "Messages could not be loaded or updated. Please retry.";
 }

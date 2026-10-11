@@ -8,6 +8,9 @@ describe("chat conversation previews", () => {
     expect(chatConversationPreview(message, "did:plc:viewer")).toBe("Hello there");
     expect(chatConversationPreview(message, "did:plc:other")).toBe("You: Hello there");
   });
+  it("previews the latest reply body rather than an older legacy quote", () => {
+    expect(chatConversationPreview({ ...message, text: "> Earlier message\n\nThe latest response" }, "viewer")).toBe("The latest response");
+  });
   it("never exposes moderated text even from the viewer", () => {
     expect(chatConversationPreview(message, "did:plc:other", true)).toBe("Message Hidden");
   });

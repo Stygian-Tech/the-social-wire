@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Network from "@/lib/atprotoNetwork";
-import { getBlueskyConversations, getBlueskyMessageUnread, getBlueskyMessages, LOCAL_CHAT_UNAVAILABLE, performBlueskyChatAction, type ChatAction } from "@/lib/blueskyChatClient";
+import { getBlueskyConversations, getBlueskyMessageUnread, getBlueskyMessages, LOCAL_CHAT_UNAVAILABLE, performBlueskyChatAction, chatErrorMessage, type ChatAction } from "@/lib/blueskyChatClient";
 const did = "did:plc:abcdefghijklmnopqrstuvwx";
 const peer = "did:plc:zzzzzzzzzzzzzzzzzzzzzzzz";
 const restores: (() => void)[] = [];
@@ -73,6 +73,21 @@ describe("real chat protocol transport", () => {
     drift = true;
     await expect(performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer }, () => { if (!current) throw new Error("Your account changed"); })).rejects.toThrow("account changed");
     expect(writes).toHaveLength(2);
+  });
+  it("unblocks a newly created PDS record before the AppView replica catches up", async () => {
+    configure("did:web:chat.local.test");
+    const calls: string[] = [];
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      const method = new URL(path, "https://pds.test").pathname.split(".").at(-1)!;
+      calls.push(method);
+      if (method === "getProfile") throw new Error("The replica has not indexed this block yet");
+      expect(JSON.parse(await new Response(init?.body).text())).toEqual({ repo: did, collection: "app.bsky.graph.block", rkey: "fresh-block" });
+      return Response.json({});
+    } } as unknown as OAuthSession;
+    await performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer, blockingUri: `at://${did}/app.bsky.graph.block/fresh-block` });
+    expect(calls).toEqual(["deleteRecord"]);
+    await expect(performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer, blockingUri: `at://${peer}/app.bsky.graph.block/fresh-block` })).rejects.toThrow("does not belong");
+    expect(calls).toEqual(["deleteRecord"]);
   });
   it("never sends local accounts to a public fallback and rejects identity drift before transport", async () => {
     configure();
@@ -187,5 +202,13 @@ describe("real chat protocol transport", () => {
     const session = { did, fetchHandler: async () => { throw new Error("unexpected transport"); } } as unknown as OAuthSession;
     for (const text of [" ", "x".repeat(1001)]) await expect(performBlueskyChatAction(session, did, { kind: "send", convoId: "c", text })).rejects.toThrow("1,000 characters");
     await expect(performBlueskyChatAction(session, did, { kind: "start", members: ["https://public.example"] })).rejects.toThrow("valid recipient handle or DID");
+  });
+});
+
+describe("chat errors", () => {
+  it("preserves actionable account/validation errors without exposing upstream details", () => {
+    expect(chatErrorMessage(new Error("Your account changed. Please reload Messages."))).toBe("Your account changed. Please reload Messages.");
+    expect(chatErrorMessage(new Error("Report details must be at most 2,000 characters."))).toBe("Report details must be at most 2,000 characters.");
+    expect(chatErrorMessage(new Error("upstream database credentials and private request payload"))).toBe("Messages could not be loaded or updated. Please retry.");
   });
 });

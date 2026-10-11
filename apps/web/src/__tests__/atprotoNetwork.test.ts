@@ -53,6 +53,8 @@ describe("local ATProto network", () => {
     expect(authorizationScopesForClient(aligned, "https://socialwire.atmosbox.internal/oauth-client-metadata.json", "local")).toBe(aligned);
     authorize.searchParams.set("client_id", clientId);
     authorize.searchParams.set("request_uri", `urn:ietf:params:oauth:request_uri:${"x".repeat(64)}`);
+    expect(aligned).not.toContain("rpc:com.atproto.moderation.createReport");
+    expect(aligned).toContain("repo:app.bsky.graph.block?action=create&action=delete");
     expect(authorize.href.length).toBeLessThan(4096);
     expect(encodeURIComponent(aligned).length - encodeURIComponent(localLoopbackOAuthScopes(aligned, "local")).length).toBeGreaterThan(1000);
   });
@@ -125,7 +127,7 @@ describe("local ATProto network", () => {
 });
 
 it("compacts only safe loopback query characters without changing consent metadata", () => {
-  const original = buildAtprotoLoopbackClientId({ redirect_uris: ["http://127.0.0.1:3016/callback"], scope: "atproto rpc:at.skej.schedule.list?aud=did:web:api.skej.at%23skej_scheduler" });
+  const original = buildAtprotoLoopbackClientId({ redirect_uris: ["http://127.0.0.1:3016/callback"], scope: "atproto repo:app.example.record?action=create&action=delete rpc:at.skej.schedule.list?aud=did:web:api.skej.at%23skej_scheduler" });
   const compact = compactLoopbackClientId(original);
   expect([...new URL(compact).searchParams]).toEqual([...new URL(original).searchParams]);
   expect(new URL(compact).searchParams.get("scope")).toContain("%23skej_scheduler");

@@ -69,7 +69,12 @@ export function getAtprotoNetwork(): AtprotoNetwork {
 
 /** Keep the proxy DID and consent audiences aligned without altering production metadata. */
 export function atprotoScopesForNetwork(scopes: string, network = getAtprotoNetwork()): string {
-  const scoped = network.chatServiceDid ? scopes.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : scopes.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
+  // The baseline chat reporting UI targets Bluesky's labeler. Isolated networks
+  // cannot use that service, so do not request its unrelated public grant.
+  const reporting = network.chatServiceDid === CHAT_SERVICE_DID && network.appLabelers === undefined
+    ? scopes
+    : scopes.split(" ").filter(scope => scope !== "rpc:com.atproto.moderation.createReport?aud=did:plc:ar7c4by46qjdydhdevvrndac%23atproto_labeler").join(" ");
+  const scoped = network.chatServiceDid ? reporting.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : reporting.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
   return skejScopesForEnvironment(scoped.replaceAll(`${APPVIEW_DID}%23bsky_appview`, `${network.appViewDid}%23bsky_appview`));
 }
 
@@ -108,8 +113,8 @@ export function authorizationScopesForClient(scopes: string, clientId: string, a
   return clientId.startsWith("http://localhost?") ? localLoopbackOAuthScopes(scopes, appEnv) : scopes;
 }
 
-/** Colon and slash are legal query characters; avoid encoding them twice inside PAR client IDs. */
+/** These characters are legal inside query values; avoid encoding them twice inside PAR client IDs. */
 export function compactLoopbackClientId(clientId: string): string {
   if (!clientId.startsWith("http://localhost?")) return clientId;
-  return clientId.replace(/%3A/gi, ":").replace(/%2F/gi, "/");
+  return clientId.replace(/%3A/gi, ":").replace(/%2F/gi, "/").replace(/%3F/gi, "?").replace(/%3D/gi, "=");
 }
