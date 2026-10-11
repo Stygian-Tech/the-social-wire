@@ -98,8 +98,8 @@ export default function SportsExperience({ feedID = "sports", onFeedChange }: { 
         </DropdownMenu>
       </header>
       {entitySearch.trim() && !definitions.some(feed => feed.kind !== "global" && sportsFeedSearchText(feed, locale).includes(entitySearch.trim().toLocaleLowerCase())) ? <p role="status" className="mb-4 text-sm text-muted-foreground">No feeds match your search.</p> : null}
-      {selectedFeed?.description || followEntity ? <div className="mb-4 flex flex-wrap items-center gap-3">
-        {selectedFeed?.description ? <p className="min-w-0 flex-1 text-sm text-muted-foreground">{selectedFeed.description.replace(`Stories matching ${selectedFeed.title}`, `Stories matching ${displaySportsFeedTitle(selectedFeed, locale)}`)}</p> : null}
+      {(selectedFeed?.kind !== "global" && selectedFeed?.description) || followEntity ? <div className="mb-4 flex flex-wrap items-center gap-3">
+        {selectedFeed?.kind !== "global" && selectedFeed?.description ? <p className="min-w-0 flex-1 text-sm text-muted-foreground">{selectedFeed.description.replace(`Stories matching ${selectedFeed.title}`, `Stories matching ${displaySportsFeedTitle(selectedFeed, locale)}`)}</p> : null}
         <SportsFeedFollowButton key={`${sports.viewerDID ?? "public"}:${followEntity?.id ?? "global"}`} entity={followEntity}
           selections={sports.selections} save={saveSelection} saving={sports.saving}
           loading={sports.selectionsLoading || !!sports.selectionsError} signedIn={sports.signedIn} viewerDID={sports.viewerDID} />
