@@ -338,10 +338,20 @@ final class PodcastLibraryModel {
     }
 
     func toggleSubscription(_ show: PodcastShow) async {
+        await setSubscription(show, subscribed: !state.subscriptions.contains(show.id))
+    }
+
+    func unsubscribe(_ show: PodcastShow) async {
+        await setSubscription(show, subscribed: false)
+    }
+
+    private func setSubscription(_ show: PodcastShow, subscribed: Bool) async {
         guard let viewer else { return }
         if show.isPrivate {
+            guard !subscribed else { return }
             do {
                 let _: JSONValue = try await request(method: "DELETE", path: "/v1/podcasts/private/subscriptions", query: ["showId": show.id], viewer: viewer)
+                guard self.viewer == viewer else { return }
                 await refresh()
             } catch { self.error = "Could Not Remove Private Subscription. Try Again." }
             return
@@ -357,13 +367,12 @@ final class PodcastLibraryModel {
             repeat {
                 let page = try await xrpc.listAuthorizedGenericRecords(collection: collection, cursor: cursor)
                 existing += page.records.filter { record in
-                    record.value.object?["feedUrl"]?.string == show.feedUrl && show.feedUrl != nil
-                        || record.value.object?["externalRef"]?.string == show.sourceUri && show.sourceUri != nil
+                    PodcastSubscriptionMatch.matches(record.value, show: show)
                 }
                 cursor = page.cursor
             } while cursor != nil
             guard self.viewer == viewer else { return }
-            if state.subscriptions.contains(show.id) {
+            if !subscribed {
                 for record in existing { try await xrpc.deleteRecord(collection: collection, rkey: rkey(from: record.uri), expectedViewer: viewer) }
             } else if existing.isEmpty {
                 try await createSubscription(show, viewer: viewer)
@@ -413,7 +422,7 @@ final class PodcastLibraryModel {
             guard self.viewer == viewer else { throw CancellationError() }
             let page = try await xrpc.listAuthorizedGenericRecords(collection: "app.skyreader.feed.subscription", cursor: cursor)
             guard self.viewer == viewer else { throw CancellationError() }
-            records += page.records
+            records += page.records.filter { PodcastSubscriptionMatch.isPodcast($0.value) }
             cursor = page.cursor
         } while cursor != nil
         return records

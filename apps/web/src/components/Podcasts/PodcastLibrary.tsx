@@ -2,6 +2,7 @@
 import { PodcastClipsLibrary } from "./PodcastClipsLibrary";
 import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
 import { PodcastLibrarySearch } from "./PodcastLibrarySearch";
+import { PodcastUnsubscribeDialog } from "./PodcastUnsubscribeDialog";
 import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
 import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
 import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
@@ -50,6 +51,7 @@ function PodcastViewerLibrary() {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [unsubscribeShow, setUnsubscribeShow] = useState<PodcastShow | null>(null);
   const [downloads, setDownloads] = useState<PodcastDownload[]>([]);
   const [downloadStatus, setDownloadStatus] = useState<Record<string, string>>(
     {},
@@ -219,20 +221,25 @@ function PodcastViewerLibrary() {
     setCursor(undefined);
     setError(null);
   };
+  async function changeSubscription(show: PodcastShow, remove: boolean) {
+    const oauth = getOAuthSession();
+    if (!oauth || oauth.did !== viewer) throw new Error("Sign In to Subscribe");
+    await writePodcastSubscription(oauth, oauth.did, show, remove);
+    if (getOAuthSession()?.did !== viewer) return;
+    await player.changeState({ subscriptions: remove
+      ? player.state.subscriptions.filter((id) => id !== show.id)
+      : [...new Set([...player.state.subscriptions, show.id])] });
+    if (remove) {
+      if (show.visibility === "private") setShows((current) => current.filter((item) => item.id !== show.id));
+      if (feed === "show" && showId === show.id) selectFeed("recent");
+    }
+  }
   async function subscribe(show: PodcastShow) {
-    await action(async () => {
-      const oauth = getOAuthSession();
-      if (!oauth || !session) throw new Error("Sign In to Subscribe");
-      const remove = player.state.subscriptions.includes(show.id);
-      await writePodcastSubscription(oauth, session.did, show, remove);
-      await player.changeState({ subscriptions: remove
-        ? player.state.subscriptions.filter((id) => id !== show.id)
-        : [...new Set([...player.state.subscriptions, show.id])] });
-      if (show.visibility === "private" && remove) {
-        setShows((current) => current.filter((item) => item.id !== show.id));
-        selectFeed("recent");
-      }
-    });
+    if (player.state.subscriptions.includes(show.id)) {
+      setUnsubscribeShow(show);
+      return;
+    }
+    await action(() => changeSubscription(show, false));
   }
   async function playEpisode(item: PodcastEpisode) {
     if (item.visibility === "private") setPreparingEpisode(item.id);
@@ -320,7 +327,7 @@ function PodcastViewerLibrary() {
           </p>
         ) : null}
         {selectedShow ? <PodcastShowDetails show={selectedShow} action={
-          <button type="button" className={compactButton} disabled={busy} onClick={() => void subscribe(selectedShow)}>
+          <button type="button" className={`${compactButton} ${player.state.subscriptions.includes(selectedShow.id) ? "text-destructive" : ""}`} disabled={busy} onClick={() => void subscribe(selectedShow)}>
             {player.state.subscriptions.includes(selectedShow.id) ? <Minus aria-hidden="true" className="size-3.5" /> : <Plus aria-hidden="true" className="size-3.5" />}
             {player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}
           </button>
@@ -474,7 +481,12 @@ function PodcastViewerLibrary() {
         </>}
       </section>
       <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto">
-        <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} discoverActive={searchScope === "discover"} onDiscover={() => { setFeed("recent"); setSearchQuery(""); setSearchScope("discover"); setError(null); }} />
+        <PodcastUnsubscribeDialog key={unsubscribeShow?.id ?? "closed"} show={unsubscribeShow} onClose={() => setUnsubscribeShow(null)} onConfirm={async (show) => {
+          setBusy(true);
+          try { await changeSubscription(show, true); }
+          finally { setBusy(false); }
+        }} />
+        <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} busy={busy} onUnsubscribe={setUnsubscribeShow} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} discoverActive={searchScope === "discover"} onDiscover={() => { setFeed("recent"); setSearchQuery(""); setSearchScope("discover"); setError(null); }} />
       </div>
     </div>
   );

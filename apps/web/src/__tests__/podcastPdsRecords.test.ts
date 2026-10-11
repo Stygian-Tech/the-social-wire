@@ -126,3 +126,26 @@ describe("Podcast public PDS records", () => {
     );
   });
 });
+
+it("removes imported podcast record keys across pages without deleting same-feed News records", async () => {
+  const removed: string[] = [];
+  const pages = [
+    { records: [{ uri: "at://did:viewer/app.skyreader.feed.subscription/news", value: { feedUrl: "https://show/rss" } }, { uri: "at://did:viewer/app.skyreader.feed.subscription/imported", value: { category: " Podcast ", feedUrl: "http://show/rss/#section" } }], cursor: "next" },
+    { records: [{ uri: "at://did:viewer/app.skyreader.feed.subscription/native", value: { sourceType: "atproto.collection", externalRef: "at://did:publisher/place.pod.show/show" } }, { uri: "at://did:viewer/app.skyreader.feed.subscription/other", value: { category: "podcast", feedUrl: "https://other/rss" } }] },
+  ];
+  const agent = spyOn(atproto, "createOAuthAgent").mockReturnValue({ com: { atproto: { repo: {
+    listRecords: async () => ({ data: pages.shift() }),
+    deleteRecord: async ({ rkey }: { rkey: string }) => { removed.push(rkey); },
+  } } } } as unknown as ReturnType<typeof atproto.createOAuthAgent>);
+  restores.push(() => agent.mockRestore());
+  await writePodcastSubscription(oauth, "did:viewer", { id: "show", title: "My Show", sourceKind: "rss", feedUrl: "https://show/rss", sourceUri: "at://did:publisher/place.pod.show/show" }, true);
+  expect(removed).toEqual(["imported", "native"]);
+});
+it("allows an unsubscribe retry after podcast records have already been removed", async () => {
+  const remove = spyOn(atproto, "createOAuthAgent").mockReturnValue({ com: { atproto: { repo: {
+    listRecords: async () => ({ data: { records: [] } }),
+    deleteRecord: async () => { throw new Error("Unexpected delete"); },
+  } } } } as unknown as ReturnType<typeof atproto.createOAuthAgent>);
+  restores.push(() => remove.mockRestore());
+  await writePodcastSubscription(oauth, "did:viewer", { id: "show", title: "Show", sourceKind: "rss" }, true);
+});
