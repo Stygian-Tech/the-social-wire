@@ -33,7 +33,7 @@ export function FinanceTickerMarquee({ feed, hidden }: { feed?: FinanceFeedDefin
                 <nav aria-label="Ticker Stocks" className="flex gap-4 overflow-x-auto px-4 py-3 text-sm">
                     {symbols.map(symbol => <TickerLink key={symbol.instrumentID} symbol={symbol} />)}
                 </nav>
-            ) : <TickerEmbed key={config} config={config} />}
+            ) : <FinanceTickerEmbed key={config} config={config} />}
             <div className={`flex items-center gap-3 px-4 py-1 text-xs text-muted-foreground ${staticDisplay ? "justify-between" : "justify-end"}`}>
                 {staticDisplay ? <TickerAttribution /> : null}
                 {!reducedMotion ? <button type="button" className="rounded px-2 py-1 hover:bg-muted focus-visible:outline focus-visible:outline-2" onClick={() => setPaused(value => !value)}>{paused ? "Resume Ticker" : "Pause Ticker"}</button> : <span>Motion Reduced</span>}
@@ -50,7 +50,7 @@ function TickerLink({ symbol }: { symbol: FinanceTickerSymbol }) {
     return <a className="shrink-0 hover:underline" href={`/read?feed=finance&financeFeed=${encodeURIComponent(`instrument:${symbol.instrumentID}`)}`}>{symbol.proName.split(":")[1]} <span className="text-muted-foreground">{symbol.title}</span></a>;
 }
 
-function TickerEmbed({ config }: { config: string }) {
+export function FinanceTickerEmbed({ config }: { config: string }) {
     const host = useRef<HTMLDivElement>(null);
     const widget = useRef<HTMLDivElement>(null);
     const [visible, setVisible] = useState(false);

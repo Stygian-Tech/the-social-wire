@@ -24,6 +24,19 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); client.clear(); restores.splice(0).forEach(restore => restore()); });
 describe("profile timeline safety", () => {
+  it("isolates viewed actors and never requests another actor's private likes", async () => {
+    const page = spyOn(Profile, "getBlueskyProfilePage").mockImplementation(async args => ({ feed: [], cursor: args.actor === bob ? "bob-page" : "alice-page" })); restores.push(() => page.mockRestore());
+    const { result, rerender } = renderHook(({ actor, tab }) => useBlueskyProfileTimeline(tab, moderation(alice), actor), { initialProps: { actor: bob, tab: "posts" as Profile.ProfileSection }, wrapper: Wrapper });
+    await waitFor(() => expect(result.current.data?.pages[0]?.cursor).toBe("bob-page"));
+    expect(page.mock.calls[0]?.[0].actor).toBe(bob);
+    rerender({ actor: alice, tab: "posts" });
+    expect(result.current.data).toBeUndefined();
+    await waitFor(() => expect(result.current.data?.pages[0]?.cursor).toBe("alice-page"));
+    const count = page.mock.calls.length;
+    rerender({ actor: bob, tab: "likes" });
+    expect(result.current.data).toBeUndefined();
+    expect(page.mock.calls.length).toBe(count);
+  });
   it("waits for moderation and rejects stale OAuth identity before requests", async () => {
     const page = spyOn(Profile, "getBlueskyProfilePage").mockResolvedValue({ feed: [] }); restores.push(() => page.mockRestore());
     const { result, rerender } = renderHook(({ safety }) => useBlueskyProfileTimeline("posts", safety), { initialProps: { safety: undefined as ModerationOpts | undefined }, wrapper: Wrapper });

@@ -65,6 +65,7 @@ export function SocialImageDialog({
     setViewport(node);
   }, []);
   const pointers = useRef(new Map<number, ImagePoint>());
+  const swipe = useRef<{ id: number; start: ImagePoint } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const transformRef = useRef<ImageTransform>(INITIAL_IMAGE_TRANSFORM);
   const sizeRef = useRef<ImageSize>({
@@ -154,6 +155,8 @@ export function SocialImageDialog({
   function pointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     event.preventDefault();
+    swipe.current = transformRef.current.scale === 1 && !pointers.current.size && total > 1
+      ? { id: event.pointerId, start: point(event.clientX, event.clientY) } : null;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     pointers.current.set(event.pointerId, point(event.clientX, event.clientY));
   }
@@ -163,7 +166,8 @@ export function SocialImageDialog({
     const previous = [...pointers.current.values()];
     const after = point(event.clientX, event.clientY);
     pointers.current.set(event.pointerId, after);
-    if (pointers.current.size >= 2)
+    if (pointers.current.size >= 2) {
+      swipe.current = null;
       update(
         pinchImage(
           transformRef.current,
@@ -173,7 +177,7 @@ export function SocialImageDialog({
           viewportSize.current,
         ),
       );
-    else
+    } else
       update({
         ...transformRef.current,
         x: transformRef.current.x + after.x - before.x,
@@ -181,9 +185,18 @@ export function SocialImageDialog({
       });
   }
   function pointerEnd(event: PointerEvent<HTMLDivElement>) {
+    const gesture = swipe.current;
+    swipe.current = null;
     pointers.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture?.(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
+    if (event.type === "pointerup" && gesture?.id === event.pointerId && transformRef.current.scale === 1) {
+      const end = point(event.clientX, event.clientY);
+      const dx = end.x - gesture.start.x, dy = end.y - gesture.start.y;
+      if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        if (dx < 0) onNext?.(); else onPrevious?.();
+      }
+    }
   }
   function zoom(factor: number) {
     update(
@@ -238,6 +251,7 @@ export function SocialImageDialog({
           Image {index + 1} of {total}
         </DialogTitle>
         <DialogDescription className="sr-only">
+          At normal zoom, swipe or use left and right arrow keys to change photos.
           Use pinch or scroll to zoom, then drag or use arrow keys to pan. Zoom
           controls and Reset Zoom are also available.
         </DialogDescription>
@@ -322,6 +336,12 @@ export function SocialImageDialog({
           role="group"
           aria-label="Image Viewer"
           onKeyDown={(event) => {
+            if (transformRef.current.scale === 1 && total > 1 && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+              event.preventDefault();
+              event.stopPropagation();
+              if (event.key === "ArrowLeft") onPrevious?.(); else onNext?.();
+              return;
+            }
             const delta = {
               ArrowLeft: { x: 40, y: 0 },
               ArrowRight: { x: -40, y: 0 },

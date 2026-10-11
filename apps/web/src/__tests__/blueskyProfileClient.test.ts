@@ -5,6 +5,19 @@ import { getBlueskyProfilePage, type ProfileSection } from "@/lib/blueskyProfile
 const did = "did:plc:alice";
 const moderation: ModerationOpts = { userDid: did, prefs: { adultContentEnabled: false, labels: {}, labelers: [{ did: "did:web:labeler.test", labels: {} }], mutedWords: [], hiddenPosts: [] } };
 describe("viewer profile feed transport", () => {
+  it("requests another user's author feed without disclosing private likes", async () => {
+    const other = "did:plc:other";
+    const calls: string[] = [];
+    const session = { did, fetchHandler: async (path: string) => {
+      const url = new URL(path, "https://pds.test");
+      calls.push(url.searchParams.get("actor")!);
+      return Response.json({ feed: [] });
+    } } as unknown as OAuthSession;
+    await getBlueskyProfilePage({ session, actor: other, tab: "posts", moderation });
+    expect(calls).toEqual([other]);
+    await expect(getBlueskyProfilePage({ session, actor: other, tab: "likes", moderation })).rejects.toThrow("Likes are private");
+    expect(calls).toEqual([other]);
+  });
   it("routes every tab through viewer OAuth with matching filters, subscription headers, cursor, and signal", async () => {
     const signal = new AbortController().signal;
     const calls: { method: string; filter: string | null }[] = [];

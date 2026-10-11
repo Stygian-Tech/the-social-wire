@@ -1,4 +1,4 @@
-import { type AppBskyActorDefs, type AppBskyFeedDefs, type AppBskyNotificationListNotifications, type ModerationOpts } from "@atproto/api";
+import { AppBskyFeedPost, type AppBskyActorDefs, type AppBskyFeedDefs, type AppBskyNotificationListNotifications, type ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createAuthenticatedAppViewAgent, socialErrorMessage } from "./blueskySocialClient";
 
@@ -33,6 +33,8 @@ export async function getSocialExplorePage(args: { session: OAuthSession; modera
 
 export function notificationPostUri(notification: SocialNotification): string | undefined {
   let uri: unknown;
+  // Reply notifications identify the reply itself. reasonSubject and the
+  // record reply.parent/root are context, never substitutes for its target.
   if (["mention", "reply", "quote", "subscribed-post"].includes(notification.reason)) uri = notification.uri;
   else if (["like", "repost", "like-via-repost", "repost-via-repost"].includes(notification.reason)) {
     const subject = notification.record.subject;
@@ -41,17 +43,41 @@ export function notificationPostUri(notification: SocialNotification): string | 
   return typeof uri === "string" && /^at:\/\/did:[^/]+\/app\.bsky\.feed\.post\/[^/?#]+$/.test(uri) ? uri : undefined;
 }
 
+/** Reply context is the immediate parent; thread roots are never hydrated as substitutes. */
+export function notificationReplyParentUri(notification: SocialNotification): string | undefined {
+  if (notification.reason !== "reply") return undefined;
+  const record = AppBskyFeedPost.validateRecord(notification.record);
+  const uri = record.success ? record.value.reply?.parent.uri : undefined;
+  return uri && /^at:\/\/did:[^/]+\/app\.bsky\.feed\.post\/[^/?#]+$/.test(uri) ? uri : undefined;
+}
+
+export function notificationFeedItem(notification: SocialNotification, posts: ReadonlyMap<string, AppBskyFeedDefs.PostView>): AppBskyFeedDefs.FeedViewPost | undefined {
+  const uri = notificationPostUri(notification);
+  const post = uri ? posts.get(uri) : undefined;
+  if (!post) return undefined;
+  const parentUri = notificationReplyParentUri(notification);
+  const record = AppBskyFeedPost.validateRecord(notification.record);
+  if (!parentUri || parentUri === post.uri || !record.success || !record.value.reply) return { post };
+  const parent = posts.get(parentUri);
+  return { post, reply: {
+    parent: parent ? { ...parent, $type: "app.bsky.feed.defs#postView" } : { $type: "app.bsky.feed.defs#notFoundPost", uri: parentUri },
+    root: { $type: "app.bsky.feed.defs#notFoundPost", uri: record.value.reply.root.uri },
+  } };
+}
+
 export async function getSocialNotificationsPage(args: { session: OAuthSession; moderation: ModerationOpts; cursor?: string; signal?: AbortSignal }): Promise<SocialNotificationPage> {
   const agent = agentFor(args.session, args.moderation);
   const options = { signal: args.signal };
   const result = await agent.app.bsky.notification.listNotifications({ cursor: args.cursor, limit: 30 }, options);
   args.signal?.throwIfAborted();
-  const uris = [...new Set(result.data.notifications.map(notificationPostUri).filter((uri): uri is string => !!uri))];
+  const uris = [...new Set(result.data.notifications.flatMap(notification => [notificationPostUri(notification), notificationReplyParentUri(notification)]).filter((uri): uri is string => !!uri))];
   const posts: AppBskyFeedDefs.PostView[] = [];
   for (let index = 0; index < uris.length; index += 25) {
-    const page = await agent.app.bsky.feed.getPosts({ uris: uris.slice(index, index + 25) }, options);
+    const requested = uris.slice(index, index + 25);
+    const page = await agent.app.bsky.feed.getPosts({ uris: requested }, options);
     args.signal?.throwIfAborted();
-    posts.push(...page.data.posts);
+    // Ignore unexpected hydration results; a missing reply stays unavailable.
+    posts.push(...page.data.posts.filter(post => requested.includes(post.uri)));
   }
   return { ...result.data, posts };
 }

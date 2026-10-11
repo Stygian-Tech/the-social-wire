@@ -12,11 +12,11 @@ import type { ProfileSection } from "@/lib/blueskyProfileClient";
 import { flattenSocialPages, socialErrorMessage } from "@/lib/blueskySocialClient";
 import { rememberOAuthReturnPath, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 
-export function ProfileTimeline({ section }: { section: ProfileSection }) {
+export function ProfileTimeline({ section, actor }: { section: ProfileSection; actor?: string }) {
   const { session, signIn } = useAuth();
   const catalog = useBlueskySocialCatalog();
-  const moderation = catalog.isError ? undefined : catalog.data?.moderation;
-  const timeline = useBlueskyProfileTimeline(section, moderation);
+  const moderation = catalog.isError || catalog.data?.moderation.userDid !== session?.did ? undefined : catalog.data?.moderation;
+  const timeline = useBlueskyProfileTimeline(section, moderation, actor);
   const [openingLogin, setOpeningLogin] = useState(false);
   const [loginError, setLoginError] = useState(false);
   const error = catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined;
@@ -35,6 +35,7 @@ export function ProfileTimeline({ section }: { section: ProfileSection }) {
     {error === SCOPE_RECOVERY_MESSAGE ? <Button disabled={openingLogin} onClick={() => { void login(); }}>{openingLogin ? "Opening Login…" : "Log In Again"}</Button> : <Button variant="outline" onClick={() => { void retry(); }}>Retry</Button>}
     {loginError ? <p>Login could not be opened. Please try again.</p> : null}
   </div>;
+  if (section === "likes" && actor && actor !== session?.did) return <p className="mx-auto max-w-2xl p-6 text-sm text-muted-foreground">Likes are private. Only your own likes are available.</p>;
   if (catalog.isPending || timeline.isPending) return <SocialTimelineSkeleton />;
   return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-3 sm:p-4">
     {moderation ? <SocialFeedPosts items={posts} moderation={moderation} /> : null}

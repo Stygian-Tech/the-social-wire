@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { moderateNotification, moderateProfile } from "@atproto/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
@@ -8,14 +9,15 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { useSocialNotifications, useSocialNotificationUnread, useMarkSocialNotificationsSeen } from "@/hooks/useSocialDiscovery";
-import { notificationIdentity, notificationPostUri, socialDiscoveryErrorMessage } from "@/lib/blueskySocialDiscoveryClient";
+import { notificationFeedItem, notificationIdentity, notificationPostUri, socialDiscoveryErrorMessage } from "@/lib/blueskySocialDiscoveryClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { SocialPostLink } from "./SocialPostLink";
 import { InteractiveSocialPost } from "./InteractiveSocialPost";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
-import { socialHttpsUrl, socialProfileUrl } from "./socialUrls";
+import { socialHttpsUrl } from "./socialUrls";
+import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
 
 const reasons: Record<string, string> = { like: "Liked Your Post", repost: "Reposted Your Post", follow: "Followed You", mention: "Mentioned You", reply: "Replied to Your Post", quote: "Quoted Your Post", "starterpack-joined": "Joined Your Starter Pack", verified: "Verified Your Account", unverified: "Removed Your Verification", "like-via-repost": "Liked a Post You Reposted", "repost-via-repost": "Reposted a Post You Reposted", "subscribed-post": "Posted an Update", "contact-match": "Joined Bluesky" };
 
@@ -66,20 +68,20 @@ function SocialNotificationsViewer() {
         </section> : !moderation || notifications.isPending ? <SocialTimelineSkeleton /> : <>
           {rows.map(notification => {
             const uri = notificationPostUri(notification);
-            const post = uri ? posts.get(uri) : undefined;
+            const item = notificationFeedItem(notification, posts);
             const name = notification.author.displayName || notification.author.handle;
             const avatarHidden = moderateProfile(notification.author, moderation).ui("avatar").blur;
             return <section key={notificationIdentity(notification)} aria-label={`${name}: ${reasons[notification.reason] ?? "Sent a Notification"}`} className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
               <div className="flex items-start gap-3">
                 <Avatar src={avatarHidden ? undefined : socialHttpsUrl(notification.author.avatar)} alt="" size={36} />
                 <div className="min-w-0 flex-1">
-                  <a href={socialProfileUrl(notification.author.did)} target="_blank" rel="noopener noreferrer" className="break-words font-semibold hover:underline">{name}</a>
+                  <Link href={socialProfilePageHref(notification.author.did, "/social/notifications")} className="break-words font-semibold hover:underline">{name}</Link>
                   <p className="text-sm">{reasons[notification.reason] ?? "Sent a Notification"}</p>
                   <time dateTime={notification.indexedAt} className="text-xs text-muted-foreground">{new Date(notification.indexedAt).toLocaleString()}</time>
                 </div>
                 {!notification.isRead ? <span className="text-xs font-semibold text-primary">Unread</span> : null}
               </div>
-              {post ? <InteractiveSocialPost item={{ post }} moderation={moderation} /> : uri ? <SocialPostLink uri={uri} moderation={moderation} /> : null}
+              {item ? <InteractiveSocialPost item={item} moderation={moderation} showReplyParentActions /> : uri ? <SocialPostLink uri={uri} moderation={moderation} /> : null}
             </section>;
           })}
           {!rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">No notifications to show.</p> : null}

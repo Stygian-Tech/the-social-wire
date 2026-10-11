@@ -3,7 +3,7 @@ export function safeSocialPostReturnPath(value: string | null | undefined): stri
   if (!value || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f]/.test(value)) return "/social";
   try {
     const url = new URL(value, "https://socialwire.invalid");
-    if (url.origin !== "https://socialwire.invalid" || !["/social", "/social/explore", "/social/notifications", "/social/bookmarks", "/social/lists", "/social/feeds", "/me"].includes(url.pathname)) return "/social";
+    if (url.origin !== "https://socialwire.invalid" || !["/social", "/social/explore", "/social/notifications", "/social/bookmarks", "/social/lists", "/social/feeds", "/social/profile", "/social/messages", "/me"].includes(url.pathname)) return "/social";
     return url.pathname + url.search + url.hash;
   } catch { return "/social"; }
 }
