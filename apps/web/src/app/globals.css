@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@stygian/markdown-editor/styles";
+@import "./articleTypography.css";
 
 @custom-variant dark (&:is(.dark *));
 

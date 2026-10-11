@@ -14,7 +14,7 @@ export function PodcastEpisodeDetailsDialog({ episode, showName, played, onTimec
   const notes = useMemo(() => open ? linkPodcastTimecodes(sanitizeHTMLWithLinks(episode.description ?? ""), episode.durationSeconds) : "", [open, episode.description, episode.durationSeconds]);
   const excerpt = useMemo(() => podcastNotesExcerpt(episode.description ?? ""), [episode.description]);
   return <Dialog open={open} onOpenChange={setOpen}>
-    <DialogTrigger aria-label={`Show Notes: ${episode.title}`} className="block w-full min-w-0 rounded text-left hover:bg-accent/30 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
+    <DialogTrigger aria-label={`Show Notes: ${episode.title}`} className="block w-full min-w-0 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
       <span className="mb-2 flex items-start justify-between gap-3 text-xs text-muted-foreground">
         {showName ? <span className="min-w-0 flex-1 line-clamp-2 break-words font-medium">{showName}</span> : <span />}
         {played !== undefined ? <span className="inline-flex shrink-0 items-center gap-1.5">
