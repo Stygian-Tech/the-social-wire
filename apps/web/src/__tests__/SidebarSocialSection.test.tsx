@@ -38,6 +38,15 @@ describe("SidebarSocialSection", () => {
     expect(screen.queryByText("Settings")).toBeNull();
     expect(screen.queryByRole("button", { name: /Expand Social|Collapse Social/ })).toBeNull();
   });
+  it("shows shared unread counters on Notifications and Messages and hides zero counts", async () => {
+    const { onHome } = await renderSection({ notificationCount: 123, messageCount: 7 });
+    expect(screen.getByRole("button", { name: "Social Notifications" }).parentElement!.querySelector('[aria-label="123 unread"]')?.textContent).toBe("123");
+    expect(screen.getByRole("button", { name: "Social Messages" }).parentElement!.querySelector('[aria-label="7 unread"]')?.textContent).toBe("7");
+    expect(screen.getByRole("button", { name: "Social Home" }).querySelector('[aria-label$="unread"]')).toBeNull();
+    cleanup();
+    await renderSection({ onHome });
+    expect(screen.queryByLabelText(/unread$/)).toBeNull();
+  });
   it("keeps Social inactive outside Social without loading the feed catalog", async () => {
     const catalog = spyOn(catalogHooks, "useBlueskySocialCatalog");
     try {

@@ -31,6 +31,8 @@ test("bounded account and reader panes use the whole viewport without podcast re
   }
   expect(shell?.className).not.toContain("podcast-player-height");
   const inset = shell?.querySelector('[data-slot="sidebar-inset"]');
+  expect(inset?.classList.contains("bg-transparent")).toBe(true);
+  expect(inset?.classList.contains("bg-background")).toBe(false);
   // Reserve the mobile bar plus its floating inset and safe area.
   expect(inset?.classList.contains("pb-[calc(5rem+env(safe-area-inset-bottom))]")).toBe(true);
   expect(inset?.classList.contains("pb-16")).toBe(false);

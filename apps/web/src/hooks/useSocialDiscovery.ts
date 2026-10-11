@@ -42,7 +42,7 @@ export function useSocialNotifications(moderation?: ModerationOpts) {
   });
 }
 
-export function useSocialNotificationUnread(enabled: boolean) {
+export function useSocialNotificationUnread(enabled: boolean, refetchInterval?: number) {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
   return useQuery({
     queryKey: ["blueskySocial", session?.did ?? "", "notificationUnread", oauthSessionReloadSeq],
@@ -54,6 +54,7 @@ export function useSocialNotificationUnread(enabled: boolean) {
       return getSocialNotificationUnread(oauth, signal);
     },
     staleTime: 15_000,
+    refetchInterval,
     retry: false,
   });
 }

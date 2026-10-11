@@ -51,13 +51,13 @@ function ResolvedLinkPreview({ url }: { url: string }) {
   const [failedImage, setFailedImage] = useState<string>();
   if (!session || preview.isError || !preview.data) return null;
   const host = new URL(url).hostname;
-  return <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 block min-w-0 overflow-hidden rounded-xl border bg-background/40 transition-colors hover:bg-background/60" aria-label={`Open ${preview.data.title || host}`}>
+  return <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full min-w-0 max-w-[400px] overflow-hidden rounded-xl border bg-background/40 transition-colors hover:bg-background/60" aria-label={`Open ${preview.data.title || host}`}>
     {cached.objectUrl && !cached.failed && failedImage !== image ? <img
       src={cached.objectUrl}
       alt=""
       loading="lazy"
       referrerPolicy="no-referrer"
-      className="block h-auto w-full"
+      className="mx-auto block h-auto max-h-60 w-auto max-w-full"
       onError={() => setFailedImage(image)}
     /> : null}
     <div className="flex min-w-0 flex-col gap-1 p-2.5 [overflow-wrap:anywhere]">

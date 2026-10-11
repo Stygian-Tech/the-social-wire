@@ -1,9 +1,10 @@
-import { LABELS, type AppBskyFeedDefs, type InterpretedLabelValueDefinition, type ModerationOpts } from "@atproto/api";
+import { LABELS, type AppBskyFeedDefs, type InterpretedLabelValueDefinition } from "@atproto/api";
+import type { SocialModerationOpts } from "@/lib/socialModerationTypes";
 
-export type SocialPostLabel = { key: string; source: string; self: boolean; definition: InterpretedLabelValueDefinition };
+export type SocialPostLabel = { key: string; source: string; self: boolean; avatar?: string; definition: InterpretedLabelValueDefinition };
 
 /** Display only active labels with definitions from a subscribed service or the SDK. */
-export function socialPostLabels(post: AppBskyFeedDefs.PostView, moderation: ModerationOpts, now = Date.now()): SocialPostLabel[] {
+export function socialPostLabels(post: AppBskyFeedDefs.PostView, moderation: SocialModerationOpts, now = Date.now()): SocialPostLabel[] {
   const labels = [...(post.labels ?? []), ...(post.author.labels ?? [])];
   const latest = new Map<string, typeof labels[number]>();
   for (const label of labels) {
@@ -19,7 +20,7 @@ export function socialPostLabels(post: AppBskyFeedDefs.PostView, moderation: Mod
     const definition = moderation.labelDefs?.[label.src]?.find(item => item.identifier === label.val)
       ?? (Object.hasOwn(LABELS, label.val) ? LABELS[label.val as keyof typeof LABELS] : undefined);
     if (!definition || (self && definition.flags.includes("no-self"))) continue;
-    result.push({ key, source: label.src, self, definition });
+    result.push({ key, source: label.src, self, avatar: self ? undefined : moderation.labelerAvatars?.[label.src], definition });
   }
   return result;
 }

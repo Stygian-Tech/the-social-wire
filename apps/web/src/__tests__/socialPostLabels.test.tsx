@@ -15,6 +15,11 @@ describe("Post label badges", () => {
     expect(socialPostLabels(post, moderation)).toHaveLength(1);
     expect(renderToStaticMarkup(<SocialPostLabels post={post} moderation={moderation} />)).toContain("Verified");
   });
+  it("attaches the matching labeler avatar without using it for author self-labels", () => {
+    const withAvatar = { ...moderation, labelerAvatars: { [did]: "https://images.example/labeler.png", [post.author.did]: "https://images.example/author.png" } };
+    expect(socialPostLabels(post, withAvatar)[0]?.avatar).toBe("https://images.example/labeler.png");
+    expect(socialPostLabels({ ...post, labels: [{ ...label, src: post.author.did, val: "porn" }] }, withAvatar)[0]?.avatar).toBeUndefined();
+  });
   it("does not display unknown sources, unknown values, or internal system labels", () => {
     const value = { ...post, labels: [{ ...label, src: "did:plc:unknown" }, { ...label, val: "unknown" }, { ...label, val: "!hide" }] };
     expect(socialPostLabels(value, moderation)).toEqual([]);

@@ -19,7 +19,7 @@ export function SocialMessageInput({ id, label, text, onChange, pending, valid, 
         event.preventDefault();
         if (valid && !pending) onSend();
       }
-    }} className="max-h-40 min-h-9 min-w-0 w-full flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm leading-5 outline-none" />
-    <button type="submit" aria-label="Send Message" title="Send Message" disabled={pending || !valid} className="mb-0.5 flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40"><ArrowUp aria-hidden="true" className="size-4" /></button>
+    }} className="block max-h-40 min-h-9 min-w-0 w-full flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm leading-5 outline-none" />
+    <button type="submit" aria-label="Send Message" title="Send Message" disabled={pending || !valid} className="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40"><ArrowUp aria-hidden="true" className="size-4" /></button>
   </div>;
 }

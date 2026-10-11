@@ -1,8 +1,9 @@
-import { Agent, AppBskyFeedDefs, moderateFeedGenerator, moderateUserList, type ModerationDecision, type AppBskyActorDefs, type ModerationOpts } from "@atproto/api";
+import { Agent, AppBskyFeedDefs, AppBskyLabelerDefs, interpretLabelValueDefinitions, moderateFeedGenerator, moderateProfile, moderateUserList, type ModerationDecision, type AppBskyActorDefs, type ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { getAtprotoNetwork } from "@/lib/atprotoNetwork";
 import { LocalAppViewAgent } from "@/lib/localAppViewAgent";
 import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import type { SocialModerationOpts } from "@/lib/socialModerationTypes";
 
 export type SocialFeed = {
   kind: "following" | "feed" | "list";
@@ -18,7 +19,7 @@ export const SOCIAL_FOLLOWING_FEED: SocialFeed = {
 
 export type BlueskySocialCatalog = {
   feeds: SocialFeed[];
-  moderation: ModerationOpts;
+  moderation: SocialModerationOpts;
 };
 
 export type BlueskySocialPage = {
@@ -108,12 +109,20 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   // No timeline can render until the viewer's custom safety definitions are ready.
   const requiredLabelers = new Set([...agent.appLabelers, ...preferences.moderationPrefs.labelers.map(labeler => labeler.did)]);
   // getServices requires at least one DID; built-in moderation needs no remote definitions.
-  const labelDefs = requiredLabelers.size ? await agent.getLabelDefinitions(preferences) : {};
+  const services = requiredLabelers.size
+    ? (await agent.app.bsky.labeler.getServices({ dids: [...requiredLabelers], detailed: true }, { signal })).data.views.filter(AppBskyLabelerDefs.isLabelerViewDetailed)
+    : [];
+  const labelDefs = Object.fromEntries(services.map(service => [service.creator.did, interpretLabelValueDefinitions(service)]));
   throwIfAborted(signal);
   for (const did of requiredLabelers) {
     if (!Object.hasOwn(labelDefs, did)) throw new Error("Your moderation settings could not be loaded. Please retry.");
   }
-  const moderation: ModerationOpts = { userDid: session.did, prefs: preferences.moderationPrefs, labelDefs };
+  const labelerAvatars: Record<string, string> = {};
+  const moderation: SocialModerationOpts = { userDid: session.did, prefs: preferences.moderationPrefs, labelDefs, labelerAvatars };
+  for (const service of services) {
+    const avatar = safeSocialFeedAvatarUrl(service.creator.avatar);
+    if (avatar && canDisplayCatalogAvatar(moderateProfile(service.creator, moderation))) labelerAvatars[service.creator.did] = avatar;
+  }
   const feeds = socialFeedsFromPreferences(preferences.savedFeeds);
   const generators = feeds.filter(feed => feed.kind === "feed");
   const names = new Map<string, string>();

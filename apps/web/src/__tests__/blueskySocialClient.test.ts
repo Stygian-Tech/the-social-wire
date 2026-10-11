@@ -125,6 +125,24 @@ describe("Social feed contracts", () => {
     await expect(getBlueskySocialCatalog(session)).rejects.toThrow("moderation settings");
   });
 
+  it("reuses the definitions response for safe labeler avatars and withholds blocked avatars", async () => {
+    for (const blocked of [false, true]) {
+      let serviceRequests = 0;
+      const session = fakeSession(method => {
+        if (method === "app.bsky.actor.getPreferences") return { preferences: [{ $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: [] }] };
+        if (method === "app.bsky.labeler.getServices") {
+          serviceRequests += 1;
+          const service = labelerView(baseLabeler);
+          return { views: [{ ...service, creator: { ...service.creator, avatar: "https://images.example/labeler.png", viewer: blocked ? { blocking: "at://did:plc:alice/app.bsky.graph.block/one" } : {} } }] };
+        }
+        throw new Error(`Unexpected ${method}`);
+      });
+      const catalog = await getBlueskySocialCatalog(session);
+      expect(catalog.moderation.labelerAvatars?.[baseLabeler]).toBe(blocked ? undefined : "https://images.example/labeler.png");
+      expect(serviceRequests).toBe(1);
+    }
+  });
+
   it("deduplicates overlapping pages without losing separate reposts and stops cursor loops", () => {
     const post = { uri: "at://did:plc:author/app.bsky.feed.post/one" } as AppBskyFeedDefs.PostView;
     const original = { post };

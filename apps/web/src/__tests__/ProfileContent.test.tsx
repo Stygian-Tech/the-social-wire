@@ -35,8 +35,12 @@ describe("Profile content", () => {
     render(<ProfileContent />);
     const navigation = screen.getByRole("navigation", { name: "Profile Content" });
     expect(navigation.classList.contains("floating-glass")).toBe(true);
-    expect(navigation.classList.contains("m-2")).toBe(true);
-    expect(navigation.classList.contains("top-2")).toBe(true);
+    expect(navigation.parentElement?.classList.contains("max-w-2xl")).toBe(true);
+    expect(navigation.parentElement?.classList.contains("px-3")).toBe(true);
+    expect(navigation.parentElement?.classList.contains("sm:px-4")).toBe(true);
+    expect(navigation.parentElement?.classList.contains("top-2")).toBe(true);
+    expect(navigation.firstElementChild?.classList.contains("mx-auto")).toBe(true);
+    expect(navigation.firstElementChild?.classList.contains("w-max")).toBe(true);
     expect(navigation.classList.contains("border-y")).toBe(false);
     expect(screen.getByRole("button", { name: "Posts" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Replies" }));

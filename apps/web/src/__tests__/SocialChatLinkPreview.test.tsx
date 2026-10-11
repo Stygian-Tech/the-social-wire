@@ -40,6 +40,11 @@ describe("chat link previews", () => {
     expect(cards[0].getAttribute("href")).toBe("https://example.com/article");
     expect(document.querySelector("script")).toBeNull();
     expect(document.querySelector("img")?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(cards[0].className).toContain("max-w-[400px]");
+    const image = document.querySelector("img");
+    expect(image?.className).toContain("max-h-60");
+    expect(image?.className).toContain("w-auto max-w-full");
+    expect(image?.className).not.toContain("object-cover");
   });
 
   it("omits unsafe images and gracefully omits failed previews", async () => {

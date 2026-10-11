@@ -41,7 +41,7 @@ export default function SocialLayout({ children }: { children: React.ReactNode }
   }
 
   return (
-    <SidebarProvider className={`mx-auto ${appViewportHeightClasses} max-w-[80rem] overflow-hidden overscroll-none [--reader-shell-width:80rem]`}>
+    <SidebarProvider className={`${appViewportHeightClasses} overflow-hidden overscroll-none [--reader-shell-width:80rem]`}>
       <PublicationSidebarProvider>
         <ReadRouteProvider>
           <Suspense fallback={null}>
@@ -56,7 +56,7 @@ export default function SocialLayout({ children }: { children: React.ReactNode }
           <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses}`}>
             <div className="flex min-h-0 flex-1 overflow-hidden">
               <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
-              {!isMessages ? <aside aria-label="Social Feed Sidebar" className="hidden w-60 shrink-0 overflow-y-auto overscroll-contain p-3 lg:block">
+              {!isMessages ? <aside aria-label="Social Feed Sidebar" className="hidden w-72 shrink-0 overflow-y-auto overscroll-contain p-3 lg:block">
                 <div className={floatingSidebarClassName}>
                   <h2 className="mb-2 px-2 text-sm font-semibold">Feeds</h2>
                   <Suspense fallback={null}><SocialFeeds /></Suspense>

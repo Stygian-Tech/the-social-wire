@@ -31,6 +31,16 @@ it("opens from the floating button and publishes only on explicit submission", a
   const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: `at://${oauth.did}/app.bsky.feed.post/new`, cid: "cid" });
   const invalidate = spyOn(cache, "invalidateQueries");
   restores.push(() => publish.mockRestore(), () => invalidate.mockRestore());
+  let dismissToast: (() => void) | undefined;
+  const originalTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (delay === 3300 && typeof callback === "function") {
+      dismissToast = callback as () => void;
+      return originalTimeout(() => {}, 0);
+    }
+    return originalTimeout(callback, delay, ...args);
+  }) as typeof setTimeout;
+  restores.push(() => { globalThis.setTimeout = originalTimeout; });
   const field = await open();
   expect(publish).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Post" }).hasAttribute("disabled")).toBe(true);
@@ -42,7 +52,10 @@ it("opens from the floating button and publishes only on explicit submission", a
   expect(publish.mock.calls[0][0].session).toBe(oauth);
   expect(invalidate).toHaveBeenCalled();
   expect(screen.queryByRole("dialog")).toBeNull();
-  await waitFor(() => expect(screen.queryByText("Post Published")).toBeNull(), { timeout: 4500 });
+  expect(screen.getByRole("status").className).toContain("[animation-delay:3s]");
+  expect(dismissToast).toBeDefined();
+  await act(async () => dismissToast!());
+  expect(screen.queryByText("Post Published")).toBeNull();
 });
 
 it("enforces grapheme limits and resets cancelled content when reopened", async () => {

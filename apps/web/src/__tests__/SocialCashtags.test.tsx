@@ -35,7 +35,7 @@ it("reuses compact official ticker markup only after entering the viewport", asy
   expect(tape.getAttribute("symbols")).toBe("NASDAQ:AAPL,NASDAQ:NVDA");
   expect(tape.getAttribute("item-size")).toBe("compact");
   expect(container.querySelector("script")?.getAttribute("src")).toBe("https://widgets.tradingview-widget.com/w/en/tv-ticker-tape.js");
-  expect(screen.getByRole("link", { name: "Ticker Tape by TradingView" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Ticker Tape by TradingView" })).toBeNull();
   unmount(); expect(container.querySelector("script")).toBeNull();
 });
 it("does not load provider scripts for unsupported tags, disabled widgets, or reduced motion", () => {
@@ -48,6 +48,7 @@ it("does not load provider scripts for unsupported tags, disabled widgets, or re
   reduce = true;
   view.rerender(<SocialCashtags record={record} />);
   expect(view.container.querySelector("script")).toBeNull();
+  expect(screen.getAllByRole("link", { name: "Ticker Tape by TradingView" })).toHaveLength(1);
   expect(screen.getByRole("link", { name: "$AAPL" }).getAttribute("href")).toBe("https://www.tradingview.com/symbols/NASDAQ-AAPL/");
 });
 it("keeps provider interactions from opening the containing post", async () => {

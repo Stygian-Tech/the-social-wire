@@ -22,8 +22,9 @@ export function ProfileContent({ actor, own = true }: { actor?: string; own?: bo
     return () => window.removeEventListener("hashchange", sync);
   }, [sections]);
   return <>
-    <nav aria-label="Profile Content" className={`sticky top-2 z-10 m-2 p-3 ${floatingGlassClasses}`}>
-      <div className="mx-auto flex max-w-2xl gap-2 overflow-x-auto">
+    <div className="sticky top-2 z-10 mx-auto w-full max-w-2xl px-3 py-2 sm:px-4">
+    <nav aria-label="Profile Content" className={`overflow-x-auto p-3 ${floatingGlassClasses}`}>
+      <div className="mx-auto flex w-max gap-2">
         {sections.map(section => <Button key={section} variant={selected === section ? "default" : "outline"} className="shrink-0 rounded-full" aria-pressed={selected === section} onClick={() => {
           setSelected(section);
           window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#${section}`);
@@ -32,6 +33,7 @@ export function ProfileContent({ actor, own = true }: { actor?: string; own?: bo
         </Button>)}
       </div>
     </nav>
+    </div>
     <section aria-label={`${selected.charAt(0).toUpperCase() + selected.slice(1)} Content`}>
       {selected === "publications" ? <MyPublicationsSection /> : <ProfileTimeline key={`${actor ?? "viewer"}:${selected}`} section={selected} actor={actor} />}
     </section>

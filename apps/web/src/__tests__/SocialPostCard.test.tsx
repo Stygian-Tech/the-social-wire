@@ -198,6 +198,21 @@ describe("Social Post Rendering", () => {
       'href="https://example.com/article"',
     );
   });
+  it("bounds external preview images while preserving the complete image", () => {
+    const html = card(item({
+      embed: {
+        $type: "app.bsky.embed.external#view",
+        external: {
+          uri: "https://example.com/article",
+          title: "An Article",
+          description: "Article preview",
+          thumb: "https://example.com/preview.png",
+        },
+      },
+    }));
+    expect(html).toContain('class="mx-auto block h-auto max-h-60 w-auto max-w-full"');
+    expect(html).not.toContain("object-cover");
+  });
   it("rejects unsafe external embed and image URLs", () => {
     expect(
       card(
