@@ -42,6 +42,7 @@ it("opens from the floating button and publishes only on explicit submission", a
   expect(publish.mock.calls[0][0].session).toBe(oauth);
   expect(invalidate).toHaveBeenCalled();
   expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(screen.queryByText("Post Published")).toBeNull(), { timeout: 4500 });
 });
 
 it("enforces grapheme limits and resets cancelled content when reopened", async () => {
