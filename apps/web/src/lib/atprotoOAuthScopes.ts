@@ -57,6 +57,7 @@ export const BLUESKY_SOCIAL_REPO_SCOPES = [
   "repo:app.bsky.graph.listitem?action=create&action=delete",
   "repo:app.bsky.feed.like?action=create&action=delete",
   "repo:app.bsky.feed.repost?action=create&action=delete",
+  "repo:app.bsky.graph.block?action=create&action=delete",
 ] as const;
 
 /** Authenticated Social reads are routed through the viewer PDS AppView proxy. */
@@ -100,6 +101,9 @@ export const BLUESKY_CHAT_RPC_SCOPES = [
   "rpc:chat.bsky.convo.deleteMessageForSelf?aud=did:web:api.bsky.chat%23bsky_chat",
   "rpc:chat.bsky.convo.muteConvo?aud=did:web:api.bsky.chat%23bsky_chat",
   "rpc:chat.bsky.convo.unmuteConvo?aud=did:web:api.bsky.chat%23bsky_chat",
+  "rpc:chat.bsky.convo.acceptConvo?aud=did:web:api.bsky.chat%23bsky_chat",
+  "rpc:chat.bsky.convo.leaveConvo?aud=did:web:api.bsky.chat%23bsky_chat",
+  "rpc:com.atproto.moderation.createReport?aud=did:plc:ar7c4by46qjdydhdevvrndac%23atproto_labeler",
 ] as const;
 
 /** Viewer moderation reads used by authenticated The Wire requests. */

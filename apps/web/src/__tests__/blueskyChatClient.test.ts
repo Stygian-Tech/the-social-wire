@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Network from "@/lib/atprotoNetwork";
-import { getBlueskyConversations, getBlueskyMessageUnread, getBlueskyMessages, LOCAL_CHAT_UNAVAILABLE, performBlueskyChatAction, type ChatAction } from "@/lib/blueskyChatClient";
+import { getBlueskyConversations, getBlueskyMessageUnread, getBlueskyMessages, LOCAL_CHAT_UNAVAILABLE, performBlueskyChatAction, chatErrorMessage, type ChatAction } from "@/lib/blueskyChatClient";
 const did = "did:plc:abcdefghijklmnopqrstuvwx";
 const peer = "did:plc:zzzzzzzzzzzzzzzzzzzzzzzz";
 const restores: (() => void)[] = [];
@@ -13,6 +13,82 @@ function configure(chatServiceDid?: string) {
   restores.push(() => config.mockRestore());
 }
 describe("real chat protocol transport", () => {
+  it("filters requests and accepts or leaves with the actual endpoint response shapes", async () => {
+    configure("did:web:chat.local.test");
+    const calls: string[] = [];
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      const url = new URL(path, "https://pds.test");
+      const method = url.pathname.split(".").at(-1)!;
+      calls.push(method);
+      if (method === "listConvos") { expect(url.searchParams.get("status")).toBe("request"); return Response.json({ convos: [{ ...convo, status: "request" }] }); }
+      expect(JSON.parse(await new Response(init?.body).text())).toEqual({ convoId: convo.id });
+      return Response.json(method === "acceptConvo" ? { rev: "accepted" } : { convoId: convo.id, rev: "left" });
+    } } as unknown as OAuthSession;
+    await getBlueskyConversations({ session, viewerDid: did, status: "request" });
+    expect(await performBlueskyChatAction(session, did, { kind: "accept", convoId: convo.id })).toEqual({ rev: "accepted" });
+    expect(await performBlueskyChatAction(session, did, { kind: "leave", convoId: convo.id })).toMatchObject({ convoId: convo.id, rev: "left" });
+    expect(calls).toEqual(["listConvos", "acceptConvo", "leaveConvo"]);
+  });
+  it("reports private chat subjects to Bluesky moderation and fails closed on local networks", async () => {
+    configure("did:web:api.bsky.chat");
+    const subjects: unknown[] = [];
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      expect(new URL(path, "https://pds.test").pathname).toBe("/xrpc/com.atproto.moderation.createReport");
+      expect(new Headers(init?.headers).get("atproto-proxy")).toBe("did:plc:ar7c4by46qjdydhdevvrndac#atproto_labeler");
+      const body = JSON.parse(await new Response(init?.body).text());
+      expect(body.reason).toBe("Unwanted messages");
+      subjects.push(body.subject);
+      return Response.json({ id: 1, reasonType: body.reasonType, subject: body.subject, reportedBy: did, createdAt: message.sentAt });
+    } } as unknown as OAuthSession;
+    const report = { kind: "report" as const, convoId: convo.id, senderDid: peer, reasonType: "com.atproto.moderation.defs#reasonSpam", reason: " Unwanted messages " };
+    await performBlueskyChatAction(session, did, { ...report, messageId: message.id });
+    await performBlueskyChatAction(session, did, report);
+    expect(subjects).toEqual([{ $type: "chat.bsky.convo.defs#messageRef", did: peer, convoId: convo.id, messageId: message.id }, { $type: "chat.bsky.convo.defs#convoRef", did: peer, convoId: convo.id }]);
+    await expect(performBlueskyChatAction(session, did, { ...report, reasonType: "invalid" })).rejects.toThrow("valid report reason");
+    await expect(performBlueskyChatAction(session, did, { ...report, reason: "a".repeat(2001) })).rejects.toThrow("2,000");
+    configure("did:web:chat.local.test");
+    await expect(performBlueskyChatAction(session, did, report)).rejects.toThrow("no chat moderation service");
+    expect(subjects).toHaveLength(2);
+  });
+  it("writes blocks to PDS and validates unblock record ownership and viewer identity", async () => {
+    configure("did:web:chat.local.test");
+    let blocking = `at://${did}/app.bsky.graph.block/block-key`;
+    let current = true;
+    let drift = false;
+    const writes: { method: string; body: unknown }[] = [];
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      const method = new URL(path, "https://pds.test").pathname.split(".").at(-1)!;
+      if (method === "getProfile") { if (drift) current = false; return Response.json({ did: peer, handle: "bob.test", viewer: { blocking } }); }
+      expect(new Headers(init?.headers).has("atproto-proxy")).toBe(false);
+      writes.push({ method, body: JSON.parse(await new Response(init?.body).text()) });
+      return Response.json(method === "createRecord" ? { uri: blocking, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku" } : {});
+    } } as unknown as OAuthSession;
+    await performBlueskyChatAction(session, did, { kind: "block", convoId: convo.id, subjectDid: peer });
+    expect(writes[0].body).toMatchObject({ repo: did, collection: "app.bsky.graph.block", record: { subject: peer, $type: "app.bsky.graph.block" } });
+    await performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer });
+    expect(writes[1].body).toEqual({ repo: did, collection: "app.bsky.graph.block", rkey: "block-key" });
+    blocking = `at://${peer}/app.bsky.graph.block/key`;
+    await expect(performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer })).rejects.toThrow("does not belong");
+    blocking = `at://${did}/app.bsky.graph.block/key`;
+    drift = true;
+    await expect(performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer }, () => { if (!current) throw new Error("Your account changed"); })).rejects.toThrow("account changed");
+    expect(writes).toHaveLength(2);
+  });
+  it("unblocks a newly created PDS record before the AppView replica catches up", async () => {
+    configure("did:web:chat.local.test");
+    const calls: string[] = [];
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      const method = new URL(path, "https://pds.test").pathname.split(".").at(-1)!;
+      calls.push(method);
+      if (method === "getProfile") throw new Error("The replica has not indexed this block yet");
+      expect(JSON.parse(await new Response(init?.body).text())).toEqual({ repo: did, collection: "app.bsky.graph.block", rkey: "fresh-block" });
+      return Response.json({});
+    } } as unknown as OAuthSession;
+    await performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer, blockingUri: `at://${did}/app.bsky.graph.block/fresh-block` });
+    expect(calls).toEqual(["deleteRecord"]);
+    await expect(performBlueskyChatAction(session, did, { kind: "unblock", convoId: convo.id, subjectDid: peer, blockingUri: `at://${peer}/app.bsky.graph.block/fresh-block` })).rejects.toThrow("does not belong");
+    expect(calls).toEqual(["deleteRecord"]);
+  });
   it("never sends local accounts to a public fallback and rejects identity drift before transport", async () => {
     configure();
     const session = { did, fetchHandler: async () => { throw new Error("unexpected transport"); } } as unknown as OAuthSession;
@@ -126,5 +202,13 @@ describe("real chat protocol transport", () => {
     const session = { did, fetchHandler: async () => { throw new Error("unexpected transport"); } } as unknown as OAuthSession;
     for (const text of [" ", "x".repeat(1001)]) await expect(performBlueskyChatAction(session, did, { kind: "send", convoId: "c", text })).rejects.toThrow("1,000 characters");
     await expect(performBlueskyChatAction(session, did, { kind: "start", members: ["https://public.example"] })).rejects.toThrow("valid recipient handle or DID");
+  });
+});
+
+describe("chat errors", () => {
+  it("preserves actionable account/validation errors without exposing upstream details", () => {
+    expect(chatErrorMessage(new Error("Your account changed. Please reload Messages."))).toBe("Your account changed. Please reload Messages.");
+    expect(chatErrorMessage(new Error("Report details must be at most 2,000 characters."))).toBe("Report details must be at most 2,000 characters.");
+    expect(chatErrorMessage(new Error("upstream database credentials and private request payload"))).toBe("Messages could not be loaded or updated. Please retry.");
   });
 });

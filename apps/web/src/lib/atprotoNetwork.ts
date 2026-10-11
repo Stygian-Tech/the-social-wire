@@ -69,11 +69,14 @@ export function getAtprotoNetwork(): AtprotoNetwork {
 
 /** Keep the proxy DID and consent audiences aligned without altering production metadata. */
 export function atprotoScopesForNetwork(scopes: string, network = getAtprotoNetwork()): string {
-  // The isolated sandbox has no video service. Never request public video
-  // delegation for an account that the publisher cannot safely upload there.
+  // The isolated sandbox has no video service. Preserve the publisher's
+  // network boundary before applying the independent chat-reporting boundary.
   const isolated = network.plcDirectory !== PLC_DIRECTORY || network.publicAppView !== PUBLIC_APPVIEW || network.appViewDid !== APPVIEW_DID;
   const supported = isolated ? scopes.split(" ").filter(scope => !["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app"].includes(scope)).join(" ") : scopes;
-  const scoped = network.chatServiceDid ? supported.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : supported.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
+  const reporting = network.chatServiceDid === CHAT_SERVICE_DID && network.appLabelers === undefined
+    ? supported
+    : supported.split(" ").filter(scope => scope !== "rpc:com.atproto.moderation.createReport?aud=did:plc:ar7c4by46qjdydhdevvrndac%23atproto_labeler").join(" ");
+  const scoped = network.chatServiceDid ? reporting.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : reporting.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
   return skejScopesForEnvironment(scoped.replaceAll(`${APPVIEW_DID}%23bsky_appview`, `${network.appViewDid}%23bsky_appview`));
 }
 
@@ -112,8 +115,8 @@ export function authorizationScopesForClient(scopes: string, clientId: string, a
   return clientId.startsWith("http://localhost?") ? localLoopbackOAuthScopes(scopes, appEnv) : scopes;
 }
 
-/** Colon and slash are legal query characters; avoid encoding them twice inside PAR client IDs. */
+/** These characters are legal inside query values; avoid encoding them twice inside PAR client IDs. */
 export function compactLoopbackClientId(clientId: string): string {
   if (!clientId.startsWith("http://localhost?")) return clientId;
-  return clientId.replace(/%3A/gi, ":").replace(/%2F/gi, "/");
+  return clientId.replace(/%3A/gi, ":").replace(/%2F/gi, "/").replace(/%3F/gi, "?").replace(/%3D/gi, "=");
 }
