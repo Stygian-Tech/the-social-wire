@@ -19,7 +19,6 @@ src/components/AppSidebar/AppSidebarSkeleton.tsx
 src/components/AppSidebar/AssignFolderDialog.tsx
 src/components/AppSidebar/NewFolder/types.ts
 src/components/AppSidebar/PublicationTabButton.tsx
-src/components/AppSidebar/UnreadSidebarBadge.tsx
 src/components/EntryDetail/EntryArticleEmbed.tsx
 src/components/EntryDetail/EntryArticleEmbedInner.tsx
 src/components/EntryDetail/EntryArticleEmbedTypes.ts
