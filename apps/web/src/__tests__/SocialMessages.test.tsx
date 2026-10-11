@@ -138,6 +138,10 @@ describe("Messages workspace", () => {
     expect(screen.getByRole("button", { name: "Message Actions" }).closest("article")).toBeNull();
     const log = screen.getByRole("log", { name: "Conversation History" });
     const input = screen.getByLabelText("Message");
+    const chatPane = screen.getByRole("region", { name: "Messages" });
+    expect(chatPane.classList.contains("max-w-2xl")).toBe(true);
+    expect(chatPane.classList.contains("w-full")).toBe(true);
+    expect(chatPane.classList.contains("mx-auto")).toBe(true);
     expect(log.contains(input)).toBe(false);
     expect(log.className.includes("flex-1")).toBe(true);
     expect(input.closest("form")?.className.includes("shrink-0")).toBe(true);

@@ -104,7 +104,7 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
           })}
           {chat.conversations.hasNextPage ? <Button variant="outline" disabled={chat.conversations.isFetchingNextPage} onClick={() => { void chat.conversations.fetchNextPage(); }}>More Conversations</Button> : null}
         </aside>
-        <section className="flex min-h-0 min-w-0 flex-col gap-3 md:col-start-1 md:row-start-1" aria-label="Messages">
+        <section className="mx-auto flex min-h-0 w-full min-w-0 max-w-2xl flex-col gap-3 justify-self-center md:col-start-1 md:row-start-1" aria-label="Messages">
           {!convoId ? <p className="py-8 text-center text-sm text-muted-foreground">Select a Conversation.</p> : <>
             <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={chat.action.isPending} onClick={() => { void perform({ kind: active?.muted ? "unmute" : "mute", convoId }); }}>{active?.muted ? "Unmute" : "Mute"}</Button><Button variant="outline" size="sm" disabled={chat.action.isPending} onClick={() => { void perform({ kind: "read", convoId }); }}>Mark As Read</Button></div>
             <div ref={viewport} role="log" aria-label="Conversation History" className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain pb-2" onTouchStart={event => {
