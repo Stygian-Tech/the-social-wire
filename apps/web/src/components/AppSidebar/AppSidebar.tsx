@@ -747,21 +747,14 @@ export function AppSidebar({
         {!desktopPublicationRail ? publicationsRail : null}
       </SidebarContent>
 
-      <div className="px-3 pb-2">
-        <SidebarMenu>
+      <SidebarFooter className="border-t border-sidebar-border/70 px-2 py-3">
+        <SidebarMenu className="gap-0.5 px-1">
           <SidebarMenuItem>
-            <SidebarMenuButton isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
+            <SidebarMenuButton tooltip="Articles" isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
               <FilePenLine />
               <span>Articles</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem>
-            <FeedbackDialog />
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </div>
-      <SidebarFooter className="border-t border-sidebar-border/70 px-2 py-3">
-        <SidebarMenu className="gap-0.5 px-1">
           {profileLoading ? (
             <SidebarMenuItem>
               <div className="flex min-w-0 flex-1 items-start gap-2 px-1 py-1">
@@ -800,6 +793,9 @@ export function AppSidebar({
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
+          <SidebarMenuItem>
+            <FeedbackDialog />
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               type="button"
