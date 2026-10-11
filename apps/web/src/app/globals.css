@@ -417,3 +417,10 @@ html[data-bold-text="true"] {
     backdrop-filter: none;
   }
 }
+
+/* The initial inset scrolls away while the header remains above the feed. */
+[data-feed-header-scroll="true"] {
+  box-sizing: border-box;
+  margin-top: calc(-1 * var(--feed-header-extent));
+  padding-top: calc(var(--feed-header-extent) + var(--feed-header-content-padding, 0px));
+}

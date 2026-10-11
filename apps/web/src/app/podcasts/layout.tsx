@@ -28,7 +28,7 @@ export default function PodcastsLayout({
     );
   if (!viewer) return null;
   return (
-    <SidebarProvider className={`mx-auto ${appViewportHeightClasses} max-w-[80rem] overflow-hidden [--reader-shell-width:80rem]`}>
+    <SidebarProvider className={`${appViewportHeightClasses} overflow-hidden [--reader-shell-width:80rem]`}>
       <PublicationSidebarProvider>
         <ReadRouteProvider>
           <Suspense fallback={null}>
