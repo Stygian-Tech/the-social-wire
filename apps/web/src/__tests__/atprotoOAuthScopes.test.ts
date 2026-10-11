@@ -83,7 +83,8 @@ describe("atprotoOAuthScopes", () => {
             scope.startsWith("blob:")
         )
     ).toBe(true);
-    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(5);
+    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(6);
+    expect(SOCIAL_WIRE_REPO_SCOPES.filter(scope => scope.includes("liveEvent"))).toEqual(["repo:app.thesocialwire.liveEvent?action=create&action=update"]);
     expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain("repo:app.thesocialwire.preferences?action=create&action=update");
     expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain("repo:app.thesocialwire.readState?action=create&action=update");
     expect(WIRE_FEEDBACK_REPO_SCOPE).toContain(
@@ -97,9 +98,9 @@ describe("atprotoOAuthScopes", () => {
       "repo:app.bsky.feed.repost?action=create&action=delete",
     ]);
     expect(ARTICLE_PUBLISHING_SCOPES).toEqual([
-      "repo:site.standard.document?action=create",
-      "repo:app.offprint.document.article?action=create",
-      "repo:blog.pckt.document?action=create",
+      "repo:site.standard.document?action=create&action=update",
+      "repo:app.offprint.document.article?action=create&action=update",
+      "repo:blog.pckt.document?action=create&action=update",
       "blob:text/markdown",
       "blob:application/json",
     ]);

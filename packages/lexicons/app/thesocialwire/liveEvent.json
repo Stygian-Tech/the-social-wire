@@ -1,0 +1,122 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.liveEvent",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "description": "Public viewer-owned live event. Updates and destination records commit atomically. Never store secrets.",
+      "record": {
+        "type": "object",
+        "required": [
+          "title",
+          "tags",
+          "destination",
+          "createdAt",
+          "updatedAt",
+          "entries"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "destination": {
+            "type": "string",
+            "enum": [
+              "blog",
+              "bluesky",
+              "both"
+            ]
+          },
+          "publicationUri": {
+            "type": "string",
+            "format": "at-uri"
+          },
+          "articleRef": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "articleUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "threadRoot": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "threadLast": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "entries": {
+            "type": "array",
+            "maxLength": 500,
+            "items": {
+              "type": "ref",
+              "ref": "#update"
+            }
+          },
+          "sourceEvent": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    },
+    "update": {
+      "type": "object",
+      "required": [
+        "id",
+        "createdAt",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 30000
+        },
+        "articleRef": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef"
+        },
+        "postRef": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef"
+        }
+      }
+    }
+  }
+}

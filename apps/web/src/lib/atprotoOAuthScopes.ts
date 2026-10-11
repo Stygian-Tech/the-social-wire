@@ -28,15 +28,16 @@ export const SOCIAL_WIRE_REPO_SCOPES = [
   "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:app.thesocialwire.preferences?action=create&action=update",
+  "repo:app.thesocialwire.liveEvent?action=create&action=update",
   "repo:app.thesocialwire.finance.selection?action=create&action=update&action=delete",
   "repo:app.thesocialwire.sports.selection?action=create&action=update&action=delete",
 ] as const;
 
 /** Article drafts stay private; these permissions publish finished native records. */
 export const ARTICLE_PUBLISHING_SCOPES = [
-  "repo:site.standard.document?action=create",
-  "repo:app.offprint.document.article?action=create",
-  "repo:blog.pckt.document?action=create",
+  "repo:site.standard.document?action=create&action=update",
+  "repo:app.offprint.document.article?action=create&action=update",
+  "repo:blog.pckt.document?action=create&action=update",
   "blob:text/markdown",
   "blob:application/json",
 ] as const;

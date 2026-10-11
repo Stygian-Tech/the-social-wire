@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { LogOut, Bookmark, Archive, FilePenLine } from "lucide-react";
+import { LogOut, Bookmark, Archive, FilePenLine, Radio } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
@@ -718,6 +718,12 @@ export function AppSidebar({
                 <SidebarMenuButton type="button" role="tab" aria-selected={pathname.startsWith("/articles")} tooltip="Articles" isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
                   <FilePenLine />
                   <span>Articles</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton type="button" role="tab" aria-selected={pathname.startsWith("/live-post")} tooltip="Live Post" isActive={pathname.startsWith("/live-post")} onClick={() => { setOpenMobile(false); router.push("/live-post"); }}>
+                  <Radio />
+                  <span>Live Post</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
