@@ -1,0 +1,40 @@
+"use client";
+import { useState } from "react";
+import { useLivestream } from "@/hooks/useLivestream";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import type { Livestream, StreamBlob, StreamKey } from "@/lib/livestream/livestreamTypes";
+import { LivestreamChat } from "./LivestreamChat";
+import { LivestreamPreview } from "./LivestreamPreview";
+export function LivestreamNodeWorkspace({ node }: { node: string }) {
+  const live = useLivestream(node), [title, setTitle] = useState(""), [tags, setTags] = useState(""), [thumb, setThumb] = useState<StreamBlob>();
+  const [selected, setSelected] = useState<Livestream>(), [secret, setSecret] = useState<StreamKey>(), [reveal, setReveal] = useState(false), [chat, setChat] = useState("");
+  const [confirmStart, setConfirmStart] = useState(false), [confirmEnd, setConfirmEnd] = useState(false), [preview, setPreview] = useState(false), [message, setMessage] = useState<string>();
+  const action = async (work: () => Promise<void>) => { setMessage(undefined); try { await work(); } catch (error) { setMessage(error instanceof Error ? error.message : "Livestream Action Failed."); } };
+  const input = { title, tags: tags.split(",").map(tag => tag.trim()).filter(Boolean), ...(thumb ? { thumb } : {}) };
+  return <div className="grid gap-4 pb-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+    <div className="min-w-0 space-y-4">
+      <section className="space-y-3 rounded-2xl border p-4"><h2 className="font-semibold">Broadcast Setup</h2><p className="text-sm">Generate A Key, Configure Your Encoder, Then Start A Livestream Announcement.</p>
+        {live.ingests.map(ingest => <label key={ingest.type} className="block text-sm">{ingest.type.toUpperCase()} Server<Input readOnly value={ingest.url} aria-label={`${ingest.type.toUpperCase()} Server`} /></label>)}
+        <Button disabled={live.pending || !live.ingests.length} onClick={() => void action(async () => { const key = await live.generateKey(); setSecret(key); setReveal(false); })}>Generate Stream Key</Button>
+        {secret ? <div className="space-y-2"><label className="block text-sm">Private Stream Key<Input aria-label="Private Stream Key" type={reveal ? "text" : "password"} readOnly value={secret.secret} autoComplete="off" /></label><div className="flex gap-2"><Button variant="outline" onClick={() => setReveal(value => !value)}>{reveal ? "Hide Key" : "Show Key"}</Button><Button variant="outline" onClick={() => void action(async () => { await navigator.clipboard.writeText(secret.secret); setMessage("Stream Key Copied."); })}>Copy Stream Key</Button><Button variant="outline" onClick={() => { setSecret(undefined); setReveal(false); }}>Clear Key</Button></div><p className="text-xs text-muted-foreground">Keep This Key Private. It Exists Only In This Browser Session And Is Cleared When You Leave Or Change Accounts.</p></div> : null}
+        <p className="text-sm text-muted-foreground">OBS: Custom Service, H.264, 1-Second Keyframes, bframes=0. Generating A Key Does Not Start A Stream Or Revoke Previously Generated Keys.</p>
+      </section>
+      <section className="space-y-3 rounded-2xl border p-4"><h2 className="font-semibold">Livestream Details</h2><label className="block text-sm">Title<Input aria-label="Livestream Title" value={title} onChange={event => setTitle(event.target.value)} maxLength={1400} /></label><label className="block text-sm">Tags<Input aria-label="Livestream Tags" value={tags} onChange={event => setTags(event.target.value)} placeholder="tech, lang:en" /></label>
+        <label className="block text-sm">Thumbnail<input aria-label="Livestream Thumbnail" type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={live.pending} onChange={event => { const file = event.target.files?.[0]; if (file) void action(async () => { setThumb(await live.uploadThumbnail(file)); setMessage("Thumbnail Uploaded."); }); }} /></label>
+        {thumb ? <p className="text-sm">Thumbnail Ready ({thumb.mimeType}).</p> : null}
+        {selected ? <p className="text-sm">Started {new Date(selected.record.createdAt).toLocaleString()}{selected.record.endedAt ? ` · Ended ${new Date(selected.record.endedAt).toLocaleString()}` : ""}</p> : null}
+        <p className="text-xs text-muted-foreground">End Your Current Announcement Before Starting Another. Start And End Times Are Recorded When You Confirm.</p>
+        <div className="flex flex-wrap gap-2"><Button disabled={live.pending || !title.trim() || !!selected?.record.endedAt || (!selected && (!live.ingests.length || live.streams.some(stream => !stream.record.endedAt)))} onClick={() => selected ? void action(async () => { setSelected(await live.save(input, selected)); setMessage("Livestream Details Updated."); }) : setConfirmStart(true)}>{selected ? "Save Details" : "Start Livestream"}</Button>{selected && !selected.record.endedAt ? <Button variant="outline" disabled={live.pending} onClick={() => setConfirmEnd(true)}>End Livestream</Button> : null}<Button variant="outline" disabled={live.pending} onClick={() => { setSelected(undefined); setTitle(""); setTags(""); setThumb(undefined); setConfirmStart(false); setConfirmEnd(false); }}>New Livestream</Button></div>
+        {confirmStart ? <div role="alert" className="space-y-2 rounded-xl border p-3"><p>This Publishes Your Livestream Announcement Now. It Does Not Start Your Encoder.</p><Button disabled={live.pending} onClick={() => void action(async () => { setSelected(await live.save(input)); setConfirmStart(false); })}>Confirm Start Livestream</Button><Button variant="ghost" onClick={() => setConfirmStart(false)}>Cancel</Button></div> : null}
+        {confirmEnd && selected ? <div role="alert" className="space-y-2 rounded-xl border p-3"><p>This Ends The Public Livestream Record. Stop Broadcasting In Your Encoder Separately.</p><Button disabled={live.pending} onClick={() => void action(async () => { setSelected(await live.end(selected)); setConfirmEnd(false); })}>Confirm End Livestream</Button><Button variant="ghost" onClick={() => setConfirmEnd(false)}>Cancel</Button></div> : null}
+      </section>
+      <section className="space-y-2 rounded-2xl border p-4"><h2 className="font-semibold">Live Status</h2><p role="status">{live.snapshot.connected ? "Connected To Streamplace" : "Streamplace Disconnected"}</p><p>Concurrent Viewers: {live.snapshot.connected ? live.snapshot.viewers ?? "Unavailable" : "Unavailable"}</p><p>Total Playback Sessions: {live.snapshot.connected ? live.snapshot.totalSessions ?? "Unavailable" : "Unavailable"}</p><p className="text-xs text-muted-foreground">Playback Sessions Are Not Unique Viewers Or Impressions.</p>
+        <Button variant="outline" onClick={() => setPreview(value => !value)}>{preview ? "Hide Preview" : "Show Preview"}</Button>{preview && live.did ? <LivestreamPreview node={node} did={live.did} /> : null}
+      </section>
+      {message || live.error || live.snapshot.error ? <p role="alert">{message ?? live.error ?? live.snapshot.error}</p> : null}
+      <section className="space-y-2 rounded-2xl border p-4"><h2 className="font-semibold">Your Livestreams</h2><Button variant="ghost" onClick={() => void live.refresh()}>Refresh Livestreams</Button>{live.loading ? <p role="status">Loading Livestreams…</p> : !live.streams.length ? <p>No Livestreams Yet.</p> : live.streams.map(stream => <Button key={stream.uri} variant="outline" disabled={live.pending} className="h-auto w-full justify-start whitespace-normal text-left" onClick={() => { setSelected(stream); setTitle(stream.record.title); setTags(stream.record.tags?.join(", ") ?? ""); setThumb(stream.record.thumb); setConfirmStart(false); setConfirmEnd(false); }}>{stream.record.title} · {stream.record.endedAt ? "Ended" : "Announced"}</Button>)}</section>
+    </div>
+    <LivestreamChat messages={live.snapshot.messages} text={chat} onChange={setChat} pending={live.pending} connected={live.snapshot.connected} onSend={() => void action(async () => { await live.send(chat); setChat(""); })} />
+  </div>;
+}

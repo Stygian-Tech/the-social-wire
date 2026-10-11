@@ -67,3 +67,6 @@ src/lib/socialModerationTypes.ts
 
 # Live Post event contracts contain only erased TypeScript declarations.
 src/lib/livePosts/livePostTypes.ts
+
+# Livestream contracts contain only erased TypeScript declarations.
+src/lib/livestream/livestreamTypes.ts
