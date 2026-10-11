@@ -44,7 +44,7 @@ beforeEach(() => {
   restore(spyOn(Notifications, "useSocialNotifications").mockImplementation(() => ({ data: { pages: [{ notifications: [notification], posts }] }, isPending: false, isError: false }) as unknown as ReturnType<typeof Notifications.useSocialNotifications>));
   restore(spyOn(Notifications, "useSocialNotificationUnread").mockReturnValue({ data: 1 } as unknown as ReturnType<typeof Notifications.useSocialNotificationUnread>));
   restore(spyOn(Notifications, "useMarkSocialNotificationsSeen").mockReturnValue({ mutate: () => {}, isPending: false } as unknown as ReturnType<typeof Notifications.useMarkSocialNotificationsSeen>));
-  restore(spyOn(Actions, "SocialPostActions").mockImplementation(({ post, onOpen }) => <><button onClick={onOpen}>Open {(post.record as { text: string }).text}</button><button onClick={() => liked(post.uri)}>Like {(post.record as { text: string }).text}</button></>));
+  restore(spyOn(Actions, "SocialPostActions").mockImplementation(({ post }) => <><button onClick={() => liked(post.uri)}>Like {(post.record as { text: string }).text}</button></>));
 });
 afterEach(() => { cleanup(); cache.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
 
@@ -52,12 +52,12 @@ it("shows the reply and its immediate parent, with separate action targets and n
   render(<SocialNotifications />, { wrapper: Wrapper });
   expect(await screen.findByText(replyRecord.text)).toBeTruthy();
   expect(screen.getByText("Immediate parent")).toBeTruthy(); expect(screen.queryByText("Thread root")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Open The actual nested reply" }));
+  fireEvent.click(screen.getByText(replyRecord.text));
   expect(push).toHaveBeenCalledWith(socialPostPageHref(replyUri, "/social/notifications"));
   fireEvent.click(screen.getByRole("button", { name: "Like The actual nested reply" }));
   expect(liked).toHaveBeenCalledWith(replyUri);
   expect(liked).not.toHaveBeenCalledWith(parentUri); expect(liked).not.toHaveBeenCalledWith(rootUri);
-  fireEvent.click(screen.getByRole("button", { name: "Open Immediate parent" }));
+  fireEvent.click(screen.getByText("Immediate parent"));
   expect(push).toHaveBeenLastCalledWith(socialPostPageHref(parentUri, "/social/notifications"));
   fireEvent.click(screen.getByRole("button", { name: "Like Immediate parent" }));
   expect(liked).toHaveBeenLastCalledWith(parentUri);

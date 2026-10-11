@@ -12,5 +12,5 @@ export function useSocialPostNavigation() {
     const query = params?.toString();
     return safeSocialPostReturnPath(`${pathname ?? "/social"}${query ? `?${query}` : ""}${typeof window === "undefined" ? "" : window.location.hash}`);
   }
-  return { openPost: (uri: string) => router.push(socialPostPageHref(uri, origin())), back: () => router.replace(origin()) };
+  return { openPost: (uri: string) => router.push(socialPostPageHref(uri, origin())), back: () => router.replace(origin(), { scroll: false }) };
 }

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import * as Navigation from "next/navigation";
 
 import * as Auth from "@/hooks/useAuth";
@@ -42,6 +42,25 @@ async function show() {
 }
 
 describe("Social route layout", () => {
+  it("keeps long feed lists inside a padded rounded frame", async () => {
+    const feeds = spyOn(SocialFeeds, "SocialFeeds").mockImplementation(() => <nav aria-label="Social Feeds">{Array.from({ length: 60 }, (_, index) => <a key={index} href={`/social?feed=${index}`}>Feed {index}</a>)}</nav>);
+    restores.push(() => feeds.mockRestore());
+    await show();
+    const aside = screen.getByRole("complementary", { name: "Social Feed Sidebar" });
+    const nav = within(aside).getByRole("navigation", { name: "Social Feeds" });
+    const scroll = nav.parentElement!;
+    const frame = scroll.parentElement!;
+    expect(within(nav).getAllByRole("link")).toHaveLength(60);
+    expect(aside.className).toContain("overflow-hidden");
+    expect(aside.className).toContain("p-3");
+    expect(frame.className).toContain("rounded-2xl");
+    expect(frame.className).toContain("overflow-hidden");
+    expect(frame.className).toContain("p-3");
+    expect(scroll.className).toContain("min-h-0");
+    expect(scroll.className).toContain("overflow-y-auto");
+    expect(scroll.className).toContain("overscroll-contain");
+  });
+
   it("waits for auth hydration without displaying content or redirecting", async () => {
     loading = true;
     signedIn = false;

@@ -121,6 +121,30 @@ describe("Social timeline page", () => {
     expect(posts.mock.calls.map(([args]) => args.cursor)).toEqual([undefined, "repeat"]);
   });
 
+  it("returns to the same scroll position with cached paginated feed rows", async () => {
+    serveCatalog();
+    const posts = spyOn(Client, "getBlueskySocialPage").mockImplementation(async args => ({
+      feed: [args.cursor ? item("return-two", "Return Second Page") : item("return-one", "Return First Page")],
+      cursor: args.cursor ? undefined : "next-return-page",
+    }));
+    restores.push(() => posts.mockRestore());
+    await show();
+    await screen.findByText("Return First Page");
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+    const row = await screen.findByText("Return Second Page");
+    const scrolling = row.closest(".overflow-y-auto") as HTMLElement;
+    scrolling.scrollTop = 780;
+    fireEvent.scroll(scrolling);
+    fireEvent.click(row);
+    expect(Navigation.useRouter().push).toHaveBeenCalled();
+    cleanup();
+    await show();
+    const returned = await screen.findByText("Return Second Page");
+    expect(returned.closest(".overflow-y-auto")?.scrollTop).toBe(780);
+    expect(screen.getByText("Return First Page")).toBeTruthy();
+    expect(posts).toHaveBeenCalledTimes(2);
+  });
+
   it("refreshes safety settings before invalidating posts and reflects updated preferences", async () => {
     const oldPost = item("old", "Old feed post");
     const refreshed = deferred<Client.BlueskySocialCatalog>();

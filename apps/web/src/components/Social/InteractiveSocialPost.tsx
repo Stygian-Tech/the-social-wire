@@ -22,7 +22,7 @@ export function InteractiveSocialPost({ item, moderation, showReplyParentActions
       <span>Conversation</span>
     </p> : null}
     {showContext ? <SocialAuthorThreadIndicator item={item} moderation={moderation} onOpen={navigation.openPost} /> : null}
-    {grouped && item.reply ? <SocialReplyContext reply={item.reply} postUri={item.post.uri} moderation={moderation} onOpenPost={openPost} parentActions={showReplyParentActions && parent ? <SocialPostActions post={parent} moderation={moderation} onOpen={() => openPost(parent)} /> : undefined} /> : null}
-    <SocialPostCard embedded={grouped} item={item} moderation={moderation} onOpen={() => openPost(item.post)} onOpenPost={openPost} actions={<SocialPostActions post={item.post} moderation={moderation} onOpen={() => openPost(item.post)} />} />
+    {grouped && item.reply ? <SocialReplyContext reply={item.reply} postUri={item.post.uri} moderation={moderation} onOpenPost={openPost} parentActions={showReplyParentActions && parent ? <SocialPostActions post={parent} moderation={moderation} /> : undefined} /> : null}
+    <SocialPostCard embedded={grouped} item={item} moderation={moderation} onOpen={() => openPost(item.post)} onOpenPost={openPost} actions={<SocialPostActions post={item.post} moderation={moderation} />} />
   </div>;
 }
