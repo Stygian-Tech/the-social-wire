@@ -1,5 +1,6 @@
 "use client";
 
+import { AnalyticsTrafficObserver } from "@/components/AnalyticsTrafficObserver";
 import { PodcastPlayerProvider } from "@/components/Podcasts/PodcastPlayerProvider";
 import { useState } from "react";
 import {
@@ -121,6 +122,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         }}
       >
         <AuthProvider>
+          <AnalyticsTrafficObserver />
           <CircleViewerCacheCleanup />
           <SocialViewerCacheCleanup />
           <PodcastPlayerProvider>{children}</PodcastPlayerProvider>

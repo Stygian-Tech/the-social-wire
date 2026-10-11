@@ -121,6 +121,8 @@ export const EntryRow = memo(function EntryRow({
         role="button"
         tabIndex={0}
         data-at-uri={entry.entryId}
+        data-analytics-subject={entry.entryId}
+        data-analytics-surface="article-feed"
         aria-busy={isResolving || undefined}
         onClick={() => onSelect(entry.entryId, entry)}
         onKeyDown={(event) => {

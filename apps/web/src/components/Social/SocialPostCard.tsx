@@ -26,6 +26,7 @@ export function SocialPostCard({
   detailedTimestamp = false,
   onOpenPost,
   embedded = false,
+  analyticsSurface = "social-feed",
 }: {
   item: AppBskyFeedDefs.FeedViewPost;
   moderation: ModerationOpts;
@@ -34,6 +35,7 @@ export function SocialPostCard({
   detailedTimestamp?: boolean;
   onOpenPost?: (post: AppBskyFeedDefs.PostView) => void;
   embedded?: boolean;
+  analyticsSurface?: "social-feed" | "post-viewer" | "messages";
 }) {
   const post = item.post;
   const record = AppBskyFeedPost.validateRecord(post.record);
@@ -74,7 +76,7 @@ export function SocialPostCard({
   const timestamp = Number.isNaN(Date.parse(record.value.createdAt)) ? post.indexedAt : record.value.createdAt;
   const date = new Date(timestamp);
   return (
-    <article className={`flex min-w-0 shrink-0 flex-col gap-3 text-card-foreground ${onOpen ? "cursor-pointer" : ""} ${embedded ? "" : "rounded-2xl border bg-card p-4"}`}
+    <article data-analytics-subject={post.uri} data-analytics-surface={analyticsSurface} className={`flex min-w-0 shrink-0 flex-col gap-3 text-card-foreground ${onOpen ? "cursor-pointer" : ""} ${embedded ? "" : "rounded-2xl border bg-card p-4"}`}
       onClick={onOpen ? event => {
         const target = event.target;
         if (target instanceof Element && event.currentTarget.contains(target) && !target.closest('a, button, input, video, audio') && !window.getSelection()?.toString()) { event.stopPropagation(); onOpen(); }
