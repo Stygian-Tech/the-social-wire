@@ -44,6 +44,22 @@ describe("real chat protocol transport", () => {
     expect(calls[3]!.body).toEqual({ convoId: convo.id, message: { text: "Hello" } });
     expect(calls[5]!.body).toEqual({ convoId: convo.id, messageId: message.id });
   });
+  it("sends native reply references and resolves mention/link facets with UTF-8 offsets", async () => {
+    configure("did:web:chat.local.test");
+    let sent: Record<string, unknown> | undefined;
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      const url = new URL(path, "https://pds.test");
+      if (url.pathname.endsWith("resolveHandle")) return Response.json({ did: peer });
+      sent = JSON.parse(await new Response(init?.body).text());
+      return Response.json(message);
+    } } as unknown as OAuthSession;
+    await performBlueskyChatAction(session, did, { kind: "send", convoId: "c", text: "😀 @bob.test https://example.test", replyTo: "parent" });
+    const payload = sent?.message as { text: string; replyTo: { messageId: string }; facets: { index: { byteStart: number }; features: { did?: string; uri?: string }[] }[] };
+    expect(payload.replyTo).toEqual({ messageId: "parent" });
+    expect(payload.text).toBe("😀 @bob.test https://example.test");
+    expect(payload.facets.find(facet => facet.features[0].did === peer)?.index.byteStart).toBe(5);
+    expect(payload.facets.some(facet => facet.features[0].uri === "https://example.test")).toBe(true);
+  });
   it("resolves recipient handles on the configured public resolver without OAuth", async () => {
     configure("did:web:chat.local.test");
     const resolve = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {

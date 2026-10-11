@@ -7,6 +7,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, Dia
 import type { ChatAction } from "@/lib/blueskyChatClient";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { SocialPeopleTextField } from "./SocialPeopleTextField";
 import { SocialMessageInput } from "./SocialMessageInput";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 
@@ -49,7 +50,7 @@ export function SocialNewConversationDialog({ initialMessage, disabled, perform,
     <DialogContent>
       <DialogTitle>New Conversation</DialogTitle><DialogDescription>Choose a recipient and send your first message.</DialogDescription>
       <form className="flex flex-col gap-3" onSubmit={event => { event.preventDefault(); void send(); }}>
-        <label className="flex flex-col gap-1 text-sm">Recipient Handle Or DID<input disabled={pending || !!createdId} value={recipient} onChange={event => setRecipient(event.target.value)} className="rounded-md border bg-background px-3 py-2" placeholder="alice.bsky.social" /></label>
+        <div className="flex flex-col gap-1 text-sm"><label htmlFor="chat-recipient">Recipient Handle Or DID</label><SocialPeopleTextField id="chat-recipient" recipient disabled={pending || !!createdId} value={recipient} onValueChange={setRecipient} className="w-full rounded-md border bg-background px-3 py-2" placeholder="alice.bsky.social" /></div>
         <SocialMessageInput id="chat-first-message" label="First Message" text={text} onChange={setText} pending={pending} valid={!!recipient.trim() && !!text.trim() && ChatBskyConvoDefs.validateMessageInput({ text: text.trim() }).success} onSend={() => { void send(); }} />
         {error ? <div role="alert" className="text-sm text-destructive">{error}{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : null}{createdId ? <p className="mt-1 text-muted-foreground">The conversation is open. Check it before retrying; the message may already have been delivered.</p> : null}</div> : null}
         <div className="flex justify-end gap-2"><DialogClose render={<Button variant="outline" disabled={pending} />}>Cancel</DialogClose></div>

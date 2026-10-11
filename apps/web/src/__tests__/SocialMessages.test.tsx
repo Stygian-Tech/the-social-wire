@@ -96,7 +96,7 @@ describe("Messages workspace", () => {
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "send" && call[2].text === draft)).toBe(true));
     await waitFor(() => expect(screen.queryByRole("dialog") === null).toBe(true));
   });
-  it("quotes a bounded reply and adds/removes reactions through the selected conversation", async () => {
+  it("sends a native reply and adds/removes reactions through the selected conversation", async () => {
     const original = "👩‍💻".repeat(990);
     const message = { $type: "chat.bsky.convo.defs#messageView" as const, id: "m", rev: "2", text: original, sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z", reactions: [{ value: "👍", sender: { did: alice }, createdAt: "2026-10-10T00:00:00Z" }] };
     const list = spyOn(Chat, "getBlueskyConversations").mockResolvedValue({ convos: [convo] }); restores.push(() => list.mockRestore());
@@ -106,21 +106,40 @@ describe("Messages workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: /bob.test/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Message Actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Reply" }));
-    expect(screen.getByText("Reply · Quoted Text")).toBeTruthy();
+    expect(screen.getByText("Replying To")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Short reply" } });
     expect((screen.getByRole("button", { name: "Send Message" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
     await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
     const action = write.mock.calls[0]![2];
     expect(action.kind).toBe("send");
-    if (action.kind === "send") expect(action.text).toBe(`> ${"👩‍💻".repeat(200)}…\n\nShort reply`);
+    if (action.kind === "send") expect(action).toEqual({ kind: "send", convoId: "c", text: "Short reply", replyTo: "m" });
     await waitFor(() => expect((screen.getByRole("button", { name: "Message Actions" }) as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Reaction 👍" }));
+    const reaction = screen.getByRole("button", { name: "Remove Reaction 👍" });
+    expect(reaction.closest("article")).toBeNull();
+    fireEvent.click(reaction);
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "removeReaction" && call[2].messageId === "m" && call[2].value === "👍")).toBe(true));
     await waitFor(() => expect((screen.getByRole("button", { name: "Message Actions" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Message Actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "React ❤️" }));
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "addReaction" && call[2].messageId === "m" && call[2].value === "❤️")).toBe(true));
+  });
+  it("renders the native immediate parent and keeps the composer outside the scrolling history", async () => {
+    const parent = { $type: "chat.bsky.convo.defs#messageView" as const, id: "parent", rev: "1", text: "The text being replied to", sender: { did: alice }, sentAt: "2026-10-10T00:00:00Z" };
+    const reply = { ...parent, id: "reply", text: "My response", sender: { did: bob }, replyTo: parent };
+    const list = spyOn(Chat, "getBlueskyConversations").mockResolvedValue({ convos: [convo] }); restores.push(() => list.mockRestore());
+    const messages = spyOn(Chat, "getBlueskyMessages").mockResolvedValue({ messages: [reply] }); restores.push(() => messages.mockRestore());
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /bob.test/ }));
+    expect(await screen.findByText("The text being replied to")).toBeTruthy();
+    expect(screen.getByText("My response")).toBeTruthy();
+    expect(document.querySelector("time")?.closest("article")).toBeNull();
+    expect(screen.getByRole("button", { name: "Message Actions" }).closest("article")).toBeNull();
+    const log = screen.getByRole("log", { name: "Conversation History" });
+    const input = screen.getByLabelText("Message");
+    expect(log.contains(input)).toBe(false);
+    expect(log.className.includes("flex-1")).toBe(true);
+    expect(input.closest("form")?.className.includes("shrink-0")).toBe(true);
   });
   for (const gesture of ["wheel", "touch"]) it(`loads older messages only after an upward ${gesture} gesture and preserves the visible position`, async () => {
     const message = { $type: "chat.bsky.convo.defs#messageView" as const, id: "new", rev: "1", text: "Recent message", sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z" };

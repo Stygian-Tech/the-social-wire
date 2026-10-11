@@ -9,6 +9,7 @@ import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { SocialPeopleTextField } from "./SocialPeopleTextField";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 
 export function SocialComposeButton() {
@@ -70,7 +71,7 @@ export function SocialComposeButton() {
         <DialogDescription>Share a Post on Bluesky</DialogDescription>
         <form className="flex min-w-0 flex-col gap-3" onSubmit={event => { event.preventDefault(); void publish(); }}>
           <label htmlFor="social-compose-text" className="sr-only">Post Text</label>
-          <textarea id="social-compose-text" autoFocus value={text} disabled={pending} onChange={event => setText(event.target.value)} rows={6} placeholder="What's Happening?" className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
+          <SocialPeopleTextField id="social-compose-text" autoFocus value={text} disabled={pending} onValueChange={setText} rows={6} placeholder="What's Happening?" className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
           <p aria-live="polite" className={`text-right text-sm ${length > 300 ? "text-destructive" : "text-muted-foreground"}`}>{length}/300</p>
           {bytes > 3000 ? <p className="text-sm text-destructive">Post Text Exceeds the Size Limit</p> : null}
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
