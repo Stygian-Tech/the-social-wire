@@ -6,6 +6,7 @@ struct PodcastsView: View {
     @State private var importingOPML = false
     @State private var input = PodcastSearchInput()
     @State private var search = PodcastSearchModel()
+    @State private var showToUnsubscribe: PodcastShow?
 
     var body: some View {
         let identity = PodcastSearchIdentity(viewer: library.viewer, query: input.query, scope: input.scope)
@@ -36,6 +37,11 @@ struct PodcastsView: View {
                                 if show.isPrivate { Text("Private").font(.caption).foregroundStyle(.secondary) }
                             }
                         }
+                        .contextMenu {
+                            Button("Unsubscribe", systemImage: "minus.circle", role: .destructive) {
+                                showToUnsubscribe = show
+                            }
+                        }
                     }
                     if !library.shows.contains(where: { library.state.subscriptions.contains($0.id) }), !library.loading {
                         ContentUnavailableView("No Podcasts Yet", systemImage: "headphones", description: Text("Add a public feed, a private RSS feed, or an on-protocol podcast."))
@@ -63,6 +69,7 @@ struct PodcastsView: View {
         }
         .sheet(isPresented: $importingOPML) { OPMLImportView(initialDestination: .podcasts) }
         .sheet(isPresented: $addingPodcast) { NavigationStack { PodcastDiscoveryView() } }
+        .modifier(PodcastUnsubscribeConfirmation(show: $showToUnsubscribe))
         .refreshable { await library.refresh() }
         .task { await library.refresh() }
         .task(id: identity) { await search.search(identity, fetch: library.searchPage) }
