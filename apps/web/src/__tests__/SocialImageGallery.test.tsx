@@ -6,6 +6,7 @@ import {
   expect,
   it,
   mock,
+  spyOn,
 } from "bun:test";
 import {
   act,
@@ -102,7 +103,7 @@ describe("Social Image Gallery", () => {
   it("swipes horizontally without stealing vertical scroll or opening the viewer after dragging", () => {
     render(<SocialImageGallery images={[image, secondImage]} />);
     const button = screen.getByRole("button", { name: "Open Image 1: A portrait" });
-    const container = button.parentElement!;
+    const container = screen.getByRole("group", { name: "Post Images" });
     const capture = mock(() => {});
     Object.defineProperty(container, "setPointerCapture", { value: capture });
     expect(container.style.touchAction).toBe("pan-y");
@@ -125,6 +126,68 @@ describe("Social Image Gallery", () => {
     expect(screen.getByText("2 / 2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open Image 2: Second Photo" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("swipes over the carousel controls row while leaving arrow and dot taps independent", () => {
+    render(<SocialImageGallery images={[image, secondImage]} />);
+    const counter = screen.getByText("1 / 2");
+    pointer(counter, "pointerdown", 150, 50);
+    pointer(counter, "pointermove", 60, 55);
+    pointer(counter, "pointerup", 60, 55);
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open Image 2: Second Photo" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const previous = screen.getByRole("button", { name: "Previous Photo" });
+    pointer(previous, "pointerdown", 150, 50);
+    expect(pointer(previous, "pointermove", 60, 55).defaultPrevented).toBe(false);
+    pointer(previous, "pointerup", 60, 55);
+    fireEvent.click(previous);
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show Photo 2" }));
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+  });
+
+  it("accumulates horizontal trackpad movement once per burst and preserves vertical scrolling and pinch zoom", () => {
+    let now = 1000;
+    const clock = spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      render(<SocialImageGallery images={[image, secondImage, { ...image, thumb: "https://publisher.example/three.jpg", alt: "Third Photo" }]} />);
+      const carousel = screen.getByRole("group", { name: "Post Images" });
+      const wheel = (deltaX: number, deltaY = 0, ctrlKey = false) => {
+        const event = new window.WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX, deltaY, ctrlKey });
+        fireEvent(carousel, event);
+        return event;
+      };
+      expect(wheel(5, 60).defaultPrevented).toBe(false);
+      expect(wheel(70, 0, true).defaultPrevented).toBe(false);
+      expect(screen.getByText("1 / 3")).toBeTruthy();
+      expect(wheel(20).defaultPrevented).toBe(true);
+      expect(screen.getByText("1 / 3")).toBeTruthy();
+      wheel(25);
+      wheel(100);
+      expect(screen.getByText("2 / 3")).toBeTruthy();
+      now += 200;
+      wheel(50);
+      expect(screen.getByText("3 / 3")).toBeTruthy();
+      now += 200;
+      wheel(50);
+      expect(screen.getByText("3 / 3")).toBeTruthy();
+      now += 200;
+      wheel(-20);
+      wheel(-25);
+      expect(screen.getByText("2 / 3")).toBeTruthy();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally { clock.mockRestore(); }
+  });
+
+  it("moves backward immediately when a previously selected photo is removed", () => {
+    const thirdImage = { ...image, thumb: "https://publisher.example/three.jpg", alt: "Third Photo" };
+    const view = render(<SocialImageGallery images={[image, secondImage, thirdImage]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show Photo 3" }));
+    view.rerender(<SocialImageGallery images={[image, secondImage]} />);
+    expect(screen.getByText("2 / 2")).toBeTruthy();
+    fireEvent.wheel(screen.getByRole("group", { name: "Post Images" }), { deltaX: -50 });
+    expect(screen.getByText("1 / 2")).toBeTruthy();
   });
 
   it("navigates the full-screen carousel at normal zoom and keeps arrow panning when zoomed", async () => {

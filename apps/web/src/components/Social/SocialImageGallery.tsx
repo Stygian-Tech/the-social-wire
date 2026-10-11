@@ -10,12 +10,38 @@ import { SocialImageDialog } from "./SocialImageDialog";
 
 export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedImages.ViewImage[] }) {
   const [active, setActive] = useState(0);
+  const carousel = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const drag = useRef<{ id: number; x: number; y: number; horizontal: boolean; vertical: boolean } | null>(null);
   const suppressClick = useRef(false);
   const clearClick = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(clearClick.current), []);
   const safeImages = images.filter(image => socialHttpsUrl(image.thumb));
+  useEffect(() => {
+    const element = carousel.current;
+    if (!element || safeImages.length < 2) return;
+    let accumulated = 0;
+    let lastWheel = 0;
+    let navigated = false;
+    const wheel = (event: WheelEvent) => {
+      // Preserve vertical feed scrolling and trackpad pinch-to-zoom.
+      if (event.ctrlKey || Math.abs(event.deltaX) <= Math.abs(event.deltaY) * 1.5) return;
+      const now = Date.now();
+      if (now - lastWheel > 180) { accumulated = 0; navigated = false; }
+      lastWheel = now;
+      event.preventDefault();
+      event.stopPropagation();
+      if (navigated) return;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientWidth : 1;
+      accumulated += event.deltaX * unit;
+      if (Math.abs(accumulated) < 40) return;
+      navigated = true;
+      const direction = accumulated > 0 ? 1 : -1;
+      setActive(previous => Math.max(0, Math.min(Math.min(previous, safeImages.length - 1) + direction, safeImages.length - 1)));
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
+    return () => element.removeEventListener("wheel", wheel);
+  }, [safeImages.length]);
   if (!safeImages.length) return null;
   const index = Math.min(active, safeImages.length - 1);
   const image = safeImages[index];
@@ -24,43 +50,45 @@ export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedIm
   const select = (next: number) => { navigate(next); setSelected(next); };
   const selectedIndex = selected === null ? null : Math.min(selected, safeImages.length - 1);
   return <>
-    <div role="group" aria-roledescription={multiple ? "carousel" : undefined} aria-label="Post Images" className="flex min-w-0 flex-col gap-2"
+    <div ref={carousel} role="group" aria-roledescription={multiple ? "carousel" : undefined} aria-label="Post Images" className="flex min-w-0 flex-col gap-2"
+      style={{ touchAction: "pan-y" }}
+      onClickCapture={event => { if (suppressClick.current) { event.preventDefault(); event.stopPropagation(); suppressClick.current = false; } }}
+      onPointerDown={event => {
+        const target = event.target as Element;
+        if (!multiple || event.button !== 0 || (target.closest("button, a, input, textarea, select, [role='button']") && !target.closest("[data-gallery-image]"))) return;
+        if (event.isPrimary === false || drag.current) { drag.current = null; return; }
+        suppressClick.current = false;
+        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, horizontal: false, vertical: false };
+      }}
+      onPointerMove={event => {
+        const gesture = drag.current;
+        if (!gesture || gesture.id !== event.pointerId || gesture.vertical) return;
+        const dx = Math.abs(event.clientX - gesture.x), dy = Math.abs(event.clientY - gesture.y);
+        if (!gesture.horizontal && dy > 10 && dy > dx) { gesture.vertical = true; return; }
+        if (!gesture.horizontal && dx > 12 && dx > dy * 1.5) {
+          gesture.horizontal = true;
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        }
+        if (gesture.horizontal) event.preventDefault();
+      }}
+      onPointerUp={event => {
+        const gesture = drag.current;
+        drag.current = null;
+        if (!gesture || gesture.id !== event.pointerId || !gesture.horizontal) return;
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        suppressClick.current = true;
+        clearTimeout(clearClick.current);
+        clearClick.current = setTimeout(() => { suppressClick.current = false; }, 300);
+        const dx = event.clientX - gesture.x;
+        if (Math.abs(dx) >= 40) navigate(index + (dx < 0 ? 1 : -1));
+      }}
+      onPointerCancel={() => { drag.current = null; }}
       onKeyDown={event => {
         if (!multiple || !event.currentTarget.contains(event.target as Node)) return;
         const next = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? safeImages.length - 1 : undefined;
         if (next !== undefined) { event.preventDefault(); event.stopPropagation(); navigate(next); }
       }}>
-      <div className="relative min-w-0" style={{ touchAction: "pan-y" }}
-        onClickCapture={event => { if (suppressClick.current) { event.preventDefault(); event.stopPropagation(); suppressClick.current = false; } }}
-        onPointerDown={event => {
-          if (!multiple || event.button !== 0 || !(event.target as Element).closest("[data-gallery-image]")) return;
-          if (event.isPrimary === false || drag.current) { drag.current = null; return; }
-          suppressClick.current = false;
-          drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, horizontal: false, vertical: false };
-        }}
-        onPointerMove={event => {
-          const gesture = drag.current;
-          if (!gesture || gesture.id !== event.pointerId || gesture.vertical) return;
-          const dx = Math.abs(event.clientX - gesture.x), dy = Math.abs(event.clientY - gesture.y);
-          if (!gesture.horizontal && dy > 10 && dy > dx) { gesture.vertical = true; return; }
-          if (!gesture.horizontal && dx > 12 && dx > dy * 1.5) {
-            gesture.horizontal = true;
-            event.currentTarget.setPointerCapture?.(event.pointerId);
-          }
-          if (gesture.horizontal) event.preventDefault();
-        }}
-        onPointerUp={event => {
-          const gesture = drag.current;
-          drag.current = null;
-          if (!gesture || gesture.id !== event.pointerId || !gesture.horizontal) return;
-          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-          suppressClick.current = true;
-          clearTimeout(clearClick.current);
-          clearClick.current = setTimeout(() => { suppressClick.current = false; }, 300);
-          const dx = event.clientX - gesture.x;
-          if (Math.abs(dx) >= 40) navigate(index + (dx < 0 ? 1 : -1));
-        }}
-        onPointerCancel={() => { drag.current = null; }}>
+      <div className="relative min-w-0">
         <button type="button" data-gallery-image aria-label={`Open Image ${index + 1}${image.alt ? `: ${image.alt}` : ""}`}
           className="block w-full min-w-0 overflow-hidden rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
           onClick={event => { event.stopPropagation(); setSelected(index); }}>
