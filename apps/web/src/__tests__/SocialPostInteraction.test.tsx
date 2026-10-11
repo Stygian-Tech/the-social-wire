@@ -37,12 +37,13 @@ function show(item: AppBskyFeedDefs.FeedViewPost = { post }) {
 }
 describe("Social Post Interactions", () => {
  it("renders parent and reply in one card and omits a later standalone parent", () => {
-  const parent = { ...post, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Grouped Parent", createdAt: "2026-10-10T00:00:00Z" } };
+  const parent = { ...post, replyCount: 99, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Grouped Parent", createdAt: "2026-10-10T00:00:00Z" } };
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }), oauthSessionReloadSeq: 0 } as unknown as ReturnType<typeof Auth.useAuth>);
   restore.push(() => auth.mockRestore());
   render(<QueryClientProvider client={new QueryClient()}><SocialFeedPosts items={[{ post, reply: { parent, root: parent } }, { post: parent }]} moderation={moderation} /></QueryClientProvider>);
   const group = screen.getByLabelText("Post Conversation");
   expect(group.classList.contains("border")).toBe(true);
+  expect(screen.getByText("Thread · 2 Posts")).toBeTruthy();
   expect(group.querySelectorAll("article")).toHaveLength(2);
   expect([...group.querySelectorAll("article")].every(article => !article.classList.contains("border"))).toBe(true);
   expect(screen.getAllByText("Grouped Parent")).toHaveLength(1);
@@ -61,8 +62,11 @@ describe("Social Post Interactions", () => {
   const view = show({ post, reply: { parent, root: parent } });
   expect(screen.queryByText("Secret Parent")).toBeNull();
   expect(screen.getByText("Original post withheld by your moderation settings.")).toBeTruthy();
+  expect(screen.getByText("Thread")).toBeTruthy();
+  expect(screen.queryByText("Thread · 2 Posts")).toBeNull();
   view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: parent.uri, notFound: true }, root: parent } }} moderation={moderation} /></QueryClientProvider>);
   expect(screen.getByText("Original post unavailable.")).toBeTruthy();
+  expect(screen.getByText("Thread")).toBeTruthy();
  });
  it("opens quoted content internally without opening the enclosing post", () => {
   const quote = { $type: "app.bsky.embed.record#viewRecord", uri: `${post.uri}quote`, cid: post.cid, author: post.author, value: { $type: "app.bsky.feed.post", text: "Quoted Content", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: post.indexedAt };
@@ -104,6 +108,7 @@ describe("Social Post Interactions", () => {
  });
  it("opens content and reply actions on the post page", () => {
   show();
+  expect(screen.queryByText(/^Thread/)).toBeNull();
   fireEvent.click(screen.getByText("Tap This Post"));
   expect(push).toHaveBeenCalledWith(socialPostPageHref(post.uri, "/social"));
   fireEvent.click(screen.getByRole("button", { name: "Open Replies (1)" }));
