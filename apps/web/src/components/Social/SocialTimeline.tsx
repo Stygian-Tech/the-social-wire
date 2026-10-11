@@ -15,6 +15,7 @@ import { SocialFeedPosts } from "./SocialFeedPosts";
 import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
 import { SocialFeedsSheet } from "./SocialFeedsSheet";
+import { SocialComposeButton } from "./SocialComposeButton";
 
 export function SocialTimeline() {
   const params = useSearchParams();
@@ -48,14 +49,14 @@ export function SocialTimeline() {
     }
   }
 
-  return <div className="flex min-h-0 w-full flex-1 flex-col">
+  return <div className="relative flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title={selected.name} subtitle="Social">
       <SocialFeedsSheet />
       <Button variant="ghost" size="icon" aria-label="Refresh Social Feed" disabled={!!routeError || catalog.isFetching || timeline.isFetching} onClick={() => { void refresh(); }}>
         <RefreshCw data-icon="inline-start" />
       </Button>
     </FeedHeader>
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" key={`${session?.did}:${feed.kind}:${feed.uri}`}>
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24" key={`${session?.did}:${feed.kind}:${feed.uri}`}>
       {error ? <section role="alert" className="mx-auto flex max-w-2xl flex-col items-start gap-3 p-6">
         <h2 className="text-lg font-semibold">Social Feed Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>
         {error === SCOPE_RECOVERY_MESSAGE ? <Button disabled={reauthorizing} onClick={() => { void reauthorize(); }}>{reauthorizing ? "Opening Login…" : "Log In Again"}</Button>
@@ -70,5 +71,6 @@ export function SocialTimeline() {
         {timeline.hasNextPage ? <Button variant="outline" disabled={timeline.isFetchingNextPage} onClick={() => { void timeline.fetchNextPage(); }}>{timeline.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}
       </div> : null}
     </div>
+    <SocialComposeButton key={session?.did} />
   </div>;
 }
