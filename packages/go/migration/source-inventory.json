@@ -11094,6 +11094,10 @@
           "sha256": "6b29a6bc010c7252643f33b59a0d2656fc32090113dd7de677aeaa4389f21142"
         },
         {
+          "path": "packages/lexicons/__tests__/liveEventLexicon.test.ts",
+          "sha256": "f44b7cb0fcc2574128e79ba842b430f9c5f0344fb89d6dea104fb5a16e7cb546"
+        },
+        {
           "path": "packages/lexicons/__tests__/podcastLexicons.test.ts",
           "sha256": "ae20615f904c5e42236a420919e88506a91587387296b02941af895ac08dc25e"
         },
@@ -11268,6 +11272,10 @@
         {
           "path": "packages/lexicons/app/thesocialwire/folder.json",
           "sha256": "16b4dba44c32c58f2fe7e7e25db16c9a6d3fc07654f400c8e2603dd01325fc07"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/liveEvent.json",
+          "sha256": "2baddec066ead61880b97efa44afee843d8cef4b8614664cfa182c484454cc53"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/operations/acknowledgeAlert.json",
@@ -11700,6 +11708,10 @@
           "sha256": "77c3b889778d392270b91f12e416b9badb51945330126723c7fb7c8990c57136"
         },
         {
+          "path": "packages/spec/__tests__/creator-analytics.test.ts",
+          "sha256": "ea9791b7cc9ef3301d9671670d677888d04c725bde714c1d99db8c4adfd9b507"
+        },
+        {
           "path": "packages/spec/__tests__/database-migration-runner.test.ts",
           "sha256": "53c231b3c3fcb94824f3875fd74e23bdeabb9b82055ccaf1755ba8f1ae8dac34"
         },
@@ -11849,11 +11861,11 @@
         },
         {
           "path": "packages/spec/endpoint-manifest.json",
-          "sha256": "f670bab0b2ddb7ae23d5504338c3d60e6661e2b5593c6ca5e048ef47f72cc263"
+          "sha256": "f5d3f938f77076f1a39ca46f43aab0ef96a01dcc60651cafa50457a8a878a417"
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "51fd972966e88309f9db47b801f295a10c99f84654f82fea3cf65b1612c123c8"
+          "sha256": "cbe4cf179313c4d288a09e3fd3a97c911b41cdfb14bb5c5056c6b7696874876d"
         },
         {
           "path": "packages/spec/package.json",
