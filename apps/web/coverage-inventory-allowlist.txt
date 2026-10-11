@@ -62,3 +62,6 @@ src/lib/podcasts/publicClip.ts
 # Articles domain types contain only erased TypeScript declarations.
 src/lib/articles/articleDraftTypes.ts
 src/lib/articles/articlePublishingTypes.ts
+
+# Labeler avatar metadata extends SDK types; declarations are erased at runtime.
+src/lib/socialModerationTypes.ts
