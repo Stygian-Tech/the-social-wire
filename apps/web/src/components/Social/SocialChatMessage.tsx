@@ -22,7 +22,7 @@ export function SocialChatMessage({ message, viewerDid, pending, moderation, onD
   const reacted = (value: string) => !!message.reactions?.some(reaction => reaction.value === value && reaction.sender.did === viewerDid);
   const stamp = new Date(message.sentAt);
   return <div className={`flex ${own ? "justify-end" : "justify-start"}`}><div className={`flex min-w-0 max-w-[85%] flex-col ${own ? "items-end" : "items-start"}`}><article aria-label={own ? "Sent Message" : "Received Message"} className={`flex w-fit min-w-0 max-w-full flex-col gap-1 rounded-xl px-3 py-2 ${own ? "bg-primary/10" : "bg-muted"}`}>
-    {content.reply || content.replyUnavailable ? <blockquote aria-label="Replied-To Message" className="mb-1 min-w-0 rounded-lg border-l-2 border-primary/50 bg-background/40 px-2 py-1.5 text-muted-foreground"><span className="mb-1 block text-[10px] font-medium">Replying To</span>{content.reply ? <SocialChatRichText message={content.reply} /> : <p className="text-xs">{content.replyUnavailable}</p>}</blockquote> : null}
+    {content.reply || content.replyUnavailable ? <blockquote aria-label="Replied-To Message" className="mb-1 min-w-0 rounded-lg bg-background/40 px-2 py-1.5 text-muted-foreground"><span className="mb-1 block text-[10px] font-medium">Replying To</span>{content.reply ? <SocialChatRichText message={content.reply} /> : <p className="text-xs">{content.replyUnavailable}</p>}</blockquote> : null}
     <SocialChatRichText message={content.body} />
     {!message.embed ? <SocialChatPostPreview text={content.body.text} moderation={moderation} /> : null}
     {!message.embed ? <SocialChatLinkPreview message={content.body} /> : null}
