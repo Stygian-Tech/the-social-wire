@@ -190,7 +190,9 @@ export async function publishPodcastClip(
   viewer: string,
   clip: PodcastClip,
   episode: PodcastEpisode,
+  assertCurrentAccount?: () => void,
 ): Promise<string> {
+  assertCurrentAccount?.();
   if (episode.visibility === "private") throw new Error("Private Feed Episodes Cannot Be Published");
   if (!clip.audioUrl || !clip.videoUrl)
     throw new Error("Wait for the clip exports to finish before publishing");
@@ -217,6 +219,7 @@ export async function publishPodcastClip(
       createdAt: clip.createdAt,
     },
   });
+  assertCurrentAccount?.();
   await podcastRequest(oauth, "clips/publish", "POST", {
     clipId: clip.id,
     uri: result.data.uri,
@@ -227,7 +230,9 @@ export async function unpublishPodcastClip(
   oauth: OAuthSession,
   viewer: string,
   clip: PodcastClip,
+  assertCurrentAccount?: () => void,
 ): Promise<void> {
+  assertCurrentAccount?.();
   if (clip.publishedUri) {
     const match = clip.publishedUri.match(/^at:\/\/([^/]+)\/([^/]+)\/([^/]+)$/);
     if (!match || match[1] !== viewer)
@@ -238,6 +243,7 @@ export async function unpublishPodcastClip(
       rkey: match[3],
     });
   }
+  assertCurrentAccount?.();
   await podcastRequest(
     oauth,
     `clips?clipId=${encodeURIComponent(clip.id)}`,

@@ -69,7 +69,11 @@ export function getAtprotoNetwork(): AtprotoNetwork {
 
 /** Keep the proxy DID and consent audiences aligned without altering production metadata. */
 export function atprotoScopesForNetwork(scopes: string, network = getAtprotoNetwork()): string {
-  const scoped = network.chatServiceDid ? scopes.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : scopes.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
+  // The isolated sandbox has no video service. Never request public video
+  // delegation for an account that the publisher cannot safely upload there.
+  const isolated = network.plcDirectory !== PLC_DIRECTORY || network.publicAppView !== PUBLIC_APPVIEW || network.appViewDid !== APPVIEW_DID;
+  const supported = isolated ? scopes.split(" ").filter(scope => !["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app"].includes(scope)).join(" ") : scopes;
+  const scoped = network.chatServiceDid ? supported.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : supported.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
   return skejScopesForEnvironment(scoped.replaceAll(`${APPVIEW_DID}%23bsky_appview`, `${network.appViewDid}%23bsky_appview`));
 }
 

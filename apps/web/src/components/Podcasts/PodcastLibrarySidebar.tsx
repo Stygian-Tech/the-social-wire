@@ -1,7 +1,7 @@
 "use client";
 
 import { floatingSidebarClassName, floatingSidebarRowClassName } from "@/components/shared/floatingSidebarStyles";
-import { Clock, Download, ListMusic, Search, Trash2 } from "lucide-react";
+import { Clock, Download, ListMusic, Search, Scissors, Trash2 } from "lucide-react";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { PodcastArtwork } from "./PodcastArtwork";
 import type { PodcastShow } from "@/lib/podcasts/client";
@@ -24,6 +24,7 @@ export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, down
     { id: "recent" as const, label: "Recently Added", Icon: Clock },
     { id: "downloads" as const, label: "Downloaded", Icon: Download, count: downloadCount },
     { id: "queue" as const, label: "Up Next", Icon: ListMusic, count: queueCount },
+    { id: "clips" as const, label: "Clips", Icon: Scissors },
   ];
   const subscribed = shows.filter((show) => subscriptions.includes(show.id));
   return (

@@ -314,7 +314,7 @@ describe("Persistent podcast player", () => {
     await screen.findByRole("button", { name: /^Clip$/ });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Clip$/ })));
     await act(async () => fireEvent.change(screen.getByLabelText("Start (Seconds)"), { target: { value: "10" } }));
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Preview Clip" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Preview Audio Range" })));
     await waitFor(() => expect(env.element.currentTime).toBe(10));
     expect(env.element.paused).toBe(false);
     await act(async () => { env.element.currentTime = 31; env.element.dispatchEvent(new window.Event("timeupdate")); });
