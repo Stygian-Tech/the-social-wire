@@ -36,17 +36,20 @@ function show(item: AppBskyFeedDefs.FeedViewPost = { post }) {
  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })}><InteractiveSocialPost item={item} moderation={moderation} /></QueryClientProvider>);
 }
 describe("Social Post Interactions", () => {
- it("compacts engagement text while preserving exact accessible counts", () => {
+ it("compacts engagement text while preserving exact accessible counts", async () => {
   const view = show({ post: { ...post, replyCount: 1_199, repostCount: 12_999, likeCount: 120_999 } });
-  const reply = screen.getByRole("button", { name: "Open Replies (1199)" });
+  const reply = screen.getByRole("button", { name: "Reply (1199)" });
   expect(reply.textContent).toBe("1.1k");
   expect(reply.getAttribute("title")).toBe("1199 Replies");
   expect(screen.getByRole("button", { name: "Repost (12999)" }).textContent).toBe("12k");
   expect(screen.getByRole("button", { name: "Like (120999)" }).textContent).toBe("120k");
   fireEvent.click(reply);
-  expect(push).toHaveBeenCalledWith(socialPostPageHref(post.uri, "/social"));
+  expect(push).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog", { name: "Reply" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post: { ...post, replyCount: 999 } }} moderation={moderation} /></QueryClientProvider>);
-  expect(screen.getByRole("button", { name: "Open Replies (999)" }).textContent).toBe("999");
+  expect(screen.getByRole("button", { name: "Reply (999)" }).textContent).toBe("999");
  });
  it("renders parent and reply in one card and omits a later standalone parent", () => {
   const parent = { ...post, replyCount: 99, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Grouped Parent", createdAt: "2026-10-10T00:00:00Z" } };
@@ -120,14 +123,14 @@ describe("Social Post Interactions", () => {
   fireEvent.click(await screen.findByRole("menuitem", { name: "Copy Link" }));
   await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Unable to copy"));
  });
- it("opens content and reply actions on the post page", () => {
+ it("opens content on the post page and reply actions in a composer", () => {
   show();
   expect(screen.queryByText(/^Thread/)).toBeNull();
   fireEvent.click(screen.getByText("Tap This Post"));
   expect(push).toHaveBeenCalledWith(socialPostPageHref(post.uri, "/social"));
-  fireEvent.click(screen.getByRole("button", { name: "Open Replies (1)" }));
-  expect(push).toHaveBeenCalledTimes(2);
-  expect(screen.queryByRole("dialog") === null).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Reply (1)" }));
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("dialog", { name: "Reply" })).toBeTruthy();
  });
  it("does not open content when a nested link is clicked, and remains keyboard accessible", () => {
   const open = mock(() => {});

@@ -74,7 +74,10 @@ test("protects the calendar route when signed out", async () => {
 });
 
 test("hides private calendar rows immediately after unlink while keeping the selection explicit", async () => {
-  state = { ...state, schedules: { ...state.schedules, data: [{ ...item, did: brand }] } } as typeof state;
+  // Unlink visibility is independent of scheduling across the next day or month.
+  const selectedDay = new Date();
+  selectedDay.setHours(12, 0, 0, 0);
+  state = { ...state, schedules: { ...state.schedules, data: [{ ...item, did: brand, scheduledAt: selectedDay.toISOString() }] } } as typeof state;
   const view = mount(<ContentCalendarPage />);
   fireEvent.change(screen.getByRole("combobox", { name: "Account" }), { target: { value: brand } });
   if (localCalendarDate(time) !== localCalendarDate(new Date())) fireEvent.click(screen.getByRole("button", { name: new RegExp(time.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })) }));

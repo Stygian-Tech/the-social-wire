@@ -17,9 +17,9 @@ const did = "did:plc:viewer";
 const moderation: ModerationOpts = { userDid: did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } };
 const post = { uri: "at://did:plc:other/app.bsky.feed.post/test", cid: "bafyreia", author: { did: "did:plc:other", handle: "other.test" }, record: { $type: "app.bsky.feed.post", text: "Selected Post", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: "2026-10-10T00:00:00Z" };
 const push = mock(() => {});
-const replace = mock((href: string) => { void href; });
+const replace = mock((href: string, options?: { scroll: boolean }) => { void href; void options; });
 const openThread = mock((uri: string, container: HTMLElement | null) => { void uri; void container; });
-const threadBack = mock(() => replace(safeSocialPostReturnPath(params.get("returnTo"))));
+const threadBack = mock(() => replace(safeSocialPostReturnPath(params.get("returnTo")), { scroll: false }));
 const restoreThread = mock((container: HTMLElement | null) => { void container; return true; });
 let focused = false;
 let params: URLSearchParams;
@@ -65,6 +65,27 @@ function deepConversation() {
 }
 
 describe("on-page post viewer", () => {
+  it("provides actions on every ancestor with that ancestor as the reply target", async () => {
+    const ancestor = { ...post, uri: `${post.uri}ancestor`, author: { did: "did:plc:ancestor", handle: "ancestor.test" }, record: { ...post.record, text: "Ancestor With Actions" } };
+    const parent = { ...post, uri: `${post.uri}parent`, author: { did: "did:plc:parent", handle: "parent.test" }, record: { ...post.record, text: "Parent With Actions" } };
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post, parent: { $type: "app.bsky.feed.defs#threadViewPost", post: parent, parent: { $type: "app.bsky.feed.defs#threadViewPost", post: ancestor } } } });
+    restores.push(() => fetch.mockRestore());
+    show();
+    await screen.findByText("Ancestor With Actions");
+    expect(screen.getAllByRole("generic", { name: "Post Actions" })).toHaveLength(3);
+    for (const [text, handle] of [["Ancestor With Actions", "ancestor.test"], ["Parent With Actions", "parent.test"], ["Selected Post", "other.test"]]) {
+      const card = screen.getByText(text!).closest("article")!;
+      expect(within(card).getByRole("button", { name: "Like (0)" })).toBeTruthy();
+      expect(within(card).getByRole("button", { name: "Repost (0)" })).toBeTruthy();
+      expect(within(card).getByRole("button", { name: "Bookmark Post" })).toBeTruthy();
+      fireEvent.click(within(card).getByRole("button", { name: "Reply (0)" }));
+      expect(screen.getByText(`Replying To @${handle}`)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    }
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("opens Show More at the boundary card while preserving following siblings", async () => {
     const { root, nodes } = deepConversation();
     const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: root });
@@ -148,15 +169,16 @@ describe("on-page post viewer", () => {
     fireEvent.click(replies.getByRole("button", { name: "Bookmark Post" }));
     await waitFor(() => expect(bookmark).toHaveBeenCalledTimes(1));
     expect(bookmark.mock.calls[0]![0]).toMatchObject({ uri: reply.uri, cid: reply.cid, saved: true });
-    fireEvent.click(replies.getByRole("button", { name: "Open Replies (3)" }));
-    expect(push).toHaveBeenCalledTimes(1);
-    expect(push).toHaveBeenLastCalledWith(socialPostPageHref(reply.uri, "/social?feed=original"));
+    fireEvent.click(replies.getByRole("button", { name: "Reply (3)" }));
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Reply" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(replies.getByRole("button", { name: "More Post Actions" }));
     const url = "https://bsky.app/profile/did%3Aplc%3Aother/post/testreply";
     expect((await screen.findByRole("menuitem", { name: "Send Message" })).getAttribute("href")).toBe(`/social/messages?draft=${encodeURIComponent(url)}`);
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy Link" }));
     await waitFor(() => expect(copy).toHaveBeenCalledWith(url));
-    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).not.toHaveBeenCalled();
   });
   it("displays a conversation with Back first in the top bar and navigates parent/reply routes", async () => {
     const parent = { ...post, uri: `${post.uri}parent`, record: { ...post.record, text: "Parent Post" } };
@@ -172,7 +194,7 @@ describe("on-page post viewer", () => {
     fireEvent.click(screen.getByText("Reply Post"));
     expect(push).toHaveBeenLastCalledWith(socialPostPageHref(reply.uri, "/social?feed=original"));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(replace).toHaveBeenCalledWith("/social?feed=original");
+    expect(replace).toHaveBeenCalledWith("/social?feed=original", { scroll: false });
   });
   it("withholds a muted reply and its action rail while keeping root actions available", async () => {
     const reply = { ...post, uri: `${post.uri}muted`, author: { ...post.author, viewer: { muted: true } }, record: { ...post.record, text: "Withheld Reply" } };
@@ -212,7 +234,7 @@ describe("on-page post viewer", () => {
     show(); expect(screen.getByRole("alert").textContent).toContain("invalid");
     expect(fetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(replace).toHaveBeenCalledWith("/social");
+    expect(replace).toHaveBeenCalledWith("/social", { scroll: false });
   });
   it("withholds content after catalog failure and offers permission recovery", async () => {
     catalogError = new Error(SCOPE_RECOVERY_MESSAGE);

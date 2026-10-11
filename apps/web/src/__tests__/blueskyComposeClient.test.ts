@@ -1,9 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
+import type { AppBskyFeedDefs } from "@atproto/api";
 import { createBlueskyPost, postTextLength } from "@/lib/blueskyComposeClient";
 
 const did = "did:plc:alice";
 const result = { uri: `at://${did}/app.bsky.feed.post/one`, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku" };
+const replyTo: AppBskyFeedDefs.PostView = {
+  uri: "at://did:plc:bob/app.bsky.feed.post/target",
+  cid: result.cid,
+  author: { did: "did:plc:bob", handle: "bob.test" },
+  record: { $type: "app.bsky.feed.post", text: "Original Post", createdAt: "2026-10-11T00:00:00Z" },
+  indexedAt: "2026-10-11T00:00:00Z",
+};
 type Request = { method: string; headers: Headers; body?: Record<string, unknown> };
 function sessionFor(respond: (request: Request) => unknown | Promise<unknown>): OAuthSession {
   return {
@@ -63,6 +71,55 @@ describe("Bluesky post creation", () => {
       return result;
     });
     await createBlueskyPost({ session, text: "@missing.test" });
+  });
+  it("posts a reply with the exact target as root and parent directly to the viewer PDS", async () => {
+    const session = sessionFor(request => {
+      expect(request.method).toBe("com.atproto.repo.createRecord");
+      expect(request.headers.get("atproto-proxy")).toBeNull();
+      expect(request.body).toMatchObject({ repo: did, collection: "app.bsky.feed.post", record: {
+        text: "Reply Text", reply: { root: { uri: replyTo.uri, cid: replyTo.cid }, parent: { uri: replyTo.uri, cid: replyTo.cid } },
+      } });
+      return result;
+    });
+    expect(await createBlueskyPost({ session, text: "Reply Text", replyTo })).toEqual(result);
+  });
+  it("preserves thread ancestry when replying to a reply and still resolves mention facets", async () => {
+    const root = { uri: "at://did:plc:carol/app.bsky.feed.post/root", cid: result.cid };
+    const nested = { ...replyTo, record: { ...replyTo.record, reply: { root, parent: root } } };
+    const requests: Request[] = [];
+    const session = sessionFor(request => {
+      requests.push(request);
+      if (request.method === "com.atproto.identity.resolveHandle") return { did: "did:plc:bob" };
+      expect(request.body!.record).toMatchObject({
+        reply: { root, parent: { uri: nested.uri, cid: nested.cid } },
+        facets: [{ features: [{ $type: "app.bsky.richtext.facet#mention", did: "did:plc:bob" }] }],
+      });
+      return result;
+    });
+    await createBlueskyPost({ session, text: "@bob.test Reply", replyTo: nested });
+    expect(requests.map(request => request.method)).toEqual(["com.atproto.identity.resolveHandle", "com.atproto.repo.createRecord"]);
+  });
+  it("rejects disabled replies and malformed target or root references before facet lookup or writes", async () => {
+    let requests = 0;
+    const session = sessionFor(() => { requests++; return result; });
+    const root = { uri: "at://did:plc:carol/app.bsky.feed.post/root", cid: result.cid };
+    const invalidTargets = [
+      { ...replyTo, viewer: { replyDisabled: true } },
+      { ...replyTo, uri: "https://bsky.app/profile/bob.test/post/target" },
+      { ...replyTo, cid: "" },
+      { ...replyTo, record: { $type: "app.bsky.feed.like", createdAt: "2026-10-11T00:00:00Z" } },
+      { ...replyTo, record: { ...replyTo.record, reply: { root: { ...root, uri: "at://did:plc:carol/app.bsky.feed.like/root" }, parent: root } } },
+      { ...replyTo, record: { ...replyTo.record, reply: { root: { ...root, cid: "" }, parent: root } } },
+    ];
+    for (const target of invalidTargets) await expect(createBlueskyPost({ session, text: "@bob.test Reply", replyTo: target })).rejects.toThrow();
+    expect(requests).toBe(0);
+  });
+  it("keeps reply account guards before lookup and before the PDS write", async () => {
+    let requests = 0, checks = 0;
+    const session = sessionFor(() => { requests++; return { did: "did:plc:bob" }; });
+    await expect(createBlueskyPost({ session, text: "@bob.test Reply", replyTo, assertCurrentAccount: () => { if (++checks === 2) throw new Error("Account changed"); } })).rejects.toThrow("Account changed");
+    expect(requests).toBe(1);
+    expect(checks).toBe(2);
   });
   it("guards account identity before network and after async resolution, before writing", async () => {
     let requests = 0, checks = 0;
