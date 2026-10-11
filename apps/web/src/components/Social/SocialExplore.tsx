@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { moderateProfile } from "@atproto/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
@@ -21,14 +22,26 @@ import { socialHttpsUrl, socialProfileUrl } from "./socialUrls";
 
 export function SocialExplore() {
   const { session } = useAuth();
-  return <SocialExploreViewer key={session?.did ?? "signed-out"} />;
+  const params = useSearchParams();
+  return <SocialExploreViewer key={`${session?.did ?? "signed-out"}:${params?.get("q") ?? ""}:${params?.get("type") ?? "posts"}`} />;
 }
 
 function SocialExploreViewer() {
   const { session } = useAuth();
-  const [draft, setDraft] = useState("");
-  const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<SocialExploreKind>("posts");
+  const params = useSearchParams();
+  const router = useRouter();
+  const urlQuery = (params?.get("q") ?? "").slice(0, 500);
+  const urlKind = params?.get("type") === "people" ? "people" : "posts";
+  const [draft, setDraft] = useState(urlQuery);
+  const [query, setQuery] = useState(urlQuery);
+  const [kind, setKind] = useState<SocialExploreKind>(urlKind);
+  function search(value: string, type: SocialExploreKind) {
+    setQuery(value); setKind(type);
+    const next = new URLSearchParams(params?.toString());
+    if (value) next.set("q", value); else next.delete("q");
+    next.set("type", type);
+    router.replace(`/social/explore?${next}`, { scroll: false });
+  }
   const catalog = useBlueskySocialCatalog();
   const availableModeration = catalog.data?.moderation;
   const moderation = !catalog.isError && availableModeration?.userDid === session?.did ? availableModeration : undefined;
@@ -54,13 +67,13 @@ function SocialExploreViewer() {
     <FeedHeader title="Explore" subtitle="Social" />
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" key={session?.did}>
       <div className={`${floatingGlassClasses} mx-auto my-2 flex w-[calc(100%-1rem)] max-w-2xl flex-col gap-4 p-3 sm:p-4`}>
-        <form className="flex gap-2" onSubmit={event => { event.preventDefault(); setQuery(draft.trim()); }}>
+        <form className="flex gap-2" onSubmit={event => { event.preventDefault(); search(draft.trim(), kind); }}>
           <Input aria-label="Search Bluesky" placeholder="Search Posts and People" value={draft} maxLength={500} onChange={event => setDraft(event.target.value)} />
           <Button type="submit">Search</Button>
         </form>
         <div role="group" aria-label="Search Type" className="flex gap-2">
-          <Button variant={kind === "posts" ? "default" : "outline"} aria-pressed={kind === "posts"} onClick={() => setKind("posts")}>Posts</Button>
-          <Button variant={kind === "people" ? "default" : "outline"} aria-pressed={kind === "people"} onClick={() => setKind("people")}>People</Button>
+          <Button variant={kind === "posts" ? "default" : "outline"} aria-pressed={kind === "posts"} onClick={() => search(query, "posts")}>Posts</Button>
+          <Button variant={kind === "people" ? "default" : "outline"} aria-pressed={kind === "people"} onClick={() => search(query, "people")}>People</Button>
         </div>
         {error ? <section role="alert" className="flex flex-col items-start gap-3 py-4">
           <h2 className="text-lg font-semibold">Explore Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>

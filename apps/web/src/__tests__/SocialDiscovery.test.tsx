@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { AppBskyActorDefs, AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Auth from "@/hooks/useAuth";
+import * as Navigation from "next/navigation";
 import * as Catalog from "@/lib/blueskySocialClient";
 import * as Client from "@/lib/blueskySocialDiscoveryClient";
 import * as Interactive from "@/components/Social/InteractiveSocialPost";
@@ -23,10 +24,14 @@ const restores: (() => void)[] = [];
 let viewer: string | null;
 let oauthDid: string | null;
 let queryClient: QueryClient;
+const replaceRoute = mock(() => {});
 function Wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={queryClient}><SidebarProvider>{children}</SidebarProvider></QueryClientProvider>; }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 function restoreSpy(spy: { mockRestore(): void }) { restores.push(() => spy.mockRestore()); return spy; }
 beforeEach(() => {
+  replaceRoute.mockClear();
+  restoreSpy(spyOn(Navigation, "useRouter").mockReturnValue({ replace: replaceRoute, push: () => {} } as unknown as ReturnType<typeof Navigation.useRouter>));
+  restoreSpy(spyOn(Navigation, "useSearchParams").mockReturnValue(new URLSearchParams() as ReturnType<typeof Navigation.useSearchParams>));
   viewer = alice; oauthDid = alice;
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   const media = Object.getOwnPropertyDescriptor(window, "matchMedia");
@@ -37,6 +42,19 @@ beforeEach(() => {
   restoreSpy(spyOn(Interactive, "InteractiveSocialPost").mockImplementation(({ item }) => <article>{(item.post.record as { text: string }).text}</article>));
 });
 afterEach(() => { cleanup(); queryClient.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
+
+it("restores Explore search and type from its return URL and persists submitted changes", async () => {
+  restoreSpy(spyOn(Navigation, "useSearchParams").mockReturnValue(new URLSearchParams({ q: "trees", type: "people" }) as ReturnType<typeof Navigation.useSearchParams>));
+  const fetch = spyOn(Client, "getSocialExplorePage").mockResolvedValue({ actors: [actor], posts: [] });
+  restoreSpy(fetch);
+  render(<SocialExplore />, { wrapper: Wrapper });
+  await screen.findByText("Other");
+  expect((screen.getByRole("textbox", { name: "Search Bluesky" }) as HTMLInputElement).value).toBe("trees");
+  expect(fetch.mock.calls[0]![0]).toMatchObject({ query: "trees", kind: "people" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Search Bluesky" }), { target: { value: "forest" } });
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  expect(replaceRoute).toHaveBeenCalledWith("/social/explore?q=forest&type=people", { scroll: false });
+});
 
 it("Explore performs real suggestions, submitted post search, people search and pagination", async () => {
   const fetch = spyOn(Client, "getSocialExplorePage").mockImplementation(async args => !args.query ? { actors: [actor], posts: [] } : args.kind === "people" ? { actors: [{ ...actor, displayName: "Search Person" }], posts: [] } : { actors: [], posts: [post(args.cursor ? "second" : "first")], cursor: args.cursor ? undefined : "next" });

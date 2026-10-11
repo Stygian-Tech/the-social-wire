@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { InteractiveSocialPost } from "@/components/Social/InteractiveSocialPost";
+import { SocialFeedPosts } from "@/components/Social/SocialFeedPosts";
 import { SocialTimelineSkeleton } from "@/components/Social/SocialTimelineSkeleton";
 import { moderateSocialPost } from "@/components/Social/socialModeration";
 import { useAuth } from "@/hooks/useAuth";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { useBlueskyProfileTimeline } from "@/hooks/useBlueskyProfileTimeline";
 import type { ProfileSection } from "@/lib/blueskyProfileClient";
-import { flattenSocialPages, socialErrorMessage, socialPostIdentity } from "@/lib/blueskySocialClient";
+import { flattenSocialPages, socialErrorMessage } from "@/lib/blueskySocialClient";
 import { rememberOAuthReturnPath, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 
 export function ProfileTimeline({ section }: { section: ProfileSection }) {
@@ -37,7 +37,7 @@ export function ProfileTimeline({ section }: { section: ProfileSection }) {
   </div>;
   if (catalog.isPending || timeline.isPending) return <SocialTimelineSkeleton />;
   return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-3 sm:p-4">
-    {moderation ? posts.map(item => <InteractiveSocialPost key={socialPostIdentity(item)} item={item} moderation={moderation} />) : null}
+    {moderation ? <SocialFeedPosts items={posts} moderation={moderation} /> : null}
     {!posts.length ? <p className="py-10 text-center text-sm text-muted-foreground">No {section.charAt(0).toUpperCase() + section.slice(1)} to Show</p> : null}
     {timeline.hasNextPage ? <Button variant="outline" disabled={timeline.isFetchingNextPage} onClick={() => { void timeline.fetchNextPage(); }}>{timeline.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}
   </div>;

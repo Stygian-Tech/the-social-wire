@@ -11,7 +11,10 @@ const sections = ["posts", "replies", "media", "likes", "publications"] as const
 export function ProfileContent() {
   const [selected, setSelected] = useState<ProfileSection | "publications">("posts");
   useEffect(() => {
-    const sync = () => { if (window.location.hash === "#publications") setSelected("publications"); };
+    const sync = () => {
+      const section = window.location.hash.slice(1);
+      if (sections.some(value => value === section)) setSelected(section as typeof selected);
+    };
     sync();
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
@@ -19,7 +22,10 @@ export function ProfileContent() {
   return <>
     <nav aria-label="Profile Content" className={`sticky top-2 z-10 m-2 p-3 ${floatingGlassClasses}`}>
       <div className="mx-auto flex max-w-2xl gap-2 overflow-x-auto">
-        {sections.map(section => <Button key={section} variant={selected === section ? "default" : "outline"} className="shrink-0 rounded-full" aria-pressed={selected === section} onClick={() => setSelected(section)}>
+        {sections.map(section => <Button key={section} variant={selected === section ? "default" : "outline"} className="shrink-0 rounded-full" aria-pressed={selected === section} onClick={() => {
+          setSelected(section);
+          window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#${section}`);
+        }}>
           {section.charAt(0).toUpperCase() + section.slice(1)}
         </Button>)}
       </div>

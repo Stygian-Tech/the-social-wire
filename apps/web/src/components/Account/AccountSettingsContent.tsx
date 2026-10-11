@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FeedSettingsSection } from "./FeedSettingsSection";
 import { OpmlImportSection } from "./OpmlImportSection";
+import { SocialModerationSettingsSection } from "./SocialModerationSettingsSection";
 
 export function AccountSettingsContent() {
   const { session, signOut } = useAuth();
@@ -42,6 +43,7 @@ export function AccountSettingsContent() {
       </div>
     </section>
     <FeedSettingsSection />
+    <SocialModerationSettingsSection />
     {podcastsEnabled() && player ? <section aria-labelledby="podcast-settings-heading" className="border-t p-4 md:p-6">
       <div className="mx-auto flex max-w-2xl flex-col gap-3">
         <h2 id="podcast-settings-heading" className="text-sm font-bold">Podcasts</h2>

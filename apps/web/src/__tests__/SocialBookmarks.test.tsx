@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Auth from "@/hooks/useAuth";
+import * as Navigation from "next/navigation";
 import * as Catalog from "@/hooks/useBlueskySocialCatalog";
 import * as Client from "@/lib/blueskyBookmarksClient";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -21,7 +22,10 @@ beforeEach(() => {
  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
  const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }) as unknown as OAuthSession, oauthSessionReloadSeq: 0, signIn: async () => {} } as unknown as ReturnType<typeof Auth.useAuth>);
  const catalog = spyOn(Catalog, "useBlueskySocialCatalog").mockReturnValue({ data: { moderation }, isPending: false, isError: false } as unknown as ReturnType<typeof Catalog.useBlueskySocialCatalog>);
- restores.push(() => auth.mockRestore(), () => catalog.mockRestore());
+ const router = spyOn(Navigation, "useRouter").mockReturnValue({ push: () => {}, replace: () => {} } as unknown as ReturnType<typeof Navigation.useRouter>);
+ const path = spyOn(Navigation, "usePathname").mockReturnValue("/social/bookmarks");
+ const search = spyOn(Navigation, "useSearchParams").mockReturnValue(new URLSearchParams() as ReturnType<typeof Navigation.useSearchParams>);
+ restores.push(() => auth.mockRestore(), () => catalog.mockRestore(), () => router.mockRestore(), () => path.mockRestore(), () => search.mockRestore());
 });
 afterEach(() => { cleanup(); queryClient.clear(); restores.splice(0).reverse().forEach(fn => fn()); });
 async function show() { await act(async () => { render(<QueryClientProvider client={queryClient}><SidebarProvider><SocialBookmarks /></SidebarProvider></QueryClientProvider>); }); }

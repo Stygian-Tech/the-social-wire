@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { useBlueskySocialTimeline } from "@/hooks/useBlueskySocialTimeline";
-import { flattenSocialPages, SOCIAL_FOLLOWING_FEED, socialErrorMessage, socialFeedFromSearchParams, socialPostIdentity } from "@/lib/blueskySocialClient";
+import { flattenSocialPages, SOCIAL_FOLLOWING_FEED, socialErrorMessage, socialFeedFromSearchParams } from "@/lib/blueskySocialClient";
 import { rememberOAuthReturnPath, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
-import { InteractiveSocialPost } from "./InteractiveSocialPost";
+import { SocialFeedPosts } from "./SocialFeedPosts";
 import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
 import { SocialFeedsSheet } from "./SocialFeedsSheet";
@@ -62,7 +62,7 @@ export function SocialTimeline() {
           : !routeError ? <Button variant="outline" onClick={() => { void refresh(); }}>Retry</Button> : null}
         {reauthorizeError ? <p className="text-sm text-destructive">Login could not be opened. Please try again.</p> : null}
       </section> : loading ? <SocialTimelineSkeleton /> : moderation ? <div className="mx-auto flex max-w-2xl flex-col gap-4 p-3 sm:p-4">
-        {posts.map(item => <InteractiveSocialPost key={socialPostIdentity(item)} item={item} moderation={moderation} />)}
+        <SocialFeedPosts items={posts} moderation={moderation} />
         {posts.length === 0 ? <section className="flex flex-col gap-2 px-2 py-10 text-center">
           <h2 className="text-lg font-semibold">No Posts to Show</h2>
           <p className="text-sm text-muted-foreground">{timeline.data?.pages.some(page => page.feed.length) ? "Posts on this page are hidden by your moderation settings." : "New posts will appear here when this feed updates."}</p>

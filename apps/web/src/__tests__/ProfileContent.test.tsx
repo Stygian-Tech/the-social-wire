@@ -24,6 +24,13 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); window.history.replaceState(null, "", "/"); });
 describe("Profile content", () => {
+  it("restores a profile content tab from the origin hash and updates it on selection", () => {
+    window.history.replaceState(null, "", "/me#likes");
+    render(<ProfileContent />);
+    expect(screen.getByRole("button", { name: "Likes" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Replies" }));
+    expect(window.location.hash).toBe("#replies");
+  });
   it("switches between read-only tabs and publications without showing settings on the profile", () => {
     render(<ProfileContent />);
     const navigation = screen.getByRole("navigation", { name: "Profile Content" });

@@ -11,6 +11,7 @@ import {
 import { moderateSocialPost } from "./socialModeration";
 import { SocialPostEmbed } from "./SocialPostEmbed";
 import { SocialRichText } from "./SocialRichText";
+import { SocialPostLabels } from "./SocialPostLabels";
 import { SocialPostTimestamp } from "./SocialPostTimestamp";
 import { socialHttpsUrl, socialPostUrl, socialProfileUrl } from "./socialUrls";
 
@@ -21,6 +22,7 @@ export function SocialPostCard({
   actions,
   detailedTimestamp = false,
   onOpenPost,
+  embedded = false,
 }: {
   item: AppBskyFeedDefs.FeedViewPost;
   moderation: ModerationOpts;
@@ -28,6 +30,7 @@ export function SocialPostCard({
   actions?: ReactNode;
   detailedTimestamp?: boolean;
   onOpenPost?: (post: AppBskyFeedDefs.PostView) => void;
+  embedded?: boolean;
 }) {
   const post = item.post;
   const record = AppBskyFeedPost.validateRecord(post.record);
@@ -68,7 +71,7 @@ export function SocialPostCard({
   const timestamp = Number.isNaN(Date.parse(record.value.createdAt)) ? post.indexedAt : record.value.createdAt;
   const date = new Date(timestamp);
   return (
-    <article className="flex min-w-0 shrink-0 flex-col gap-3 rounded-2xl border bg-card p-4 text-card-foreground"
+    <article className={`flex min-w-0 shrink-0 flex-col gap-3 text-card-foreground ${embedded ? "" : "rounded-2xl border bg-card p-4"}`}
       onClick={onOpen ? event => {
         const target = event.target;
         if (target instanceof Element && event.currentTarget.contains(target) && !target.closest('a, button, input, video, audio') && !window.getSelection()?.toString()) { event.stopPropagation(); onOpen(); }
@@ -123,6 +126,7 @@ export function SocialPostCard({
         </div>
         {!detailedTimestamp ? <SocialPostTimestamp timestamp={timestamp} /> : null}
       </div>
+      <SocialPostLabels post={post} moderation={moderation} />
       <SocialRichText record={record.value} />
       {post.embed ? (
         media.blur || media.filter || media.noOverride ? (
