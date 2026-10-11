@@ -20,6 +20,7 @@ COPY packages/read-state/package.json packages/read-state/package.json
 COPY packages/lexicons/package.json packages/lexicons/package.json
 COPY packages/spec/package.json packages/spec/package.json
 COPY services/podcast-worker/package.json services/podcast-worker/package.json
+COPY packages/vendor packages/vendor
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY services/podcast-worker services/podcast-worker
 USER bun
