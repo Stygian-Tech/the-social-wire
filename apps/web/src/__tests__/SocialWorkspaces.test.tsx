@@ -96,8 +96,8 @@ it("shows cached feed avatars in saved and discover cards from their existing ge
   const { container } = render(<SocialFeedDirectory />, { wrapper: Wrapper });
   await screen.findByText("Saved Science");
   await screen.findByText("Science Feed");
-  expect(container.querySelector(`article img[src="${recommended.avatar}"]`)).toBeTruthy();
-  expect(container.querySelector(`article img[src="${saved.avatar}"]`)).toBeTruthy();
+  await waitFor(() => expect(container.querySelector(`article img[src="${recommended.avatar}"]`)).toBeTruthy());
+  await waitFor(() => expect(container.querySelector(`article img[src="${saved.avatar}"]`)).toBeTruthy());
   expect(cache.mock.calls.some(([src]) => src === recommended.avatar)).toBe(true);
   expect(cache.mock.calls.some(([src]) => src === saved.avatar)).toBe(true);
   expect(screen.getByText("Missing Avatar").closest("article")?.querySelector("img")).toBeNull();
