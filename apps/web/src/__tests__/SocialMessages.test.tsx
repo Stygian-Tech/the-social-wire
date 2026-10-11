@@ -133,6 +133,7 @@ describe("Messages workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: /bob.test/ }));
     expect(await screen.findByText("The text being replied to")).toBeTruthy();
     expect(screen.getByText("My response")).toBeTruthy();
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
     expect(document.querySelector("time")?.closest("article")).toBeNull();
     expect(screen.getByRole("button", { name: "Message Actions" }).closest("article")).toBeNull();
     const log = screen.getByRole("log", { name: "Conversation History" });
@@ -140,6 +141,12 @@ describe("Messages workspace", () => {
     expect(log.contains(input)).toBe(false);
     expect(log.className.includes("flex-1")).toBe(true);
     expect(input.closest("form")?.className.includes("shrink-0")).toBe(true);
+    const contacts = screen.getByRole("complementary", { name: "Conversations" });
+    expect(contacts.contains(screen.getByRole("button", { name: "New Conversation" }))).toBe(true);
+    expect(contacts.contains(input)).toBe(false);
+    expect(contacts.className.includes("md:col-start-2")).toBe(true);
+    expect(contacts.className.includes("max-h-40")).toBe(true);
+    expect(contacts.className.includes("floating-glass")).toBe(true);
   });
   for (const gesture of ["wheel", "touch"]) it(`loads older messages only after an upward ${gesture} gesture and preserves the visible position`, async () => {
     const message = { $type: "chat.bsky.convo.defs#messageView" as const, id: "new", rev: "1", text: "Recent message", sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z" };
@@ -164,6 +171,7 @@ describe("Messages workspace", () => {
       fireEvent.touchMove(log, { touches: [{ clientX: 102, clientY: 180 }] });
     }
     await screen.findByText("Older message");
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
     expect(messages).toHaveBeenCalledTimes(2);
     expect(messages.mock.calls[1]![0].cursor).toBe("older");
     await waitFor(() => expect(log.scrollTop).toBe(200));
