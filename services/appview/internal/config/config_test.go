@@ -63,3 +63,19 @@ func TestPostgresPoolUsesDeployedSourceKey(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalSandboxPolicyIsConfinedToLocalAppView(t *testing.T) {
+	env := fixture()
+	env["APP_ENV"] = "local"
+	env["LOCAL_ATPROTO_ALLOWED_HOSTS"] = "plc.atmosbox.test,pds1.atmosbox.test"
+	c, err := Parse(env)
+	if err != nil || c.EndpointPolicy == nil || c.Auth.Policy != c.EndpointPolicy {
+		t.Fatalf("local policy not wired: %v", err)
+	}
+	for _, mode := range []string{"dev", "prod"} {
+		env["APP_ENV"] = mode
+		if _, err := Parse(env); err == nil {
+			t.Fatal("sandbox enabled outside local mode")
+		}
+	}
+}

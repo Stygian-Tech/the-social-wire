@@ -1,3 +1,4 @@
+import { skejScopesForEnvironment } from "@/lib/skej/skejEnvironment";
 import { normalizeAppEnv, readAppEnvRaw } from "@/lib/appEnv";
 
 export type AtprotoNetwork = {
@@ -69,7 +70,7 @@ export function getAtprotoNetwork(): AtprotoNetwork {
 /** Keep the proxy DID and consent audiences aligned without altering production metadata. */
 export function atprotoScopesForNetwork(scopes: string, network = getAtprotoNetwork()): string {
   const scoped = network.chatServiceDid ? scopes.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : scopes.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
-  return scoped.replaceAll(`${APPVIEW_DID}%23bsky_appview`, `${network.appViewDid}%23bsky_appview`);
+  return skejScopesForEnvironment(scoped.replaceAll(`${APPVIEW_DID}%23bsky_appview`, `${network.appViewDid}%23bsky_appview`));
 }
 
 /** Compact local loopback scopes; the PDS requires identical strings in its metadata and PAR. */
@@ -105,4 +106,10 @@ export function localLoopbackOAuthScopes(scopes: string, appEnv = readAppEnvRaw(
 /** Hosted metadata keeps full scope strings, including when a local HTTPS client is used. */
 export function authorizationScopesForClient(scopes: string, clientId: string, appEnv = readAppEnvRaw()): string {
   return clientId.startsWith("http://localhost?") ? localLoopbackOAuthScopes(scopes, appEnv) : scopes;
+}
+
+/** Colon and slash are legal query characters; avoid encoding them twice inside PAR client IDs. */
+export function compactLoopbackClientId(clientId: string): string {
+  if (!clientId.startsWith("http://localhost?")) return clientId;
+  return clientId.replace(/%3A/gi, ":").replace(/%2F/gi, "/");
 }

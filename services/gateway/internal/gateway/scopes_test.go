@@ -14,7 +14,7 @@ import (
 // in the published native authorization request order.
 func TestPodcastDisabledMetadataKeepsProductionScope(t *testing.T) {
 	for _, fixture := range []struct{ path, scope, digest string }{
-		{"/oauth-client-metadata.json", webScope, "7bb76547bd50807e63ddb4ad28d0fc0772f5839b7cb0e0104d22f7e051a4644d"},
+		{"/oauth-client-metadata.json", webScope, "2fde3e3954056d91571e6cec2d5cf156694d05e17e5f12534e760dfb690e7731"},
 		{"/ios-client-metadata.json", iosScope, "7001b4367000f36cab50a5cf3e517f23353b9ef7cb37b90c4310661b761d4a9d"},
 	} {
 		for _, enabled := range []bool{false, true} {

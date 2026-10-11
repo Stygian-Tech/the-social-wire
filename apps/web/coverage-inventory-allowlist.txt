@@ -64,3 +64,9 @@ src/lib/articles/articlePublishingTypes.ts
 
 # Labeler avatar metadata extends SDK types; declarations are erased at runtime.
 src/lib/socialModerationTypes.ts
+
+# Live Post event contracts contain only erased TypeScript declarations.
+src/lib/livePosts/livePostTypes.ts
+
+# Livestream contracts contain only erased TypeScript declarations.
+src/lib/livestream/livestreamTypes.ts

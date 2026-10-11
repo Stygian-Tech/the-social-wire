@@ -53,6 +53,14 @@ func NormalizePublicRemoteBase(raw string) (string, error) {
 // The original URL hostname remains the TLS SNI/certificate authority. Redirects
 // are returned to the caller, so credentials cannot follow a changed origin.
 func NewPublicHTTPClient(resolver AddressResolver) *http.Client {
+	return newHTTPClient(resolver, nil)
+}
+
+func NewHTTPClientWithPolicy(policy *EndpointPolicy) *http.Client {
+	return newHTTPClient(nil, policy)
+}
+
+func newHTTPClient(resolver AddressResolver, policy *EndpointPolicy) *http.Client {
 	v := NewPublicDNSValidator(resolver, 64)
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.Proxy = nil
@@ -69,10 +77,15 @@ func NewPublicHTTPClient(resolver AddressResolver) *http.Client {
 			return nil, e
 		}
 		base := "https://" + net.JoinHostPort(host, port)
-		if _, e = NormalizePublicRemoteBase(base); e != nil {
+		if _, e = policy.NormalizeBase(base); e != nil {
 			return nil, e
 		}
-		ip, e := v.Validate(ctx, base)
+		var ip string
+		if _, local := policy.localURL(base); local {
+			ip, e = policy.ValidateAddress(ctx, base)
+		} else {
+			ip, e = v.Validate(ctx, base)
+		}
 		if e != nil {
 			return nil, e
 		}

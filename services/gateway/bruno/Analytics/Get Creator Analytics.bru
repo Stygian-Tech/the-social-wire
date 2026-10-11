@@ -1,0 +1,21 @@
+meta {
+  name: Get Creator Analytics
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/analytics/summary?days=30&limit=50
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+docs {
+  Authenticated creator analytics. Gateway verifies OAuth/DPoP; direct AppView requires its authenticated internal trust path. Traffic is Social Wire only; no external impressions or historic interaction deltas are inferred.
+}

@@ -1,8 +1,16 @@
-import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
+import * as scheduling from "@/hooks/useSkejScheduling";
+import { localDateTimeValue } from "@/components/ContentCalendar/calendarDates";
+import * as storedAuth from "@/lib/auth";
+import * as brands from "@/hooks/useBrandAccounts";
+import * as profiles from "@/lib/brandAccounts/brandAccountPublicProfile";
+import * as social from "@/lib/blueskySocialClient";
+import * as publishing from "@/lib/brandAccounts/brandAccountSocialClient";
+import * as discovery from "@/lib/blueskySocialDiscoveryClient";
 import * as compose from "@/lib/blueskyComposeClient";
 import { SocialComposeButton } from "@/components/Social/SocialComposeButton";
 
@@ -10,6 +18,10 @@ const restores: (() => void)[] = [];
 let cache: QueryClient;
 const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
 beforeEach(() => {
+  const scheduler = spyOn(scheduling, "useSkejScheduling").mockReturnValue({ readiness: { data: { accountDid: oauth.did, connected: true }, isPending: false, isError: false, refetch: async () => ({}) }, schedules: {}, pending: false, schedule: async () => ({}), cancel: async () => {}, reschedule: async () => {}, connectUrl: "https://skej.test/connect" } as unknown as ReturnType<typeof scheduling.useSkejScheduling>); restores.push(() => scheduler.mockRestore());
+  const stored = spyOn(storedAuth, "getStoredOAuthDid").mockReturnValue(oauth.did); restores.push(() => stored.mockRestore());
+  const linked = spyOn(brands, "useBrandAccounts").mockReturnValue([]); restores.push(() => linked.mockRestore());
+  const profile = spyOn(profiles, "getBrandAccountPublicProfile").mockImplementation(async did => ({ did, handle: did === oauth.did ? "viewer.test" : "brand.test", displayName: did === oauth.did ? "Personal" : "Brand" })); restores.push(() => profile.mockRestore());
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const spy = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
   restores.push(() => spy.mockRestore());
@@ -94,4 +106,88 @@ it("prevents duplicate submission and closing while a post is pending", async ()
   expect(screen.getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
   expect(publish).toHaveBeenCalledTimes(1);
   await act(async () => resolve({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" }));
+});
+
+it("publishes and resolves mentions as the selected brand without replacing personal auth", async () => {
+  const brand = { did: "did:plc:brand" } as unknown as OAuthSession;
+  const linked = spyOn(brands, "useBrandAccounts").mockReturnValue([brand.did]); restores.push(() => linked.mockRestore());
+  let allowed = true;
+  const connection = spyOn(brands, "useBrandAccountSession").mockReturnValue({ session: brand, error: undefined, generation: 0, retry: () => {}, assertCurrentActor: () => { if (!allowed) throw new Error("Account Changed"); } }); restores.push(() => connection.mockRestore());
+  const moderation = { userDid: brand.did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } };
+  const catalog = spyOn(social, "getBlueskySocialCatalog").mockResolvedValue({ moderation, feeds: [] } as Awaited<ReturnType<typeof social.getBlueskySocialCatalog>>); restores.push(() => catalog.mockRestore());
+  const agent = spyOn(social, "createAuthenticatedAppViewAgent").mockReturnValue({ app: { bsky: { actor: { getProfile: async () => ({ data: { did: brand.did, handle: "brand.test", displayName: "Brand" } }) } } } } as ReturnType<typeof social.createAuthenticatedAppViewAgent>); restores.push(() => agent.mockRestore());
+  const people = spyOn(discovery, "getSocialExplorePage").mockResolvedValue({ posts: [], actors: [{ did: "did:plc:person", handle: "person.test" }] }); restores.push(() => people.mockRestore());
+  const post = spyOn(publishing, "publishBrandPost").mockImplementation(async args => { args.assertCurrentActor(); return { uri: "at://did:plc:brand/app.bsky.feed.post/new", cid: "cid" }; }); restores.push(() => post.mockRestore());
+  const personal = spyOn(compose, "createBlueskyPost"); restores.push(() => personal.mockRestore());
+  await open();
+  const picker = screen.getByRole("combobox", { name: "Post As" });
+  expect((picker as HTMLSelectElement).value).toBe(oauth.did);
+  fireEvent.change(picker, { target: { value: brand.did } });
+  const field = await screen.findByRole("textbox", { name: "Brand Post Text" });
+  fireEvent.change(field, { target: { value: "Hi @person", selectionStart: 10 } });
+  fireEvent.click(await screen.findByRole("option", { name: "@person.test" }));
+  expect(people.mock.calls[0][0].session).toBe(brand);
+  allowed = false;
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByRole("alert");
+  expect(post).not.toHaveBeenCalled();
+  allowed = true;
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(post.mock.calls[0][0].session).toBe(brand);
+  expect(personal).not.toHaveBeenCalled();
+  expect(auth.useAuth().getOAuthSession()).toBe(oauth);
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  expect((screen.getByRole("combobox", { name: "Post As" }) as HTMLSelectElement).value).toBe(oauth.did);
+  const schedule = mockSchedule();
+  fireEvent.change(screen.getByRole("combobox", { name: "Post As" }), { target: { value: brand.did } });
+  fireEvent.change(await screen.findByRole("textbox", { name: "Brand Post Text" }), { target: { value: "Brand Scheduled" } });
+  fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+  const value = localDateTimeValue(new Date(Date.now() + 3_600_000));
+  fireEvent.change(screen.getByLabelText("Publish At"), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "Schedule Post" }));
+  await screen.findByText("Post Scheduled");
+  expect(schedule).toHaveBeenCalledWith("Brand Scheduled", new Date(value).toISOString());
+  expect(scheduling.useSkejScheduling).toHaveBeenCalledWith(oauth.did, brand.did, { includeSchedules: false });
+  expect(post).toHaveBeenCalledTimes(1);
+});
+
+it("isolates personal drafts and pending guards when the owner changes", async () => {
+  let captured: Parameters<typeof compose.createBlueskyPost>[0] | undefined;
+  let finish!: (result: { uri: string; cid: string }) => void;
+  const publish = spyOn(compose, "createBlueskyPost").mockImplementation(args => { captured = args; return new Promise(resolve => { finish = resolve; }); }); restores.push(() => publish.mockRestore());
+  const view = render(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Post Text" }), { target: { value: "Private Old Draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  const next = { did: "did:plc:next" } as unknown as OAuthSession;
+  spyOn(auth, "useAuth").mockReturnValue({ session: { did: next.did }, getOAuthSession: () => next } as ReturnType<typeof auth.useAuth>);
+  view.rerender(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
+  expect(() => captured!.assertCurrentAccount!()).toThrow("account changed");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  expect((await screen.findByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement).value).toBe("");
+  await act(async () => finish({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(screen.queryByText("Post Published")).toBeNull();
+});
+
+function mockSchedule() {
+  const schedule = mock(async () => ({}));
+  const previous = scheduling.useSkejScheduling(oauth.did, oauth.did);
+  spyOn(scheduling, "useSkejScheduling").mockReturnValue({ ...previous, schedule } as unknown as ReturnType<typeof scheduling.useSkejScheduling>);
+  return schedule;
+}
+it("queues personal posts in Skej rather than publishing immediately", async () => {
+  const schedule = mockSchedule();
+  const publish = spyOn(compose, "createBlueskyPost"); restores.push(() => publish.mockRestore());
+  fireEvent.change(await open(), { target: { value: "Scheduled Content" } });
+  fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+  expect(screen.getByRole("button", { name: "Schedule Post" }).hasAttribute("disabled")).toBe(true);
+  const value = localDateTimeValue(new Date(Date.now() + 3_600_000));
+  fireEvent.change(screen.getByLabelText("Publish At"), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "Schedule Post" }));
+  await screen.findByText("Post Scheduled");
+  expect(schedule).toHaveBeenCalledWith("Scheduled Content", new Date(value).toISOString());
+  expect(publish).not.toHaveBeenCalled();
 });

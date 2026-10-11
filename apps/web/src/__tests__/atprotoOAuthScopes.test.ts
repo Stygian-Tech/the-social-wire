@@ -9,6 +9,7 @@ import {
   BLUESKY_CHAT_RPC_SCOPES,
   SKYREADER_REPO_SCOPES,
   SOCIAL_WIRE_REPO_SCOPES,
+  STREAMPLACE_REPO_SCOPES,
   SEMBLE_REPO_OAUTH_SCOPES,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
   WIRE_FEEDBACK_REPO_SCOPE,
@@ -21,6 +22,16 @@ import {
 import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 
 describe("atprotoOAuthScopes", () => {
+  it("adds only the direct PDS grants used by Livestream", () => {
+    expect(STREAMPLACE_REPO_SCOPES).toEqual([
+      "repo:place.stream.key?action=create",
+      "repo:place.stream.livestream?action=create&action=update",
+      "repo:place.stream.chat.message?action=create",
+    ]);
+    for (const scope of STREAMPLACE_REPO_SCOPES) expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(scope);
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("include:place.stream");
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("rpc:place.stream");
+  });
   it("grants only the chat reaction methods at the chat audience", () => {
     for (const method of ["addReaction", "removeReaction"]) {
       const scope = `rpc:chat.bsky.convo.${method}?aud=did:web:api.bsky.chat%23bsky_chat`;
@@ -83,7 +94,8 @@ describe("atprotoOAuthScopes", () => {
             scope.startsWith("blob:")
         )
     ).toBe(true);
-    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(5);
+    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(6);
+    expect(SOCIAL_WIRE_REPO_SCOPES.filter(scope => scope.includes("liveEvent"))).toEqual(["repo:app.thesocialwire.liveEvent?action=create&action=update"]);
     expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain("repo:app.thesocialwire.preferences?action=create&action=update");
     expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain("repo:app.thesocialwire.readState?action=create&action=update");
     expect(WIRE_FEEDBACK_REPO_SCOPE).toContain(
@@ -97,9 +109,9 @@ describe("atprotoOAuthScopes", () => {
       "repo:app.bsky.feed.repost?action=create&action=delete",
     ]);
     expect(ARTICLE_PUBLISHING_SCOPES).toEqual([
-      "repo:site.standard.document?action=create",
-      "repo:app.offprint.document.article?action=create",
-      "repo:blog.pckt.document?action=create",
+      "repo:site.standard.document?action=create&action=update",
+      "repo:app.offprint.document.article?action=create&action=update",
+      "repo:blog.pckt.document?action=create&action=update",
       "blob:text/markdown",
       "blob:application/json",
     ]);

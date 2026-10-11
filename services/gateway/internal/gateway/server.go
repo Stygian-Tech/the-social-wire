@@ -41,7 +41,7 @@ func (s *Server) Handler() http.Handler {
 		s.HTTP = &http.Client{Transport: &http.Transport{MaxIdleConns: 64, MaxIdleConnsPerHost: 16, MaxConnsPerHost: 64, IdleConnTimeout: 30 * time.Second}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	}
 	if s.Public == nil {
-		s.Public = gatewaycore.NewPublicHTTPClient(nil)
+		s.Public = gatewaycore.NewHTTPClientWithPolicy(s.Config.EndpointPolicy)
 	}
 	mux := http.NewServeMux()
 	auth := gatewaycore.AuthMiddleware(s.Config.Auth, s.Public)

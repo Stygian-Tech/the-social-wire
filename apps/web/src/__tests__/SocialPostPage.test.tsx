@@ -130,7 +130,7 @@ describe("on-page post viewer", () => {
     expect(screen.queryByText("Selected Post") === null).toBe(true);
   });
   it("preserves only safe origin pages including search and profile tab state", () => {
-    for (const path of ["/social?list=original", "/social/explore?q=trees&type=posts", "/social/bookmarks", "/me#likes"]) expect(safeSocialPostReturnPath(path)).toBe(path);
+    for (const path of ["/social?list=original", "/social/explore?q=trees&type=posts", "/social/bookmarks", "/me#likes", "/live-post"]) expect(safeSocialPostReturnPath(path)).toBe(path);
     for (const path of ["//evil.example", "/\\evil.example", "https://evil.example", "/social/post?uri=cycle", "/login", "/me/settings", "/social/%2e%2e/login"]) expect(safeSocialPostReturnPath(path)).toBe("/social");
   });
 });

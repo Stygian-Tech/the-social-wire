@@ -42,5 +42,5 @@ function ResolvedPostPreview({ reference, moderation }: { reference: { actor: st
   if (!post) return <p className="text-xs text-muted-foreground">Post preview unavailable.</p>;
   const content = moderateSocialPost(post, moderation).ui("contentList");
   if (content.filter || content.blur || content.noOverride) return <p className="text-xs text-muted-foreground">Post preview withheld.</p>;
-  return <div className="mt-1 min-w-0"><SocialPostCard item={{ post }} moderation={moderation} onOpen={() => navigation.openPost(post.uri)} onOpenPost={post => navigation.openPost(post.uri)} /></div>;
+  return <div className="mt-1 min-w-0"><SocialPostCard analyticsSurface="messages" item={{ post }} moderation={moderation} onOpen={() => navigation.openPost(post.uri)} onOpenPost={post => navigation.openPost(post.uri)} /></div>;
 }

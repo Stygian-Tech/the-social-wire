@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { LogOut, Bookmark, Archive, FilePenLine } from "lucide-react";
+import { LogOut, Bookmark, Archive } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
@@ -44,6 +44,7 @@ import { PublicationTabs } from "./PublicationTabs";
 import { SidebarSocialSection } from "./SidebarSocialSection";
 import { SidebarAudioSection } from "./SidebarAudioSection";
 import { podcastsEnabled } from "@/lib/podcasts/playback";
+import { SidebarToolsSection } from "./SidebarToolsSection";
 import { SidebarTopicsSection } from "./SidebarTopicsSection";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
@@ -711,6 +712,7 @@ export function AppSidebar({
             financeActive={currentFeed === "finance"}
             onFinanceSelect={() => selectTopLevelFeed("finance")}
           />
+          <SidebarToolsSection pathname={pathname} onNavigate={href => { setOpenMobile(false); router.push(href); }} />
           <SidebarListsSection
             key={session?.did || "signed-out"}
             lists={readerLists.lists}
@@ -749,12 +751,6 @@ export function AppSidebar({
 
       <SidebarFooter className="border-t border-sidebar-border/70 px-2 py-3">
         <SidebarMenu className="gap-0.5 px-1">
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Articles" isActive={pathname.startsWith("/articles")} onClick={() => { setOpenMobile(false); router.push("/articles"); }}>
-              <FilePenLine />
-              <span>Articles</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           {profileLoading ? (
             <SidebarMenuItem>
               <div className="flex min-w-0 flex-1 items-start gap-2 px-1 py-1">

@@ -1,3 +1,5 @@
+import { compactLoopbackClientId } from "@/lib/atprotoNetwork";
+import { skejScopesForEnvironment } from "@/lib/skej/skejEnvironment";
 import { afterEach, describe, expect, it } from "bun:test";
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
 import { Agent } from "@atproto/api";
@@ -35,7 +37,7 @@ describe("local ATProto network", () => {
     expect(scopes).toContain("rpc:app.bsky.feed.getFeedSkeleton?aud=did:web:appview.atmosbox.test%23bsky_appview");
     expect(scopes).toContain("repo:app.bsky.feed.post?action=create");
     expect(scopes.split(" ").filter(s => s.startsWith("repo:"))).toEqual(AT_PROTO_OAUTH_SCOPES.split(" ").filter(s => s.startsWith("repo:")));
-    expect(atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES, resolveAtprotoNetwork("prod"))).toBe(AT_PROTO_OAUTH_SCOPES);
+    expect(atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES, resolveAtprotoNetwork("prod"))).toBe(skejScopesForEnvironment(AT_PROTO_OAUTH_SCOPES));
   });
   it("compacts only full repo actions in the explicit local loopback client ID", () => {
     const scopes = "repo:app.example.full?action=create&action=update&action=delete repo:app.example.partial?action=create&action=delete rpc:app.example.method?aud=did:web:app.example include:app.example.authFull";
@@ -43,7 +45,7 @@ describe("local ATProto network", () => {
     expect(compact).toBe("repo:app.example.full repo:app.example.partial?action=create&action=delete rpc:app.example.method?aud=did:web:app.example include:app.example.authFull");
     for (const env of ["prod", "dev", "", "test"]) expect(localLoopbackOAuthScopes(scopes, env)).toBe(scopes);
     const aligned = atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES, resolveAtprotoNetwork("local", local));
-    const clientId = buildAtprotoLoopbackClientId({ redirect_uris: ["http://127.0.0.1:3016/callback"], scope: localLoopbackOAuthScopes(aligned, "local") });
+    const clientId = compactLoopbackClientId(buildAtprotoLoopbackClientId({ redirect_uris: ["http://127.0.0.1:3016/callback"], scope: localLoopbackOAuthScopes(aligned, "local") }));
     const authorize = new URL("https://pds1.atmosbox.test/oauth/authorize");
     const declared = new URL(clientId).searchParams.get("scope")!.split(" ");
     const requested = authorizationScopesForClient(aligned, clientId, "local").split(" ");
@@ -120,4 +122,12 @@ describe("local ATProto network", () => {
     process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "true";
     expect(isDummyReaderDataEnabled()).toBe(true);
   });
+});
+
+it("compacts only safe loopback query characters without changing consent metadata", () => {
+  const original = buildAtprotoLoopbackClientId({ redirect_uris: ["http://127.0.0.1:3016/callback"], scope: "atproto rpc:at.skej.schedule.list?aud=did:web:api.skej.at%23skej_scheduler" });
+  const compact = compactLoopbackClientId(original);
+  expect([...new URL(compact).searchParams]).toEqual([...new URL(original).searchParams]);
+  expect(new URL(compact).searchParams.get("scope")).toContain("%23skej_scheduler");
+  expect(compactLoopbackClientId("https://example.com/path%2Fvalue")).toBe("https://example.com/path%2Fvalue");
 });
