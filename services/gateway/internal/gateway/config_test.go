@@ -89,3 +89,19 @@ func TestIngestionEvidenceDoesNotExtendCompleteness(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestLocalSandboxPolicyIsConfinedToLocalGateway(t *testing.T) {
+	env := map[string]string{"APP_ENV": "local", "LOCAL_ATPROTO_ALLOWED_HOSTS": "plc.atmosbox.test,pds1.atmosbox.test"}
+	c, err := ParseConfig(env)
+	if err != nil || c.EndpointPolicy == nil || c.Auth.Policy != c.EndpointPolicy {
+		t.Fatalf("local policy not wired: %v", err)
+	}
+	for _, mode := range []string{"dev", "prod"} {
+		env["APP_ENV"] = mode
+		env["DATABASE_URL"] = "fixture"
+		env["PDS_ATTESTATION_RECEIPT_SECRET"] = strings.Repeat("x", 32)
+		if _, err := ParseConfig(env); err == nil {
+			t.Fatal("sandbox enabled outside local mode")
+		}
+	}
+}

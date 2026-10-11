@@ -38,7 +38,7 @@ func (r RepositorySnapshotReader) Read(ctx context.Context, did string, collecti
 	defer cancel()
 	getter := r.PDS.HTTP
 	if getter == nil {
-		getter = PublicHTTP{}
+		getter = PublicHTTP{Policy: r.PDS.Policy}
 	}
 	s := &snapshotRead{reader: r, getter: getter, store: mst.NewMemBlockStore()}
 	base, key, err := s.identity(ctx, did)

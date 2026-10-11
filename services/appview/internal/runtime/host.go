@@ -87,7 +87,7 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 		return nil, errors.New("AppView requires PostgreSQL")
 	}
 	process, cancel := context.WithCancel(ctx)
-	h = &Host{Config: c, DB: db, ctx: process, cancel: cancel, publicHTTP: gatewaycore.NewPublicHTTPClient(nil), internalHTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	h = &Host{Config: c, DB: db, ctx: process, cancel: cancel, publicHTTP: gatewaycore.NewHTTPClientWithPolicy(c.EndpointPolicy), internalHTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	defer func() {
 		if err != nil {
 			h.Close(context.Background())
@@ -115,14 +115,14 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 	if c.CacheBackend == "redis" && h.Redis != nil {
 		projection.Redis = h.Redis
 	}
-	baseRepo := &gatewaycore.RepoClient{Client: h.publicHTTP, PLCURL: c.Auth.PLCURL}
+	baseRepo := &gatewaycore.RepoClient{Client: h.publicHTTP, PLCURL: c.Auth.PLCURL, Policy: c.EndpointPolicy}
 	var resolutionRedis redis.Cmdable
 	if h.Redis != nil {
 		resolutionRedis = h.Redis
 	}
 	repo := repocache.New(baseRepo, resolutionRedis, c.Environment).RepoClient
-	getter := thinappviewcore.PublicHTTP{}
-	pds := &thinappviewcore.PDSClient{HTTP: getter, PLCBase: c.Auth.PLCURL}
+	getter := thinappviewcore.PublicHTTP{Policy: c.EndpointPolicy}
+	pds := &thinappviewcore.PDSClient{HTTP: getter, PLCBase: c.Auth.PLCURL, Policy: c.EndpointPolicy}
 	h.Publications = publicationcore.NewService(db, repo, h.publicHTTP)
 	if cacheEnabled {
 		h.Publications.Cache = &publicationcore.CacheStore{Projection: projection}

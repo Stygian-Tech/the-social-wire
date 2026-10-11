@@ -65,7 +65,7 @@ func (a *PDSAttestor) Attest(ctx context.Context, token, authorization, sessionP
 		if e != nil {
 			return nil, e
 		}
-		issuer, e := NormalizePublicRemoteBase(candidate.Issuer)
+		issuer, e := a.Verifier.Policy.NormalizeBase(candidate.Issuer)
 		trusted := false
 		for _, server := range authority.AuthorizationServers {
 			trusted = trusted || server == issuer

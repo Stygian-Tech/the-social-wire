@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 )
 
 type PDSRecordResponseError struct {
@@ -46,6 +48,7 @@ type PublicGetter interface {
 }
 type PDSClient struct {
 	HTTP          PublicGetter
+	Policy        *gatewaycore.EndpointPolicy
 	PLCBase       string
 	mu            sync.Mutex
 	endpoints     map[string]pdsEndpoint
@@ -88,13 +91,13 @@ func (p *PDSClient) Resolve(ctx context.Context, did string) (string, error) {
 	}
 	httpClient := p.HTTP
 	if httpClient == nil {
-		httpClient = PublicHTTP{}
+		httpClient = PublicHTTP{Policy: p.Policy}
 	}
 	root := p.PLCBase
 	if root == "" {
 		root = "https://plc.directory"
 	}
-	documentURL, err := didDocumentURL(did, root)
+	documentURL, err := didDocumentURLWithPolicy(did, root, p.Policy)
 	if err != nil {
 		return "", err
 	}
@@ -135,7 +138,7 @@ func (p *PDSClient) Resolve(ctx context.Context, did string) (string, error) {
 	}
 	for _, service := range document.Services {
 		if (service.ID == "#atproto_pds" || service.ID == did+"#atproto_pds") && service.Type == "AtprotoPersonalDataServer" {
-			endpoint := ValidatePDSBase(service.Endpoint)
+			endpoint := validatedPDSBase(service.Endpoint, p.Policy)
 			if endpoint == "" {
 				return "", errors.New("unsafe PDS service endpoint")
 			}
@@ -183,7 +186,7 @@ func (p *PDSClient) FetchRecord(ctx context.Context, did, collection, key string
 	}
 	httpClient := p.HTTP
 	if httpClient == nil {
-		httpClient = PublicHTTP{}
+		httpClient = PublicHTTP{Policy: p.Policy}
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -212,6 +215,10 @@ func (p *PDSClient) FetchRecord(ctx context.Context, did, collection, key string
 }
 
 func didDocumentURL(did, plcRoot string) (string, error) {
+	return didDocumentURLWithPolicy(did, plcRoot, nil)
+}
+
+func didDocumentURLWithPolicy(did, plcRoot string, policy *gatewaycore.EndpointPolicy) (string, error) {
 	if strings.HasPrefix(did, "did:plc:") && len(strings.TrimPrefix(did, "did:plc:")) == 24 {
 		for _, character := range strings.TrimPrefix(did, "did:plc:") {
 			if !(character >= 'a' && character <= 'z' || character >= '2' && character <= '7') {
@@ -228,7 +235,7 @@ func didDocumentURL(did, plcRoot string) (string, error) {
 	if err != nil || host == "" {
 		return "", errors.New("invalid did:web host")
 	}
-	base := ValidatePDSBase("https://" + host)
+	base := validatedPDSBase("https://"+host, policy)
 	if base == "" {
 		return "", errors.New("unsafe did:web host")
 	}

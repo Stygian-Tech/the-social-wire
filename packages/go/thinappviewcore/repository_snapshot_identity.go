@@ -13,7 +13,7 @@ func (s *snapshotRead) identity(ctx context.Context, did string) (string, crypto
 	if root == "" {
 		root = "https://plc.directory"
 	}
-	target, err := didDocumentURL(did, root)
+	target, err := didDocumentURLWithPolicy(did, root, s.reader.PDS.Policy)
 	if err != nil {
 		return "", nil, snapshotError("invalid identity")
 	}
@@ -42,7 +42,7 @@ func (s *snapshotRead) identity(ctx context.Context, did string) (string, crypto
 			services++
 		}
 		if (service.ID == "#atproto_pds" || service.ID == did+"#atproto_pds") && service.Type == "AtprotoPersonalDataServer" {
-			base = ValidatePDSBase(service.Endpoint)
+			base = validatedPDSBase(service.Endpoint, s.reader.PDS.Policy)
 		}
 	}
 	if services != 1 || base == "" {
