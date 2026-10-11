@@ -43,10 +43,13 @@ describe("Social Post Interactions", () => {
   render(<QueryClientProvider client={new QueryClient()}><SocialFeedPosts items={[{ post, reply: { parent, root: parent } }, { post: parent }]} moderation={moderation} /></QueryClientProvider>);
   const group = screen.getByLabelText("Post Conversation");
   expect(group.classList.contains("border")).toBe(true);
-  expect(screen.getByText("Thread · 2 Posts")).toBeTruthy();
+  expect(screen.getByText("Conversation")).toBeTruthy();
   expect(group.querySelectorAll("article")).toHaveLength(2);
   expect([...group.querySelectorAll("article")].every(article => !article.classList.contains("border"))).toBe(true);
   expect(screen.getAllByText("Grouped Parent")).toHaveLength(1);
+  const articles = group.querySelectorAll("article");
+  expect(articles[0]!.textContent).not.toContain("Replying To");
+  expect(articles[1]!.textContent).toContain("Replying To @other.test");
   fireEvent.click(screen.getByText("Grouped Parent"));
   expect(push).toHaveBeenCalledWith(socialPostPageHref(parent.uri, "/social"));
  });
@@ -62,11 +65,10 @@ describe("Social Post Interactions", () => {
   const view = show({ post, reply: { parent, root: parent } });
   expect(screen.queryByText("Secret Parent")).toBeNull();
   expect(screen.getByText("Original post withheld by your moderation settings.")).toBeTruthy();
-  expect(screen.getByText("Thread")).toBeTruthy();
-  expect(screen.queryByText("Thread · 2 Posts")).toBeNull();
+  expect(screen.getByText("Conversation")).toBeTruthy();
   view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: parent.uri, notFound: true }, root: parent } }} moderation={moderation} /></QueryClientProvider>);
   expect(screen.getByText("Original post unavailable.")).toBeTruthy();
-  expect(screen.getByText("Thread")).toBeTruthy();
+  expect(screen.getByText("Conversation")).toBeTruthy();
  });
  it("opens quoted content internally without opening the enclosing post", () => {
   const quote = { $type: "app.bsky.embed.record#viewRecord", uri: `${post.uri}quote`, cid: post.cid, author: post.author, value: { $type: "app.bsky.feed.post", text: "Quoted Content", createdAt: "2026-10-10T00:00:00Z" }, indexedAt: post.indexedAt };

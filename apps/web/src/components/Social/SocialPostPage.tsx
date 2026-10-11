@@ -12,8 +12,11 @@ import { useSocialPostNavigation } from "@/hooks/useSocialPostNavigation";
 import { isSocialPostUri } from "@/lib/socialPostNavigation";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { collectSocialThreadReplies, socialThreadReplyIndent } from "@/lib/socialThreadReplies";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialPostCard } from "./SocialPostCard";
+import { SocialAuthorThreadIndicator } from "./SocialAuthorThreadIndicator";
+import { socialAuthorThreadRoot } from "@/lib/socialAuthorThread";
 import { SocialPostActions } from "./SocialPostActions";
 
 export function SocialPostPage() {
@@ -38,24 +41,17 @@ function SocialPostViewer({ uri }: { uri: string | null | undefined }) {
   while (AppBskyFeedDefs.isThreadViewPost(parent) && parents.length < 80 && !seen.has(parent.post.uri)) {
     seen.add(parent.post.uri); parents.unshift(parent.post); parent = parent.parent;
   }
-  const replies: AppBskyFeedDefs.PostView[] = [];
-  function collect(nodes: AppBskyFeedDefs.ThreadViewPost["replies"], depth = 0) {
-    if (depth > 6 || replies.length >= 100) return;
-    for (const node of nodes ?? []) if (AppBskyFeedDefs.isThreadViewPost(node) && !seen.has(node.post.uri)) {
-      if (replies.length >= 100) break;
-      seen.add(node.post.uri); replies.push(node.post); collect(node.replies, depth + 1);
-    }
-  }
-  collect(root?.replies);
+  const replies = collectSocialThreadReplies(root, seen);
   const error = catalog.isError ? socialErrorMessage(catalog.error) : query.isError ? socialErrorMessage(query.error) : undefined;
   const openPost = (post: AppBskyFeedDefs.PostView) => navigation.openPost(post.uri);
   return <div className="flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title="Post" subtitle="Conversation" leading={<Button variant="ghost" size="icon" aria-label="Back" title="Back" className="min-h-11 min-w-11" onClick={navigation.back}><ArrowLeft aria-hidden="true" /></Button>} />
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><section aria-label="Post Conversation" className="mx-auto flex max-w-2xl flex-col gap-3 p-3 sm:p-4">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><section aria-label="Post Conversation" className="relative mx-auto flex max-w-2xl flex-col gap-3 p-3 sm:p-4">
       {!valid ? <p role="alert">This post link is invalid.</p> : error ? <div role="alert" className="flex flex-col items-start gap-3"><p>{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={() => { if (catalog.isError) void catalog.refetch(); else void query.refetch(); }}>Retry</Button>}</div> : !moderation || query.isPending ? <p role="status">Loading conversation…</p> : !root ? <p>This conversation is unavailable.</p> : <>
+        <SocialAuthorThreadIndicator item={{ post: root.post }} thread={socialAuthorThreadRoot(root)} moderation={moderation} onOpen={navigation.openPost} />
         {parents.map(post => <SocialPostCard key={post.uri} item={{ post }} moderation={moderation} onOpen={() => openPost(post)} onOpenPost={openPost} />)}
-        <SocialPostCard analyticsSurface="post-viewer" item={{ post: root.post }} moderation={moderation} detailedTimestamp onOpenPost={openPost} actions={<SocialPostActions post={root.post} moderation={moderation} onOpen={() => document.getElementById("social-post-replies")?.scrollIntoView({ block: "nearest" })} />} />
-        <section id="social-post-replies" aria-label="Replies" className="flex flex-col gap-3"><h2 className="font-medium">Replies</h2>{!replies.length ? <p className="text-sm text-muted-foreground">No replies yet.</p> : replies.map(post => <SocialPostCard key={post.uri} item={{ post }} moderation={moderation} onOpen={() => openPost(post)} onOpenPost={openPost} actions={<SocialPostActions post={post} moderation={moderation} onOpen={() => openPost(post)} />} />)}</section>
+        <SocialPostCard analyticsSurface="post-viewer" item={{ post: root.post, reply: root.parent ? { root: { ...root.post, $type: "app.bsky.feed.defs#postView" }, parent: AppBskyFeedDefs.isThreadViewPost(root.parent) ? { ...root.parent.post, $type: "app.bsky.feed.defs#postView" } : root.parent } : undefined }} moderation={moderation} detailedTimestamp onOpenPost={openPost} actions={<SocialPostActions post={root.post} moderation={moderation} onOpen={() => document.getElementById("social-post-replies")?.scrollIntoView({ block: "nearest" })} />} />
+        <section id="social-post-replies" aria-label="Replies" className="flex flex-col gap-3"><h2 className="font-medium">Replies</h2>{!replies.length ? <p className="text-sm text-muted-foreground">No replies yet.</p> : replies.map(({ post, parent, depth }) => <div key={post.uri} data-reply-depth={depth} className={`min-w-0 ${depth > 0 ? "border-l-2 border-border pl-2 sm:pl-3" : ""} ${socialThreadReplyIndent(depth)}`}><SocialPostCard item={{ post, reply: { root: { ...root.post, $type: "app.bsky.feed.defs#postView" }, parent: { ...parent, $type: "app.bsky.feed.defs#postView" } } }} moderation={moderation} onOpen={() => openPost(post)} onOpenPost={openPost} actions={<SocialPostActions post={post} moderation={moderation} onOpen={() => openPost(post)} />} /></div>)}</section>
       </>}
     </section></div>
   </div>;

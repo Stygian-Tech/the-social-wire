@@ -44,6 +44,22 @@ afterEach(() => { cleanup(); cache.clear(); restores.splice(0).reverse().forEach
 function show() { return render(<QueryClientProvider client={cache}><SidebarProvider><SocialPostPage /></SidebarProvider></QueryClientProvider>); }
 
 describe("on-page post viewer", () => {
+  it("indents nested replies, retains sibling order, and identifies the immediate parent", async () => {
+    const first = { ...post, uri: `${post.uri}first`, author: { did: "did:plc:first", handle: "first.test" }, record: { ...post.record, text: "First Reply" } };
+    const nested = { ...post, uri: `${post.uri}nested`, record: { ...post.record, text: "Nested Reply" } };
+    const sibling = { ...post, uri: `${post.uri}sibling`, record: { ...post.record, text: "Sibling Reply" } };
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post, replies: [{ $type: "app.bsky.feed.defs#threadViewPost", post: first, replies: [{ $type: "app.bsky.feed.defs#threadViewPost", post: nested }] }, { $type: "app.bsky.feed.defs#threadViewPost", post: sibling }] } });
+    restores.push(() => fetch.mockRestore());
+    const view = show();
+    await screen.findByText("Nested Reply");
+    const rows = Array.from(view.container.querySelectorAll("[data-reply-depth]"));
+    expect(rows.map(row => row.getAttribute("data-reply-depth"))).toEqual(["0", "1", "0"]);
+    expect(rows[1]?.className).toContain("ml-3");
+    expect(rows[1]?.className).toContain("border-l-2");
+    expect(rows[1]?.textContent).toContain("first.test");
+    fireEvent.click(screen.getByText("Nested Reply"));
+    expect(push).toHaveBeenLastCalledWith(socialPostPageHref(nested.uri, "/social?feed=original"));
+  });
   it("targets reply engagement, bookmarks, menu links, and its own conversation independently", async () => {
     const reply = { ...post, uri: `${post.uri}reply`, cid: "reply-cid", replyCount: 3, record: { ...post.record, text: "Reply With Actions" } };
     const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post, replies: [{ $type: "app.bsky.feed.defs#threadViewPost", post: reply }] } });
@@ -102,6 +118,19 @@ describe("on-page post viewer", () => {
     expect(replies.queryByText("Withheld Reply") === null).toBe(true);
     expect(replies.queryByRole("button", { name: "More Post Actions" }) === null).toBe(true);
     expect(screen.getAllByRole("button", { name: "More Post Actions" })).toHaveLength(1);
+  });
+  it("preserves a nested reply without revealing its muted parent's identity", async () => {
+    const parent = { ...post, uri: `${post.uri}muted`, author: { did: "did:plc:hidden", handle: "hidden-parent.test", viewer: { muted: true } }, record: { ...post.record, text: "Hidden Parent" } };
+    const nested = { ...post, uri: `${post.uri}nested`, record: { ...post.record, text: "Visible Nested Reply" } };
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post, replies: [{ $type: "app.bsky.feed.defs#threadViewPost", post: parent, replies: [{ $type: "app.bsky.feed.defs#threadViewPost", post: nested }] }] } });
+    restores.push(() => fetch.mockRestore());
+    const view = show();
+    await screen.findByText("Visible Nested Reply");
+    expect(screen.queryByText("Hidden Parent")).toBeNull();
+    expect(screen.queryByText(/hidden-parent\.test/)).toBeNull();
+    const row = view.container.querySelector('[data-reply-depth="1"]');
+    expect(row?.textContent).toContain("Replying To a withheld post");
+    expect(within(row as HTMLElement).getByRole("button", { name: "More Post Actions" })).toBeTruthy();
   });
   for (const type of ["blockedPost", "notFoundPost"] as const) it(`never shows stale content or actions for ${type}`, async () => {
     const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: type === "blockedPost" ? { $type: "app.bsky.feed.defs#blockedPost", uri: post.uri, blocked: true, author: { did: post.author.did } } : { $type: "app.bsky.feed.defs#notFoundPost", uri: post.uri, notFound: true } });
