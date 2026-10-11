@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   AT_PROTO_OAUTH_SCOPES,
+  BLUESKY_PODCAST_VIDEO_SCOPES,
   ARTICLE_PUBLISHING_SCOPES,
   BLUESKY_SOCIAL_REPO_SCOPES,
   BLUESKY_SOCIAL_RPC_SCOPES,
@@ -22,6 +23,12 @@ import {
 import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 
 describe("atprotoOAuthScopes", () => {
+  it("grants only MP4 upload and the exact video quota/PDS delegation methods", () => {
+    expect(BLUESKY_PODCAST_VIDEO_SCOPES).toEqual(["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app"]);
+    for (const scope of BLUESKY_PODCAST_VIDEO_SCOPES) expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(scope);
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("blob:video/*");
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("rpc:*?");
+  });
   it("adds only the direct PDS grants used by Livestream", () => {
     expect(STREAMPLACE_REPO_SCOPES).toEqual([
       "repo:place.stream.key?action=create",

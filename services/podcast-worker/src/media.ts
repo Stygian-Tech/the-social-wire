@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { downloadPublic } from "./publicFetch";
 import type { SilenceInterval, TranscriptCue } from "./types";
-import { createSlides } from "./slides";
+import { createArtworkFrame } from "./slides";
 
 const INPUT_FORMATS = "mp3,mov,ogg,wav,flac,aac";
 export async function runMedia(command: string, args: string[], timeoutMs = 900_000): Promise<string> {
@@ -69,14 +69,16 @@ export function clipCaptions(cues: TranscriptCue[], start: number, end: number):
 }
 
 export function validateClip(start: number, end: number, duration: number): void {
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > duration || end-start > 600) throw new Error("Clip must be within the episode and no longer than ten minutes");
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > duration || end-start > 600) throw new Error("Clip must be within the episode and no longer than ten minutes");
 }
 
 export async function renderClip(options: {source: string; directory: string; start: number; end: number; duration: number; artwork?: string; title: string; attribution: string; cues?: TranscriptCue[]}): Promise<{audio: string; video: string}> {
   validateClip(options.start, options.end, options.duration);
   const audio = join(options.directory,"audio.m4a"); const video = join(options.directory,"audiogram.mp4");
   await runMedia("ffmpeg", ["-hide_banner","-loglevel","error","-nostdin","-y","-protocol_whitelist","file,pipe","-format_whitelist",INPUT_FORMATS,"-i", options.source, "-ss",String(options.start),"-t",String(options.end-options.start),"-vn","-c:a","aac","-b:a","192k","-movflags","+faststart",audio]);
-  const slides=await createSlides({directory:options.directory,artwork:options.artwork,title:options.title,attribution:options.attribution,cues:options.cues??[],start:options.start,end:options.end});
-  await runMedia("ffmpeg",["-hide_banner","-loglevel","error","-nostdin","-y","-f","concat","-safe","0","-i",slides,"-i",audio,"-filter_complex","[1:a]asplit[voice][wave];[wave]showwaves=s=900x220:mode=line:colors=white:rate=30[visual];[0:v][visual]overlay=90:1300[out]","-map","[out]","-map","[voice]","-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p","-r","30","-c:a","aac","-t",String(options.end-options.start),"-movflags","+faststart",video]);
+  const frame=await createArtworkFrame(options);
+  // One keyframe covers the bounded ten-minute still clip. Periodic lossy I-frames
+  // otherwise introduce small visual changes even when the input frame is identical.
+  await runMedia("ffmpeg",["-hide_banner","-loglevel","error","-nostdin","-y","-loop","1","-framerate","30","-i",frame,"-i",audio,"-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-tune","stillimage","-g","18001","-sc_threshold","0","-pix_fmt","yuv420p","-c:a","copy","-t",String(options.end-options.start),"-movflags","+faststart",video]);
   return {audio,video};
 }

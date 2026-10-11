@@ -69,11 +69,13 @@ export function getAtprotoNetwork(): AtprotoNetwork {
 
 /** Keep the proxy DID and consent audiences aligned without altering production metadata. */
 export function atprotoScopesForNetwork(scopes: string, network = getAtprotoNetwork()): string {
-  // The baseline chat reporting UI targets Bluesky's labeler. Isolated networks
-  // cannot use that service, so do not request its unrelated public grant.
+  // The isolated sandbox has no video service. Preserve the publisher's
+  // network boundary before applying the independent chat-reporting boundary.
+  const isolated = network.plcDirectory !== PLC_DIRECTORY || network.publicAppView !== PUBLIC_APPVIEW || network.appViewDid !== APPVIEW_DID;
+  const supported = isolated ? scopes.split(" ").filter(scope => !["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app"].includes(scope)).join(" ") : scopes;
   const reporting = network.chatServiceDid === CHAT_SERVICE_DID && network.appLabelers === undefined
-    ? scopes
-    : scopes.split(" ").filter(scope => scope !== "rpc:com.atproto.moderation.createReport?aud=did:plc:ar7c4by46qjdydhdevvrndac%23atproto_labeler").join(" ");
+    ? supported
+    : supported.split(" ").filter(scope => scope !== "rpc:com.atproto.moderation.createReport?aud=did:plc:ar7c4by46qjdydhdevvrndac%23atproto_labeler").join(" ");
   const scoped = network.chatServiceDid ? reporting.replaceAll(`${CHAT_SERVICE_DID}%23bsky_chat`, `${network.chatServiceDid}%23bsky_chat`) : reporting.split(" ").filter(scope => !scope.includes(`${CHAT_SERVICE_DID}%23bsky_chat`)).join(" ");
   return skejScopesForEnvironment(scoped.replaceAll(`${APPVIEW_DID}%23bsky_appview`, `${network.appViewDid}%23bsky_appview`));
 }

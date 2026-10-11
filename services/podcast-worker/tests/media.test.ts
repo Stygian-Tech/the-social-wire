@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import sharp from "sharp";
+import { createArtworkFrame } from "../src/slides";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,8 +31,49 @@ describe("source-time media processing",()=>{
     expect(text).toContain("00:00:03,000 --> 00:00:05,000\nLater");
   });
   it("rejects invalid/out-of-bounds rendering requests",()=>{
-    for(const [start,end] of [[-1,1],[2,1],[0,11],[NaN,1]])expect(()=>validateClip(start!,end!,10)).toThrow();
+    for(const [start,end] of [[-1,1],[2,1],[0,11],[NaN,1],[0,Infinity]])expect(()=>validateClip(start!,end!,10)).toThrow();
+    expect(()=>validateClip(0,601,1000)).toThrow();
+    expect(()=>validateClip(0,600,1000)).not.toThrow();
+    expect(()=>validateClip(0,1,NaN)).toThrow();
   });
+  it("fits all artwork edges into one frame without cropping",async()=>{
+    const directory=await mkdtemp(join(tmpdir(),"podcast-artwork-test-"));
+    try {
+      const artwork=join(directory,"artwork.png");
+      await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300"><rect width="600" height="300" fill="red"/><rect x="590" width="10" height="300" fill="blue"/></svg>')).png().toFile(artwork);
+      const frame=await createArtworkFrame({directory,artwork,title:"Episode",attribution:"Publisher"});
+      const pixel=async(x:number,y:number)=>Array.from(await sharp(frame).extract({left:x,top:y,width:1,height:1}).removeAlpha().raw().toBuffer());
+      expect(await pixel(90,500)).toEqual([255,0,0]);
+      expect(await pixel(989,500)).toEqual([0,0,255]);
+      expect(await pixel(540,200)).toEqual([23,25,35]);
+      expect(await pixel(540,1070)).toEqual([23,25,35]);
+    } finally {await rm(directory,{recursive:true,force:true});}
+  });
+  it("loops static artwork for the complete selected audio interval despite legacy caption cues",async()=>{
+    const directory=await mkdtemp(join(tmpdir(),"podcast-static-video-test-"));
+    try {
+      const source=join(directory,"source.wav");const artwork=join(directory,"artwork.png");
+      await runMedia("ffmpeg",["-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=10",source]);
+      await sharp({create:{width:600,height:300,channels:3,background:"#eb4433"}}).png().toFile(artwork);
+      const rendered=await renderClip({source,directory,start:.5,end:9.5,duration:10,artwork,title:"Episode",attribution:"Publisher",cues:[{startSeconds:.5,endSeconds:1,text:"First caption"},{startSeconds:1,endSeconds:2.5,text:"Different caption"}]});
+      const metadata=JSON.parse(await runMedia("ffprobe",["-v","error","-show_entries","stream=codec_name,duration,nb_frames,width,height","-of","json",rendered.video]));
+      const video=metadata.streams.find((stream:{codec_name:string})=>stream.codec_name==="h264");
+      const audio=metadata.streams.find((stream:{codec_name:string})=>stream.codec_name==="aac");
+      expect(video).toMatchObject({width:1080,height:1920,nb_frames:"270"});
+      expect(Number(video.duration)).toBeCloseTo(9,2);expect(Number(audio.duration)).toBeCloseTo(9,1);
+      expect(await probeDuration(rendered.audio)).toBeCloseTo(9,1);
+      const frames=await runMedia("ffmpeg",["-v","error","-i",rendered.video,"-map","0:v:0","-f","framemd5","-"]);
+      const hashes=frames.split("\n").filter(line=>line&&!line.startsWith("#")).map(line=>line.split(",").at(-1)?.trim());
+      expect(hashes).toHaveLength(270);expect(new Set(hashes).size).toBe(1);
+      const videoAudio=await runMedia("ffmpeg",["-v","error","-i",rendered.video,"-map","0:a:0","-f","md5","-"]);
+      const selectedAudio=await runMedia("ffmpeg",["-v","error","-i",rendered.audio,"-map","0:a:0","-f","md5","-"]);
+      expect(videoAudio).toBe(selectedAudio);
+      const decoded=join(directory,"decoded.png");
+      await runMedia("ffmpeg",["-v","error","-i",rendered.video,"-frames:v","1",decoded]);
+      const center=Array.from(await sharp(decoded).extract({left:540,top:630,width:1,height:1}).removeAlpha().raw().toBuffer());
+      expect(center[0]).toBeGreaterThan(220);expect(center[1]).toBeLessThan(80);expect(center[2]).toBeLessThan(70);
+    } finally {await rm(directory,{recursive:true,force:true});}
+  },60_000);
   it("analyzes actual audio and renders playable AAC/MP4 exports",async()=>{
     const directory=await mkdtemp(join(tmpdir(),"podcast-media-test-"));
     try {
