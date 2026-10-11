@@ -63,3 +63,35 @@ func TestAlternateURLsAndHTTPBodiesAreBounded(t *testing.T) {
 		t.Fatalf("resolution %+v", response)
 	}
 }
+
+func TestNewsResolverRejectsDirectPodcastFeed(t *testing.T) {
+	r := Resolver{HTTP: getterFunc(func(ctx context.Context, target string, h http.Header, max, redirects int) (int, http.Header, []byte, error) {
+		if target == "https://publisher.social/podcast.xml" {
+			return 200, nil, []byte(`<rss><channel><item><enclosure url="https://publisher.social/episode.mp3" type="audio/mpeg"/></item></channel></rss>`), nil
+		}
+		return 404, nil, nil, nil
+	})}
+	response := r.Resolve(context.Background(), "https://publisher.social/podcast.xml")
+	if response.Result != nil || response.Error == nil || !strings.Contains(*response.Error, "Podcasts") {
+		t.Fatalf("podcast became News subscription candidate: %+v", response)
+	}
+}
+
+func TestNewsResolverSkipsPodcastAlternate(t *testing.T) {
+	r := Resolver{HTTP: getterFunc(func(ctx context.Context, target string, h http.Header, max, redirects int) (int, http.Header, []byte, error) {
+		switch target {
+		case "https://publisher.social", "https://publisher.social/":
+			return 200, nil, []byte(`<link rel="alternate" type="application/rss+xml" href="/podcast.xml"><link rel="alternate" type="application/rss+xml" href="/news.xml">`), nil
+		case "https://publisher.social/podcast.xml":
+			return 200, nil, []byte(`<rss><channel><item><enclosure url="https://publisher.social/episode.mp3"/></item></channel></rss>`), nil
+		case "https://publisher.social/news.xml":
+			return 200, nil, []byte(`<rss><channel><item><title>News</title></item></channel></rss>`), nil
+		default:
+			return 404, nil, nil, nil
+		}
+	})}
+	response := r.Resolve(context.Background(), "https://publisher.social/")
+	if response.Result == nil || response.Result.FeedURL == nil || *response.Result.FeedURL != "https://publisher.social/news.xml" {
+		t.Fatalf("wrong News feed: %+v", response)
+	}
+}
