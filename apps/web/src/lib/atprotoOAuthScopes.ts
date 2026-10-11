@@ -11,9 +11,9 @@ import {
  * `public/client-metadata.json` (`scope`) for API parity tests: authorization
  * servers reject undeclared scopes.
  *
- * `atproto` is required by the ATProto OAuth profile. Prefer published
- * application permission sets so PDS consent screens can group permissions by
- * product. Keep explicit `repo:` grants only where no suitable set exists.
+ * `atproto` is required by the ATProto OAuth profile. Use published permission
+ * sets only when they grant no extra powers; retain explicit collection/action
+ * and RPC grants when a bundle would broaden access.
  *
  * Legacy `com.thesocialwire.*` grants are omitted: the web client no longer
  * writes those collections. Read-only access does not require repo grants.
@@ -85,6 +85,8 @@ export const BLUESKY_CHAT_RPC_SCOPES = [
   "rpc:chat.bsky.convo.getMessages?aud=did:web:api.bsky.chat%23bsky_chat",
   "rpc:chat.bsky.convo.getConvoForMembers?aud=did:web:api.bsky.chat%23bsky_chat",
   "rpc:chat.bsky.convo.sendMessage?aud=did:web:api.bsky.chat%23bsky_chat",
+  "rpc:chat.bsky.convo.addReaction?aud=did:web:api.bsky.chat%23bsky_chat",
+  "rpc:chat.bsky.convo.removeReaction?aud=did:web:api.bsky.chat%23bsky_chat",
   "rpc:chat.bsky.convo.updateRead?aud=did:web:api.bsky.chat%23bsky_chat",
   "rpc:chat.bsky.convo.deleteMessageForSelf?aud=did:web:api.bsky.chat%23bsky_chat",
   "rpc:chat.bsky.convo.muteConvo?aud=did:web:api.bsky.chat%23bsky_chat",
