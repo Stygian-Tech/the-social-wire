@@ -3,6 +3,8 @@
 import { Bell, Bookmark, Compass, House, List, MessagesSquare, Rss } from "lucide-react";
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 
+import { UnreadSidebarBadge } from "./UnreadSidebarBadge";
+
 export const SOCIAL_DESTINATIONS = [
   { name: "Home", section: "home", icon: House, href: "/social" },
   { name: "Explore", section: "explore", icon: Compass, href: "/social/explore" },
@@ -13,8 +15,10 @@ export const SOCIAL_DESTINATIONS = [
   { name: "Feeds", section: "feeds", icon: Rss, href: "/social/feeds" },
 ] as const;
 
-export function SidebarSocialSection({ active, activeSection = "home", onHome, onNavigate }: {
+export function SidebarSocialSection({ active, activeSection = "home", onHome, onNavigate, notificationCount = 0, messageCount = 0 }: {
   active: boolean;
+  notificationCount?: number;
+  messageCount?: number;
   activeSection?: string;
   onHome: () => void;
   onNavigate?: (href: string) => void;
@@ -28,6 +32,7 @@ export function SidebarSocialSection({ active, activeSection = "home", onHome, o
           <SidebarMenuButton type="button" aria-label={`Social ${name}`} aria-current={selected ? "page" : undefined} isActive={selected} tooltip={name} onClick={() => section === "home" ? onHome() : onNavigate?.(href)}>
             <Icon aria-hidden="true" /><span className="truncate">{name}</span>
           </SidebarMenuButton>
+          {section === "notifications" ? <UnreadSidebarBadge count={notificationCount} /> : section === "messages" ? <UnreadSidebarBadge count={messageCount} /> : null}
         </SidebarMenuItem>;
       })}
     </SidebarMenu>

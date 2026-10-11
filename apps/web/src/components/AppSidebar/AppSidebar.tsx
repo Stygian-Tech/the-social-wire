@@ -21,6 +21,7 @@ import { Avatar } from "@/components/shared/Avatar";
 import { SidebarFoldersSection } from "./SidebarFoldersSection";
 import { SidebarListPublicationsSection } from "./SidebarListPublicationsSection";
 import { SidebarPublicationsSection } from "./SidebarPublicationsSection";
+import { useSocialUnreadCounts } from "@/hooks/useSocialUnreadCounts";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useSidebarBootstrap,
@@ -99,6 +100,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { session, signOut } = useAuth();
+  const socialUnread = useSocialUnreadCounts();
   const { setOpenMobile } = useSidebar();
   const readerLists = useStandardReaderLists();
   const viewerDidRef = useRef(session?.did);
@@ -678,6 +680,8 @@ export function AppSidebar({
           </SidebarGroup>
           ) : null}
           <SidebarSocialSection
+            notificationCount={socialUnread.notificationCount}
+            messageCount={socialUnread.messageCount}
             active={currentFeed === "social"}
             activeSection={pathname.split("/")[2] || "home"}
             onNavigate={href => { setOpenMobile(false); router.push(href); }}

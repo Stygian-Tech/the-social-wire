@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Network from "@/lib/atprotoNetwork";
-import { getBlueskyConversations, getBlueskyMessages, LOCAL_CHAT_UNAVAILABLE, performBlueskyChatAction, type ChatAction } from "@/lib/blueskyChatClient";
+import { getBlueskyConversations, getBlueskyMessageUnread, getBlueskyMessages, LOCAL_CHAT_UNAVAILABLE, performBlueskyChatAction, type ChatAction } from "@/lib/blueskyChatClient";
 const did = "did:plc:abcdefghijklmnopqrstuvwx";
 const peer = "did:plc:zzzzzzzzzzzzzzzzzzzzzzzz";
 const restores: (() => void)[] = [];
@@ -18,6 +18,28 @@ describe("real chat protocol transport", () => {
     const session = { did, fetchHandler: async () => { throw new Error("unexpected transport"); } } as unknown as OAuthSession;
     await expect(getBlueskyConversations({ session, viewerDid: did })).rejects.toThrow(LOCAL_CHAT_UNAVAILABLE);
     await expect(getBlueskyConversations({ session, viewerDid: peer })).rejects.toThrow("account changed");
+  });
+  it("counts all unread pages without fetching messages or double-counting overlapping conversations", async () => {
+    configure("did:web:chat.local.test");
+    const cursors: (string | null)[] = [];
+    const signal = new AbortController().signal;
+    const session = { did, fetchHandler: async (path: string, init?: RequestInit) => {
+      const url = new URL(path, "https://pds.test");
+      expect(url.pathname).toBe("/xrpc/chat.bsky.convo.listConvos");
+      expect(url.searchParams.get("readState")).toBe("unread");
+      expect(init?.signal).toBe(signal);
+      cursors.push(url.searchParams.get("cursor"));
+      return cursors.length === 1 ? Response.json({ convos: [{ ...convo, unreadCount: 3 }], cursor: "next" }) : Response.json({ convos: [{ ...convo, unreadCount: 3 }, { ...convo, id: "other", unreadCount: 4 }] });
+    } } as unknown as OAuthSession;
+    expect(await getBlueskyMessageUnread({ session, viewerDid: did, signal })).toBe(7);
+    expect(cursors).toEqual([null, "next"]);
+  });
+  it("rejects incomplete unread pagination instead of presenting a partial total", async () => {
+    configure("did:web:chat.local.test");
+    const session = { did, fetchHandler: async () => Response.json({ convos: [convo], cursor: "same" }) } as unknown as OAuthSession;
+    await expect(getBlueskyMessageUnread({ session, viewerDid: did })).rejects.toThrow("pagination did not complete");
+    const controller = new AbortController(); controller.abort();
+    await expect(getBlueskyMessageUnread({ session, viewerDid: did, signal: controller.signal })).rejects.toThrow();
   });
   it("routes paginated reads through chat proxy with signal and all mutations with real RPC bodies", async () => {
     configure("did:web:chat.local.test");
