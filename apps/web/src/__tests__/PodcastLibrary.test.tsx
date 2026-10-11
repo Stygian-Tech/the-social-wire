@@ -325,3 +325,31 @@ it("updates Played indicators while preserving episode positions and usable play
   fireEvent.click(within(finished).getByRole("button", { name: "Show Notes: Finished Episode" }));
   expect(within(await screen.findByRole("dialog")).getByText("Publisher show notes")).toBeTruthy();
 });
+
+
+it("opens viewer-wide Clips without fetching episodes and returns to Search", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const paths: string[] = [];
+  const authMock = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
+  const playerMock = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state: client.initialPodcastState(), episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
+  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
+    paths.push(path);
+    if (path === "shows") return { shows: [] } as T;
+    if (path === "clips") return { clips: [{ id: "draft", episodeId: "other-episode", title: "My Prepared Clip", startSeconds: 5, endSeconds: 20, status: "queued", createdAt: "2026-10-11T12:00:00Z" }] } as T;
+    return { episodes: [] } as T;
+  });
+  restores.push(() => authMock.mockRestore(), () => playerMock.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  render(<PodcastLibrary />);
+  await waitFor(() => expect(paths).toContain("episodes"));
+  paths.length = 0;
+  fireEvent.click(screen.getByRole("button", { name: "Clips" }));
+  await screen.findByText("My Prepared Clip");
+  expect(screen.getByRole("button", { name: "Clips" }).getAttribute("aria-current")).toBe("page");
+  expect(paths).toContain("clips");
+  expect(paths.some(path => path.startsWith("episodes"))).toBe(false);
+  expect(screen.queryByLabelText("Search Your Library")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  await screen.findByLabelText("Search Podcasts");
+  expect(screen.queryByRole("region", { name: "Your Podcast Clips" })).toBeNull();
+});

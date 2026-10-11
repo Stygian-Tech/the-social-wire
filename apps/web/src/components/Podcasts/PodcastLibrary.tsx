@@ -1,4 +1,5 @@
 "use client";
+import { PodcastClipsLibrary } from "./PodcastClipsLibrary";
 import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
 import { PodcastLibrarySearch } from "./PodcastLibrarySearch";
 import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
@@ -61,8 +62,8 @@ function PodcastViewerLibrary() {
   const [loading, setLoading] = useState(false);
   const [preparingEpisode, setPreparingEpisode] = useState<string | null>(null);
   const downloadEpisodes = useMemo(() => downloads.map(item => item.episode), [downloads]);
-  const searching = searchScope === "discover" || !!searchQuery.trim();
-  const search = usePodcastLibrarySearch({ viewer, query: searchQuery, scope: searchScope === "discover" ? "directory" : "library", showId: feed === "show" ? showId ?? undefined : undefined, downloaded: feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
+  const searching = feed !== "clips" && (searchScope === "discover" || !!searchQuery.trim());
+  const search = usePodcastLibrarySearch({ viewer, query: feed === "clips" ? "" : searchQuery, scope: searchScope === "discover" ? "directory" : "library", showId: feed === "show" ? showId ?? undefined : undefined, downloaded: feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
   const showNames = useMemo(() => new Map([...shows, ...search.shows].map(show => [show.id, show.title.trim()])), [shows, search.shows]);
   const controllers = useRef(new Map<string, AbortController>());
   useEffect(() => () => controllers.current.get("directory-preview")?.abort(), [searchQuery, searchScope]);
@@ -98,7 +99,7 @@ function PodcastViewerLibrary() {
   }, [load, cancelLibraryLoad]);
   useEffect(() => {
     const oauth = getOAuthSession();
-    if (searching || !oauth || !navigator.onLine || feed === "downloads" || (feed === "show" && !showId)) return;
+    if (feed === "clips" || searching || !oauth || !navigator.onLine || feed === "downloads" || (feed === "show" && !showId)) return;
     const controller = new AbortController();
     const path = feed === "show"
       ? `episodes?showId=${encodeURIComponent(showId!)}`
@@ -208,9 +209,10 @@ function PodcastViewerLibrary() {
   const downloaded = new Set(downloads.map((item) => item.episode.id));
   const displayed = searching ? search.episodes : podcastFeedEpisodes(feed, episodes, downloadEpisodes, player.state.queue);
   const selectedShow = searchScope === "library" && feed === "show" ? shows.find((show) => show.id === showId) : undefined;
-  const heading = searchScope === "discover" ? "Search Podcasts" : selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
+  const heading = searchScope === "discover" ? "Search Podcasts" : selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes", clips: "Clips" }[feed]);
   const selectFeed = (next: PodcastFeed, id?: string) => {
     if (searchScope === "discover") { setSearchScope("library"); setSearchQuery(""); }
+    setSearchQuery("");
     setFeed(next);
     setShowId(id ?? null);
     setEpisodes([]);
@@ -258,6 +260,7 @@ function PodcastViewerLibrary() {
             <button type="button" className="inline-flex min-h-7 shrink-0 items-center gap-1 rounded border px-1.5 text-xs hover:bg-accent pointer-coarse:min-h-11" aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}><Plus aria-hidden="true" className="size-3.5" />Add a Podcast</button>
           </div>
         </header>
+        {feed === "clips" ? <PodcastClipsLibrary /> : <>
         <PodcastLibrarySearch
           scope={searchScope}
           query={searchQuery}
@@ -468,9 +471,10 @@ function PodcastViewerLibrary() {
           </button>
         ) : null}
         {feed === "downloads" ? <p className="text-xs text-muted-foreground">Offline Audio: {(downloads.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)} MB. Save Audio exports a file to your device.</p> : null}
+        </>}
       </section>
       <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto">
-        <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} discoverActive={searchScope === "discover"} onDiscover={() => { setSearchQuery(""); setSearchScope("discover"); setError(null); }} />
+        <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} discoverActive={searchScope === "discover"} onDiscover={() => { setFeed("recent"); setSearchQuery(""); setSearchScope("discover"); setError(null); }} />
       </div>
     </div>
   );
