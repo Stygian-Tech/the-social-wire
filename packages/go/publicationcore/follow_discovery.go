@@ -75,6 +75,10 @@ func rowFromURI(ctx context.Context, repo Repository, raw string, at time.Time) 
 	return &DiscoveredRow{PublicationID: normal, SubscriptionPublicationID: &normal, AuthorDID: did, AuthorHandle: &did, Title: title, IconURL: thinappviewcore.PublicationIconURL(value, did, pds), DiscoveredAt: at}
 }
 func FollowDiscovery(ctx context.Context, repo Repository, client *http.Client, viewer string, at time.Time) []DiscoveredRow {
+	appViewBase := "https://public.api.bsky.app"
+	if network, ok := repo.(interface{ AppViewBase() string }); ok {
+		appViewBase = network.AppViewBase()
+	}
 	subjects := map[string]bool{viewer: true}
 	cursor := ""
 	seen := map[string]bool{}
@@ -109,7 +113,7 @@ func FollowDiscovery(ctx context.Context, repo Repository, client *http.Client, 
 				Follows []struct{ DID string }
 				Cursor  string
 			}
-			if publicJSON(ctx, client, queryURL("https://public.api.bsky.app", "/xrpc/app.bsky.graph.getFollows", q), 256<<10, &page) != nil {
+			if publicJSON(ctx, client, queryURL(appViewBase, "/xrpc/app.bsky.graph.getFollows", q), 256<<10, &page) != nil {
 				break
 			}
 			for _, follow := range page.Follows {

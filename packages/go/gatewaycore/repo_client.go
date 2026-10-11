@@ -44,7 +44,7 @@ func (c *RepoClient) ResolveDID(ctx context.Context, repo string) (string, error
 		return repo, nil
 	}
 	v := TokenVerifier{Client: c.Client, Policy: c.Policy}
-	body, status, e := v.fetch(ctx, "https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle="+url.QueryEscape(repo), 65536)
+	body, status, e := v.fetch(ctx, c.Policy.HandleResolverBase()+"/xrpc/com.atproto.identity.resolveHandle?handle="+url.QueryEscape(repo), 65536)
 	if e != nil {
 		return "", e
 	}
@@ -277,3 +277,6 @@ func (c *RepoClient) Mutate(ctx context.Context, auth AuthContext, method string
 	}
 	return result, nil
 }
+
+// AppViewBase supplies network discovery without a process-global override.
+func (c *RepoClient) AppViewBase() string { return c.Policy.AppViewBase() }

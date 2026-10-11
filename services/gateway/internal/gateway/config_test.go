@@ -105,3 +105,15 @@ func TestLocalSandboxPolicyIsConfinedToLocalGateway(t *testing.T) {
 		}
 	}
 }
+
+func TestPostgresRecordLeaseDoesNotWrapNilRedis(t *testing.T) {
+	cache := RecordCache{Backend: "postgres"}
+	lease, err := cache.Acquire(context.Background(), "viewer", "preferences")
+	if err != nil || lease == nil || lease.Key != "" {
+		t.Fatal(lease, err)
+	}
+	if !cache.Renew(context.Background(), *lease) {
+		t.Fatal("unshared local lease cannot renew")
+	}
+	cache.Release(context.Background(), *lease)
+}

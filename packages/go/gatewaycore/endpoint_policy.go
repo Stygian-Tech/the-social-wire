@@ -13,8 +13,9 @@ import (
 // EndpointPolicy is an immutable, explicitly opted-in local sandbox boundary.
 // Unlisted hosts always retain the normal public HTTPS/DNS admission rules.
 type EndpointPolicy struct {
-	hosts    map[string]struct{}
-	resolver AddressResolver
+	hosts                           map[string]struct{}
+	resolver                        AddressResolver
+	appViewBase, handleResolverBase string
 }
 
 func NewEndpointPolicy(env map[string]string) (*EndpointPolicy, error) {
@@ -25,6 +26,9 @@ func NewEndpointPolicy(env map[string]string) (*EndpointPolicy, error) {
 func NewEndpointPolicyWithResolver(env map[string]string, resolver AddressResolver) (*EndpointPolicy, error) {
 	raw := strings.TrimSpace(env["LOCAL_ATPROTO_ALLOWED_HOSTS"])
 	if raw == "" {
+		if strings.TrimSpace(env["ATPROTO_LOCAL_APPVIEW_URL"])+strings.TrimSpace(env["ATPROTO_LOCAL_HANDLE_RESOLVER_URL"]) != "" {
+			return nil, fmt.Errorf("local service overrides require LOCAL_ATPROTO_ALLOWED_HOSTS")
+		}
 		return nil, nil
 	}
 	if env["APP_ENV"] != "local" {
@@ -51,7 +55,19 @@ func NewEndpointPolicyWithResolver(env map[string]string, resolver AddressResolv
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
-	return &EndpointPolicy{hosts: hosts, resolver: resolver}, nil
+	policy := &EndpointPolicy{hosts: hosts, resolver: resolver}
+	for key, target := range map[string]*string{"ATPROTO_LOCAL_APPVIEW_URL": &policy.appViewBase, "ATPROTO_LOCAL_HANDLE_RESOLVER_URL": &policy.handleResolverBase} {
+		raw := strings.TrimSpace(env[key])
+		if raw == "" {
+			continue
+		}
+		u, ok := policy.localURL(raw)
+		if !ok || u.RawQuery != "" || u.ForceQuery || (u.Path != "" && u.Path != "/") {
+			return nil, fmt.Errorf("%s must be an explicitly allowed sandbox HTTPS origin", key)
+		}
+		*target = strings.TrimRight(u.String(), "/")
+	}
+	return policy, nil
 }
 
 func (p *EndpointPolicy) localURL(raw string) (*url.URL, bool) {
@@ -115,4 +131,18 @@ func (p *EndpointPolicy) ValidateAddress(ctx context.Context, raw string) (strin
 	}
 	sort.Strings(addresses)
 	return addresses[0], nil
+}
+
+// AppViewBase keeps configured sandbox discovery on the sandbox network.
+func (p *EndpointPolicy) AppViewBase() string {
+	if p != nil && p.appViewBase != "" {
+		return p.appViewBase
+	}
+	return "https://public.api.bsky.app"
+}
+func (p *EndpointPolicy) HandleResolverBase() string {
+	if p != nil && p.handleResolverBase != "" {
+		return p.handleResolverBase
+	}
+	return "https://public.api.bsky.app"
 }
