@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ModerationOpts } from "@atproto/api";
 import * as Navigation from "next/navigation";
 import * as Auth from "@/hooks/useAuth";
 import * as Catalog from "@/hooks/useBlueskySocialCatalog";
 import * as Client from "@/lib/blueskyPostClient";
+import * as Bookmarks from "@/lib/blueskyBookmarksClient";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import SocialPostPage from "@/app/social/post/page";
 import { safeSocialPostReturnPath, socialPostPageHref } from "@/lib/socialPostNavigation";
@@ -24,7 +25,7 @@ beforeEach(() => {
   const media = Object.getOwnPropertyDescriptor(window, "matchMedia");
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   restores.push(() => { if (media) Object.defineProperty(window, "matchMedia", media); else Reflect.deleteProperty(window, "matchMedia"); });
-  for (const [name, value] of Object.entries({ HTMLElement: window.HTMLElement, Element: window.Element, Node: window.Node })) {
+  for (const [name, value] of Object.entries({ HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, Element: window.Element, Node: window.Node, MutationObserver: window.MutationObserver, DOMRect: window.DOMRect, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, { configurable: true, value });
     restores.push(() => { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
@@ -43,6 +44,39 @@ afterEach(() => { cleanup(); cache.clear(); restores.splice(0).reverse().forEach
 function show() { return render(<QueryClientProvider client={cache}><SidebarProvider><SocialPostPage /></SidebarProvider></QueryClientProvider>); }
 
 describe("on-page post viewer", () => {
+  it("targets reply engagement, bookmarks, menu links, and its own conversation independently", async () => {
+    const reply = { ...post, uri: `${post.uri}reply`, cid: "reply-cid", replyCount: 3, record: { ...post.record, text: "Reply With Actions" } };
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post, replies: [{ $type: "app.bsky.feed.defs#threadViewPost", post: reply }] } });
+    const engage = spyOn(Client, "setBlueskyPostEngagement").mockResolvedValue("at://did:plc:viewer/app.bsky.feed.like/action");
+    const bookmark = spyOn(Bookmarks, "setBlueskyBookmark").mockResolvedValue(undefined);
+    restores.push(() => fetch.mockRestore(), () => engage.mockRestore(), () => bookmark.mockRestore());
+    const copy = mock(async () => {});
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+    restores.push(() => { if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard); else Reflect.deleteProperty(navigator, "clipboard"); });
+    show();
+    const replies = within(await screen.findByRole("region", { name: "Replies" }));
+    await replies.findByText("Reply With Actions");
+    fireEvent.click(replies.getByRole("button", { name: "Like (0)" }));
+    await waitFor(() => expect(engage).toHaveBeenCalledTimes(1));
+    expect(engage.mock.calls[0]![0]).toMatchObject({ kind: "like", uri: reply.uri, cid: reply.cid });
+    await waitFor(() => expect((replies.getByRole("button", { name: "Repost (0)" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(replies.getByRole("button", { name: "Repost (0)" }));
+    await waitFor(() => expect(engage).toHaveBeenCalledTimes(2));
+    expect(engage.mock.calls[1]![0]).toMatchObject({ kind: "repost", uri: reply.uri, cid: reply.cid });
+    fireEvent.click(replies.getByRole("button", { name: "Bookmark Post" }));
+    await waitFor(() => expect(bookmark).toHaveBeenCalledTimes(1));
+    expect(bookmark.mock.calls[0]![0]).toMatchObject({ uri: reply.uri, cid: reply.cid, saved: true });
+    fireEvent.click(replies.getByRole("button", { name: "Open Replies (3)" }));
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenLastCalledWith(socialPostPageHref(reply.uri, "/social?feed=original"));
+    fireEvent.click(replies.getByRole("button", { name: "More Post Actions" }));
+    const url = "https://bsky.app/profile/did%3Aplc%3Aother/post/testreply";
+    expect((await screen.findByRole("menuitem", { name: "Send Message" })).getAttribute("href")).toBe(`/social/messages?draft=${encodeURIComponent(url)}`);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy Link" }));
+    await waitFor(() => expect(copy).toHaveBeenCalledWith(url));
+    expect(push).toHaveBeenCalledTimes(1);
+  });
   it("displays a conversation with Back first in the top bar and navigates parent/reply routes", async () => {
     const parent = { ...post, uri: `${post.uri}parent`, record: { ...post.record, text: "Parent Post" } };
     const reply = { ...post, uri: `${post.uri}reply`, record: { ...post.record, text: "Reply Post" } };
@@ -58,6 +92,16 @@ describe("on-page post viewer", () => {
     expect(push).toHaveBeenLastCalledWith(socialPostPageHref(reply.uri, "/social?feed=original"));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(replace).toHaveBeenCalledWith("/social?feed=original");
+  });
+  it("withholds a muted reply and its action rail while keeping root actions available", async () => {
+    const reply = { ...post, uri: `${post.uri}muted`, author: { ...post.author, viewer: { muted: true } }, record: { ...post.record, text: "Withheld Reply" } };
+    const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post, replies: [{ $type: "app.bsky.feed.defs#threadViewPost", post: reply }] } });
+    restores.push(() => fetch.mockRestore());
+    show();
+    const replies = within(await screen.findByRole("region", { name: "Replies" }));
+    expect(replies.queryByText("Withheld Reply") === null).toBe(true);
+    expect(replies.queryByRole("button", { name: "More Post Actions" }) === null).toBe(true);
+    expect(screen.getAllByRole("button", { name: "More Post Actions" })).toHaveLength(1);
   });
   for (const type of ["blockedPost", "notFoundPost"] as const) it(`never shows stale content or actions for ${type}`, async () => {
     const fetch = spyOn(Client, "getBlueskyPostThread").mockResolvedValue({ thread: type === "blockedPost" ? { $type: "app.bsky.feed.defs#blockedPost", uri: post.uri, blocked: true, author: { did: post.author.did } } : { $type: "app.bsky.feed.defs#notFoundPost", uri: post.uri, notFound: true } });
