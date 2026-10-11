@@ -21,10 +21,6 @@ import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 import { useCircleEdition } from "@/hooks/useCircleFeed";
 import { editorialFeedForReadRoute } from "@/lib/editorialFeedRoute";
 
-export function readFeedHeaderClassName(isWire: boolean) {
-  return isWire ? "pt-3" : undefined;
-}
-
 /**
  * Global All / Unread toggle for the read shell (applies to whichever publication is open).
  */
@@ -101,7 +97,6 @@ export function ReadArticleFilterBar() {
             <WireBetaBadge />
           </span>
         }
-        className={readFeedHeaderClassName(true)}
       >
         <Button
           type="button"
