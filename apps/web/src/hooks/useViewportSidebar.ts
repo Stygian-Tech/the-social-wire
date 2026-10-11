@@ -3,16 +3,21 @@
 import { useLayoutEffect, useRef } from "react";
 
 /** Constrain a sticky panel to the visible area of its owning scroll pane. */
-export function useViewportSidebar(scrollHostSelector: string) {
+export function useViewportSidebar(scrollHostSelector: string, minViewportWidth = 0, enabled = true) {
   const sidebar = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const panel = sidebar.current;
     const scrollHost = panel?.closest<HTMLElement>(scrollHostSelector);
-    if (!panel || !scrollHost) return;
+    if (!enabled || !panel || !scrollHost) return;
     let frame = 0;
     let topbar: HTMLElement | undefined;
     const measure = () => {
       frame = 0;
+      if (window.innerWidth < minViewportWidth) {
+        panel.style.removeProperty("top");
+        panel.style.removeProperty("max-height");
+        return;
+      }
       const currentTopbar = scrollHost.querySelector<HTMLElement>(":scope > [data-topic-topbar]") ?? undefined;
       if (currentTopbar !== topbar) {
         if (topbar) observer?.unobserve(topbar);
@@ -47,6 +52,6 @@ export function useViewportSidebar(scrollHostSelector: string) {
       mutations.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [scrollHostSelector]);
+  }, [scrollHostSelector, minViewportWidth, enabled]);
   return sidebar;
 }

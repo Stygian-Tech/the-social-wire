@@ -506,7 +506,7 @@ export function AppSidebar({
   return (
     <>
     <Sidebar
-      className="transition-[width] [&_[data-slot=sidebar-inner]]:bg-background"
+      className="top-[calc(var(--environment-banner-height,0px)+1rem)] bottom-4 h-auto transition-[width] [&_[data-slot=sidebar-inner]]:bg-background"
       style={{
         left:
           "max(0px, calc((100vw - var(--reader-shell-width, 70rem)) / 2))",

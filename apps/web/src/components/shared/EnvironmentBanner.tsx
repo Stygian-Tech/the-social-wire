@@ -23,7 +23,7 @@ export function EnvironmentBanner({ appEnv }: EnvironmentBannerProps) {
     <div
       role="status"
       aria-label={`${appEnv} environment`}
-      className={bannerClasses(appEnv)}
+      className={`${bannerClasses(appEnv)} min-h-[var(--environment-banner-height,0px)]`}
     >
       <p className="font-medium">{body}</p>
     </div>
