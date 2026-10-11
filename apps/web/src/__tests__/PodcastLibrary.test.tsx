@@ -301,7 +301,10 @@ it("updates Played indicators while preserving episode positions and usable play
   const fresh = screen.getByRole("button", { name: "Show Notes: Fresh Episode" }).closest("li")!;
   expect(finished.getAttribute("data-played")).toBe("true");
   expect(within(finished).getByText("Played")).toBeTruthy();
-  expect(within(fresh).getByText("Unplayed")).toBeTruthy();
+  expect(within(fresh).getByText("In Progress")).toBeTruthy();
+  expect(within(fresh).getByText("0:35 / 2:00")).toBeTruthy();
+  expect(within(fresh).getByText("1:25 Left")).toBeTruthy();
+  expect(within(fresh).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("29");
   fireEvent.click(within(fresh).getByRole("button", { name: "Mark Played" }));
   await waitFor(() => expect(within(fresh).getByText("Played")).toBeTruthy());
   expect(fresh.getAttribute("data-played")).toBe("true");
@@ -313,7 +316,7 @@ it("updates Played indicators while preserving episode positions and usable play
   expect(playback).toEqual(["fresh"]);
   expect(within(fresh).getByRole("button", { name: "Play" }).hasAttribute("disabled")).toBe(false);
   fireEvent.click(within(fresh).getByRole("button", { name: "Mark Unplayed" }));
-  await waitFor(() => expect(within(fresh).getByText("Unplayed")).toBeTruthy());
+  await waitFor(() => expect(within(fresh).getByText("In Progress")).toBeTruthy());
   expect(fresh.getAttribute("data-played")).toBe("false");
   expect(within(fresh).getByRole("heading").classList.contains("text-muted-foreground")).toBe(false);
   expect(changes[1]?.progress?.fresh?.positionSeconds).toBe(35);

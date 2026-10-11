@@ -9,7 +9,7 @@ import { sanitizeHTMLWithLinks } from "@/lib/sanitize";
 import { linkPodcastTimecodes, podcastNotesExcerpt } from "@/lib/podcasts/showNotes";
 import { PodcastArtwork } from "./PodcastArtwork";
 
-export function PodcastEpisodeDetailsDialog({ episode, showName, played, onTimecode }: { episode: PodcastEpisode; showName?: string; played?: boolean; onTimecode?: (seconds: number) => void }) {
+export function PodcastEpisodeDetailsDialog({ episode, showName, played, inProgress, onTimecode }: { episode: PodcastEpisode; showName?: string; played?: boolean; inProgress?: boolean; onTimecode?: (seconds: number) => void }) {
   const [open, setOpen] = useState(false);
   const notes = useMemo(() => open ? linkPodcastTimecodes(sanitizeHTMLWithLinks(episode.description ?? ""), episode.durationSeconds) : "", [open, episode.description, episode.durationSeconds]);
   const excerpt = useMemo(() => podcastNotesExcerpt(episode.description ?? ""), [episode.description]);
@@ -19,7 +19,7 @@ export function PodcastEpisodeDetailsDialog({ episode, showName, played, onTimec
         {showName ? <span className="min-w-0 flex-1 line-clamp-2 break-words font-medium">{showName}</span> : <span />}
         {played !== undefined ? <span className="inline-flex shrink-0 items-center gap-1.5">
           {played ? <CheckCircle aria-hidden="true" className="size-3.5" /> : <Circle aria-hidden="true" className="size-3.5" />}
-          {played ? "Played" : "Unplayed"}
+          {played ? "Played" : inProgress ? "In Progress" : "Unplayed"}
         </span> : null}
       </span>
       <span className="flex items-center gap-3">

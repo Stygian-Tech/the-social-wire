@@ -159,6 +159,69 @@ function environment() {
   };
 }
 describe("Persistent podcast player", () => {
+  it("restores the player position without playback and preserves it while metadata loads", async () => {
+    const env = environment();
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    const saved = { positionSeconds: 53, completed: false, updatedAt: "2026-10-05T01:00:00Z" };
+    window.localStorage.setItem("the-social-wire.podcast-state.v1:did:plc:viewer-a", JSON.stringify({ episode, state: { ...initialPodcastState(), progress: { episode: saved } }, pending: {} }));
+    env.getDownload.mockResolvedValue({ episode, bytes: 3, downloadedAt: saved.updatedAt, media: new Blob(["mp3"]) });
+    env.element.play = async () => {};
+    let player: PlayerContext;
+    function Capture() { const context = usePodcastPlayer(); useEffect(() => { player = context; }, [context]); return null; }
+    render(<PodcastPlayerProvider><Capture /></PodcastPlayerProvider>);
+    await waitFor(() => expect(player!.position).toBe(53));
+    expect(player!.duration).toBe(120);
+    expect(env.element.getAttribute("src")).toBeNull();
+    await act(async () => { await player!.play(episode); });
+    await act(async () => window.dispatchEvent(new window.Event("pagehide")));
+    expect(player!.state.progress.episode.positionSeconds).toBe(53);
+    await act(async () => env.element.onloadedmetadata?.(new window.Event("loadedmetadata")));
+    expect(env.element.currentTime).toBe(53);
+    await act(async () => { await player!.play(episode); });
+    await act(async () => { await player!.changeState({ progress: { episode: { ...saved, positionSeconds: 70, updatedAt: "2099-10-06T01:00:00Z" } } }); });
+    await act(async () => env.element.onloadedmetadata?.(new window.Event("loadedmetadata")));
+    expect(env.element.currentTime).toBe(70);
+  });
+
+  it("shows the selected episode's saved or requested position while its audio loads", async () => {
+    const env = environment();
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    env.getDownload.mockImplementation(async (_viewer, id) => ({ episode: { ...episode, id }, bytes: 3, downloadedAt: "2026-10-05", media: new Blob(["mp3"]) }));
+    let player: PlayerContext;
+    function Capture() { const context = usePodcastPlayer(); useEffect(() => { player = context; }, [context]); return null; }
+    render(<PodcastPlayerProvider><Capture /></PodcastPlayerProvider>);
+    await act(async () => { await player!.play(episode); player!.seek(40); });
+    expect(player!.position).toBe(40);
+    const other = { ...episode, id: "other", durationSeconds: 200 };
+    await act(async () => { await player!.changeState({ progress: { other: { positionSeconds: 70, completed: false, updatedAt: "2026-10-05" } } }); });
+    env.element.play = async () => {};
+    await act(async () => { await player!.play(other); });
+    expect(player!.episode?.id).toBe("other");
+    expect(player!.position).toBe(70);
+    expect(player!.duration).toBe(200);
+    await act(async () => { await player!.play(other, 20); });
+    expect(player!.position).toBe(20);
+    expect(player!.state.progress.episode.positionSeconds).toBe(40);
+  });
+
+  it("saves the latest listening position immediately when the page is hidden", async () => {
+    const env = environment();
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    env.getDownload.mockResolvedValue({ episode, bytes: 3, downloadedAt: "2026-10-05", media: new Blob(["mp3"]) });
+    let player: PlayerContext;
+    function Capture() { const context = usePodcastPlayer(); useEffect(() => { player = context; }, [context]); return null; }
+    render(<PodcastPlayerProvider><Capture /></PodcastPlayerProvider>);
+    await act(async () => { await player!.play(episode); });
+    env.element.currentTime = 47;
+    const visibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    restores.push(() => { if (visibility) Object.defineProperty(document, "visibilityState", visibility); else Reflect.deleteProperty(document, "visibilityState"); });
+    await act(async () => document.dispatchEvent(new window.Event("visibilitychange")));
+    const cache = JSON.parse(window.localStorage.getItem("the-social-wire.podcast-state.v1:did:plc:viewer-a")!);
+    expect(cache.state.progress.episode.positionSeconds).toBe(47);
+    expect(cache.pending.progress.episode.positionSeconds).toBe(47);
+  });
+
   it("starts a different episode at an explicit time instead of its saved resume position", async () => {
     const env = environment();
     const other = { ...episode, id: "other", audioUrl: "https://publisher.test/other.mp3" };
