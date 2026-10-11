@@ -1,10 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SocialNewConversationDialog } from "@/components/Social/SocialNewConversationDialog";
 import type { ChatAction } from "@/lib/blueskyChatClient";
 
+import * as auth from "@/hooks/useAuth";
+import * as catalog from "@/hooks/useBlueskySocialCatalog";
+import * as discovery from "@/hooks/useSocialDiscovery";
+
 const restores: (() => void)[] = [];
 beforeEach(() => {
+  const spies = [spyOn(auth, "useAuth").mockReturnValue({ session: undefined } as unknown as ReturnType<typeof auth.useAuth>), spyOn(catalog, "useBlueskySocialCatalog").mockReturnValue({} as ReturnType<typeof catalog.useBlueskySocialCatalog>), spyOn(discovery, "useSocialExplore").mockReturnValue({} as ReturnType<typeof discovery.useSocialExplore>)];
+  restores.push(...spies.map(spy => () => spy.mockRestore()));
   for (const [name, value] of Object.entries({ HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, Element: window.Element, Node: window.Node, MutationObserver: window.MutationObserver, DOMRect: window.DOMRect, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, { configurable: true, value });
