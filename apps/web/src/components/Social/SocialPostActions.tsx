@@ -7,6 +7,7 @@ import { useBlueskyPostEngagement } from "@/hooks/useBlueskyPostEngagement";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
+import { formatSocialEngagementCount } from "@/lib/formatSocialEngagementCount";
 import { SocialPostMenu } from "./SocialPostMenu";
 
 export function SocialPostActions({ post, moderation, onOpen }: { post: AppBskyFeedDefs.PostView; moderation: ModerationOpts; onOpen: () => void }) {
@@ -16,9 +17,9 @@ export function SocialPostActions({ post, moderation, onOpen }: { post: AppBskyF
   return <div>
     <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-6 text-sm text-muted-foreground" aria-label="Post Actions">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-6">
-      <button className={button} aria-label={`Open Replies (${post.replyCount ?? 0})`} onClick={onOpen}><MessageCircle className="size-4" /><span>{post.replyCount ?? 0}</span></button>
-      <button className={`${button} ${engagement.repost ? "text-green-600 dark:text-green-400" : ""}`} aria-label={`Repost (${engagement.repostCount})`} aria-pressed={!!engagement.repost} disabled={isPending} onClick={toggleRepost}><Repeat2 className="size-4" /><span>{engagement.repostCount}</span></button>
-      <button className={`${button} ${engagement.like ? "text-rose-600 dark:text-rose-400" : ""}`} aria-label={`Like (${engagement.likeCount})`} aria-pressed={!!engagement.like} disabled={isPending} onClick={toggleLike}><Heart className={`size-4 ${engagement.like ? "fill-current" : ""}`} /><span>{engagement.likeCount}</span></button>
+      <button className={button} title={`${post.replyCount ?? 0} Replies`} aria-label={`Open Replies (${post.replyCount ?? 0})`} onClick={onOpen}><MessageCircle className="size-4" /><span>{formatSocialEngagementCount(post.replyCount ?? 0)}</span></button>
+      <button className={`${button} ${engagement.repost ? "text-green-600 dark:text-green-400" : ""}`} title={`${engagement.repostCount} Reposts`} aria-label={`Repost (${engagement.repostCount})`} aria-pressed={!!engagement.repost} disabled={isPending} onClick={toggleRepost}><Repeat2 className="size-4" /><span>{formatSocialEngagementCount(engagement.repostCount)}</span></button>
+      <button className={`${button} ${engagement.like ? "text-rose-600 dark:text-rose-400" : ""}`} title={`${engagement.likeCount} Likes`} aria-label={`Like (${engagement.likeCount})`} aria-pressed={!!engagement.like} disabled={isPending} onClick={toggleLike}><Heart className={`size-4 ${engagement.like ? "fill-current" : ""}`} /><span>{formatSocialEngagementCount(engagement.likeCount)}</span></button>
       </div>
       <div className="grid shrink-0 grid-cols-2 items-center gap-2">
       <button className={`${button} ${bookmark.saved ? "text-primary" : ""}`} aria-label={bookmark.saved ? "Remove Bookmark" : "Bookmark Post"} aria-pressed={bookmark.saved} disabled={bookmark.isPending} onClick={bookmark.toggle}><Bookmark className={`size-4 ${bookmark.saved ? "fill-current" : ""}`} /></button>
