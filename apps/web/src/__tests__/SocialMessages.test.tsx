@@ -133,6 +133,8 @@ describe("Messages workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: /bob.test/ }));
     expect(await screen.findByText("The text being replied to")).toBeTruthy();
     expect(screen.getByText("My response")).toBeTruthy();
+    expect(document.querySelector("time")?.closest("article")).toBeNull();
+    expect(screen.getByRole("button", { name: "Message Actions" }).closest("article")).toBeNull();
     const log = screen.getByRole("log", { name: "Conversation History" });
     const input = screen.getByLabelText("Message");
     expect(log.contains(input)).toBe(false);

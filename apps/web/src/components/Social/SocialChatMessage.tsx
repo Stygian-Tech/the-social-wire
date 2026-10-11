@@ -27,6 +27,8 @@ export function SocialChatMessage({ message, viewerDid, pending, moderation, onD
     {!message.embed ? <SocialChatPostPreview text={content.body.text} moderation={moderation} /> : null}
     {!message.embed ? <SocialChatLinkPreview message={content.body} /> : null}
     {message.embed ? AppBskyEmbedRecord.isView(message.embed) && moderation?.userDid === viewerDid ? <div className="mt-1"><SocialPostEmbed embed={message.embed} moderation={moderation} onOpenPost={post => navigation.openPost(post.uri)} /></div> : <p className="text-xs text-muted-foreground">Attachment unavailable.</p> : null}
+  </article>
+    {reactions.length ? <div aria-label="Message Reactions" className={`relative z-10 -mt-1 flex max-w-full flex-wrap gap-1 px-2 ${own ? "justify-end" : "justify-start"}`}>{reactions.map(value => <button key={value} type="button" disabled={pending} aria-label={`${reacted(value) ? "Remove" : "Add"} Reaction ${value}`} aria-pressed={reacted(value)} onClick={() => onReaction(message.id, value, reacted(value))} className="rounded-full border bg-card px-2 py-0.5 shadow-sm text-xs hover:bg-accent">{value} {message.reactions?.filter(reaction => reaction.value === value).length}</button>)}</div> : null}
     <div className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">{!Number.isNaN(stamp.getTime()) ? <time dateTime={message.sentAt} title={stamp.toLocaleString()}>{stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time> : null}
       <DropdownMenu><DropdownMenuTrigger disabled={pending} aria-label="Message Actions" className="flex min-h-7 min-w-7 items-center justify-center rounded hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"><MoreHorizontal className="size-3.5" /></DropdownMenuTrigger><DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => onReply({ id: message.id, text: content.body.text })}><Reply className="size-4" />Reply</DropdownMenuItem>
@@ -34,7 +36,5 @@ export function SocialChatMessage({ message, viewerDid, pending, moderation, onD
         <DropdownMenuItem variant="destructive" onClick={() => onDelete(message.id)}><Trash2 className="size-4" />Delete For Me</DropdownMenuItem>
       </DropdownMenuContent></DropdownMenu>
     </div>
-  </article>
-    {reactions.length ? <div aria-label="Message Reactions" className={`relative z-10 -mt-1 flex max-w-full flex-wrap gap-1 px-2 ${own ? "justify-end" : "justify-start"}`}>{reactions.map(value => <button key={value} type="button" disabled={pending} aria-label={`${reacted(value) ? "Remove" : "Add"} Reaction ${value}`} aria-pressed={reacted(value)} onClick={() => onReaction(message.id, value, reacted(value))} className="rounded-full border bg-card px-2 py-0.5 shadow-sm text-xs hover:bg-accent">{value} {message.reactions?.filter(reaction => reaction.value === value).length}</button>)}</div> : null}
   </div></div>;
 }
