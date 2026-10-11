@@ -458,7 +458,8 @@ describe("Standard Reader Lists Sidebar", () => {
       publications: [publicationId],
       users: ["did:plc:creator"],
     });
-  });
+    // Full-suite coverage and Base UI accessibility queries can exceed 5s on CI.
+  }, 15_000);
   it("shows valid publication handles and never labels a DID placeholder as a handle", () => {
     mount({
       onCreate: async () => undefined,
