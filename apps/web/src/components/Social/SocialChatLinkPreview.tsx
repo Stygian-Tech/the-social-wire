@@ -57,7 +57,7 @@ function ResolvedLinkPreview({ url }: { url: string }) {
       alt=""
       loading="lazy"
       referrerPolicy="no-referrer"
-      className="max-h-48 w-full object-cover"
+      className="block h-auto w-full"
       onError={() => setFailedImage(image)}
     /> : null}
     <div className="flex min-w-0 flex-col gap-1 p-2.5 [overflow-wrap:anywhere]">

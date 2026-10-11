@@ -64,7 +64,7 @@ export function SocialPostEmbed({
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
-            className="max-h-48 w-full object-cover"
+            className="block h-auto w-full"
           />
         ) : null}
         <div className="flex flex-col gap-1 p-3">
