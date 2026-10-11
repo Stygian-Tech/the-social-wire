@@ -6,6 +6,7 @@ import (
 	"errors"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
+	"github.com/stygian-tech/the-social-wire/packages/go/analyticscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/appviewcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
@@ -18,6 +19,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/topicreadcore"
+	"github.com/stygian-tech/the-social-wire/services/appview/internal/analytics"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/config"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/lists"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/podcasts"
@@ -158,6 +160,7 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 	}
 	publicMux, protectedMux, discoveryMux := http.NewServeMux(), http.NewServeMux(), http.NewServeMux()
 	h.registerHealth(publicMux)
+	analytics.Routes{Store: analyticscore.Store{DB: db, Secret: c.InternalSecret}, Provider: &analytics.CachedProvider{Base: analyticscore.Provider{Repo: repo, HTTP: h.publicHTTP, AppView: repo.AppViewBase()}}, Now: time.Now, Limits: &analytics.Limits{}}.Register(protectedMux)
 	publications.Routes{Service: h.Publications, Resolver: publicationcore.Resolver{Repo: repo, HTTP: getter}}.Register(protectedMux)
 	lists.Routes{Runtime: h.Lists}.Register(protectedMux)
 	semble.Routes{Service: semblecore.Service{Transport: semblecore.NewHTTPTransport(c.EnvironmentValues, h.publicHTTP), Reader: semblecore.PublicReader{Repo: repo}}}.Register(protectedMux)
