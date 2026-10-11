@@ -21,10 +21,12 @@ export function SocialPostEmbed({
   embed,
   moderation,
   depth = 0,
+  onOpenPost,
 }: {
   embed: Embed;
   moderation: ModerationOpts;
   depth?: number;
+  onOpenPost?: (post: AppBskyFeedDefs.PostView) => void;
 }) {
   if (!embed) return null;
   if (depth > 1)
@@ -99,6 +101,7 @@ export function SocialPostEmbed({
         <SocialPostEmbed
           embed={embed.media}
           moderation={moderation}
+          onOpenPost={onOpenPost}
           depth={depth}
         />
         <SocialPostEmbed
@@ -108,6 +111,7 @@ export function SocialPostEmbed({
             $type: embed.record.$type ?? "app.bsky.embed.record#view",
           }}
           moderation={moderation}
+          onOpenPost={onOpenPost}
           depth={depth}
         />
       </div>
@@ -140,6 +144,7 @@ export function SocialPostEmbed({
     record: record.value,
     labels: quote.labels,
     indexedAt: quote.indexedAt,
+    embed: quote.embeds?.[0],
   };
   const decision = moderateSocialPost(post, moderation);
   const content = decision.ui("contentList");
@@ -155,7 +160,12 @@ export function SocialPostEmbed({
   const media = decision.ui("contentMedia");
   const href = socialPostUrl(quote.uri);
   return (
-    <blockquote className="flex flex-col gap-2 rounded-xl border p-3">
+    <blockquote className="flex flex-col gap-2 rounded-xl border p-3" onClick={onOpenPost ? event => {
+      const target = event.target;
+      if (target instanceof Element && event.currentTarget.contains(target) && !target.closest('a, button, video, audio') && !window.getSelection()?.toString()) {
+        event.stopPropagation(); onOpenPost(post);
+      }
+    } : undefined}>
       {identity.blur ||
       identity.filter ||
       identity.noOverride ||
@@ -182,6 +192,7 @@ export function SocialPostEmbed({
             key={index}
             embed={child}
             moderation={moderation}
+            onOpenPost={onOpenPost}
             depth={depth + 1}
           />
         ))
@@ -191,9 +202,10 @@ export function SocialPostEmbed({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-primary hover:underline"
+          onClick={onOpenPost ? event => { event.preventDefault(); event.stopPropagation(); onOpenPost(post); } : undefined}
+          className="sr-only focus:not-sr-only focus:text-primary"
         >
-          View Quoted Post
+          Open Quoted Post
         </a>
       ) : null}
     </blockquote>

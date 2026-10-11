@@ -1,11 +1,11 @@
 "use client";
 
-import { List, Rss, Users } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { SOCIAL_FOLLOWING_FEED, socialFeedHref } from "@/lib/blueskySocialClient";
 import { floatingSidebarRowClassName } from "@/components/shared/floatingSidebarStyles";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SocialFeedAvatar } from "@/components/Social/SocialFeedAvatar";
 
 export function SocialFeeds({ onSelect }: { onSelect?: () => void }) {
   const params = useSearchParams();
@@ -21,7 +21,6 @@ export function SocialFeeds({ onSelect }: { onSelect?: () => void }) {
       const selected = pathname === "/social" && (feed.kind === "following" ? !selectedFeed && !selectedList
         : feed.kind === "feed" ? selectedFeed === feed.uri && !selectedList
           : selectedList === feed.uri && !selectedFeed);
-      const Icon = feed.kind === "following" ? Users : feed.kind === "list" ? List : Rss;
       return <button
         key={`${feed.kind}:${feed.uri}`}
         type="button"
@@ -29,7 +28,7 @@ export function SocialFeeds({ onSelect }: { onSelect?: () => void }) {
         className={`${floatingSidebarRowClassName} w-full text-left hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground`}
         onClick={() => { router.push(socialFeedHref(feed)); onSelect?.(); }}
       >
-        <Icon aria-hidden="true" className="size-4 shrink-0" />
+        <SocialFeedAvatar feed={feed} />
         <span className="min-w-0 break-words [overflow-wrap:anywhere]">{feed.name}</span>
       </button>;
     })}
