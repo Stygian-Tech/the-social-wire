@@ -85,7 +85,7 @@ function ViewerClipCard({ clip, episode, onChanged }: { clip: PodcastClip; episo
       URL.revokeObjectURL(media.url); objectUrls.current.delete(media.url); setMedia(null); setComposer(false);
       setError("Video Could Not Play. Please Retry Preview.");
     }} /> : null}
-    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+    {error ? <p role="alert" className="min-w-0 [overflow-wrap:anywhere] text-sm text-destructive">{error}</p> : null}
     {!composer && error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : null}
     {progress ? <p role="status" className="text-sm text-muted-foreground">{progress}</p> : null}
     {postUri ? <p role="status" className="text-sm">Published to Bluesky. <a className="text-primary underline" href={`/social/post?uri=${encodeURIComponent(postUri)}`}>View Post</a></p> : null}
