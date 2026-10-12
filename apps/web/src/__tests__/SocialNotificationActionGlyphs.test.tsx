@@ -35,6 +35,10 @@ it.each([
   expect(glyph?.classList.contains(iconClass)).toBe(true);
   expect(glyph?.getAttribute("aria-hidden")).toBe("true");
   expect(glyph?.classList.contains("shrink-0")).toBe(true);
+  expect(glyph?.classList.contains("size-3")).toBe(true);
+  expect(action.parentElement?.classList.contains("text-xs")).toBe(true);
+  const author = screen.getByRole("link", { name: "Bob" });
+  expect(action.compareDocumentPosition(author) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByRole("link", { name: "Bob" })).toBeTruthy();
   expect(screen.getByText("Unread")).toBeTruthy();
 });
