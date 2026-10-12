@@ -6,6 +6,8 @@ import { SocialPeopleTextField } from "@/components/Social/SocialPeopleTextField
 import { PodcastClipPreview } from "./PodcastClipPreview";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
 import { Avatar } from "@/components/shared/Avatar";
+import { SocialPermissionRecovery } from "@/components/Social/SocialPermissionRecovery";
+import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 
 export function PodcastClipComposer({ open, onOpenChange, title, url, accountDid, pending, progress, error, onPublish, onPlay, onCancel }: {
   open: boolean; onOpenChange: (open: boolean) => void; title: string; url: string; accountDid: string;
@@ -30,6 +32,7 @@ export function PodcastClipComposer({ open, onOpenChange, title, url, accountDid
           onValueChange={setText} placeholder="Add a Comment…" rows={3} className="w-full rounded-xl border bg-background p-3" />
           <span className={`block text-xs ${valid ? "text-muted-foreground" : "text-destructive"}`}>{length.graphemes}/300 Characters</span></label>}
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : null}
       {progress ? <p role="status" className="text-sm text-muted-foreground">{progress}</p> : null}
       <div className="flex justify-end gap-2">
         {pending ? <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={onCancel}>Cancel Upload</button> : <DialogClose className="rounded-lg border px-3 py-2 text-sm">Cancel</DialogClose>}
