@@ -70,10 +70,11 @@ export function CreateFolderFormFields({
         />
       </div>
       <div className="space-y-1.5">
-        <Label id={iconLabelId}>Icon</Label>
+        <Label id={iconLabelId}>Icon or Emoji</Label>
         <FolderIconPicker
           labelledBy={iconLabelId}
           value={icon}
+          disabled={pending}
           onChange={setIcon}
         />
       </div>

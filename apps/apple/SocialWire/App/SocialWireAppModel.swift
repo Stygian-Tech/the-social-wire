@@ -1490,7 +1490,7 @@ final class SocialWireAppModel {
             case .finance:
                 feedPreferences.showFinance && wireCatalog?.financeAvailable != false
             case .podcasts:
-                podcasts.available
+                feedPreferences.showPodcasts && podcasts.available
             case .sports:
                 feedPreferences.showSports && wireCatalog?.sportsAvailable != false
             case .circle:
@@ -1529,6 +1529,14 @@ final class SocialWireAppModel {
            let replacement = feedPreferences.visibleFeeds.first {
             selectReaderListSource(replacement)
         }
+    }
+
+    func setSocialVisible(_ visible: Bool) async {
+        await setDiscoveryFeedVisible(visible, keyPath: \.showSocial)
+    }
+
+    func setPodcastsVisible(_ visible: Bool) async {
+        await setDiscoveryFeedVisible(visible, keyPath: \.showPodcasts)
     }
 
     func setSportsVisible(_ visible: Bool) async {
@@ -1811,6 +1819,8 @@ final class SocialWireAppModel {
             hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
             showSports: feedPreferences.showSports,
             hideSportsScores: feedPreferences.hideSportsScores,
+            showSocial: feedPreferences.showSocial,
+            showPodcasts: feedPreferences.showPodcasts,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -1875,6 +1885,8 @@ final class SocialWireAppModel {
             hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
             showSports: feedPreferences.showSports,
             hideSportsScores: feedPreferences.hideSportsScores,
+            showSocial: feedPreferences.showSocial,
+            showPodcasts: feedPreferences.showPodcasts,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -1905,6 +1917,8 @@ final class SocialWireAppModel {
             hideFinanceCrypto: feedPreferences.hideFinanceCrypto,
             showSports: feedPreferences.showSports,
             hideSportsScores: feedPreferences.hideSportsScores,
+            showSocial: feedPreferences.showSocial,
+            showPodcasts: feedPreferences.showPodcasts,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -3752,6 +3766,8 @@ final class SocialWireAppModel {
             hideFinanceCrypto: previous?.hideFinanceCrypto,
             showSports: previous?.showSports,
             hideSportsScores: previous?.hideSportsScores,
+            showSocial: previous?.showSocial,
+            showPodcasts: previous?.showPodcasts,
                 showTopLevelFeedUnreadCounts: previous?.showTopLevelFeedUnreadCounts,
                 feedsWithUnreadCounts: previous?.feedsWithUnreadCounts,
                 rssArticleOpenMode: previous?.rssArticleOpenMode,

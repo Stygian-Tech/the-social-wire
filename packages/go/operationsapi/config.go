@@ -11,7 +11,7 @@ import (
 )
 
 type Config struct {
-	Environment, InstanceID, DatabaseURL, InternalSecret, WebhookURL, WebhookSecret, FingerprintSecret                                                 string
+	Environment, InstanceID, DatabaseURL, InternalSecret, WebhookURL, WebhookSecret, FingerprintSecret, TabUsageEnvironment                            string
 	Enabled, RecoveryEnabled, AlertDeliveryEnabled, RetentionCatchUpEnabled                                                                            bool
 	OperatorDIDs                                                                                                                                       map[string]struct{}
 	ReplayRewindMicroseconds, BacklogAlertMicroseconds                                                                                                 int64
@@ -25,6 +25,13 @@ func ConfigFromEnvironment(env map[string]string) (Config, error) {
 	if environment != "dev" && environment != "prod" {
 		return Config{}, errors.New("APP_ENV must be explicitly set to dev or prod for Operations")
 	}
+	tabUsageEnvironment := environment
+	if override := strings.TrimSpace(env["OPERATIONS_TAB_USAGE_ENVIRONMENT"]); override != "" {
+		if override != "local" || environment != "dev" || strings.TrimSpace(env["RAILWAY_ENVIRONMENT_ID"])+strings.TrimSpace(env["RAILWAY_ENVIRONMENT_NAME"]) != "" {
+			return Config{}, errors.New("tab usage environment override is restricted to an unhosted dev Operations process")
+		}
+		tabUsageEnvironment = override
+	}
 	database := strings.TrimSpace(env["DATABASE_URL"])
 	if database == "" {
 		return Config{}, errors.New("DATABASE_URL is required for Operations")
@@ -37,7 +44,7 @@ func ConfigFromEnvironment(env map[string]string) (Config, error) {
 	if secret == "" {
 		secret = strings.TrimSpace(env["GATEWAY_OPERATIONS_INTERNAL_SECRET"])
 	}
-	c := Config{Environment: environment, InstanceID: instance, DatabaseURL: database,
+	c := Config{Environment: environment, TabUsageEnvironment: tabUsageEnvironment, InstanceID: instance, DatabaseURL: database,
 		InternalSecret: strings.TrimSpace(env["GATEWAY_OPERATIONS_INTERNAL_SECRET"]),
 		WebhookURL:     strings.TrimSpace(env["OPERATIONS_ALERT_WEBHOOK_URL"]), WebhookSecret: strings.TrimSpace(env["OPERATIONS_ALERT_WEBHOOK_SECRET"]), FingerprintSecret: secret,
 		Enabled: configTruthy(env, "OPERATIONS_TELEMETRY_ENABLED", true), RecoveryEnabled: configTruthy(env, "OPERATIONS_RECOVERY_ENABLED", false), AlertDeliveryEnabled: configTruthy(env, "OPERATIONS_ALERT_DELIVERY_ENABLED", false), RetentionCatchUpEnabled: strings.ToLower(env["OPERATIONS_RETENTION_CATCHUP_ENABLED"]) == "true", OperatorDIDs: map[string]struct{}{},

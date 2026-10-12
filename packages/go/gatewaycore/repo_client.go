@@ -32,6 +32,7 @@ type RepoPage struct {
 	Cursor  string       `json:"cursor,omitempty"`
 }
 type RepoClient struct {
+	Policy *EndpointPolicy
 	Client *http.Client
 	PLCURL string
 	// PDSResolver is an optional acceleration boundary; callers retain the same read validation.
@@ -42,8 +43,8 @@ func (c *RepoClient) ResolveDID(ctx context.Context, repo string) (string, error
 	if strings.HasPrefix(repo, "did:") {
 		return repo, nil
 	}
-	v := TokenVerifier{Client: c.Client}
-	body, status, e := v.fetch(ctx, "https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle="+url.QueryEscape(repo), 65536)
+	v := TokenVerifier{Client: c.Client, Policy: c.Policy}
+	body, status, e := v.fetch(ctx, c.Policy.HandleResolverBase()+"/xrpc/com.atproto.identity.resolveHandle?handle="+url.QueryEscape(repo), 65536)
 	if e != nil {
 		return "", e
 	}
@@ -71,10 +72,10 @@ func (c *RepoClient) ResolvePDS(ctx context.Context, did string) (string, error)
 		if err != nil {
 			return "", err
 		}
-		return NormalizePublicRemoteBase(endpoint)
+		return c.Policy.NormalizeBase(endpoint)
 	}
 
-	v := TokenVerifier{Client: c.Client}
+	v := TokenVerifier{Client: c.Client, Policy: c.Policy}
 	raw, status, e := v.fetch(ctx, strings.TrimRight(c.PLCURL, "/")+"/"+url.PathEscape(did), 262144)
 	if e != nil {
 		return "", e
@@ -93,13 +94,13 @@ func (c *RepoClient) ResolvePDS(ctx context.Context, did string) (string, error)
 	}
 	for _, s := range doc.Service {
 		if s.ID == "#atproto_pds" || s.Type == "AtprotoPersonalDataServer" {
-			return NormalizePublicRemoteBase(s.ServiceEndpoint)
+			return c.Policy.NormalizeBase(s.ServiceEndpoint)
 		}
 	}
 	return "", ErrAuthentication
 }
 func (c *RepoClient) publicJSON(ctx context.Context, target string, maximum int, out any) error {
-	v := TokenVerifier{Client: c.Client}
+	v := TokenVerifier{Client: c.Client, Policy: c.Policy}
 	raw, status, e := v.fetch(ctx, target, maximum)
 	if e != nil {
 		return e
@@ -276,3 +277,6 @@ func (c *RepoClient) Mutate(ctx context.Context, auth AuthContext, method string
 	}
 	return result, nil
 }
+
+// AppViewBase supplies network discovery without a process-global override.
+func (c *RepoClient) AppViewBase() string { return c.Policy.AppViewBase() }

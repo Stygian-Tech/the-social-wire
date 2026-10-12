@@ -41,7 +41,7 @@ func (s *Server) Handler() http.Handler {
 		s.HTTP = &http.Client{Transport: &http.Transport{MaxIdleConns: 64, MaxIdleConnsPerHost: 16, MaxConnsPerHost: 64, IdleConnTimeout: 30 * time.Second}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	}
 	if s.Public == nil {
-		s.Public = gatewaycore.NewPublicHTTPClient(nil)
+		s.Public = gatewaycore.NewHTTPClientWithPolicy(s.Config.EndpointPolicy)
 	}
 	mux := http.NewServeMux()
 	auth := gatewaycore.AuthMiddleware(s.Config.Auth, s.Public)
@@ -51,6 +51,9 @@ func (s *Server) Handler() http.Handler {
 		s.Limiter = &RequestLimiter{}
 	}
 	for _, route := range Routes {
+		if strings.HasPrefix(route.Target, "/v1/analytics/") && !s.Config.ToolsEnabled {
+			continue
+		}
 		if route.Service == "circle" && !s.Config.Serves("circle") {
 			continue
 		}
@@ -87,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 		s.Preferences.Register(mux, auth)
 	}
 	mux.Handle("POST /v1/telemetry/client-performance", auth(http.HandlerFunc(s.performance)))
+	mux.Handle("GET /v1/subscription/entitlements", auth(http.HandlerFunc(s.subscriptionEntitlements)))
 	return s.requestTrace(s.cors(mux))
 }
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {

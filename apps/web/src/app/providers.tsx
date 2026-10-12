@@ -1,7 +1,9 @@
 "use client";
 
+import { AnalyticsTrafficObserver } from "@/components/AnalyticsTrafficObserver";
 import { PodcastPlayerProvider } from "@/components/Podcasts/PodcastPlayerProvider";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { TabUsageObserver } from "@/components/TabUsageObserver";
 import {
   QueryClient,
   type Query,
@@ -14,41 +16,15 @@ import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
 import { shouldPersistFinanceQuery } from "@/lib/financeQueryPersist";
+import { shouldPersistEntriesQuery } from "@/lib/entriesQueryPersist";
 import { CircleViewerCacheCleanup } from "@/components/Circle/CircleViewerCacheCleanup";
+import { SocialViewerCacheCleanup } from "@/components/Social/SocialViewerCacheCleanup";
 
 /** IndexedDB key for dehydrated React Query cache (sidebar + bounded entry lists). */
 const QUERY_PERSIST_KEY = "the-social-wire.react-query.v2";
 
 /** Drop persisted payload older than this (ms). */
 const QUERY_PERSIST_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-
-type EntryListPage = { entries: unknown[]; cursor?: string };
-
-/** Persist successful viewer-scoped feed pages only when they remain bounded. */
-function shouldPersistEntriesQuery(query: Query): boolean {
-  const key = query.queryKey;
-  if (
-    !Array.isArray(key) ||
-    (key[0] !== "entries" &&
-      key[0] !== "aggregateEntries" &&
-      key[0] !== "wireEntries" &&
-      key[0] !== "wireEditionMore") ||
-    (key[0] !== "wireEntries" &&
-      key[0] !== "wireEditionMore" &&
-      (typeof key[1] !== "string" || key[1].length === 0)) ||
-    query.state.status !== "success"
-  ) {
-    return false;
-  }
-  const data = query.state.data as InfiniteData<EntryListPage> | undefined;
-  if (!data?.pages?.length) return false;
-  const pageCount = data.pages.length;
-  const totalEntries = data.pages.reduce(
-    (n, p) => n + (p.entries?.length ?? 0),
-    0
-  );
-  return pageCount <= 3 && totalEntries <= 150;
-}
 
 function shouldPersistSidebarProjectionQuery(query: Query): boolean {
   const key = query.queryKey;
@@ -147,7 +123,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         }}
       >
         <AuthProvider>
+          <AnalyticsTrafficObserver />
+          <Suspense fallback={null}><TabUsageObserver /></Suspense>
           <CircleViewerCacheCleanup />
+          <SocialViewerCacheCleanup />
           <PodcastPlayerProvider>{children}</PodcastPlayerProvider>
         </AuthProvider>
       </PersistQueryClientProvider>

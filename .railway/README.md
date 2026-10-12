@@ -2,9 +2,9 @@
 
 `railway.ts` owns the three consolidated indexing service classes in
 Development and Production: Ingress Controller, Projection Pool, and
-Coordinator. Development additionally includes the Podcast Media bucket and
-Podcast Media Worker through `podcasts.ts`; Production does not include or
-enable these resources. The stable partial name keeps omit-as-delete scoped to
+Coordinator. Both environments include independent Podcast Media buckets and
+Podcast Media Workers through `podcasts.ts`. Development tracks `dev`;
+Production tracks `main`. The stable partial name keeps omit-as-delete scoped to
 the resources owned by this graph while the compatibility fleet remains on grandfathered
 `railway/*.json` configuration during the rollback window. The graph aborts in
 every other environment.
@@ -30,11 +30,11 @@ variables already present on each target service. It does not copy values from
 compatibility services: seed the three targets before the first apply, then
 `preserve()` retains those values without printing secrets into source.
 
-Before applying Development podcast resources, seed the worker's Postgres URL,
-migrator-service reference, shared media secret and dedicated bridge credentials.
+Before applying podcast resources in either environment, seed the worker's Postgres URL,
+migrator-service reference, environment-specific shared media secret. Bridge publishing remains disabled.
 The graph references the private bucket's endpoint, bucket name, region and keys.
-It enables one worker replica in `sfo`, tracking `dev`, with the Development
-Gateway as its public asset origin. Wait for Database Migrator success before
+It enables one worker replica in `sfo`, with the matching branch and Gateway
+as its public asset origin. Wait for Database Migrator success before
 starting consumers; GitHub push deployment ordering does not follow variable
 references. AppView's private worker URL and shared secret, and Web's build-time
 feature flag, are configured separately. Do not expose a public worker domain.
@@ -54,3 +54,9 @@ artifact to Production.
 
 Plans redact preserved database, Redis, and signing credentials. Never use
 `--show-values` in shared logs.
+
+For the Social/Podcasts Production release, set `NEXT_PUBLIC_PODCASTS_ENABLED=true`
+on Web and `PODCASTS_ENABLED=true` on Gateway/AppView. Keep
+`NEXT_PUBLIC_TOOLS_ENABLED=false` on Web and `TOOLS_ENABLED=false` on
+Gateway/AppView. Review the plan and apply only podcast settings if unrelated
+indexing drift appears; never apply unrelated variable deletions.

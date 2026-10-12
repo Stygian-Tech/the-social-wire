@@ -1,0 +1,20 @@
+meta {
+  name: Get Subscription Entitlements
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/subscription/entitlements
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Returns {viewerDid, plan: "free" | "pro"} for the verified OAuth viewer. Response is private, no-store. Until billing is integrated, configure SOCIALWIRE_PRO_DIDS on Gateway as comma-separated exact DIDs; an unset allowlist grants nobody Pro. Pro enforcement defaults off. Enable SOCIALWIRE_PRO_GATING_ENABLED on Gateway together with NEXT_PUBLIC_PRO_GATING_ENABLED on Web (requires a Web rebuild). Plans still reflect grants when enforcement is disabled. With enforcement enabled, a linked brand authenticates as its own DID and requires an explicit grant for creator analytics; an owner's grant is not inherited. Request parameters, plan headers, and local client storage cannot grant entitlements. Analytics summary/refresh return 403 ProRequired for Free viewers only with enforcement enabled; ordinary Reader/Social analytics observations remain available.
+}

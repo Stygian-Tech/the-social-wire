@@ -1,5 +1,7 @@
 "use client";
 
+import { attachFloatingGlassControlsOverlay } from "@/components/shared/floatingGlassScrollOverlay";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { useMemo, useState } from "react";
 import { ExternalLink, Link2, NotebookPen, Trash2 } from "lucide-react";
 
@@ -360,72 +362,100 @@ export function SembleCollectionBrowser({
 
   return (
     <>
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden border-x border-border/70 bg-background">
-        <header className="border-b p-4">
-          <div className="flex items-baseline justify-between gap-4">
-            <div>
-              <h2 className="text-base font-bold">{collectionName}</h2>
-              <p className="text-xs text-muted-foreground">
-                {count} {count === 1 ? "Item" : "Items"} · Semble Collection
-              </p>
+      <div className="relative mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden border-x border-border/70">
+        <div data-floating-glass-controls ref={attachFloatingGlassControlsOverlay} className="flex flex-col">
+          <header className={`m-2 shrink-0 p-4 ${floatingGlassClasses}`}>
+            <div className="flex items-baseline justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold">{collectionName}</h2>
+                <p className="text-xs text-muted-foreground">
+                  {count} {count === 1 ? "Item" : "Items"} · Semble Collection
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="mt-3 grid gap-2">
-            <Input
-              type="url"
-              value={url}
-              disabled={collectionUnavailable}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://example.com/article"
-              aria-label="URL To Save"
-            />
-            <div className="flex gap-2">
+            <div className="mt-3 grid gap-2">
               <Input
-                value={note}
+                type="url"
+                value={url}
                 disabled={collectionUnavailable}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="Optional Note"
-                aria-label="Optional Note"
+                onChange={(event) => setUrl(event.target.value)}
+                placeholder="https://example.com/article"
+                aria-label="URL To Save"
               />
-              <Button
-                type="button"
-                disabled={collectionUnavailable || !url.trim() || saveMutation.isPending}
-                onClick={save}
-              >
-                {saveMutation.isPending ? "Saving…" : "Save"}
-              </Button>
+              <div className="flex gap-2">
+                <Input
+                  value={note}
+                  disabled={collectionUnavailable}
+                  onChange={(event) => setNote(event.target.value)}
+                  placeholder="Optional Note"
+                  aria-label="Optional Note"
+                />
+                <Button
+                  type="button"
+                  disabled={collectionUnavailable || !url.trim() || saveMutation.isPending}
+                  onClick={save}
+                >
+                  {saveMutation.isPending ? "Saving…" : "Save"}
+                </Button>
+              </div>
             </div>
-          </div>
-          {saveMutation.error ? (
-            <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-destructive">
-              <span>{saveMutation.error.message}</span>
-              {orphanCard ? (
+            {saveMutation.error ? (
+              <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-destructive">
+                <span>{saveMutation.error.message}</span>
+                {orphanCard ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={retryMutation.isPending}
+                    onClick={() => retry(orphanCard)}
+                  >
+                    {retryMutation.isPending ? "Retrying…" : "Retry Link"}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {retryMutation.error || removeMutation.error ? (
+              <p role="alert" className="mt-2 text-sm text-destructive">
+                {(retryMutation.error ?? removeMutation.error)?.message}
+              </p>
+            ) : null}
+            {collectionQuery.isError && collectionQuery.items.length > 0 ? (
+              <div
+                role="status"
+                className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200"
+              >
+                <span>Showing cached Semble items because the live projection failed.</span>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={retryMutation.isPending}
-                  onClick={() => retry(orphanCard)}
+                  disabled={collectionQuery.isFetching}
+                  onClick={() => collectionQuery.refetch()}
                 >
-                  {retryMutation.isPending ? "Retrying…" : "Retry Link"}
+                  {collectionQuery.isFetching ? "Retrying…" : "Retry"}
                 </Button>
-              ) : null}
+              </div>
+            ) : null}
+          </header>
+        </div>
+        <div data-saved-links-scroll className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain px-2">
+          {collectionQuery.isLoading ? (
+            <div className="shrink-0 space-y-2 p-2">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} className="h-28 w-full rounded-lg" />
+              ))}
             </div>
-          ) : null}
-          {retryMutation.error || removeMutation.error ? (
-            <p role="alert" className="mt-2 text-sm text-destructive">
-              {(retryMutation.error ?? removeMutation.error)?.message}
-            </p>
-          ) : null}
-          {collectionQuery.isError && collectionQuery.items.length > 0 ? (
-            <div
-              role="status"
-              className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200"
-            >
-              <span>Showing cached Semble items because the live projection failed.</span>
+          ) : collectionQuery.isError && collectionQuery.items.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-destructive">
+              <p>{collectionQuery.error.message}</p>
+              <p className="max-w-md text-xs text-muted-foreground">
+                {collectionUnavailable
+                  ? "Choose another viewer-owned Semble collection in Your Account settings before saving again."
+                  : "Your cached collection remains available when present. Retry the projection request when Semble is reachable."}
+              </p>
               <Button
                 type="button"
-                size="sm"
                 variant="outline"
                 disabled={collectionQuery.isFetching}
                 onClick={() => collectionQuery.refetch()}
@@ -433,84 +463,60 @@ export function SembleCollectionBrowser({
                 {collectionQuery.isFetching ? "Retrying…" : "Retry"}
               </Button>
             </div>
-          ) : null}
-        </header>
-        {collectionQuery.isLoading ? (
-          <div className="space-y-2 p-2">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <Skeleton key={index} className="h-28 w-full rounded-lg" />
-            ))}
-          </div>
-        ) : collectionQuery.isError && collectionQuery.items.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-destructive">
-            <p>{collectionQuery.error.message}</p>
-            <p className="max-w-md text-xs text-muted-foreground">
-              {collectionUnavailable
-                ? "Choose another viewer-owned Semble collection in Your Account settings before saving again."
-                : "Your cached collection remains available when present. Retry the projection request when Semble is reachable."}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={collectionQuery.isFetching}
-              onClick={() => collectionQuery.refetch()}
-            >
-              {collectionQuery.isFetching ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
-        ) : orderedItems.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-            This Semble collection is empty.
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {orderedItems.map((item) => (
-              <button
-                key={item.membership?.linkUri ?? item.id}
-                type="button"
-                className="mb-2 flex w-full gap-3 rounded-xl border bg-card p-3 text-left shadow-sm transition-colors hover:bg-accent/40"
-                onClick={() => setSelected(item)}
-              >
-                <div className="size-20 shrink-0 overflow-hidden rounded-lg border bg-muted/40">
-                  {item.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- Semble preserves publisher image URLs.
-                    <img src={item.image} alt="" className="size-full object-cover" />
-                  ) : (
-                    <NotebookPen className="m-6 size-8 text-muted-foreground" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs text-muted-foreground">
-                    {item.siteName || item.contributor.handle || item.contributor.did}
-                    {itemDate(item) ? ` · ${itemDate(item)}` : ""}
-                  </p>
-                  <h3 className="mt-1 line-clamp-2 font-semibold">{itemTitle(item)}</h3>
-                  {item.description ? (
-                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                      {item.description}
+          ) : orderedItems.length === 0 ? (
+            <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
+              This Semble collection is empty.
+            </div>
+          ) : (
+            <div className="shrink-0">
+              {orderedItems.map((item) => (
+                <button
+                  key={item.membership?.linkUri ?? item.id}
+                  type="button"
+                  className="mb-2 flex w-full gap-3 rounded-xl border bg-card p-3 text-left shadow-sm transition-colors hover:bg-accent/40"
+                  onClick={() => setSelected(item)}
+                >
+                  <div className="size-20 shrink-0 overflow-hidden rounded-lg border bg-muted/40">
+                    {item.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- Semble preserves publisher image URLs.
+                      <img src={item.image} alt="" className="size-full object-cover" />
+                    ) : (
+                      <NotebookPen className="m-6 size-8 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs text-muted-foreground">
+                      {item.siteName || item.contributor.handle || item.contributor.did}
+                      {itemDate(item) ? ` · ${itemDate(item)}` : ""}
                     </p>
-                  ) : null}
-                  {item.note ? (
-                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                      Note: {item.note.text}
-                    </p>
-                  ) : null}
-                </div>
-              </button>
-            ))}
-            {collectionQuery.hasNextPage ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={collectionQuery.isFetchingNextPage}
-                onClick={() => collectionQuery.fetchNextPage()}
-              >
-                {collectionQuery.isFetchingNextPage ? "Loading…" : "Load More"}
-              </Button>
-            ) : null}
-          </div>
-        )}
+                    <h3 className="mt-1 line-clamp-2 font-semibold">{itemTitle(item)}</h3>
+                    {item.description ? (
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                        {item.description}
+                      </p>
+                    ) : null}
+                    {item.note ? (
+                      <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                        Note: {item.note.text}
+                      </p>
+                    ) : null}
+                  </div>
+                </button>
+              ))}
+              {collectionQuery.hasNextPage ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={collectionQuery.isFetchingNextPage}
+                  onClick={() => collectionQuery.fetchNextPage()}
+                >
+                  {collectionQuery.isFetchingNextPage ? "Loading…" : "Load More"}
+                </Button>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
       {selected ? (
         <SembleItemDetail

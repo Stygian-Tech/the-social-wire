@@ -70,12 +70,12 @@ export default function SportsExperience({ feedID = "sports", onFeedChange }: { 
   };
 
   return (
-    <div key={feedID} ref={scroll} data-sports-scroll className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto">
+    <div key={feedID} ref={scroll} data-sports-scroll className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto xl:[&>[data-topic-topbar]]:mr-[calc(17rem+2rem)]">
       {!followEntity && (sports.catalog.data?.eventsEnabled || (feedID === "sports" && sports.catalog.isPending && !sports.catalog.data)) ? <SportsEventsStrip feedID={feedID} hidden={performanceHidden} entities={catalogEntities} selections={sports.selections} viewerDID={sports.viewerDID ?? "public"} selectionsLoading={sports.selectionsLoading || !!sports.selectionsError} catalogLoading={!sports.catalog.data} /> : null}
-      <div className="grid min-w-0 gap-5 p-4 pt-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
+      <div className="grid min-w-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="@container/sports min-w-0">
-      <header className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/sports:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
-        <h1 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/sports:max-w-56">{selectedFeed ? displaySportsFeedTitle(selectedFeed, locale) : "Sports"}</h1>
+      <header aria-label="Sports Feed Controls" className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/sports:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
+        <h2 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/sports:max-w-56">{selectedFeed ? displaySportsFeedTitle(selectedFeed, locale) : "Sports"}</h2>
         <div className="col-start-1 row-start-2 flex min-w-0 items-center text-sm @min-[24rem]/sports:col-start-2 @min-[24rem]/sports:row-start-1">
           <SportsFeedPicker entities={catalogEntities} definitions={definitions} feedID={feedID} entitySearch={entitySearch} onFeedChange={onFeedChange} />
         </div>
@@ -97,8 +97,8 @@ export default function SportsExperience({ feedID = "sports", onFeedChange }: { 
         </DropdownMenu>
       </header>
       {entitySearch.trim() && !definitions.some(feed => feed.kind !== "global" && sportsFeedSearchText(feed, locale).includes(entitySearch.trim().toLocaleLowerCase())) ? <p role="status" className="mb-4 text-sm text-muted-foreground">No feeds match your search.</p> : null}
-      {selectedFeed?.description || followEntity ? <div className="mb-4 flex flex-wrap items-center gap-3">
-        {selectedFeed?.description ? <p className="min-w-0 flex-1 text-sm text-muted-foreground">{selectedFeed.description.replace(`Stories matching ${selectedFeed.title}`, `Stories matching ${displaySportsFeedTitle(selectedFeed, locale)}`)}</p> : null}
+      {(selectedFeed?.kind !== "global" && selectedFeed?.description) || followEntity ? <div className="mb-4 flex flex-wrap items-center gap-3">
+        {selectedFeed?.kind !== "global" && selectedFeed?.description ? <p className="min-w-0 flex-1 text-sm text-muted-foreground">{selectedFeed.description.replace(`Stories matching ${selectedFeed.title}`, `Stories matching ${displaySportsFeedTitle(selectedFeed, locale)}`)}</p> : null}
         <SportsFeedFollowButton key={`${sports.viewerDID ?? "public"}:${followEntity?.id ?? "global"}`} entity={followEntity}
           selections={sports.selections} save={saveSelection} saving={sports.saving}
           loading={sports.selectionsLoading || !!sports.selectionsError} signedIn={sports.signedIn} viewerDID={sports.viewerDID} />

@@ -100,6 +100,7 @@ type authority struct {
 	Issuers, AuthorizationServers []string
 }
 type TokenVerifier struct {
+	Policy                   *EndpointPolicy
 	Lifetime                 *AuthLifetime
 	Client                   *http.Client
 	PLCURL, SupplementalJWKS string
@@ -111,7 +112,7 @@ type TokenVerifier struct {
 }
 
 func (v *TokenVerifier) fetch(ctx context.Context, target string, maximum int) ([]byte, int, error) {
-	if _, e := NormalizePublicRemoteBase(target); e != nil {
+	if _, e := v.Policy.NormalizeBase(target); e != nil {
 		return nil, 0, ErrAuthentication
 	}
 	deadline, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -269,7 +270,7 @@ func (v *TokenVerifier) resolveAuthorityMode(ctx context.Context, did string, fr
 	}
 	a := authority{}
 	for _, s := range doc.Service {
-		base, e := NormalizePublicRemoteBase(s.ServiceEndpoint)
+		base, e := v.Policy.NormalizeBase(s.ServiceEndpoint)
 		if e != nil {
 			continue
 		}
@@ -295,7 +296,7 @@ func (v *TokenVerifier) resolveAuthorityMode(ctx context.Context, did string, fr
 		}
 		if json.Unmarshal(meta, &m) == nil {
 			for _, s := range m.Servers {
-				if base, e := NormalizePublicRemoteBase(s); e == nil {
+				if base, e := v.Policy.NormalizeBase(s); e == nil {
 					a.Issuers = append(a.Issuers, base)
 					a.AuthorizationServers = append(a.AuthorizationServers, base)
 				}
@@ -345,7 +346,7 @@ func (v *TokenVerifier) Verify(ctx context.Context, token string, now time.Time)
 	if hasSupplemental && verifyKeySet(token, []byte(v.SupplementalJWKS)) == nil {
 		return a, nil
 	}
-	issuer, e := NormalizePublicRemoteBase(a.Issuer)
+	issuer, e := v.Policy.NormalizeBase(a.Issuer)
 	if e != nil {
 		return a, ErrAuthentication
 	}
@@ -377,7 +378,7 @@ func (v *TokenVerifier) Verify(ctx context.Context, token string, now time.Time)
 		if json.Unmarshal(raw, &m) != nil {
 			continue
 		}
-		actual, e := NormalizePublicRemoteBase(m.Issuer)
+		actual, e := v.Policy.NormalizeBase(m.Issuer)
 		if e != nil || actual != issuer {
 			continue
 		}

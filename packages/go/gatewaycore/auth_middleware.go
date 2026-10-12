@@ -9,6 +9,7 @@ import (
 )
 
 type AuthConfig struct {
+	Policy                                      *EndpointPolicy
 	Lifetime                                    *AuthLifetime
 	PLCURL, SupplementalJWKS, AttestationSecret string
 	RequireKnownClient                          bool
@@ -32,12 +33,12 @@ func authError(w http.ResponseWriter, status int, message string) {
 }
 func newAuthMiddleware(config AuthConfig, client *http.Client, optional bool) func(http.Handler) http.Handler {
 	if client == nil {
-		client = NewPublicHTTPClient(nil)
+		client = NewHTTPClientWithPolicy(config.Policy)
 	}
 	if config.PLCURL == "" {
 		config.PLCURL = "https://plc.directory"
 	}
-	verifier := &TokenVerifier{Client: client, PLCURL: config.PLCURL, SupplementalJWKS: config.SupplementalJWKS, Lifetime: config.Lifetime}
+	verifier := &TokenVerifier{Client: client, PLCURL: config.PLCURL, SupplementalJWKS: config.SupplementalJWKS, Lifetime: config.Lifetime, Policy: config.Policy}
 	attestor := &PDSAttestor{Verifier: verifier}
 	replay := &DPoPReplayGuard{}
 	receipt, _ := NewAttestationReceipt(config.AttestationSecret)

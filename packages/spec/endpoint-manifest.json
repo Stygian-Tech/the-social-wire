@@ -154,6 +154,30 @@
     },
     {
       "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/subscription/entitlements",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/analytics/summary",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/analytics/refresh",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/analytics/events",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
       "method": "POST",
       "path": "/v1/telemetry/client-performance",
       "classification": "telemetry"

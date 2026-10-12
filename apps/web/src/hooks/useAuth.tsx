@@ -134,13 +134,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(
     () =>
-      onOAuthSessionInvalidated(() => {
+      onOAuthSessionInvalidated((did) => {
+        if (oauthSessionRef.current?.did !== did && session?.did !== did) return;
         oauthSessionRef.current = null;
         setSession(null);
         setIsLoading(false);
         bumpOAuthReloadSeq();
       }),
-    [bumpOAuthReloadSeq]
+    [bumpOAuthReloadSeq, session?.did]
   );
 
   useEffect(() => {

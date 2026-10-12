@@ -1,0 +1,25 @@
+meta {
+  name: Record Creator Observation
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/analytics/events
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "subjectUri": "{{analyticsSubjectUri}}", "event": "impression", "surface": "social-feed" }
+}
+
+docs {
+  Authenticated creator analytics. Gateway verifies OAuth/DPoP; direct AppView requires its authenticated internal trust path. Traffic is Social Wire only; no external impressions or historic interaction deltas are inferred.
+}

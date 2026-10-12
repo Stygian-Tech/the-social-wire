@@ -62,12 +62,12 @@ func (r *Repository) resolve(ctx context.Context, did string) (string, error) {
 	owner := ""
 	if err == nil {
 		if state == socialwireredis.Fresh {
-			return cachedEndpoint(endpoint)
+			return r.cachedEndpoint(endpoint)
 		}
 		owner, err = r.acquire(ctx, did, now)
 		if err == nil && owner == "" {
 			if state == socialwireredis.Stale {
-				return cachedEndpoint(endpoint)
+				return r.cachedEndpoint(endpoint)
 			}
 			for range 5 {
 				timer := time.NewTimer(50 * time.Millisecond)
@@ -82,7 +82,7 @@ func (r *Repository) resolve(ctx context.Context, did string) (string, error) {
 					break
 				}
 				if contender != socialwireredis.Miss {
-					return cachedEndpoint(value)
+					return r.cachedEndpoint(value)
 				}
 			}
 		}
@@ -103,7 +103,7 @@ func (r *Repository) resolve(ctx context.Context, did string) (string, error) {
 		}
 		return "", err
 	}
-	endpoint, err = cachedEndpoint(endpoint)
+	endpoint, err = r.cachedEndpoint(endpoint)
 	if err != nil {
 		_ = r.store(ctx, did, "", r.Now())
 		return "", err
@@ -111,7 +111,13 @@ func (r *Repository) resolve(ctx context.Context, did string) (string, error) {
 	_ = r.store(ctx, did, endpoint, r.Now())
 	return endpoint, nil
 }
+func (r *Repository) cachedEndpoint(endpoint string) (string, error) {
+	return admittedCachedEndpoint(endpoint, r.base.Policy)
+}
 func cachedEndpoint(endpoint string) (string, error) {
+	return admittedCachedEndpoint(endpoint, nil)
+}
+func admittedCachedEndpoint(endpoint string, policy *gatewaycore.EndpointPolicy) (string, error) {
 	if endpoint == "" {
 		return "", gatewaycore.ErrAuthentication
 	}
@@ -119,7 +125,7 @@ func cachedEndpoint(endpoint string) (string, error) {
 	if err != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(endpoint, "#") {
 		return "", gatewaycore.ErrAuthentication
 	}
-	return gatewaycore.NormalizePublicRemoteBase(endpoint)
+	return policy.NormalizeBase(endpoint)
 }
 func (r *Repository) lookup(ctx context.Context, did string, now time.Time) (socialwireredis.LookupState, string, error) {
 	if r.cache != nil {

@@ -8,12 +8,14 @@ const feeds = [
   { id: "circle", label: "Your Circle", preference: "showCircle" },
   { id: "finance", label: "Finance", preference: "showFinance" },
   { id: "sports", label: "Sports", preference: "showSports" },
+  { id: "social", label: "Social", preference: "showSocial" },
+  { id: "podcasts", label: "Podcasts", preference: "showPodcasts" },
 ] as const;
 
 type DiscoveryFeedDisplaySettingsProps = {
-  preferences: Pick<FeedDisplayPreferences, "showWire" | "showCircle" | "showFinance" | "showSports">;
+  preferences: Pick<FeedDisplayPreferences, "showWire" | "showCircle" | "showFinance" | "showSports" | "showSocial" | "showPodcasts">;
   isPending: boolean;
-  onVisibilityChange: (feed: "wire" | "circle" | "finance" | "sports", visible: boolean) => void;
+  onVisibilityChange: (feed: "wire" | "circle" | "finance" | "sports" | "social" | "podcasts", visible: boolean) => void;
 };
 
 export function DiscoveryFeedDisplaySettings({

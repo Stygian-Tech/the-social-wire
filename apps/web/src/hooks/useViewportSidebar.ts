@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef } from "react";
+import { APP_CHROME_GUTTER_PX } from "@/components/shared/appChromeStyles";
 
 /** Constrain a sticky panel to the visible area of its owning scroll pane. */
 export function useViewportSidebar(scrollHostSelector: string, minViewportWidth = 0, enabled = true) {
@@ -16,6 +17,7 @@ export function useViewportSidebar(scrollHostSelector: string, minViewportWidth 
       if (window.innerWidth < minViewportWidth) {
         panel.style.removeProperty("top");
         panel.style.removeProperty("max-height");
+        panel.style.removeProperty("height");
         return;
       }
       const currentTopbar = scrollHost.querySelector<HTMLElement>(":scope > [data-topic-topbar]") ?? undefined;
@@ -26,11 +28,14 @@ export function useViewportSidebar(scrollHostSelector: string, minViewportWidth 
       }
       const host = scrollHost.getBoundingClientRect();
       const barBottom = topbar?.getBoundingClientRect().bottom ?? host.top;
-      const stickyOffset = Math.max(0, barBottom - host.top) + 16;
-      panel.style.top = `${stickyOffset}px`;
+      const stickyOffset = Math.max(0, barBottom - host.top) + APP_CHROME_GUTTER_PX;
+      const fixed = window.getComputedStyle(panel).position === "fixed";
+      panel.style.top = `${fixed ? host.top + stickyOffset : stickyOffset}px`;
       const top = Math.max(panel.getBoundingClientRect().top, host.top + stickyOffset);
       const bottom = Math.min(window.innerHeight, host.bottom);
-      panel.style.maxHeight = `${Math.max(0, bottom - top - 16)}px`;
+      const availableHeight = `${Math.max(0, bottom - top - APP_CHROME_GUTTER_PX)}px`;
+      panel.style.maxHeight = availableHeight;
+      if (fixed) panel.style.height = availableHeight;
     };
     const schedule = () => {
       if (typeof window.requestAnimationFrame !== "function") { measure(); return; }

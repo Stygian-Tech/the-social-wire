@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import * as Playback from "@/components/Podcasts/PodcastPlayerProvider";
 import * as Auth from "@/hooks/useAuth";
@@ -8,12 +8,22 @@ import { initialPodcastState } from "@/lib/podcasts/client";
 const restores: (() => void)[] = [];
 afterEach(() => { cleanup(); for (const restore of restores.splice(0).reverse()) restore(); });
 
-test("Podcasts keeps scrolling content and the full player inside the same bounded pane", () => {
+test("Podcasts scrolls behind its player and releases the inset when playback clears", () => {
   for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "DOMRect"] as const) {
     const previous = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, { configurable: true, value: window[name] });
     restores.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
   }
+  const previousObserver = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
+  const disconnect = mock(() => {});
+  Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: class {
+    observe() {}
+    disconnect = disconnect;
+  } });
+  restores.push(() => {
+    if (previousObserver) Object.defineProperty(globalThis, "ResizeObserver", previousObserver);
+    else Reflect.deleteProperty(globalThis, "ResizeObserver");
+  });
   const authHook = spyOn(Auth, "useAuth").mockReturnValue({
     session: null, getOAuthSession: () => undefined,
   } as unknown as ReturnType<typeof Auth.useAuth>);
@@ -23,15 +33,24 @@ test("Podcasts keeps scrolling content and the full player inside the same bound
     play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {},
   } as Playback.PlayerContext);
   try {
-    render(<PodcastContentPane><button>Last Episode</button></PodcastContentPane>);
+    const view = render(<PodcastContentPane><button>Last Episode</button></PodcastContentPane>);
     const content = screen.getByRole("main");
     const player = screen.getByRole("complementary", { name: "Podcast Player" });
     expect(content.classList.contains("overflow-y-auto")).toBe(true);
+    expect(content.classList.contains("lg:overflow-hidden")).toBe(true);
     expect(content.classList.contains("min-h-0")).toBe(true);
     expect(content.parentElement).toBe(player.parentElement);
     expect(player.previousElementSibling).toBe(content);
     expect(player.classList.contains("shrink-0")).toBe(true);
     expect(player.classList.contains("fixed")).toBe(false);
     expect(content.parentElement?.classList.contains("overflow-hidden")).toBe(true);
+    expect(content.getAttribute("data-floating-glass-scroll-bottom")).toBe("true");
+    expect(content.parentElement?.style.getPropertyValue("--floating-glass-bottom-extent")).toBe("0px");
+    hook.mockReturnValue({ episode: null } as Playback.PlayerContext);
+    view.rerender(<PodcastContentPane><button>Last Episode</button></PodcastContentPane>);
+    expect(screen.queryByRole("complementary", { name: "Podcast Player" })).toBeNull();
+    expect(content.hasAttribute("data-floating-glass-scroll-bottom")).toBe(false);
+    expect(content.parentElement?.style.getPropertyValue("--floating-glass-bottom-extent")).toBe("");
+    expect(disconnect).toHaveBeenCalledTimes(1);
   } finally { hook.mockRestore(); authHook.mockRestore(); }
 });

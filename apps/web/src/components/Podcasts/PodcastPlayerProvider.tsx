@@ -70,6 +70,7 @@ export function PodcastPlayerProvider({
   const getAudioElement = useCallback(() => audio.current, []);
   const active = useRef<PodcastEpisode | null>(null);
   const playbackGeneration = useRef(0);
+  const playbackReady = useRef(false);
   const pendingSeek = useRef<{ episodeId: string; time: number } | null>(null);
   const objectUrl = useRef<string | null>(null);
   const stateRef = useRef(initialPodcastState());
@@ -201,7 +202,7 @@ export function PodcastPlayerProvider({
   const saveProgress = useCallback(() => {
     const item = active.current;
     const element = audio.current;
-    if (!item || !element || !element.src || !viewerRef.current) return;
+    if (!item || !element || !element.src || !playbackReady.current || !viewerRef.current) return;
     void changeState({
       progress: {
         [item.id]: {
@@ -294,20 +295,29 @@ export function PodcastPlayerProvider({
       }
       active.current = item;
       setEpisode(item);
+      const savedProgress = stateRef.current.progress[item.id];
+      const requestedPosition = pendingSeek.current?.episodeId === item.id ? pendingSeek.current.time : undefined;
+      setPosition(clampPlaybackTime(
+        requestedPosition ?? (savedProgress?.completed ? 0 : (savedProgress?.positionSeconds ?? 0)),
+        item.durationSeconds ?? 0,
+      ));
+      setDuration(item.durationSeconds ?? 0);
       setSilence(null);
       silenceRef.current = null;
+      playbackReady.current = false;
       element.src = source;
       element.playbackRate = stateRef.current.playbackSpeed;
       element.preservesPitch = true;
-      const resume = stateRef.current.progress[item.id];
       element.onloadedmetadata = () => {
         if (generation !== playbackGeneration.current || viewerRef.current !== did || audio.current !== element) return;
+        const resume = stateRef.current.progress[item.id];
         const requestedPosition = pendingSeek.current?.episodeId === item.id ? pendingSeek.current.time : undefined;
         pendingSeek.current = null;
         element.currentTime = clampPlaybackTime(
           requestedPosition ?? (resume?.completed ? 0 : (resume?.positionSeconds ?? 0)),
           element.duration,
         );
+        playbackReady.current = true;
         setDuration(element.duration);
         setPosition(element.currentTime);
       };
@@ -487,7 +497,11 @@ export function PodcastPlayerProvider({
       void sync().catch((reason) => setError(String(reason)));
     };
     window.addEventListener("online", offline);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") saveProgress();
+    };
     window.addEventListener("pagehide", saveProgress);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     void registerPodcastOfflineShell().catch(() => {});
     return () => {
       clearInterval(timer);
@@ -498,12 +512,15 @@ export function PodcastPlayerProvider({
       audio.current = null;
       window.removeEventListener("online", offline);
       window.removeEventListener("pagehide", saveProgress);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
     };
   }, [changeState, getOAuthSession, play, saveProgress, sync]);
   useEffect(() => {
+    saveProgress();
     playbackGeneration.current++;
     pendingSeek.current = null;
+    playbackReady.current = false;
     active.current = null;
     audio.current?.pause();
     if (audio.current) {
@@ -519,6 +536,7 @@ export function PodcastPlayerProvider({
         setState(stateRef.current);
         setEpisode(null);
         setPosition(0);
+        setDuration(0);
         setError(null);
       }
     });
@@ -536,6 +554,10 @@ export function PodcastPlayerProvider({
             if (!cancelled) {
               setState(stateRef.current);
               setEpisode(active.current);
+              const restored = active.current;
+              const progress = restored ? stateRef.current.progress[restored.id] : undefined;
+              setPosition(progress?.completed ? 0 : clampPlaybackTime(progress?.positionSeconds ?? 0, restored?.durationSeconds ?? 0));
+              setDuration(restored?.durationSeconds ?? 0);
             }
           });
         }
@@ -553,6 +575,12 @@ export function PodcastPlayerProvider({
             );
             stateRef.current.playbackSpeed = normalizePodcastSpeed(stateRef.current.playbackSpeed);
             setState(stateRef.current);
+            if (active.current && !audio.current?.getAttribute("src")) {
+              const restored = active.current;
+              const progress = stateRef.current.progress[restored.id];
+              setPosition(progress?.completed ? 0 : clampPlaybackTime(progress?.positionSeconds ?? 0, restored.durationSeconds ?? 0));
+              setDuration(restored.durationSeconds ?? 0);
+            }
             persist();
             return sync();
           })
@@ -563,7 +591,7 @@ export function PodcastPlayerProvider({
     return () => {
       cancelled = true;
     };
-  }, [viewer, getOAuthSession, persist, sync]);
+  }, [viewer, getOAuthSession, persist, saveProgress, sync]);
   useEffect(() => {
     if (audio.current) audio.current.playbackRate = state.playbackSpeed;
   }, [state.playbackSpeed]);

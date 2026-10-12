@@ -1,0 +1,30 @@
+meta {
+  name: Post Tab Usage
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/v1/telemetry/client-performance
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "event": "tab_dwell",
+    "tab": "content-calendar",
+    "durationMs": 5000,
+    "environment": "dev"
+  }
+}
+
+docs {
+  Allowlisted tab usage; no client user identity or paths. The server stores a secret-derived pseudonym for 30 days. tab_open requires durationMs: 0.
+}

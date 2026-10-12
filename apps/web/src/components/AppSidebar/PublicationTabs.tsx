@@ -54,7 +54,7 @@ export function PublicationTabs({
     return null;
   return (
     <SidebarGroup className="pb-1 pt-1">
-      <SidebarGroupLabel>Feeds</SidebarGroupLabel>
+      <SidebarGroupLabel>News</SidebarGroupLabel>
       <SidebarMenu
         className="gap-0.5"
         role="tablist"

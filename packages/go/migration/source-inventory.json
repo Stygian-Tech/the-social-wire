@@ -11091,7 +11091,11 @@
         },
         {
           "path": "packages/lexicons/__tests__/lexicons.test.ts",
-          "sha256": "6b29a6bc010c7252643f33b59a0d2656fc32090113dd7de677aeaa4389f21142"
+          "sha256": "ac4204ae40c68856039d68405faa99d6893063834af3dbf2976c170333be53d4"
+        },
+        {
+          "path": "packages/lexicons/__tests__/liveEventLexicon.test.ts",
+          "sha256": "f44b7cb0fcc2574128e79ba842b430f9c5f0344fb89d6dea104fb5a16e7cb546"
         },
         {
           "path": "packages/lexicons/__tests__/podcastLexicons.test.ts",
@@ -11270,6 +11274,10 @@
           "sha256": "16b4dba44c32c58f2fe7e7e25db16c9a6d3fc07654f400c8e2603dd01325fc07"
         },
         {
+          "path": "packages/lexicons/app/thesocialwire/liveEvent.json",
+          "sha256": "2baddec066ead61880b97efa44afee843d8cef4b8614664cfa182c484454cc53"
+        },
+        {
           "path": "packages/lexicons/app/thesocialwire/operations/acknowledgeAlert.json",
           "sha256": "068a548ebb35456c7f316eb397e27b5ec7f3f3799ea88a1b06aee3c18fc3f5b9"
         },
@@ -11387,7 +11395,7 @@
         },
         {
           "path": "packages/lexicons/app/thesocialwire/preferences.json",
-          "sha256": "e8aab6247f7fea463c1210170ef3448f4f5818de9b5fe6e6c24951dab3d64c92"
+          "sha256": "88d0c847fdffb059e210842b125eeb226f9c44c29f8fb70d866893413fec5115"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/publication/getSidebar.json",
@@ -11681,7 +11689,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "787c50bc6b1252fd001c7590e8ee406d1edd2077bc7064d4c783cebbd0149ccb"
+          "sha256": "9b07c040cc4390a2287330a11f7d413a5092eec8f92bfd9ce9f84f421d792b26"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",
@@ -11698,6 +11706,10 @@
         {
           "path": "packages/spec/__tests__/coverage-inventory.test.ts",
           "sha256": "77c3b889778d392270b91f12e416b9badb51945330126723c7fb7c8990c57136"
+        },
+        {
+          "path": "packages/spec/__tests__/creator-analytics.test.ts",
+          "sha256": "ea9791b7cc9ef3301d9671670d677888d04c725bde714c1d99db8c4adfd9b507"
         },
         {
           "path": "packages/spec/__tests__/database-migration-runner.test.ts",
@@ -11757,7 +11769,7 @@
         },
         {
           "path": "packages/spec/__tests__/podcast-deployment.test.ts",
-          "sha256": "1fb13f05bbcbdffcfe3b6a76580c881e62af823bd06b6b25594da3dcb1803804"
+          "sha256": "4f91872b623871cf569aa21baeb08d39fb24e4d67d6b8d19d4304225c2915878"
         },
         {
           "path": "packages/spec/__tests__/postgres-replay-harness.test.ts",
@@ -11782,6 +11794,10 @@
         {
           "path": "packages/spec/__tests__/subscribed-feed-performance-migration.test.ts",
           "sha256": "2583eea9b4ca7b3f250aa787ab4b753a29afd51fb8fcfb40943447a3b60170e1"
+        },
+        {
+          "path": "packages/spec/__tests__/subscription-entitlements.test.ts",
+          "sha256": "1f9f770af8309aa3e20488a72b5a21e9bbac8a5cb26fa652ea358282d72ed250"
         },
         {
           "path": "packages/spec/__tests__/tap-registration-migration.test.ts",
@@ -11849,11 +11865,11 @@
         },
         {
           "path": "packages/spec/endpoint-manifest.json",
-          "sha256": "f670bab0b2ddb7ae23d5504338c3d60e6661e2b5593c6ca5e048ef47f72cc263"
+          "sha256": "9143e0fa7c04b9a8eb42bdb81ff84dd0498667b2826ff9b421d09e3b96b41c28"
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "51fd972966e88309f9db47b801f295a10c99f84654f82fea3cf65b1612c123c8"
+          "sha256": "b46845763f4093dbb4486ae0544bb9b620b93d1a14c21f2bcf55fdf7fd12e9c5"
         },
         {
           "path": "packages/spec/package.json",

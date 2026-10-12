@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@stygian/markdown-editor/styles";
+@import "./articleTypography.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -175,6 +177,9 @@ html[data-bold-text="true"] {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  :where(button, [role="button"], a[href], summary):not(:disabled):not([aria-disabled="true"]):not([data-disabled]) {
+    cursor: pointer;
   }
   body {
     @apply bg-background text-foreground;
@@ -387,4 +392,104 @@ html[data-bold-text="true"] {
 }
 @media (prefers-reduced-motion: reduce) {
   .podcast-waveform-indicator { animation: none; }
+}
+
+
+.floating-glass {
+  background-color: var(--background);
+  background-image: linear-gradient(135deg, oklch(1 0 0 / 0.025), transparent 65%);
+  box-shadow: 0 2px 10px -6px oklch(0 0 0 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.035);
+}
+
+@supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {
+  .floating-glass {
+    background-color: color-mix(in oklch, var(--background) 40%, transparent);
+    -webkit-backdrop-filter: blur(12px) saturate(110%);
+    backdrop-filter: blur(12px) saturate(110%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .floating-glass {
+    background-color: var(--background);
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Scroll viewports extend behind shared glass; their initial/end inset remains reachable. */
+[data-floating-glass-scroll-top] {
+  box-sizing: border-box;
+  margin-top: calc(-1 * var(--floating-glass-top-extent, 0px));
+  padding-top: calc(var(--floating-glass-top-extent, 0px) + var(--floating-glass-top-content-padding, 0px));
+}
+
+[data-floating-glass-scroll-bottom] {
+  box-sizing: border-box;
+  margin-bottom: calc(-1 * var(--floating-glass-bottom-extent, 0px));
+  padding-bottom: calc(var(--floating-glass-bottom-extent, 0px) + var(--floating-glass-bottom-content-padding, 0px));
+}
+
+[data-floating-glass-shell-top] {
+  margin-top: calc(-1 * var(--floating-glass-top-extent, 0px));
+}
+
+[data-floating-glass-shell-top] [data-entry-list-scroll] {
+  padding-top: calc(var(--floating-glass-top-extent, 0px) + 0.5rem);
+}
+
+[data-floating-glass-shell-top] [data-account-scroll] {
+  padding-top: var(--floating-glass-top-extent, 0px);
+}
+
+[data-floating-glass-controls] {
+  position: absolute;
+  inset-inline: 0;
+  top: var(--floating-glass-top-extent, 0px);
+  z-index: 20;
+}
+
+[data-saved-links-scroll] {
+  padding-top: calc(var(--floating-glass-top-extent, 0px) + var(--floating-glass-controls-extent, 0px) + 0.5rem);
+}
+
+/* Keep the route viewport behind the fixed mobile navigation. Clearance belongs
+   to scrolling content or a measured floating footer, never the route shell. */
+.app-mobile-navigation-shell {
+  --mobile-navigation-clearance: 0px;
+}
+
+@media (width < 48rem) {
+  .app-mobile-navigation-shell {
+    --mobile-navigation-clearance: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  .app-mobile-navigation-shell :is(
+    main.overflow-y-auto,
+    div.overflow-y-auto.flex-1,
+    div.overflow-y-auto.h-full,
+    [data-entry-list-scroll],
+    [data-saved-links-scroll]
+  ):not([data-floating-glass-scroll-bottom]) {
+    scroll-padding-bottom: var(--mobile-navigation-clearance);
+  }
+
+  .app-mobile-navigation-shell :is(
+    main.overflow-y-auto,
+    div.overflow-y-auto.flex-1,
+    div.overflow-y-auto.h-full,
+    [data-entry-list-scroll],
+    [data-saved-links-scroll]
+  ):not([data-floating-glass-scroll-bottom])::after {
+    content: "";
+    display: block;
+    height: var(--mobile-navigation-clearance);
+    flex-shrink: 0;
+    pointer-events: none;
+  }
+}
+
+[data-floating-glass-shell-top] [data-wire-scroll-container] {
+  padding-top: calc(var(--floating-glass-top-extent, 0px) + var(--floating-glass-controls-extent, 0px));
 }

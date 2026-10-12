@@ -78,6 +78,8 @@ export function useFeedDisplayPreferences() {
           showCircle: next.showCircle,
           showFinance: next.showFinance,
           showSports: next.showSports,
+          showSocial: next.showSocial,
+          showPodcasts: next.showPodcasts,
           hideSportsScores: next.hideSportsScores,
           hideFinancePerformance: next.hideFinancePerformance,
           hideFinanceCrypto: next.hideFinanceCrypto,
@@ -136,6 +138,8 @@ export function useFeedDisplayPreferences() {
             showCircle: normalized.showCircle,
             showFinance: normalized.showFinance,
             showSports: normalized.showSports,
+            showSocial: normalized.showSocial,
+            showPodcasts: normalized.showPodcasts,
             hideSportsScores: normalized.hideSportsScores,
             hideFinancePerformance: normalized.hideFinancePerformance,
             hideFinanceCrypto: normalized.hideFinanceCrypto,
@@ -218,10 +222,10 @@ export function useFeedDisplayPreferences() {
   );
 
   const setDiscoveryFeedVisible = useCallback(
-    (feed: "wire" | "circle" | "finance" | "sports", visible: boolean) => {
+    (feed: "wire" | "circle" | "finance" | "sports" | "social" | "podcasts", visible: boolean) => {
       mutation.mutate({
         ...preferences,
-        [feed === "wire" ? "showWire" : feed === "finance" ? "showFinance" : feed === "sports" ? "showSports" : "showCircle"]: visible,
+        [({ wire: "showWire", circle: "showCircle", finance: "showFinance", sports: "showSports", social: "showSocial", podcasts: "showPodcasts" } as const)[feed]]: visible,
       });
     },
     [mutation, preferences],

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"net/http"
 	"net/http/httptest"
@@ -74,5 +75,30 @@ func TestPostgresSampledSpanPersists(t *testing.T) {
 	var attrs string
 	if e := db.QueryRow(`SELECT attributes::text FROM operations_trace_spans WHERE id=$1`, id).Scan(&attrs); e != nil || strings.Contains(attrs, "must-drop") {
 		t.Fatal(attrs, e)
+	}
+}
+func TestNavigationTelemetryRejectsIdentityAndUnboundedSamples(t *testing.T) {
+	s := Server{Config: Config{Environment: "dev"}}
+	for _, item := range []struct {
+		body          string
+		authenticated bool
+		want          int
+	}{
+		{`{"event":"tab_open","tab":"messages","durationMs":0,"environment":"dev"}`, false, 401},
+		{`{"event":"tab_open","tab":"/social/messages?to=alice","durationMs":0,"environment":"dev"}`, true, 400},
+		{`{"event":"tab_dwell","tab":"messages","durationMs":60001,"environment":"dev"}`, true, 400},
+		{`{"event":"tab_dwell","tab":"messages","durationMs":0,"environment":"dev"}`, true, 400},
+		{`{"event":"tab_open","tab":"messages","durationMs":3,"environment":"dev"}`, true, 400},
+		{`{"event":"tab_open","tab":"messages","durationMs":0,"environment":"dev","did":"must-not-store"}`, true, 202},
+	} {
+		r := httptest.NewRequest("POST", "https://gateway.invalid/v1/telemetry/client-performance", strings.NewReader(item.body))
+		if item.authenticated {
+			r = r.WithContext(gatewaycore.ContextWithAuth(r.Context(), gatewaycore.AuthContext{DID: "did:plc:viewer"}))
+		}
+		w := httptest.NewRecorder()
+		s.performance(w, r)
+		if w.Code != item.want {
+			t.Fatal(w.Code, item.want, w.Body.String())
+		}
 	}
 }

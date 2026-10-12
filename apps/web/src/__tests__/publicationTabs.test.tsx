@@ -212,7 +212,7 @@ test("Finance belongs to Topics with its icon, Beta badge, and selection behavio
   ).toBe("false");
 });
 
-test("hides empty Topics and Feeds sections independently", () => {
+test("hides empty Topics and News sections independently", () => {
   const { rerender } = render(
     <SidebarProvider>
       <PublicationTabs
@@ -223,7 +223,7 @@ test("hides empty Topics and Feeds sections independently", () => {
       <SidebarTopicsSection visibleFeeds={new Set(["finance"])} />
     </SidebarProvider>,
   );
-  expect(screen.queryByText("Feeds")).toBeNull();
+  expect(screen.queryByText("News")).toBeNull();
   expect(screen.getByRole("tablist", { name: "Topics" })).toBeDefined();
   rerender(
     <SidebarProvider>
@@ -235,7 +235,7 @@ test("hides empty Topics and Feeds sections independently", () => {
       <SidebarTopicsSection visibleFeeds={new Set(["subscribed"])} />
     </SidebarProvider>,
   );
-  expect(screen.getByText("Feeds")).toBeDefined();
+  expect(screen.getByText("News")).toBeDefined();
   expect(screen.queryByText("Topics")).toBeNull();
   expect(screen.queryByRole("tab", { name: "Finance, Beta" })).toBeNull();
 });

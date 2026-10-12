@@ -56,7 +56,7 @@ export default function ReadLayout({
 
   return (
     <SidebarProvider
-      className={`mx-auto ${appViewportHeightClasses} max-w-[var(--reader-shell-width)] overflow-hidden overscroll-none [--reader-shell-width:70rem] has-[[data-wire-route=true]]:max-w-none has-[[data-wire-route=true]]:[--reader-shell-width:82rem] has-[[data-wire-route=true]]:[&_[data-slot=sidebar-gap]]:ml-[max(0px,calc((100vw-var(--reader-shell-width))/2))]`}
+      className={`${appViewportHeightClasses} overflow-hidden overscroll-none [--reader-shell-width:70rem] has-[[data-wire-route=true]]:[--reader-shell-width:82rem]`}
     >
       <PublicationSidebarProvider>
         <ReadRouteProvider>
@@ -109,7 +109,12 @@ function ReadContentInset({ children }: { children: React.ReactNode }) {
       className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses} ${editorialFeed && !searchParams.get("list") ? "" : "lg:mr-64"}`}
     >
       <ReadArticleFilterBar />
-      <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
+      <main
+        data-feed-header-shell="true"
+        className="flex min-h-0 flex-1 overflow-hidden"
+      >
+        {children}
+      </main>
     </SidebarInset>
   );
 }

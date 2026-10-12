@@ -58,12 +58,12 @@ export default function FinanceExperience({ feedID = "finance", onFeedChange }: 
   };
 
   return (
-    <div key={feedID} ref={scroll} data-finance-scroll className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto">
+    <div key={feedID} ref={scroll} data-finance-scroll className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto xl:[&>[data-topic-topbar]]:mr-[calc(17rem+2rem)]">
       {selectedFeed || feedID === "finance" ? <FinanceTickerMarquee feed={selectedFeed} hidden={performanceHidden} /> : null}
-      <div className="grid min-w-0 gap-5 p-4 pt-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
+      <div className="grid min-w-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="@container/finance min-w-0">
-      <header className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/finance:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
-        <h1 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/finance:max-w-56">{selectedFeed?.title ?? "Finance"}</h1>
+      <header aria-label="Finance Feed Controls" className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/finance:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
+        <h2 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/finance:max-w-56">{selectedFeed?.title ?? "Finance"}</h2>
         <div className="col-start-1 row-start-2 flex min-w-0 items-center text-sm @min-[24rem]/finance:col-start-2 @min-[24rem]/finance:row-start-1">
           <FinanceFeedPicker definitions={definitions} feedID={feedID} companySearch={companySearch} onFeedChange={onFeedChange} />
         </div>

@@ -1,9 +1,18 @@
-import { afterEach, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useViewportSidebar } from "@/hooks/useViewportSidebar";
 import { SportsFollowingSidebar } from "@/components/SportsFollowingSidebar";
 import type { SportsEntity, SportsFeedDefinition, SportsSelection } from "@/lib/sportsFeedClient";
 
-afterEach(cleanup);
+let viewportWidth: PropertyDescriptor | undefined;
+beforeEach(() => {
+ viewportWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
+ Object.defineProperty(window, "innerWidth", { configurable: true, value: 1400, writable: true });
+});
+afterEach(() => {
+ cleanup();
+ if (viewportWidth) Object.defineProperty(window, "innerWidth", viewportWidth);
+});
 const entities: SportsEntity[] = [
   {id:"football",name:"Football",kind:"sport",active:true,competitionIDs:[],aliases:[]},
   {id:"league",name:"NFL",kind:"competition",active:true,competitionIDs:[],aliases:[]},
@@ -15,6 +24,10 @@ const entities: SportsEntity[] = [
 const definitions: SportsFeedDefinition[] = entities.map(entity => ({id:`entity:${entity.id}`,title:entity.name,kind:entity.kind,entityIDs:[entity.id],description:"Matching stories"}));
 const selection = (reference:string,action:"follow"|"mute"="follow"):SportsSelection => ({reference,action,createdAt:"2026-10-04",updatedAt:"2026-10-04"});
 const props = {entities,definitions,selections:[],feedID:"sports"};
+function StickySidebarFixture() {
+ const sidebar = useViewportSidebar("[data-sports-scroll]", 1280);
+ return <aside ref={sidebar} />;
+}
 
 it("distinguishes loading, unavailable, and empty interests",()=>{
  const mounted=render(<SportsFollowingSidebar {...props} loading />);
@@ -113,7 +126,7 @@ it("fits the remaining viewport and grows or contracts while the feed scrolls",(
  let top=300;
  const rect=spyOn(window.HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){return {top:this.tagName==="ASIDE"?top:40,bottom:700,left:0,right:300,width:300,height:660,x:0,y:40,toJSON:()=>({})} as DOMRect;});
  try {
-  const mounted=render(<div data-sports-scroll><SportsFollowingSidebar {...props} /></div>);
+  const mounted=render(<div data-sports-scroll><StickySidebarFixture /></div>);
   const panel=screen.getByRole("complementary");const host=panel.parentElement!;
   expect(panel.style.maxHeight).toBe("384px");
   top=60;fireEvent.scroll(host);expect(panel.style.maxHeight).toBe("624px");
@@ -126,9 +139,9 @@ it("contracts when schedules arrive above the sidebar after its initial layout",
  let top=60;
  const rect=spyOn(window.HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){return {top:this.tagName==="ASIDE"?top:40,bottom:700,left:0,right:300,width:300,height:660,x:0,y:40,toJSON:()=>({})} as DOMRect;});
  try {
-  const mounted=render(<div data-sports-scroll><SportsFollowingSidebar {...props} /></div>);
+  const mounted=render(<div data-sports-scroll><StickySidebarFixture /></div>);
   const panel=screen.getByRole("complementary");expect(panel.style.maxHeight).toBe("624px");
-  top=300;mounted.rerender(<div data-sports-scroll><p>Schedules Loaded</p><SportsFollowingSidebar {...props} /></div>);
+  top=300;mounted.rerender(<div data-sports-scroll><p>Schedules Loaded</p><StickySidebarFixture /></div>);
   await waitFor(()=>expect(screen.getByRole("complementary").style.maxHeight).toBe("384px"));mounted.unmount();
  } finally {rect.mockRestore();}
 });
@@ -147,7 +160,7 @@ it("tracks animated sticky topbar height for sidebar margin and available viewpo
  Object.defineProperty(globalThis,"ResizeObserver",{configurable:true,writable:true,value:Observer});
  const rect=spyOn(window.HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){const top=this.hasAttribute("data-topic-topbar")?40:this.tagName==="ASIDE"?40+Number.parseFloat(this.style.top||"16"):40;const height=this.hasAttribute("data-topic-topbar")?barHeight:660;return {top,bottom:this.hasAttribute("data-topic-topbar")?top+height:700,left:0,right:300,width:300,height,x:0,y:top,toJSON:()=>({})} as DOMRect;});
  try {
-  const view=render(<div data-sports-scroll><section data-topic-topbar>Schedules</section><SportsFollowingSidebar key="following" {...props}/></div>);
+  const view=render(<div data-sports-scroll><section data-topic-topbar>Schedules</section><StickySidebarFixture key="following"/></div>);
   const panel=screen.getByRole("complementary");const bar=screen.getByText("Schedules");
   expect(observed.has(bar)).toBe(true);expect(observed.size).toBe(2);
   expect(panel.style.top).toBe("236px");expect(panel.style.maxHeight).toBe("408px");
@@ -157,7 +170,7 @@ it("tracks animated sticky topbar height for sidebar margin and available viewpo
   await waitFor(()=>expect(panel.style.top).toBe("60px"));expect(panel.style.maxHeight).toBe("584px");
   barHeight=320;resize?.([],{} as ResizeObserver);
   await waitFor(()=>expect(panel.style.top).toBe("336px"));expect(panel.style.maxHeight).toBe("308px");
-  view.rerender(<div data-sports-scroll><SportsFollowingSidebar key="following" {...props}/></div>);
+  view.rerender(<div data-sports-scroll><StickySidebarFixture key="following"/></div>);
   await waitFor(()=>expect(panel.style.top).toBe("16px"));expect(observed.has(bar)).toBe(false);
   view.unmount();expect(observed.size).toBe(0);
  } finally {rect.mockRestore();if(original)Object.defineProperty(globalThis,"ResizeObserver",original);else Reflect.deleteProperty(globalThis,"ResizeObserver");}
@@ -165,7 +178,9 @@ it("tracks animated sticky topbar height for sidebar margin and available viewpo
 
 it("uses the full viewport for its independent scrolling rail", () => {
  render(<SportsFollowingSidebar {...props} />);
- expect(screen.getByRole("complementary").className).toContain("rounded-xl");
+ expect(screen.getByRole("complementary").className).toContain("rounded-2xl");
+ expect(screen.getByRole("complementary").className).toContain("floating-glass");
+ expect(screen.getByRole("complementary").className).not.toContain("bg-background");
  expect(screen.getByRole("complementary").className).toContain("p-3");
  expect(screen.getByRole("link", {name: "All Sports"}).className).toContain("min-h-8");
  expect(screen.getByRole("link", {name: "All Sports"}).className).toContain("pointer-coarse:min-h-11");

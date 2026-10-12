@@ -6,6 +6,7 @@ import (
 	"errors"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
+	"github.com/stygian-tech/the-social-wire/packages/go/analyticscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/appviewcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
@@ -18,6 +19,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/topicreadcore"
+	"github.com/stygian-tech/the-social-wire/services/appview/internal/analytics"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/config"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/lists"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/podcasts"
@@ -87,7 +89,7 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 		return nil, errors.New("AppView requires PostgreSQL")
 	}
 	process, cancel := context.WithCancel(ctx)
-	h = &Host{Config: c, DB: db, ctx: process, cancel: cancel, publicHTTP: gatewaycore.NewPublicHTTPClient(nil), internalHTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	h = &Host{Config: c, DB: db, ctx: process, cancel: cancel, publicHTTP: gatewaycore.NewHTTPClientWithPolicy(c.EndpointPolicy), internalHTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	defer func() {
 		if err != nil {
 			h.Close(context.Background())
@@ -115,14 +117,14 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 	if c.CacheBackend == "redis" && h.Redis != nil {
 		projection.Redis = h.Redis
 	}
-	baseRepo := &gatewaycore.RepoClient{Client: h.publicHTTP, PLCURL: c.Auth.PLCURL}
+	baseRepo := &gatewaycore.RepoClient{Client: h.publicHTTP, PLCURL: c.Auth.PLCURL, Policy: c.EndpointPolicy}
 	var resolutionRedis redis.Cmdable
 	if h.Redis != nil {
 		resolutionRedis = h.Redis
 	}
 	repo := repocache.New(baseRepo, resolutionRedis, c.Environment).RepoClient
-	getter := thinappviewcore.PublicHTTP{}
-	pds := &thinappviewcore.PDSClient{HTTP: getter, PLCBase: c.Auth.PLCURL}
+	getter := thinappviewcore.PublicHTTP{Policy: c.EndpointPolicy}
+	pds := &thinappviewcore.PDSClient{HTTP: getter, PLCBase: c.Auth.PLCURL, Policy: c.EndpointPolicy}
 	h.Publications = publicationcore.NewService(db, repo, h.publicHTTP)
 	if cacheEnabled {
 		h.Publications.Cache = &publicationcore.CacheStore{Projection: projection}
@@ -158,6 +160,7 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 	}
 	publicMux, protectedMux, discoveryMux := http.NewServeMux(), http.NewServeMux(), http.NewServeMux()
 	h.registerHealth(publicMux)
+	analytics.Routes{Enabled: c.ToolsEnabled, Store: analyticscore.Store{DB: db, Secret: c.InternalSecret}, Provider: &analytics.CachedProvider{Base: analyticscore.Provider{Repo: repo, HTTP: h.publicHTTP, AppView: repo.AppViewBase()}}, Now: time.Now, Limits: &analytics.Limits{}}.Register(protectedMux)
 	publications.Routes{Service: h.Publications, Resolver: publicationcore.Resolver{Repo: repo, HTTP: getter}}.Register(protectedMux)
 	lists.Routes{Runtime: h.Lists}.Register(protectedMux)
 	semble.Routes{Service: semblecore.Service{Transport: semblecore.NewHTTPTransport(c.EnvironmentValues, h.publicHTTP), Reader: semblecore.PublicReader{Repo: repo}}}.Register(protectedMux)

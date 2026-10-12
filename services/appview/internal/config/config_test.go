@@ -63,3 +63,39 @@ func TestPostgresPoolUsesDeployedSourceKey(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalSandboxPolicyIsConfinedToLocalAppView(t *testing.T) {
+	env := fixture()
+	env["APP_ENV"] = "local"
+	env["LOCAL_ATPROTO_ALLOWED_HOSTS"] = "plc.atmosbox.test,pds1.atmosbox.test"
+	c, err := Parse(env)
+	if err != nil || c.EndpointPolicy == nil || c.Auth.Policy != c.EndpointPolicy {
+		t.Fatalf("local policy not wired: %v", err)
+	}
+	for _, mode := range []string{"dev", "prod"} {
+		env["APP_ENV"] = mode
+		if _, err := Parse(env); err == nil {
+			t.Fatal("sandbox enabled outside local mode")
+		}
+	}
+}
+
+func TestToolsEnvironmentGate(t *testing.T) {
+	for _, test := range []struct {
+		environment, flag string
+		enabled           bool
+	}{
+		{"prod", "", false}, {"prod", "false", false}, {"prod", "true", true},
+		{"dev", "", true}, {"local", "", true}, {"dev", "false", false}, {"dev", "true", true}, {"prod", "invalid", false},
+	} {
+		t.Run(test.environment+"/"+test.flag, func(t *testing.T) {
+			c, err := Parse(map[string]string{"APP_ENV": test.environment, "TOOLS_ENABLED": test.flag, "DATABASE_URL": "postgres://local/test", "ENABLE_THIN_APPVIEW": "true"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.ToolsEnabled != test.enabled {
+				t.Fatalf("enabled=%v", c.ToolsEnabled)
+			}
+		})
+	}
+}

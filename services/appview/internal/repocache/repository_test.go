@@ -215,3 +215,23 @@ func TestColdContendersUseCompletedResolutionAndRespectEnvironment(t *testing.T)
 		t.Fatal("environment namespaces collided")
 	}
 }
+
+func TestLocalSandboxResolutionRetainsPolicyAcrossCache(t *testing.T) {
+	policy, err := gatewaycore.NewEndpointPolicy(map[string]string{"APP_ENV": "local", "LOCAL_ATPROTO_ALLOWED_HOSTS": "plc.atmosbox.test,pds1.atmosbox.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := &gatewaycore.RepoClient{Policy: policy, PLCURL: "https://plc.atmosbox.test", Client: &http.Client{Transport: transport(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"service":[{"id":"#atproto_pds","serviceEndpoint":"https://pds1.atmosbox.test"}]}`))}, nil
+	})}}
+	repo := New(base, nil, "local")
+	for range 2 {
+		value, err := repo.ResolvePDS(context.Background(), "did:plc:localfixture")
+		if err != nil || value != "https://pds1.atmosbox.test" {
+			t.Fatal(value, err)
+		}
+	}
+	if _, err := cachedEndpoint("https://pds1.atmosbox.test"); err == nil {
+		t.Fatal("default public cache policy weakened")
+	}
+}

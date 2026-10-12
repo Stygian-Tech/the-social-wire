@@ -65,7 +65,7 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
             circle: preferences.showCircle && circleCatalog?.enabled != false,
             finance: preferences.showFinance && financeAvailable,
             sports: preferences.showSports && sportsAvailable,
-            podcasts: podcastsAvailable
+            podcasts: preferences.showPodcasts && podcastsAvailable
         )
     }
 

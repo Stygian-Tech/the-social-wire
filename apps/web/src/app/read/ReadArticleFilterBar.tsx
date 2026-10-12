@@ -21,10 +21,6 @@ import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 import { useCircleEdition } from "@/hooks/useCircleFeed";
 import { editorialFeedForReadRoute } from "@/lib/editorialFeedRoute";
 
-export function readFeedHeaderClassName(isWire: boolean) {
-  return isWire ? "pt-3" : undefined;
-}
-
 /**
  * Global All / Unread toggle for the read shell (applies to whichever publication is open).
  */
@@ -77,8 +73,10 @@ export function ReadArticleFilterBar() {
 
   if (listURI) return <ReadListHeader uri={listURI} />;
 
-  // Finance owns its Customize, Refresh, and market-display header.
-  if (editorialFeed === "finance" || editorialFeed === "sports") return null;
+  // Topics share the route header while keeping their feed-specific controls in the pane.
+  if (editorialFeed === "finance" || editorialFeed === "sports") {
+    return <FeedHeader title={editorialFeed === "finance" ? "Finance" : "Sports"} className="xl:mr-[calc(17rem+2rem)]" />;
+  }
 
   if (editorialFeed) {
     const isRefreshing = isCircle
@@ -92,6 +90,7 @@ export function ReadArticleFilterBar() {
     const title = isCircle ? "Your Circle" : "The Wire";
     return (
       <FeedHeader
+        className="xl:mr-[calc(19rem+2rem)]"
         title={
           <span
             aria-label={`${title}, Beta`}
@@ -101,7 +100,6 @@ export function ReadArticleFilterBar() {
             <WireBetaBadge />
           </span>
         }
-        className={readFeedHeaderClassName(true)}
       >
         <Button
           type="button"

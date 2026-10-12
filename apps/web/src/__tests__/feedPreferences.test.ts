@@ -19,6 +19,8 @@ describe("feed display preferences", () => {
           showCircle,
           showFinance: true,
           showSports: true,
+          showSocial: true,
+          showPodcasts: true,
           hideSportsScores: false,
           hideFinancePerformance: false,
           hideFinanceCrypto: false,
@@ -31,6 +33,8 @@ describe("feed display preferences", () => {
           showCircle,
           showFinance: true,
           showSports: true,
+          showSocial: true,
+          showPodcasts: true,
           hideSportsScores: false,
           hideFinancePerformance: false,
           hideFinanceCrypto: false,
@@ -66,6 +70,8 @@ describe("feed display preferences", () => {
       showCircle: true,
       showFinance: true,
           showSports: true,
+          showSocial: true,
+          showPodcasts: true,
           hideSportsScores: false,
       hideFinancePerformance: false,
           hideFinanceCrypto: false,
@@ -86,6 +92,8 @@ describe("feed display preferences", () => {
       showCircle: true,
       showFinance: true,
           showSports: true,
+          showSocial: true,
+          showPodcasts: true,
           hideSportsScores: false,
       hideFinancePerformance: false,
           hideFinanceCrypto: false,
@@ -155,4 +163,19 @@ test("drops counts for every explicitly hidden feed", () => {
    saveCachedFeedDisplayPreferences(storage, "did:plc:viewer", preferences);
    expect(loadCachedFeedDisplayPreferences(storage, "did:plc:viewer")?.hideFinanceCrypto).toBe(true);
    expect(loadCachedFeedDisplayPreferences(storage, "did:plc:other")).toBeNull();
+ });
+
+ test("Social and Podcasts visibility stays independent through cache restores", () => {
+   const cache = new Map<string, string>();
+   const storage = { getItem: (key: string) => cache.get(key) ?? null, setItem: (key: string, value: string) => { cache.set(key, value); } };
+   for (const showSocial of [true, false]) {
+     for (const showPodcasts of [true, false]) {
+       const preferences = normalizeFeedDisplayPreferences({ showSocial, showPodcasts });
+       saveCachedFeedDisplayPreferences(storage, "did:plc:viewer", preferences);
+       expect(loadCachedFeedDisplayPreferences(storage, "did:plc:viewer")).toEqual(preferences);
+       expect(preferences.showSocial).toBe(showSocial);
+       expect(preferences.showPodcasts).toBe(showPodcasts);
+       expect(preferences.showFinance).toBe(true);
+     }
+   }
  });

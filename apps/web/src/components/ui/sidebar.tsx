@@ -12,7 +12,10 @@ import {
   SIDEBAR_WIDTH_MAX_PX,
 } from "@/lib/sidebarWidthStorage"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useSidebarMounted } from "@/hooks/useSidebarMounted"
 import { cn } from "@/lib/utils"
+import { appChromePaddingClassName } from "@/components/shared/appChromeStyles"
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -205,6 +208,7 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const showMobileSidebar = useSidebarMounted() && isMobile
 
   if (collapsible === "none") {
     return (
@@ -221,7 +225,7 @@ function Sidebar({
     )
   }
 
-  if (isMobile) {
+  if (showMobileSidebar) {
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent
@@ -229,7 +233,12 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-[min(92vw,var(--sidebar-width))] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className={cn(
+            "w-[min(92vw,var(--sidebar-width))] p-0 text-sidebar-foreground [&>button]:hidden",
+            variant === "floating"
+              ? `${floatingGlassClasses} data-[side=left]:inset-y-2 data-[side=right]:inset-y-2 data-[side=left]:left-2 data-[side=right]:right-2 data-[side=left]:h-[calc(100svh-1rem)] data-[side=right]:h-[calc(100svh-1rem)]`
+              : "bg-sidebar"
+          )}
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -266,7 +275,7 @@ function Sidebar({
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
-            ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
+            ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(8)))]"
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
         )}
       />
@@ -277,7 +286,7 @@ function Sidebar({
           "fixed bottom-0 top-[var(--environment-banner-height,0px)] z-10 hidden h-[calc(100svh-var(--environment-banner-height,0px))] w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
-            ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
+            ? `${appChromePaddingClassName} group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(8))+2px)]`
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className
         )}
@@ -286,7 +295,10 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="relative flex size-full min-h-0 min-w-0 flex-col overflow-x-hidden bg-sidebar group-data-[variant=floating]:rounded-2xl group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className={cn(
+            "relative flex size-full min-h-0 min-w-0 flex-col overflow-x-hidden",
+            variant === "floating" ? floatingGlassClasses : "bg-sidebar"
+          )}
         >
           {children}
         </div>
@@ -335,6 +347,7 @@ function SidebarResizeHandle({
     setSidebarWidthPx,
     setSidebarResizing,
   } = useSidebar()
+  const mounted = useSidebarMounted()
 
   const clampWidth = React.useCallback((value: number) => {
     return Math.min(
@@ -409,7 +422,7 @@ function SidebarResizeHandle({
     [clampWidth, isMobile, open, setSidebarWidthPx, side]
   )
 
-  if (isMobile || !open) {
+  if ((mounted && isMobile) || !open) {
     return null
   }
 
@@ -471,7 +484,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "relative flex min-h-0 min-w-0 w-full flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
+        "relative flex min-h-0 min-w-0 w-full flex-1 flex-col bg-transparent md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
         className
       )}
       {...props}
