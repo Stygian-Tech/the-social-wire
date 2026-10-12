@@ -12,6 +12,7 @@ import {
   SIDEBAR_WIDTH_MAX_PX,
 } from "@/lib/sidebarWidthStorage"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useClientHydrated } from "@/hooks/useClientHydrated"
 import { cn } from "@/lib/utils"
 import { appChromePaddingClassName } from "@/components/shared/appChromeStyles"
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles"
@@ -207,6 +208,7 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const showMobileSidebar = useClientHydrated() && isMobile
 
   if (collapsible === "none") {
     return (
@@ -223,7 +225,7 @@ function Sidebar({
     )
   }
 
-  if (isMobile) {
+  if (showMobileSidebar) {
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent
