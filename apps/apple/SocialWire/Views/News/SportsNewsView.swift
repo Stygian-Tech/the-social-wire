@@ -110,7 +110,6 @@ struct SportsNewsView: View {
     }
 
     private func refresh() async {
-        await topic.load(language: language)
-        await topic.loadEvents()
+        await topic.refresh(language: language)
     }
 }

@@ -1,0 +1,80 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.corpus.getItems",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Internal service-authenticated batch of current eligible corpus items. Missing items are omitted; viewer credentials are forbidden.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "itemIds"
+          ],
+          "properties": {
+            "itemIds": {
+              "type": "array",
+              "minLength": 1,
+              "maxLength": 100,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "ref",
+              "ref": "app.thesocialwire.defs#jsonObject",
+              "description": "At most 100 current corpus item objects keyed by item ID. Each value has the item definition shape and its item.itemId must equal the key. Missing or ineligible items are omitted."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "ModerationUnavailable"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        },
+        {
+          "name": "InternalServerError"
+        }
+      ]
+    },
+    "item": {
+      "type": "object",
+      "required": [
+        "item"
+      ],
+      "properties": {
+        "item": {
+          "type": "ref",
+          "ref": "app.thesocialwire.discovery.defs#wireItem"
+        },
+        "sourceActorKey": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}

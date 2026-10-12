@@ -51,6 +51,14 @@ func (c *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"service": "wire-corpus-edge", "status": status}, false)
 		return
 	}
+	if path == corpuscore.BatchItemsPath {
+		if !c.authenticate(r, now) {
+			respondBatchStatus(w, 401)
+			return
+		}
+		c.batchItems(w, r, now)
+		return
+	}
 	if !strings.HasPrefix(path, "/internal/wire/v1/") {
 		respondStatus(w, 404)
 		return

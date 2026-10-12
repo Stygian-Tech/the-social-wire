@@ -73,6 +73,8 @@ import { SidebarListsSection } from "./SidebarListsSection";
 import { useStandardReaderList, useStandardReaderLists } from "@/hooks/useStandardReaderLists";
 import type { StandardReaderList } from "@/lib/standardReaderListsClient";
 import { AppSidebarBrandHeader } from "./AppSidebarBrandHeader";
+import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
+import { useDeferredFeedCatalogs } from "@/hooks/useDeferredFeedCatalogs";
 import { useFinanceCatalog } from "@/hooks/useFinanceCatalog";
 import { topicNavigationIsVisible } from "@/lib/topicNavigationVisibility";
 import { useSportsCatalog } from "@/hooks/useSportsCatalog";
@@ -179,9 +181,12 @@ export function AppSidebar({
     { enabled: sidebarDependentDataEnabled && usingSemble },
   );
   const { preferences: feedPreferences } = useFeedDisplayPreferences();
-  const wireCatalog = useWireFeedCatalog();
-  const sportsCatalog = useSportsCatalog();
-  const financeCatalog = useFinanceCatalog();
+  const dummyCatalogs = isDummyReaderDataEnabled();
+  const deferredCatalogsReady = useDeferredFeedCatalogs(!dummyCatalogs) || dummyCatalogs;
+  const selectedEditorialFeed = pathname.startsWith("/read") ? searchParams.get("feed") : null;
+  const wireCatalog = useWireFeedCatalog({ enabled: deferredCatalogsReady || selectedEditorialFeed === "wire" });
+  const sportsCatalog = useSportsCatalog({ enabled: deferredCatalogsReady || selectedEditorialFeed === "sports" });
+  const financeCatalog = useFinanceCatalog({ enabled: deferredCatalogsReady || selectedEditorialFeed === "finance" });
   const wireNavigationEnabled =
     feedPreferences.showWire &&
     wireCatalog.data?.enabled === true &&

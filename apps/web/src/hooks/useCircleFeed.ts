@@ -3,7 +3,8 @@
 import { isExpiredFeedCursor } from "@/lib/feedResponseError";
 import { useExpiredFeedCursorRecovery } from "@/hooks/useExpiredFeedCursorRecovery";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import {
   useInfiniteQuery,
   useMutation,
@@ -62,19 +63,13 @@ export function useCircleEdition(args: { enabled: boolean }) {
   );
   const languageKey = language ?? "default";
 
+  const queryKey = useMemo(() => [...CIRCLE_EDITION_QUERY_KEY(viewerDid, languageKey), oauthSessionReloadSeq], [viewerDid, languageKey, oauthSessionReloadSeq]);
   const query = useInfiniteQuery({
-    queryKey: [
-      ...CIRCLE_EDITION_QUERY_KEY(viewerDid, languageKey),
-      oauthSessionReloadSeq,
-    ],
+    queryKey,
     queryFn: ({ pageParam, signal }) => {
       if (!oauthSession) throw new Error("Your Circle requires sign-in.");
-      return getCircleEdition({
-        oauthSession,
-        language,
-        cursor: pageParam,
-        signal,
-      });
+      const fetchPage = () => getCircleEdition({ oauthSession, language, cursor: pageParam, signal });
+      return pageParam ? fetchPage() : coalesceFeedFirstPage(queryClient, oauthSession, queryKey, fetchPage);
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.moreCursor,
@@ -85,7 +80,8 @@ export function useCircleEdition(args: { enabled: boolean }) {
       catalog.data?.enabled === true &&
       catalog.data.available === true,
     staleTime: CIRCLE_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     retry: (count, error) => !isExpiredFeedCursor(error) && count < 1,
   });
 
@@ -97,7 +93,7 @@ export function useCircleEdition(args: { enabled: boolean }) {
     }),
     mutationFn: async () => {
       if (!oauthSession) throw new Error("Your Circle requires sign-in.");
-      return getCircleEdition({ oauthSession, language, bypassCache: true });
+      return coalesceFeedFirstPage(queryClient, oauthSession, queryKey, () => getCircleEdition({ oauthSession, language, bypassCache: true }));
     },
     onSuccess: async (fresh, _variables, context) => {
       // Mutation completion can outlive an account switch or sign-out. Only the
@@ -108,9 +104,25 @@ export function useCircleEdition(args: { enabled: boolean }) {
       queryClient.setQueryData(context.queryKey, { pages: [fresh], pageParams: [undefined] });
     },
   });
+  const restoredContext = useRef<string | null>(null);
+  useEffect(() => {
+    const context = JSON.stringify(queryKey);
+    if (!args.enabled || !query.isSuccess || query.isFetchedAfterMount || restoredContext.current === context || Date.now() - (queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0) < CIRCLE_STALE_TIME_MS) return;
+    restoredContext.current = context;
+    void refreshGeneration.mutateAsync().catch(() => {});
+  }, [args.enabled, query.isSuccess, query.isFetchedAfterMount, queryKey, queryClient, refreshGeneration]);
+  useEffect(() => {
+    if (!args.enabled || !query.isSuccess) return;
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - (queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0) >= CIRCLE_STALE_TIME_MS) void refreshGeneration.mutateAsync().catch(() => {});
+    };
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => { window.removeEventListener("focus", refreshVisible); document.removeEventListener("visibilitychange", refreshVisible); };
+  }, [args.enabled, query.isSuccess, queryClient, queryKey, refreshGeneration]);
   useExpiredFeedCursorRecovery(query.error, refreshGeneration.mutateAsync, args.enabled);
   return {
-    ...query, catalog, language,
+    ...query, refetch: refreshGeneration.mutateAsync, isFetching: query.isFetching || refreshGeneration.isPending, catalog, language,
     error: refreshGeneration.error ?? query.error,
     isError: refreshGeneration.isError || query.isError,
   };

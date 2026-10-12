@@ -228,20 +228,25 @@ final class XRPCClient {
     }
 
     private func readStateRequest(url: URL, session: AuthSession, body: Data?) async throws -> (Data, HTTPURLResponse) {
-        var request = URLRequest(url: url)
-        request.httpMethod = body == nil ? "GET" : "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        for attempt in 0...1 {
-            try await sign(&request, session: session)
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing PDS response.") }
-            await auth.dpop.updateNonce(from: http)
-            if attempt == 0, [400, 401].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil { continue }
-            return (data, http)
+        return try await auth.dpop.withNonceSequence(for: session.pdsURL, exclusive: false) { [self] in
+            guard auth.session?.did == session.did, auth.session?.accessToken == session.accessToken else {
+                throw ReadStateSyncFailure.accountChanged
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = body == nil ? "GET" : "POST"
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+            for attempt in 0...1 {
+                try await sign(&request, session: session)
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing PDS response.") }
+                await auth.dpop.updateNonce(from: http)
+                if attempt == 0, [400, 401].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil { continue }
+                return (data, http)
+            }
+            throw SocialWireError.notAuthenticated
         }
-        throw SocialWireError.notAuthenticated
     }
 
     func putRecord<Record: Encodable>(collection: String, rkey: String, record: Record, expectedViewer: String? = nil) async throws {
@@ -310,41 +315,47 @@ final class XRPCClient {
     }
 
     private func sendAuthorized(_ request: URLRequest, session: AuthSession) async throws -> (Data, HTTPURLResponse) {
-        var currentSession = session
-        // A resource rejection permits one token refresh; each token gets the existing bounded
-        // nonce ceremony. Only the viewer's own PDS may trigger credential recovery.
-        for recovery in 0 ... 1 {
-            var currentRequest = request
-            if recovery > 0 { try await sign(&currentRequest, session: currentSession) }
-            for attempt in 1 ... 3 {
-                let (data, response) = try await transport(currentRequest)
-                guard let http = response as? HTTPURLResponse else {
-                    throw SocialWireError.badResponse("Missing response.")
-                }
-                await auth.dpop.updateNonce(from: http)
-                let nonceChallenge = [400, 401].contains(http.statusCode)
-                    && http.value(forHTTPHeaderField: "DPoP-Nonce") != nil
-                if nonceChallenge, attempt < 3 {
-                    Self.logger.debug("XRPC DPoP nonce challenge, attempt \(attempt)")
-                    currentRequest = request
-                    try await sign(&currentRequest, session: currentSession)
-                    continue
-                }
-                let invalidToken = Self.isInvalidTokenResponse(http, data: data)
-                if http.statusCode == 401, (!nonceChallenge || invalidToken),
-                   Self.hasSameOrigin(request.url, currentSession.pdsURL) {
-                    if recovery == 0 {
-                        currentSession = try await auth.refreshedSession(rejected: currentSession)
-                        break
-                    }
-                    if invalidToken {
-                        auth.invalidateSessionAfterUnauthorizedResponse(rejected: currentSession)
-                    }
-                }
-                return (data, http)
+        return try await auth.dpop.withNonceSequence(for: session.pdsURL, exclusive: false) { [self] in
+            guard auth.session?.did == session.did, auth.session?.accessToken == session.accessToken else {
+                throw ReadStateSyncFailure.accountChanged
             }
+            var currentSession = session
+            // A resource rejection permits one token refresh; each token gets the existing bounded
+            // nonce ceremony. Only the viewer's own PDS may trigger credential recovery.
+            for recovery in 0 ... 1 {
+                var currentRequest = request
+                try Task.checkCancellation()
+                try await sign(&currentRequest, session: currentSession)
+                for attempt in 1 ... 3 {
+                    let (data, response) = try await transport(currentRequest)
+                    guard let http = response as? HTTPURLResponse else {
+                        throw SocialWireError.badResponse("Missing response.")
+                    }
+                    await auth.dpop.updateNonce(from: http)
+                    let nonceChallenge = [400, 401].contains(http.statusCode)
+                        && http.value(forHTTPHeaderField: "DPoP-Nonce") != nil
+                    if nonceChallenge, attempt < 3 {
+                        Self.logger.debug("XRPC DPoP nonce challenge, attempt \(attempt)")
+                        currentRequest = request
+                        try await sign(&currentRequest, session: currentSession)
+                        continue
+                    }
+                    let invalidToken = Self.isInvalidTokenResponse(http, data: data)
+                    if http.statusCode == 401, (!nonceChallenge || invalidToken),
+                       Self.hasSameOrigin(request.url, currentSession.pdsURL) {
+                        if recovery == 0 {
+                            currentSession = try await auth.refreshedSession(rejected: currentSession)
+                            break
+                        }
+                        if invalidToken {
+                            auth.invalidateSessionAfterUnauthorizedResponse(rejected: currentSession)
+                        }
+                    }
+                    return (data, http)
+                }
+            }
+            throw SocialWireError.badResponse("XRPC request exhausted authentication recovery.")
         }
-        throw SocialWireError.badResponse("XRPC request exhausted authentication recovery.")
     }
 
     nonisolated static func isInvalidTokenResponse(_ response: HTTPURLResponse, data: Data) -> Bool {

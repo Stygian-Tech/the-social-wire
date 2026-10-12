@@ -15,9 +15,11 @@ import {
   useQuery,
   useQueryClient,
   useIsRestoring,
+  type InfiniteData,
 } from "@tanstack/react-query";
 import { mergeStandardReaderListsPage, standardReaderListsQueryKey } from "@/lib/standardReaderListsClient";
 import { useAuth } from "@/hooks/useAuth";
+import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 import { queueBootstrapFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 import { consumeBootstrapStream } from "@/lib/bootstrapStreamClient";
 import {
@@ -289,7 +291,9 @@ function PublicationSidebarProviderInner({
                     pendingAutoSelectPublicationIdRef.current;
                   pendingAutoSelectPublicationIdRef.current = null;
                 }
-                if (bootstrapFeedPublicationIdRef.current) {
+                if (bootstrapFeedPublicationIdRef.current && !qc.getQueryData<InfiniteData<EntriesPage>>([
+                  ...ENTRIES_QUERY_KEY(did, normalizeAtRepoParam(bootstrapFeedPublicationIdRef.current)), "all",
+                ])?.pages.some(page => page.entries.length > 0)) {
                   queueBootstrapFeedRefresh({
                     queryClient: qc,
                     publicationKey: normalizeAtRepoParam(

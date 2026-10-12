@@ -11,7 +11,7 @@ import (
 )
 
 func (r Routes) registerFinance(mux *http.ServeMux) {
-	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinance", r.finance)
+	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinance", r.observeFeed("finance", r.finance))
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinanceCatalog", r.financeCatalog)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.searchFinanceInstruments", r.financeSearch)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinanceSectors", func(w http.ResponseWriter, req *http.Request) {

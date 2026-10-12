@@ -5,7 +5,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/financecore"
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
-	"golang.org/x/sync/errgroup"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -22,16 +22,22 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 	var initial corpuscore.FinanceGeneration
 	var err error
 	if cursor == "" {
+		started := time.Now()
 		initial, err = s.source(ctx, language, now)
+		ObserveFeedPhase(ctx, "source", time.Since(started))
 		if err != nil {
 			return FinancePage{}, err
 		}
 	}
-	initialCatalog, err := s.Catalog(ctx)
+	started := time.Now()
+	catalog, err := s.Catalog(ctx)
+	ObserveFeedPhase(ctx, "catalog", time.Since(started))
 	if err != nil {
 		return FinancePage{}, err
 	}
+	started = time.Now()
 	prefs, err := s.Selections.Finance(ctx, viewer, refresh && cursor == "", now)
+	ObserveFeedPhase(ctx, "selections", time.Since(started))
 	if err != nil {
 		return FinancePage{}, err
 	}
@@ -39,7 +45,7 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 	if feed == "finance" {
 		revision = financecore.PreferenceFingerprint(prefs.Instruments, prefs.Sectors)
 	} else {
-		revision = FinanceNamedRevision(initialCatalog)
+		revision = FinanceNamedRevision(catalog)
 	}
 	revision += ":" + s.Config.Policy.Revision()
 	if hideCrypto {
@@ -66,7 +72,9 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 		if err != nil {
 			return FinancePage{}, err
 		}
+		started = time.Now()
 		retained, err := s.retained(ctx, decoded.GenerationID, snapshotScope, language, revision, now)
+		ObserveFeedPhase(ctx, "snapshot-load", time.Since(started))
 		if err != nil {
 			return FinancePage{}, err
 		}
@@ -79,10 +87,7 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 		if !initial.ExpiresAt.After(now) {
 			return FinancePage{}, ErrUnavailable
 		}
-		catalog, err := s.Catalog(ctx)
-		if err != nil {
-			return FinancePage{}, err
-		}
+		started = time.Now()
 		definition, ok := financeDefinition(feed, catalog)
 		if !ok {
 			return FinancePage{}, ErrInvalidCursor
@@ -116,18 +121,17 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 			}
 		}
 		ranked := financecore.Rank(candidates, instruments, sectors, feed == "finance")
+		ObserveFeedPhase(ctx, "analysis", time.Since(started))
 		proposal := corpuscore.FinanceGeneration{GenerationID: newID(), GeneratedAt: initial.GeneratedAt, ExpiresAt: minTime(initial.ExpiresAt, now.Add(48*time.Hour)), Language: language, Candidates: ranked, Source: initial.Source}
+		started = time.Now()
 		snapshot, err = s.persist(ctx, proposal, initial, snapshotScope, revision, now)
+		ObserveFeedPhase(ctx, "snapshot-persistence", time.Since(started))
 		if err != nil {
 			return FinancePage{}, err
 		}
 	}
 	if ordinal > len(snapshot.Candidates) {
 		return FinancePage{}, ErrInvalidCursor
-	}
-	catalog, err := s.Catalog(ctx)
-	if err != nil {
-		return FinancePage{}, err
 	}
 	definition, ok := financeDefinition(feed, catalog)
 	if !ok {
@@ -141,28 +145,28 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 	}
 	accepted := []FinanceItem{}
 	for ordinal < len(snapshot.Candidates) && len(accepted) < limit {
-		end := min(ordinal+10, len(snapshot.Candidates))
+		end := min(ordinal+corpuscore.MaximumBatchItems, len(snapshot.Candidates))
 		batch := snapshot.Candidates[ordinal:end]
-		current := make([]*wirecore.FeedItem, len(batch))
-		g, gctx := errgroup.WithContext(ctx)
-		for index, candidate := range batch {
-			g.Go(func() error {
-				item, err := s.Wire.Item(gctx, candidate.Item.ItemID, viewer, now)
-				if err != nil {
-					return err
-				}
-				if item != nil {
-					current[index] = &item.Item
-				}
-				return nil
-			})
+		ids := make([]string, 0, len(batch))
+		seen := map[string]bool{}
+		for _, candidate := range batch {
+			if !seen[candidate.Item.ItemID] {
+				ids = append(ids, candidate.Item.ItemID)
+				seen[candidate.Item.ItemID] = true
+			}
 		}
-		if err = g.Wait(); err != nil {
+		started := time.Now()
+		current, err := s.Wire.Items(ctx, ids, viewer, now)
+		ObserveFeedPhase(ctx, "rehydration", time.Since(started))
+		slog.Debug("Topic feed phase", "feed", feed, "phase", "rehydration", "duration_ms", time.Since(started).Milliseconds(), "candidates", len(ids))
+		if err != nil {
 			return FinancePage{}, err
 		}
-		for index, candidate := range batch {
+
+		started = time.Now()
+		for _, candidate := range batch {
 			ordinal++
-			item := current[index]
+			item := current[candidate.Item.ItemID]
 			if item == nil {
 				continue
 			}
@@ -191,6 +195,7 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 				break
 			}
 		}
+		ObserveFeedPhase(ctx, "analysis", time.Since(started))
 	}
 	var next *string
 	if ordinal < len(snapshot.Candidates) {

@@ -1,5 +1,7 @@
 "use client";
 
+import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
+
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useSportsFeed } from "@/hooks/useSportsFeed";
@@ -24,6 +26,7 @@ import { useSportsDisplayLocale } from "@/hooks/useSportsDisplayLocale";
 export default function SportsExperience({ feedID = "sports", onFeedChange }: { feedID?: string; onFeedChange?: (id: string) => void }) {
   const locale = useSportsDisplayLocale();
   const sports = useSportsFeed(feedID);
+  useFeedFirstContentTiming(`sports:${feedID}:${sports.viewerDID ?? "public"}`, sports.items.length > 0, !sports.feed.isFetchedAfterMount);
   const { catalogEntities, entitiesByID, definitions } = useMemo(() => {
     const catalogEntities = sports.catalog.data?.entities ?? [];
     const entitiesByID = new Map(catalogEntities.map(entity => [entity.id, entity]));

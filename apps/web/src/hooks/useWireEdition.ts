@@ -3,7 +3,7 @@
 import { isExpiredFeedCursor } from "@/lib/feedResponseError";
 import { useExpiredFeedCursorRecovery } from "@/hooks/useExpiredFeedCursorRecovery";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -13,6 +13,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import { useAuth } from "@/hooks/useAuth";
 import { useWireFeedCatalog } from "@/hooks/useWireFeed";
 import { WIRE_MODERATION_RPC_SCOPES } from "@/lib/atprotoOAuthScopes";
@@ -22,7 +23,6 @@ import {
   type WireEditionPage,
 } from "@/lib/wireEditionClient";
 import {
-  createWireModerationDpopProofPool,
   getWire,
   selectWireLanguage,
   selectWireViewerRegion,
@@ -76,7 +76,7 @@ export function useWireEdition(args: {
   enabled: boolean;
   refreshCachedOnMount?: boolean;
 }) {
-  const catalog = useWireFeedCatalog();
+  const catalog = useWireFeedCatalog({ enabled: args.enabled });
   const {
     session,
     isLoading: authLoading,
@@ -128,7 +128,6 @@ export function useWireEdition(args: {
         : "baseline";
   const modeKey = moderationModeKey;
   const queryKey = WIRE_EDITION_QUERY_KEY(languageKey, regionKey, modeKey);
-  const refreshKeyRef = useRef<string | null>(null);
 
   const requireModerationReady = useCallback(() => {
     if (
@@ -154,14 +153,11 @@ export function useWireEdition(args: {
         return getWireEdition({ language, region, signal, bypassCache });
       }
       if (!oauthSession) throw WIRE_MODERATION_SESSION_ERROR;
-      const moderationDpopProofPool =
-        await createWireModerationDpopProofPool(oauthSession);
       return getWireEdition({
         language,
         region,
         signal,
         oauthSession,
-        moderationDpopProofPool,
         bypassCache,
       });
     },
@@ -176,7 +172,7 @@ export function useWireEdition(args: {
 
   const query = useInfiniteQuery({
     queryKey,
-    queryFn: ({ signal }) => fetchEditionPage(signal),
+    queryFn: ({ signal }) => coalesceFeedFirstPage(queryClient, oauthSession, queryKey, () => fetchEditionPage(signal)),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: () => undefined,
     enabled:
@@ -202,16 +198,13 @@ export function useWireEdition(args: {
         );
       }
       if (!oauthSession) throw WIRE_MODERATION_SESSION_ERROR;
-      const moderationDpopProofPool =
-        await createWireModerationDpopProofPool(oauthSession);
       return wirePageToEntriesPage(
         await getWire({
           cursor,
           language,
           signal,
           oauthSession,
-          moderationDpopProofPool,
-        }),
+          }),
       );
     },
     [
@@ -240,7 +233,7 @@ export function useWireEdition(args: {
 
   const refreshFirstPageMutation = useMutation({
     mutationKey: ["refreshWireEdition", languageKey, regionKey, modeKey],
-    mutationFn: async () => fetchEditionPage(undefined, true),
+    mutationFn: async () => coalesceFeedFirstPage(queryClient, oauthSession, queryKey, () => fetchEditionPage(undefined, true)),
     onMutate: () => ({ languageKey, regionKey, modeKey, oauthSession }),
     onSuccess: async (fresh, _variables, context) => {
       if (!context || getOAuthSession() !== context.oauthSession) return;
@@ -270,31 +263,7 @@ export function useWireEdition(args: {
     refreshFirstPage,
   ]);
 
-  useEffect(() => {
-    if (
-      !args.refreshCachedOnMount ||
-      !query.data?.pages.length ||
-      query.isFetchedAfterMount ||
-      !query.isSuccess
-    ) {
-      return;
-    }
-    const firstPage = query.data.pages[0];
-    const refreshKey = `${languageKey}:${modeKey}:${firstPage?.generationId ?? ""}`;
-    if (refreshKeyRef.current === refreshKey) return;
-    refreshKeyRef.current = refreshKey;
-    void refreshFirstPage().catch(() => {
-      // A persisted edition remains useful during a partial outage.
-    });
-  }, [
-    args.refreshCachedOnMount,
-    languageKey,
-    modeKey,
-    query.data?.pages,
-    query.isFetchedAfterMount,
-    query.isSuccess,
-    refreshFirstPage,
-  ]);
+
 
   return {
     ...query,

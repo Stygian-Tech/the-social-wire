@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useSportsCatalog } from "@/hooks/useSportsCatalog";
 import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import { useAuth } from "@/hooks/useAuth";
 import { hasWireModerationScopes } from "@/hooks/useWireFeed";
 import { useExpiredFeedCursorRecovery } from "@/hooks/useExpiredFeedCursorRecovery";
@@ -24,7 +25,10 @@ export function useSportsFeed(feedID = "sports") {
     const selectionKey = useMemo(() => ["sportsSelections", viewer, oauthSessionReloadSeq], [viewer, oauthSessionReloadSeq]);
     const selections = useQuery({ queryKey: selectionKey, queryFn: () => listSportsSelections(oauth!, session!.did), enabled: !!oauth && !!session, staleTime: 60000 });
     const moderation = useQuery({ queryKey: ["sportsModeration", session?.did ?? "public", oauthSessionReloadSeq], queryFn: async () => hasWireModerationScopes((await oauth!.getTokenInfo("auto")).scope), enabled: !!oauth && !!session, staleTime: Infinity });
-    const fingerprint = sportsPreferenceFingerprint(selections.data ?? []);
+    // Initial controls are optional; their arrival must not restart server-authoritative news.
+    const preferenceContext = `${viewer}:${oauthSessionReloadSeq}`;
+    const [preferenceRevision, setPreferenceRevision] = useState(() => ({ context: preferenceContext, value: sportsPreferenceFingerprint(selections.data ?? []), verified: selections.isSuccess, refreshSelections: false }));
+    const fingerprint = (preferenceRevision.context === preferenceContext ? preferenceRevision.value : sportsPreferenceFingerprint([]));
     const mode = session ? moderation.data === true ? "viewer" : "blocked" : "baseline";
     const key = useMemo(() => ["sportsEntries", feedID, viewer, language, region, mode, fingerprint, oauthSessionReloadSeq], [feedID, viewer, language, region, mode, fingerprint, oauthSessionReloadSeq]);
     const context = JSON.stringify(key);
@@ -37,8 +41,26 @@ export function useSportsFeed(feedID = "sports") {
         context: string;
         items: SportsPage["items"];
     } | null>(null);
-    const enabled = !isLoading && (!session || (!!oauth && moderation.data === true && selections.isSuccess));
-    const feed = useInfiniteQuery({ queryKey: key, queryFn: ({ pageParam, signal }) => getSports({ feed: feedID, cursor: pageParam, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal }), initialPageParam: undefined as string | undefined, getNextPageParam: page => page.cursor, enabled: enabled && optimisticItems?.context !== context, staleTime: 60000, gcTime: 60 * 60000, maxPages: 20, refetchOnWindowFocus: false, refetchOnMount: false, retry: (count, error) => !isExpiredFeedCursor(error) && count < 1 });
+    const enabled = !isLoading && (!session || (!!oauth && moderation.data === true));
+    const feed = useInfiniteQuery({ queryKey: key, queryFn: ({ pageParam, signal }) => pageParam ? getSports({ feed: feedID, cursor: pageParam, refreshSelections: !pageParam && preferenceRevision.context === preferenceContext && preferenceRevision.refreshSelections, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal }) : coalesceFeedFirstPage(client, oauth, key, () => getSports({ feed: feedID, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal, refreshSelections: preferenceRevision.context === preferenceContext && preferenceRevision.refreshSelections })), initialPageParam: undefined as string | undefined, getNextPageParam: page => page.cursor, enabled: enabled && optimisticItems?.context !== context, staleTime: 60000, gcTime: 60 * 60000, maxPages: 20, refetchOnWindowFocus: false, refetchOnMount: false, retry: (count, error) => !isExpiredFeedCursor(error) && count < 1 });
+    const controlsFingerprint = sportsPreferenceFingerprint(selections.data ?? []);
+    useEffect(() => {
+        if (!selections.isSuccess || optimisticItems?.context === context) return;
+        const verified = preferenceRevision.context === preferenceContext && preferenceRevision.verified;
+        const currentFingerprint = preferenceRevision.context === preferenceContext ? preferenceRevision.value : sportsPreferenceFingerprint([]);
+        if (verified && controlsFingerprint === currentFingerprint) return;
+        if (!verified && !feed.data?.pages.length) return;
+        const nextFingerprint = controlsFingerprint;
+        const nextKey = ["sportsEntries", feedID, viewer, language, region, mode, nextFingerprint, oauthSessionReloadSeq];
+        // A cold server response is already authoritative. Attach its generation to
+        // the first control snapshot without issuing a second news request.
+        const canReuseColdPage = !verified && feed.isFetchedAfterMount;
+        if (canReuseColdPage && feed.data) client.setQueryData(nextKey, feed.data);
+        else if (controlsFingerprint !== currentFingerprint) client.removeQueries({ queryKey: nextKey, exact: true });
+        // Reconcile independently fetched PDS controls with the server generation.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setPreferenceRevision({ context: preferenceContext, value: controlsFingerprint, verified: true, refreshSelections: !canReuseColdPage && controlsFingerprint !== currentFingerprint });
+    }, [selections.isSuccess, controlsFingerprint, optimisticItems?.context, context, preferenceRevision, preferenceContext, feed.data, feed.isFetchedAfterMount, client, feedID, viewer, language, region, mode, oauthSessionReloadSeq]);
     const refresh = useCallback(async () => {
         const captured = context;
         let targetKey = key;
@@ -46,13 +68,13 @@ export function useSportsFeed(feedID = "sports") {
         setRefreshState({context: captured, pending: true, error: null});
         try {
             if (oauth && viewer !== "public") {
-                const latest = await listSportsSelections(oauth, viewer);
+                const latest = selections.data ?? [];
                 if (currentContext.current !== captured || getOAuthSession() !== oauth) return;
                 targetKey = ["sportsEntries", feedID, viewer, language, region, mode, sportsPreferenceFingerprint(latest), oauthSessionReloadSeq];
                 targetContext = JSON.stringify(targetKey);
-                client.setQueryData(selectionKey, latest);
+                setPreferenceRevision({ context: preferenceContext, value: sportsPreferenceFingerprint(latest), verified: selections.isSuccess, refreshSelections: false });
             }
-            const page = await getSports({ feed: feedID, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, refreshSelections: !!oauth });
+            const page = await coalesceFeedFirstPage(client, oauth, targetKey, () => getSports({ feed: feedID, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, refreshSelections: !!oauth }));
             if ((currentContext.current !== captured && currentContext.current !== targetContext) || getOAuthSession() !== oauth)
                 return;
             await client.cancelQueries({ queryKey: targetKey, exact: true });
@@ -60,6 +82,9 @@ export function useSportsFeed(feedID = "sports") {
                 return;
             client.setQueryData<InfiniteData<SportsPage, string | undefined>>(targetKey, { pages: [page], pageParams: [undefined] });
             setOptimisticItems(null);
+            // Reconcile controls after fresh content is visible; another client
+            // may have changed PDS interests used by the server refresh.
+            void client.invalidateQueries({ queryKey: selectionKey, exact: true }).catch(() => undefined);
         }
         catch (error) {
             if (currentContext.current === captured || currentContext.current === targetContext)
@@ -69,14 +94,14 @@ export function useSportsFeed(feedID = "sports") {
             if (currentContext.current === captured || currentContext.current === targetContext)
                 setRefreshState(previous => previous.context === captured || previous.context === targetContext ? {...previous, pending: false} : previous);
         }
-    }, [context, feedID, language, region, mode, viewer, oauthSessionReloadSeq, selectionKey, oauth, getOAuthSession, client, key]);
+    }, [context, feedID, language, region, mode, viewer, oauthSessionReloadSeq, selectionKey, selections.data, selections.isSuccess, preferenceContext, oauth, getOAuthSession, client, key]);
     useExpiredFeedCursorRecovery(feed.error, refresh, enabled);
     const refreshedContext = useRef<string | null>(null);
     useEffect(() => {
-        if (!enabled || !feed.data?.pages.length || feed.isFetchedAfterMount || optimisticItems?.context === context || refreshedContext.current === context) return;
+        if (!enabled || !feed.data?.pages.length || feed.isFetchedAfterMount || Date.now() - (client.getQueryState(key)?.dataUpdatedAt ?? 0) < 60000 || optimisticItems?.context === context || refreshedContext.current === context) return;
         refreshedContext.current = context;
         void refresh();
-    }, [enabled, feed.data?.pages.length, feed.isFetchedAfterMount, optimisticItems?.context, context, refresh]);
+    }, [enabled, feed.data?.pages.length, feed.isFetchedAfterMount, optimisticItems?.context, context, refresh, client, key]);
     const mutation = useMutation({ mutationFn: async ({ selection, remove }: {
             selection: SportsSelection;
             remove: boolean;
@@ -90,11 +115,13 @@ export function useSportsFeed(feedID = "sports") {
             const next = remove ? previous.filter(s => s.reference !== selection.reference) : [...previous.filter(s => s.reference !== selection.reference), selection];
             const items = optimisticItems?.context === context ? optimisticItems.items : feed.data?.pages.flatMap(p => p.items) ?? [];
             await client.cancelQueries({ queryKey: selectionKey, exact: true });
+            setPreferenceRevision({ context: preferenceContext, value: sportsPreferenceFingerprint(next), verified: true, refreshSelections: true });
             client.setQueryData(selectionKey, next);
             const nextKey = ["sportsEntries", feedID, session?.did ?? "public", language, region, mode, sportsPreferenceFingerprint(next), oauthSessionReloadSeq];
             setOptimisticItems({ context: JSON.stringify(nextKey), items: reorderSportsItems(items, next, feedID === "sports") });
             return { previous, captured };
         }, onError: (_error, _variables, rollback) => { if (rollback && getOAuthSession() === oauth) {
+            setPreferenceRevision({ context: preferenceContext, value: sportsPreferenceFingerprint(rollback.previous), verified: true, refreshSelections: false });
             client.setQueryData(selectionKey, rollback.previous);
             setOptimisticItems(null);
         } }, onSuccess: () => { } });

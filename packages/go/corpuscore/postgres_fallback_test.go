@@ -103,6 +103,10 @@ func TestPostgresFallbackCircleAndViewOnlyRole(t *testing.T) {
 			t.Fatalf("rank parity %d %s", i, r.Item.ItemID)
 		}
 	}
+	batch, err := store.Items(ctx, []string{page.Rows[0].Item.ItemID, "missing-view-only-batch-item"}, now)
+	if err != nil || len(batch) != 1 || batch[0].Item.ItemID != page.Rows[0].Item.ItemID {
+		t.Fatal("batch requires only serving-view permissions", batch, err)
+	}
 	limit := 5000
 	edition, err := store.Edition(ctx, EditionQuery{Language: "en", FallbackLimit: &limit}, now)
 	if err != nil || len(edition.FallbackRows) != 4 {

@@ -14,19 +14,34 @@ import (
 
 type financeWireFixture struct {
 	corpuscore.Store
-	items map[string]wirecore.FeedItem
+	items      map[string]wirecore.FeedItem
+	batchCalls int
+	itemCalls  int
 }
 
 func (f *financeWireFixture) Item(_ context.Context, id string, _ time.Time) (*corpuscore.Item, error) {
+	f.itemCalls++
 	item, ok := f.items[id]
 	if !ok {
 		return nil, nil
 	}
 	return &corpuscore.Item{Item: item}, nil
 }
+func (f *financeWireFixture) Items(_ context.Context, ids []string, _ time.Time) ([]corpuscore.Item, error) {
+	f.batchCalls++
+	result := []corpuscore.Item{}
+	// Deliberately return reverse order to verify pages keep snapshot order.
+	for index := len(ids) - 1; index >= 0; index-- {
+		if item, ok := f.items[ids[index]]; ok {
+			result = append(result, corpuscore.Item{Item: item})
+		}
+	}
+	return result, nil
+}
 func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	db := selectionDB(t)
-	ctx := context.Background()
+	dbPhases := map[string]int{}
+	ctx := WithFeedPhaseObserver(context.Background(), func(phase string, _ time.Duration) { dbPhases[phase]++ })
 	now := time.Now().UTC().Truncate(time.Second)
 	generation := "77777777-1111-1111-1111-111111111111"
 	instrument := financecore.ReviewedInstruments()[0]
@@ -71,6 +86,9 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Cursor == nil {
 		t.Fatal(page, err)
 	}
+	if fixture.batchCalls != 1 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 {
+		t.Fatal("first-page batch budget", fixture.batchCalls, fixture.itemCalls)
+	}
 	decoded, err := store.Cursor.Decode(*page.Cursor, "en", page.PreferenceRevision, mustHash(t, store.Hasher, "anonymous-finance"), "finance", now)
 	if err != nil || decoded.NextOrdinal != 1 || decoded.ExpiresAt != topicExpiry(now.Add(time.Hour)) {
 		t.Fatal(decoded, err)
@@ -82,6 +100,9 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	next, err := store.Page(ctx, *page.Cursor, 1, "en", "", false, now, "finance", false)
 	if err != nil || len(next.Items) != 1 || next.Items[0].Story.ItemID != "c" || next.Cursor != nil {
 		t.Fatal(next, err)
+	}
+	if fixture.batchCalls != 2 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 2 || dbPhases["db-query"] != 2 {
+		t.Fatal("continuation batch budget", fixture.batchCalls, fixture.itemCalls)
 	}
 	if _, err = store.Page(ctx, *page.Cursor, 1, "en", "different-viewer", false, now, "finance", false); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatal("cross viewer cursor accepted", err)

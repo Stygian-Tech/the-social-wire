@@ -77,6 +77,27 @@ describe("bootstrap feed recovery", () => {
     }
   });
 
+  it("coalesces simultaneous focus and visibility refreshes for a cached feed", async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(queryKey, { pages: [page], pageParams: [undefined] });
+    process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = "https://api.example.test";
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    let feedRequests = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("getFeed")) { feedRequests++; await gate; return Response.json(page); }
+      return Response.json({ counts: {} });
+    }) as unknown as typeof fetch;
+    const args = { queryClient, publicationKey, viewerDid, oauthSession: oauthSession() };
+    const first = refreshPublicationFeedFirstPage(args);
+    const second = refreshPublicationFeedFirstPage(args);
+    expect(second).toBe(first);
+    finish();
+    await Promise.all([first, second]);
+    expect(feedRequests).toBe(1);
+    queryClient.clear();
+  });
+
   it("coalesces encoded/canonical bootstrap events with an in-flight normal feed fetch", async () => {
     const queryClient = new QueryClient();
     let complete!: (page: EntriesPage) => void;

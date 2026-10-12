@@ -65,7 +65,7 @@ func TestWireRoutesAnonymousCachingAndAuthenticatedDenial(t *testing.T) {
 	request = request.WithContext(gatewaycore.ContextWithAuth(request.Context(), gatewaycore.AuthContext{DID: "did:example:viewer"}))
 	denied := httptest.NewRecorder()
 	mux.ServeHTTP(denied, request)
-	if denied.Code != 503 {
+	if denied.Code != 428 || !strings.Contains(denied.Body.String(), `"error":"UpstreamProofRequired"`) || denied.Header().Get("Cache-Control") != "private, no-store" {
 		t.Fatal(denied.Code)
 	}
 	m.Cache.Store("did:example:viewer", topicreadcore.ModerationSnapshot{FetchedAt: time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)})

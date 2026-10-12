@@ -90,6 +90,10 @@ func TestPostgresAuthoritativeCacheAndCursor(t *testing.T) {
 	if store.Cache.Statistics()["feed_hit"] != 1 || store.Cache.Statistics()["edition_hit"] != 1 || store.Cache.Statistics()["item_hit"] != 1 {
 		t.Fatal(store.Cache.Statistics())
 	}
+	batch, err := store.Items(ctx, []string{key, "missing-batch-item"}, now)
+	if err != nil || len(batch) != 1 || batch[0].Item.Title != "Before" {
+		t.Fatal(batch, err)
+	}
 	execFixture(t, db, `UPDATE wire_items SET title='After',author_key='did:example:changed' WHERE canonical_key=$1`, key)
 	item, err := store.Item(ctx, key, now)
 	if err != nil || item == nil || item.Item.Title != "After" {
@@ -99,9 +103,17 @@ func TestPostgresAuthoritativeCacheAndCursor(t *testing.T) {
 	if err != nil || edition.SourceActorKeysByItemID[key] != "did:example:changed" || edition.LeadStories[0].Title != "After" {
 		t.Fatalf("edited edition %+v %v", edition, err)
 	}
+	batch, err = store.Items(ctx, []string{key}, now)
+	if err != nil || len(batch) != 1 || batch[0].Item.Title != "After" || batch[0].SourceActorKey == nil || *batch[0].SourceActorKey != "did:example:changed" {
+		t.Fatal(batch, err)
+	}
 	execFixture(t, db, `INSERT INTO wire_labels(canonical_key,label_key,label_value,source,applied_at,expires_at) VALUES($1,'block','block','test',$2,$3)`, key, now, now.Add(time.Hour))
 	if item, err := store.Item(ctx, key, now); err != nil || item != nil {
 		t.Fatalf("blocked item %v %v", item, err)
+	}
+	batch, err = store.Items(ctx, []string{key}, now)
+	if err != nil || len(batch) != 0 {
+		t.Fatal("blocked batch item", batch, err)
 	}
 	page, err := store.Feed(ctx, FeedQuery{Language: "en", GenerationID: &id, Limit: 10}, now)
 	if err != nil || len(page.Rows) != 0 {
@@ -174,5 +186,37 @@ func TestPostgresSportsScopeAndOrdering(t *testing.T) {
 	events, err = store.SportsEvents(ctx, EventsQuery{CompetitionIDs: []string{nhl}, Global: false}, now)
 	if err != nil || len(events) != 500 || events[0].ID != "corpus-live" {
 		t.Fatalf("prelimit ordering count %d %v", len(events), err)
+	}
+}
+
+func TestPostgresBatchServingExclusionsAndLiveRemoval(t *testing.T) {
+	db := corpusDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	queryPhases := map[string]int{}
+	ctx := WithQueryObserver(context.Background(), func(phase string, _ time.Duration) { queryPhases[phase]++ })
+	keys := []string{"batch-security-current", "batch-security-expired", "batch-security-ad", "batch-security-ineligible", "batch-security-label"}
+	labeler := "did:example:batch-security"
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM wire_labels WHERE canonical_key=ANY($1::text[])`, keys)
+		db.Exec(`DELETE FROM wire_items WHERE canonical_key=ANY($1::text[])`, keys)
+		db.Exec(`DELETE FROM wire_label_refresh_state WHERE source_did=$1`, labeler)
+	})
+	execFixture(t, db, `INSERT INTO wire_label_refresh_state(source_did,endpoint_host,last_attempted_at,last_successful_at,target_count,label_count,is_current) VALUES($1,'labels.example',$2,$2,0,0,TRUE)`, labeler, now)
+	for _, key := range keys {
+		execFixture(t, db, `INSERT INTO wire_items(canonical_key,canonical_url,source_domain,source_name,title,first_seen_at,last_seen_at,expires_at,language_code,author_key) VALUES($1,'https://example.com/'||$1,'example.com','Example','Current',$2,$2,$3,'en','did:example:author')`, key, now, now.Add(time.Hour))
+	}
+	execFixture(t, db, `UPDATE wire_items SET expires_at=$2 WHERE canonical_key=$1`, keys[1], now.Add(-time.Hour))
+	execFixture(t, db, `UPDATE wire_items SET commercial_class='probable_ad' WHERE canonical_key=$1`, keys[2])
+	execFixture(t, db, `UPDATE wire_items SET eligible=FALSE WHERE canonical_key=$1`, keys[3])
+	execFixture(t, db, `INSERT INTO wire_labels(canonical_key,label_key,label_value,source,applied_at,expires_at) VALUES($1,'spam','spam','test',$2,$3)`, keys[4], now, now.Add(time.Hour))
+	store := &PostgreSQLStore{DB: db, Cache: redisCache(t)}
+	items, err := store.Items(ctx, keys, now)
+	if err != nil || len(items) != 1 || items[0].Item.ItemID != keys[0] || queryPhases["db-acquisition"] != 2 || queryPhases["db-query"] != 2 || db.Stats().InUse != 0 {
+		t.Fatal(items, err)
+	}
+	execFixture(t, db, `DELETE FROM wire_items WHERE canonical_key=$1`, keys[0])
+	items, err = store.Items(ctx, keys, now)
+	if err != nil || len(items) != 0 {
+		t.Fatal("removed current item retained", items, err)
 	}
 }

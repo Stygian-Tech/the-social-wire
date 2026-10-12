@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import type { ModerationOpts } from "@atproto/api";
 import { useAuth } from "@/hooks/useAuth";
 import { getBlueskySocialPage, hydrateBlueskySocialPage, nextSocialCursor, type SocialFeed, type BlueskySocialPage } from "@/lib/blueskySocialClient";
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 
 export function useBlueskySocialTimeline(feed: SocialFeed, moderation: ModerationOpts | undefined) {
@@ -52,7 +53,15 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
     // The key follows the same pages; avoid restarting decoration on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages, client, getOAuthSession, moderation]);
-  return query;
+  const refreshFirstPage = async (freshModeration = moderation) => {
+    const oauth = getOAuthSession();
+    if (!oauth || !freshModeration || freshModeration.userDid !== oauth.did) throw new Error(SCOPE_RECOVERY_MESSAGE);
+    const freshKey = ["blueskySocial", oauth.did, "timeline", oauthSessionReloadSeq, feed.kind, feed.uri, freshModeration.prefs.labelers.map(labeler => labeler.did)];
+    const page = await coalesceFeedFirstPage(client, oauth, freshKey, () => getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true }));
+    if (getOAuthSession() !== oauth) return;
+    client.setQueryData<InfiniteData<BlueskySocialPage>>(freshKey, { pages: [page], pageParams: [undefined] });
+  };
+  return { ...query, refreshFirstPage };
 }
 
 const decoratedPages = new WeakSet<BlueskySocialPage>();

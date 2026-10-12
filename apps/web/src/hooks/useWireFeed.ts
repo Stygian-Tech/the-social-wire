@@ -15,7 +15,6 @@ import {
 
 import { entriesNextPageParam } from "@/hooks/useEntries";
 import {
-  createWireModerationDpopProofPool,
   getWire,
   getWireFeedCatalog,
   selectWireLanguage,
@@ -23,6 +22,7 @@ import {
   type WireEntriesPage,
 } from "@/lib/wireFeedClient";
 import { recordClientPerformance } from "@/lib/clientPerformanceTelemetry";
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import { useAuth } from "@/hooks/useAuth";
 import { WIRE_MODERATION_RPC_SCOPES } from "@/lib/atprotoOAuthScopes";
 
@@ -83,9 +83,10 @@ export function setWireRefreshStatus(
   );
 }
 
-export function useWireFeedCatalog() {
+export function useWireFeedCatalog({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: WIRE_CATALOG_QUERY_KEY,
+    enabled,
     queryFn: ({ signal }) => getWireFeedCatalog(signal),
     staleTime: 60_000,
     gcTime: 60 * 60_000,
@@ -98,7 +99,7 @@ export function useWireFeedEntries(args: {
   enabled: boolean;
   refreshCachedOnMount?: boolean;
 }) {
-  const catalog = useWireFeedCatalog();
+  const catalog = useWireFeedCatalog({ enabled: args.enabled });
   const {
     session,
     isLoading: authLoading,
@@ -179,14 +180,11 @@ export function useWireFeedEntries(args: {
       if (!oauthSession) {
         throw WIRE_MODERATION_SESSION_ERROR;
       }
-      const moderationDpopProofPool =
-        await createWireModerationDpopProofPool(oauthSession);
       return getWire({
         cursor,
         language,
         signal,
         oauthSession,
-        moderationDpopProofPool,
       });
     },
     [
@@ -202,8 +200,9 @@ export function useWireFeedEntries(args: {
 
   const query = useInfiniteQuery({
     queryKey,
-    queryFn: async ({ pageParam, signal }) =>
-      wirePageToEntriesPage(await fetchWirePage(pageParam, signal)),
+    queryFn: async ({ pageParam, signal }) => pageParam
+      ? wirePageToEntriesPage(await fetchWirePage(pageParam, signal))
+      : coalesceFeedFirstPage(queryClient, oauthSession, queryKey, async () => wirePageToEntriesPage(await fetchWirePage(undefined, signal))),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: entriesNextPageParam,
     enabled:
@@ -222,7 +221,7 @@ export function useWireFeedEntries(args: {
 
   const refreshFirstPageMutation = useMutation({
     mutationKey: ["refreshWireFirstPage", languageKey, modeKey],
-    mutationFn: async () => wirePageToEntriesPage(await fetchWirePage()),
+    mutationFn: async () => coalesceFeedFirstPage(queryClient, oauthSession, queryKey, async () => wirePageToEntriesPage(await fetchWirePage())),
     onMutate: () => {
       setWireRefreshStatus(queryClient, languageKey, modeKey, {
         isPending: true,
@@ -274,6 +273,7 @@ export function useWireFeedEntries(args: {
 
   useEffect(() => {
     if (
+      !args.enabled ||
       !args.refreshCachedOnMount ||
       !query.data?.pages.length ||
       query.isFetchedAfterMount ||
@@ -288,6 +288,7 @@ export function useWireFeedEntries(args: {
       // Persisted ranked rows remain useful during a partial outage.
     });
   }, [
+    args.enabled,
     args.refreshCachedOnMount,
     languageKey,
     modeKey,

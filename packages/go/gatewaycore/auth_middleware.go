@@ -3,6 +3,7 @@ package gatewaycore
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -44,6 +45,7 @@ func newAuthMiddleware(config AuthConfig, client *http.Client, optional bool) fu
 	receipt, _ := NewAttestationReceipt(config.AttestationSecret)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			started := time.Now()
 			if _, ok := AuthContextFrom(r.Context()); ok {
 				next.ServeHTTP(w, r)
 				return
@@ -134,6 +136,7 @@ func newAuthMiddleware(config AuthConfig, client *http.Client, optional bool) fu
 				w.Header().Set(ReceiptHeader, responseReceipt)
 			}
 			auth := AuthContext{candidate.DID, authorization, proof, strings.TrimSpace(r.Header.Get("X-ATProto-Upstream-DPoP"))}
+			w.Header().Add("Server-Timing", fmt.Sprintf("auth;dur=%.3f", float64(time.Since(started))/float64(time.Millisecond)))
 			next.ServeHTTP(w, r.WithContext(ContextWithAuth(r.Context(), auth)))
 		})
 	}

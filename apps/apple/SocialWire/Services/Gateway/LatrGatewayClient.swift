@@ -1,5 +1,6 @@
 import Foundation
 import LatrKit
+import ReadStateCore
 
 /// Bookmark XRPC client routed through the Social Wire Gateway. Application credentials remain
 /// server-side; the native client supplies gateway-, L@tr-, and PDS-bound DPoP proofs.
@@ -193,6 +194,16 @@ final class LatrGatewayClient {
     }
 
     private func migrateLegacyPage(_ input: LatrMigrateBookmarksInput) async throws -> Data {
+        let session = try await auth.validSession()
+        return try await auth.dpop.withNonceSequence(for: session.pdsURL) { [self] in
+            guard auth.session?.did == session.did, auth.session?.accessToken == session.accessToken else {
+                throw ReadStateSyncFailure.accountChanged
+            }
+            return try await migrateLegacyPageWithinNonceSequence(input)
+        }
+    }
+
+    private func migrateLegacyPageWithinNonceSequence(_ input: LatrMigrateBookmarksInput) async throws -> Data {
         do {
             return try await Self.performAttestationCeremonies { _ in
                 let prepared = try await self.preparedGatewaySession()
@@ -261,6 +272,24 @@ final class LatrGatewayClient {
         body: Data? = nil,
         bodyCarriesUpstreamProof: Bool = false,
         preparedSession: PreparedGatewaySession? = nil
+    ) async throws -> Data {
+        if preparedSession != nil {
+            return try await requestWithinNonceSequence(method: method, xrpc: xrpc, query: query, body: body,
+                bodyCarriesUpstreamProof: bodyCarriesUpstreamProof, preparedSession: preparedSession)
+        }
+        let session = try await auth.validSession()
+        return try await auth.dpop.withNonceSequence(for: session.pdsURL) { [self] in
+            guard auth.session?.did == session.did, auth.session?.accessToken == session.accessToken else {
+                throw ReadStateSyncFailure.accountChanged
+            }
+            return try await requestWithinNonceSequence(method: method, xrpc: xrpc, query: query, body: body,
+                bodyCarriesUpstreamProof: bodyCarriesUpstreamProof, preparedSession: nil)
+        }
+    }
+
+    private func requestWithinNonceSequence(
+        method: String, xrpc: LatrXRPCMethod, query: [URLQueryItem], body: Data?,
+        bodyCarriesUpstreamProof: Bool, preparedSession: PreparedGatewaySession?
     ) async throws -> Data {
         let method = Self.transportMethod(for: xrpc, requestedMethod: method)
         var components = URLComponents(

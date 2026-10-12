@@ -1,6 +1,7 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { discoveryGatewayFetch, type WireItem, type WirePage } from "@/lib/wireFeedClient";
+import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
 import { feedResponseError } from "@/lib/feedResponseError";
 export type SportsEntity = { id: string; name: string; kind: string; sportID?: string; competitionIDs: string[]; aliases: string[]; groupPath?: string[]; schoolID?: string; gender?: string; division?: string; abbreviation?: string; active: boolean };
 export type SportsItem = { story: WireItem; entities: SportsEntity[]; associations: { entityID: string; confidence: number; prominence: number; resolverVersion: string; evidence: string[] }[]; majorGlobal: boolean; sportIDs?: string[]; competitionIDs?: string[]; materiality: string };
@@ -30,7 +31,9 @@ export async function getSports(args: {feed?: string; cursor?: string; language?
  return page;
 }
 export const sportsTopicIsVisible = (showSports: boolean, catalog?: Pick<SportsCatalog,"enabled">) => showSports && catalog?.enabled === true;
-export const getSportsCatalog = (signal?: AbortSignal) => query<SportsCatalog>("getSportsCatalog",new URLSearchParams(),undefined,signal);
+export const getSportsCatalog = (signal?: AbortSignal) => isDummyReaderDataEnabled()
+ ? Promise.resolve<SportsCatalog>({ enabled: false, available: false, eventsEnabled: false, feeds: [], entities: [], version: "local-fixture" })
+ : query<SportsCatalog>("getSportsCatalog",new URLSearchParams(),undefined,signal);
 export const searchSportsEntities = (q: string, signal?: AbortSignal) => query<{entities:SportsEntity[]}>("searchSportsEntities",new URLSearchParams({q}),undefined,signal);
 export const getSportsEvents = async (feed: string, signal?: AbortSignal, teamIDs?: readonly string[], context?: { preferredIDs: readonly string[]; timeZone: string }) => {
  const params = new URLSearchParams({feed});
