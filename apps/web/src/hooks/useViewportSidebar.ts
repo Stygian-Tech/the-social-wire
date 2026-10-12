@@ -17,6 +17,7 @@ export function useViewportSidebar(scrollHostSelector: string, minViewportWidth 
       if (window.innerWidth < minViewportWidth) {
         panel.style.removeProperty("top");
         panel.style.removeProperty("max-height");
+        panel.style.removeProperty("height");
         return;
       }
       const currentTopbar = scrollHost.querySelector<HTMLElement>(":scope > [data-topic-topbar]") ?? undefined;
@@ -32,7 +33,9 @@ export function useViewportSidebar(scrollHostSelector: string, minViewportWidth 
       panel.style.top = `${fixed ? host.top + stickyOffset : stickyOffset}px`;
       const top = Math.max(panel.getBoundingClientRect().top, host.top + stickyOffset);
       const bottom = Math.min(window.innerHeight, host.bottom);
-      panel.style.maxHeight = `${Math.max(0, bottom - top - APP_CHROME_GUTTER_PX)}px`;
+      const availableHeight = `${Math.max(0, bottom - top - APP_CHROME_GUTTER_PX)}px`;
+      panel.style.maxHeight = availableHeight;
+      if (fixed) panel.style.height = availableHeight;
     };
     const schedule = () => {
       if (typeof window.requestAnimationFrame !== "function") { measure(); return; }

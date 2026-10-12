@@ -272,7 +272,7 @@ function PodcastViewerLibrary() {
     } catch { setError("Audio Could Not Be Saved. Please Retry."); }
   }
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-4 p-4 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
+    <div className="grid w-full min-w-0 grid-cols-1 gap-4 p-4 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
       <section className="min-w-0 lg:flex lg:min-h-0 lg:flex-col">
         <FeedHeader title="Podcasts" className="m-0 mb-4">
           <div className="flex items-center gap-2">

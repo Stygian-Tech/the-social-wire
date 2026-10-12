@@ -28,7 +28,7 @@ export function PodcastLibrarySidebar({ feed, showId, shows, subscriptions, down
   ];
   const subscribed = shows.filter((show) => subscriptions.includes(show.id));
   return (
-    <aside aria-label="Podcast Library" className={`${floatingSidebarClassName} space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain`}>
+    <aside aria-label="Podcast Library" className={`${floatingSidebarClassName} w-full space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain`}>
       <nav aria-label="Podcast Feeds" className="space-y-1">
         {onDiscover ? <button type="button" aria-current={discoverActive ? "page" : undefined}
           onClick={onDiscover}

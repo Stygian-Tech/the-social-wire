@@ -12,8 +12,8 @@ export function LivestreamNodeWorkspace({ node }: { node: string }) {
   const [confirmStart, setConfirmStart] = useState(false), [confirmEnd, setConfirmEnd] = useState(false), [preview, setPreview] = useState(false), [message, setMessage] = useState<string>();
   const action = async (work: () => Promise<void>) => { setMessage(undefined); try { await work(); } catch (error) { setMessage(error instanceof Error ? error.message : "Livestream Action Failed."); } };
   const input = { title, tags: tags.split(",").map(tag => tag.trim()).filter(Boolean), ...(thumb ? { thumb } : {}) };
-  return <div className="grid gap-4 pb-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-    <div className="min-w-0 space-y-4">
+  return <div className="grid min-w-0 gap-4 pb-8 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden lg:pb-0">
+    <div className="min-w-0 space-y-4 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
       <section className="space-y-3 rounded-2xl border p-4"><h2 className="font-semibold">Broadcast Setup</h2><p className="text-sm">Generate A Key, Configure Your Encoder, Then Start A Livestream Announcement.</p>
         {live.ingests.map(ingest => <label key={ingest.type} className="block text-sm">{ingest.type.toUpperCase()} Server<Input readOnly value={ingest.url} aria-label={`${ingest.type.toUpperCase()} Server`} /></label>)}
         <Button disabled={live.pending || !live.ingests.length} onClick={() => void action(async () => { const key = await live.generateKey(); setSecret(key); setReveal(false); })}>Generate Stream Key</Button>

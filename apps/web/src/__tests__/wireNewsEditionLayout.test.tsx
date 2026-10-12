@@ -463,13 +463,16 @@ describe("WireNewsEditionLayout", () => {
       const panel = container.querySelector("aside")!;
       expect(panel.style.top).toBe("116px");
       expect(panel.style.maxHeight).toBe("568px");
+      expect(panel.style.height).toBe("568px");
       paneBottom = 500;
       fireEvent.resize(window);
       await waitFor(() => expect(panel.style.maxHeight).toBe("368px"));
+      expect(panel.style.height).toBe("368px");
       window.innerWidth = 900;
       fireEvent.resize(window);
       await waitFor(() => expect(panel.style.maxHeight).toBe(""));
       expect(panel.style.top).toBe("");
+      expect(panel.style.height).toBe("");
     } finally {
       cleanup();
       geometry.mockRestore();

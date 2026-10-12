@@ -19,7 +19,7 @@ export function WireTrendingStories({
       ref={sidebar}
       aria-labelledby="wire-trending-stories"
       tabIndex={0}
-      className={`${floatingSidebarClassName} mx-4 mt-5 outline-none sm:mx-5 xl:fixed xl:right-4 xl:top-[calc(var(--environment-banner-height,0px)+1rem)] xl:mx-0 xl:mt-0 xl:w-[19rem] xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] xl:overflow-y-auto xl:overscroll-contain xl:[scrollbar-gutter:stable] xl:focus-visible:ring-2 xl:focus-visible:ring-ring`}
+      className={`${floatingSidebarClassName} mx-4 mt-4 outline-none xl:fixed xl:right-4 xl:top-[calc(var(--environment-banner-height,0px)+1rem)] xl:mx-0 xl:mt-0 xl:w-[19rem] xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] xl:overflow-y-auto xl:overscroll-contain xl:[scrollbar-gutter:stable] xl:focus-visible:ring-2 xl:focus-visible:ring-ring`}
     >
       <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--purple-foreground)]">
         What Matters Now

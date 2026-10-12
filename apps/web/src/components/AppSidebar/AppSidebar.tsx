@@ -227,7 +227,8 @@ export function AppSidebar({
     unreadCountsByPublicationId
   );
 
-  const { data: profile, isLoading: profileLoading } = useViewerProfile();
+  const { data: cachedProfile, isLoading: profileLoading } = useViewerProfile();
+  const profile = clientHydrated ? cachedProfile : undefined;
 
   const subscribedPublications = useMemo(() => {
     const seen = new Set<string>();
@@ -512,7 +513,7 @@ export function AppSidebar({
   const publicationsRail = showPublicationsRail && (selectedListUri || (
         currentFeed !== "wire" &&
         currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "social" && currentFeed !== "podcasts")) ? (
-        <div className={`${floatingSidebarClassName} mx-2 flex flex-col self-stretch lg:self-start gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:mx-0 lg:right-4 lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:z-30 lg:w-60 lg:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto lg:overscroll-contain`}>
+        <div className={`${floatingSidebarClassName} mx-2 flex flex-col self-stretch lg:self-start gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:mx-0 lg:bottom-4 lg:right-4 lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:z-30 lg:w-60 lg:h-auto lg:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto lg:overscroll-contain`}>
           <div className="hidden shrink-0 items-center px-2 pb-2 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">
               Publications
@@ -751,7 +752,7 @@ export function AppSidebar({
 
       <SidebarFooter className="border-t border-sidebar-border/70 px-2 py-3">
         <SidebarMenu className="gap-0.5 px-1">
-          {profileLoading ? (
+          {clientHydrated && profileLoading ? (
             <SidebarMenuItem>
               <div className="flex min-w-0 flex-1 items-start gap-2 px-1 py-1">
                 <Skeleton className="size-6 shrink-0 rounded-full" />

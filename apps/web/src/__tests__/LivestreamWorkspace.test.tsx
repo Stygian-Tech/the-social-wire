@@ -29,7 +29,7 @@ test("announces and ends only after explicit confirmation without claiming encod
   await mount(); fireEvent.change(screen.getByRole("textbox", { name: "Livestream Title" }), { target: { value: "Live" } });
   fireEvent.click(screen.getByRole("button", { name: "Start Livestream" })); expect(state.save).not.toHaveBeenCalled(); expect(screen.getByText(/Does Not Start Your Encoder/)).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Confirm Start Livestream" })); await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole("button", { name: "End Livestream" })); expect(state.end).not.toHaveBeenCalled(); expect(screen.getByText(/Stop Broadcasting In Your Encoder Separately/)).toBeDefined();
+  fireEvent.click(await screen.findByRole("button", { name: "End Livestream" })); expect(state.end).not.toHaveBeenCalled(); expect(screen.getByText(/Stop Broadcasting In Your Encoder Separately/)).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Confirm End Livestream" })); await waitFor(() => expect(state.end).toHaveBeenCalledTimes(1));
 });
 test("key stays masked and clears on account and node changes", async () => {
@@ -53,4 +53,18 @@ test("keeps the shared livestream top bar outside its scrolling workspace", asyn
   expect(header.parentElement!.classList.contains("overflow-hidden")).toBe(true);
   expect(header.nextElementSibling!.classList.contains("overflow-y-auto")).toBe(true);
   expect(header.nextElementSibling!.classList.contains("min-h-0")).toBe(true);
+});
+
+
+test("bounds desktop broadcast controls independently of the chat rail and keeps node controls outside both", async () => {
+  await mount();
+  const controls = screen.getByRole("heading", { name: "Broadcast Setup" }).parentElement!.parentElement!;
+  const grid = controls.parentElement!;
+  expect(controls.classList.contains("lg:min-h-0")).toBe(true);
+  expect(controls.classList.contains("lg:overflow-y-auto")).toBe(true);
+  expect(grid.classList.contains("lg:grid-rows-[minmax(0,1fr)]")).toBe(true);
+  expect(grid.classList.contains("lg:flex-1")).toBe(true);
+  expect(grid.parentElement!.classList.contains("lg:h-full")).toBe(true);
+  expect(grid.contains(screen.getByRole("button", { name: "Connect Node" }))).toBe(false);
+  expect(grid.parentElement!.parentElement!.classList.contains("lg:overflow-hidden")).toBe(true);
 });

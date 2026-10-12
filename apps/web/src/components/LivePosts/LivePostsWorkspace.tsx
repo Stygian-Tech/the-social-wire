@@ -67,7 +67,7 @@ function LivePostsViewer() {
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     <FeedHeader title="Live Post" subtitle="Live Events"><Button size="sm" disabled={live.pending || live.loading} onClick={() => openNew()}><Plus className="size-4" />New Event</Button><Button variant="ghost" size="icon" aria-label="Refresh Live Events" disabled={live.pending || live.loading} onClick={() => { void live.refresh(); }}><RefreshCw className="size-4" /></Button></FeedHeader>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain lg:overflow-hidden">
-      <div className="mx-auto grid w-full max-w-6xl gap-4 p-4 pt-0 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)]">
+      <div className="grid w-full gap-4 p-4 pt-0 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)]">
         <aside aria-label="Live Events" className={`${floatingGlassClasses} min-w-0 p-3 lg:min-h-0 lg:col-start-2 lg:row-start-1 lg:overflow-y-auto lg:overscroll-contain`}>
           <h2 className="mb-3 px-2 text-sm font-semibold">Your Events</h2>
           {live.loading || live.rsvpLoading ? <p role="status" className="p-2 text-sm">Loading Events…</p> : null}

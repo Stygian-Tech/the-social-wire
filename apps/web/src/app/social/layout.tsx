@@ -58,7 +58,7 @@ export default function SocialLayout({ children }: { children: React.ReactNode }
             <div className="flex min-h-0 flex-1 overflow-hidden">
               <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
               {!isMessages ? <aside aria-label="Social Feed Sidebar" className={`hidden min-h-0 w-72 shrink-0 overflow-hidden ${appChromePaddingClassName} lg:flex lg:flex-col`}>
-                <div className={`${floatingSidebarClassName} flex min-h-0 w-full flex-col overflow-hidden`}>
+                <div className={`${floatingSidebarClassName} flex min-h-0 w-full flex-1 flex-col self-stretch overflow-hidden`}>
                   <h2 className="mb-2 shrink-0 px-2 text-sm font-semibold">Feeds</h2>
                   <div className="min-h-0 overflow-y-auto overscroll-contain"><Suspense fallback={null}><SocialFeeds /></Suspense></div>
                 </div>
