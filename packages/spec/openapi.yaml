@@ -2892,7 +2892,7 @@ paths:
       summary: Read Verified Viewer Subscription Entitlements
       tags: [Subscription]
       security: [{ATProtoOAuthDPoP: []}]
-      description: Server-owned subscription plan for the authenticated viewer DID. Until billing is integrated, Gateway grants Pro only to exact DIDs configured in SOCIALWIRE_PRO_DIDS; unset configuration defaults everyone to Free. Linked brand identities require their own grant. Request parameters and client storage cannot grant entitlements.
+      description: Server-owned subscription plan for the authenticated viewer DID. Until billing is integrated, Gateway grants Pro only to exact DIDs configured in SOCIALWIRE_PRO_DIDS; unset configuration defaults everyone to Free. Pro enforcement defaults off; enable SOCIALWIRE_PRO_GATING_ENABLED on Gateway together with NEXT_PUBLIC_PRO_GATING_ENABLED on Web to enforce paid access. Plans still reflect grants when enforcement is disabled. Linked brand identities require their own grant when enforcement is enabled. Request parameters and client storage cannot grant entitlements.
       responses:
         '200':
           description: Viewer Subscription Plan
@@ -2915,14 +2915,14 @@ paths:
       summary: Read Viewer-Owned Creator Analytics
       tags: [Analytics]
       security: [{ATProtoOAuthDPoP: []}]
-      description: Requires Pro for the authenticated viewer DID. Current known platform engagement and separately scoped Social Wire traffic. No historical platform impressions or external blog traffic are inferred. Daily snapshots begin on refresh. Views and clicks from the author are excluded.
+      description: Requires Pro for the authenticated viewer DID only when SOCIALWIRE_PRO_GATING_ENABLED is true (defaults off). Current known platform engagement and separately scoped Social Wire traffic. No historical platform impressions or external blog traffic are inferred. Daily snapshots begin on refresh. Views and clicks from the author are excluded.
       parameters: &creatorAnalyticsParameters
         - {in: query, name: days, schema: {type: integer, minimum: 1, maximum: 90, default: 30}}
         - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
         - {in: query, name: cursor, schema: {type: string}, description: Viewer-owned canonical subject URI.}
       responses:
         '200': {description: Account-Scoped Analytics, content: {application/json: {schema: {$ref: '#/components/schemas/CreatorAnalyticsSummary'}}}}
-        '403': {description: Pro Subscription Required (ProRequired)}
+        '403': {description: Pro Subscription Required (ProRequired) When Pro Enforcement Is Enabled}
         '400': {description: Invalid Range Or Cursor}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {description: Request Limit Reached}
@@ -2933,11 +2933,11 @@ paths:
       summary: Refresh Platform Inventory And Engagement Snapshot
       tags: [Analytics]
       security: [{ATProtoOAuthDPoP: []}]
-      description: Requires Pro for the authenticated viewer DID. Refreshes bounded public PDS inventory and AppView counters for the authenticated author. Coverage identifies partial inventory; cumulative snapshots never imply historic daily interactions. Limited to one refresh per minute per viewer.
+      description: Requires Pro for the authenticated viewer DID only when SOCIALWIRE_PRO_GATING_ENABLED is true (defaults off). Refreshes bounded public PDS inventory and AppView counters for the authenticated author. Coverage identifies partial inventory; cumulative snapshots never imply historic daily interactions. Limited to one refresh per minute per viewer.
       parameters: *creatorAnalyticsParameters
       responses:
         '200': {description: Refreshed Analytics, content: {application/json: {schema: {$ref: '#/components/schemas/CreatorAnalyticsSummary'}}}}
-        '403': {description: Pro Subscription Required (ProRequired)}
+        '403': {description: Pro Subscription Required (ProRequired) When Pro Enforcement Is Enabled}
         '400': {description: Invalid Range Or Cursor}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {description: Refresh Limit Reached}

@@ -11797,7 +11797,7 @@
         },
         {
           "path": "packages/spec/__tests__/subscription-entitlements.test.ts",
-          "sha256": "5699893fca5782b4d89a4a739be128e80635b09f05c1e2d85e3337696abc1eea"
+          "sha256": "1f9f770af8309aa3e20488a72b5a21e9bbac8a5cb26fa652ea358282d72ed250"
         },
         {
           "path": "packages/spec/__tests__/tap-registration-migration.test.ts",
@@ -11869,7 +11869,7 @@
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "b1f766167cbe1bc2ebd2671d925d2506435d6aa0ba48d9b63f0510a2a9516f6a"
+          "sha256": "b46845763f4093dbb4486ae0544bb9b620b93d1a14c21f2bcf55fdf7fd12e9c5"
         },
         {
           "path": "packages/spec/package.json",
