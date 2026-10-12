@@ -6,10 +6,12 @@ import { AppBskyFeedPost, moderateProfile, type ModerationOpts, type AppBskyFeed
 import { useAuth } from "@/hooks/useAuth";
 import { getStoredOAuthDid } from "@/lib/auth";
 import { createBlueskyPost, postTextLength } from "@/lib/blueskyComposeClient";
+import { refreshSocialPostQueries } from "@/lib/socialPostRefresh";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { SocialComposePreview } from "./SocialComposePreview";
 import { SocialPeopleTextField } from "./SocialPeopleTextField";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialPostCard } from "./SocialPostCard";
@@ -36,10 +38,11 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
   const [error, setError] = useState<string>();
   const [published, setPublished] = useState(false);
   const busy = useRef(false);
+  const stopRefresh = useRef<(() => void) | undefined>(undefined);
   const currentDid = useRef(session?.did);
   useLayoutEffect(() => {
     currentDid.current = session?.did;
-    return () => { currentDid.current = undefined; };
+    return () => { currentDid.current = undefined; stopRefresh.current?.(); };
   }, [session?.did]);
   const { graphemes, bytes } = postTextLength(text);
   const valid = !!text.trim() && graphemes <= 300 && bytes <= 3000;
@@ -73,7 +76,8 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
       setOpen(false);
       setText("");
       setPublished(true);
-      void cache.invalidateQueries({ predicate: query => query.queryKey[0] === "blueskySocial" && query.queryKey[1] === did && ["thread", "timeline", "profileTimeline", "explore", "bookmarks", "notifications"].includes(String(query.queryKey[2])) });
+      stopRefresh.current?.();
+      stopRefresh.current = refreshSocialPostQueries(cache, did, () => currentDid.current === did && getStoredOAuthDid() === did && getOAuthSession()?.did === did);
     } catch (failure) {
       if (currentDid.current === did) setError(socialErrorMessage(failure));
     } finally {
@@ -95,6 +99,7 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
           {quote ? <div className="max-h-48 overflow-y-auto rounded-xl border p-3"><SocialPostCard item={{ post }} moderation={moderation} embedded /></div> : null}
           <label htmlFor={fieldId} className="sr-only">{quote ? "Quote Text" : "Reply Text"}</label>
           <SocialPeopleTextField id={fieldId} autoFocus value={text} disabled={pending} onValueChange={setText} rows={5} placeholder={quote ? "Add a Comment…" : "Write a Reply…"} className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
+          <SocialComposePreview text={text} />
           <p aria-live="polite" className={`text-right text-sm ${graphemes > 300 ? "text-destructive" : "text-muted-foreground"}`}>{graphemes}/300</p>
           {bytes > 3000 ? <p className="text-sm text-destructive">{quote ? "Quote Text" : "Reply Text"} Exceeds the Size Limit</p> : null}
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}

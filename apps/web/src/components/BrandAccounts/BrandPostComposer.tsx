@@ -9,6 +9,7 @@ import { getSocialExplorePage } from "@/lib/blueskySocialDiscoveryClient";
 import { insertSocialMention, socialMentionAtCaret } from "@/lib/socialMentionTypeahead";
 import { Avatar } from "@/components/shared/Avatar";
 import { socialHttpsUrl } from "@/components/Social/socialUrls";
+import { SocialComposePreview } from "@/components/Social/SocialComposePreview";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
@@ -33,6 +34,7 @@ export function BrandPostComposer({ ownerDid, session, moderation, profile, pare
     {parent ? <blockquote className="max-h-32 overflow-y-auto border-l-2 pl-3 text-sm"><span className="block text-xs text-muted-foreground">Replying to @{parent.author.handle}</span>{typeof (parent.record as { text?: unknown }).text === "string" ? String((parent.record as { text: string }).text) : "Post"}</blockquote> : null}
     <form className="space-y-3" onSubmit={event => { event.preventDefault(); void submit(); }}><label className="sr-only" htmlFor="brand-post-text">Brand Post Text</label><textarea id="brand-post-text" ref={ref} autoFocus rows={6} className="w-full rounded-xl border bg-background p-3" disabled={pending} value={text} onChange={event => { setText(event.target.value); setCaret(event.target.selectionStart); }} onSelect={event => setCaret(event.currentTarget.selectionStart)} placeholder="Write a Post…" />
       {mention ? <div role="listbox" aria-label="Brand Mention Suggestions" className="max-h-40 overflow-y-auto rounded-xl border p-1">{people.data?.actors.filter(actor => { const decision = moderateProfile(actor, moderation).ui("profileList"); return !decision.filter && !decision.blur && !decision.noOverride; }).slice(0, 6).map(actor => <button type="button" role="option" aria-selected="false" key={actor.did} className="block w-full rounded-lg px-2 py-1 text-left text-sm hover:bg-accent" onClick={() => { const next = insertSocialMention(text, mention, actor.handle); setText(next.text); setCaret(next.caret); requestAnimationFrame(() => { ref.current?.focus(); ref.current?.setSelectionRange(next.caret, next.caret); }); }}>@{actor.handle}</button>)}{people.isPending ? <p role="status" className="p-2 text-xs">Loading People…</p> : people.isError ? <p className="p-2 text-xs">People Could Not Be Loaded</p> : !people.data?.actors.length ? <p className="p-2 text-xs">No Matching People</p> : null}</div> : null}
+      <SocialComposePreview text={text} />
       <p className="text-right text-xs text-muted-foreground">{length.graphemes}/300</p>{scheduling?.controls}{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}<div className="flex justify-end gap-2"><DialogClose disabled={pending} className="rounded-xl border px-3 py-2">Cancel</DialogClose><Button type="submit" disabled={pending || !text.trim() || length.graphemes > 300 || length.bytes > 3000 || scheduling?.valid === false}>{pending ? scheduling?.pendingLabel || "Publishing…" : scheduling?.submitLabel || (parent ? "Post Reply" : "Post")}</Button></div>
     </form>
   </>;
