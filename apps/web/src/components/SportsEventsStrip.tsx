@@ -85,7 +85,7 @@ export function SportsEventsStrip({ feedID, hidden, entities = [], selections = 
     const timestamps = data?.events.map(event => Date.parse(event.startsAt)) ?? [];
     return timestamps.length ? [new Date(Math.min(...timestamps)).toLocaleDateString(), new Date(Math.max(...timestamps)).toLocaleDateString()] : [];
   }, [data?.events]);
-  return <section ref={element => { sectionRef.current = element; compactSpring(element); }} data-topic-topbar data-compact={compact} aria-label="Sports Events" className={`sticky top-2 z-20 m-2 shrink-0 p-3 ${floatingGlassClasses}`}>
+  return <section ref={element => { sectionRef.current = element; compactSpring(element); }} data-topic-topbar data-compact={compact} aria-label="Sports Events" className={`sticky top-4 z-20 m-4 shrink-0 p-3 ${floatingGlassClasses}`}>
     <div className="mb-2 flex items-center justify-between gap-3 text-sm">
       <h2 className="min-w-0 font-medium [overflow-wrap:anywhere]">Schedules and Results</h2>
       <div className="flex items-center gap-2">

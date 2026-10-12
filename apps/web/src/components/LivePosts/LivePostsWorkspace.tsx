@@ -66,15 +66,15 @@ function LivePostsViewer() {
   const rsvpError = live.rsvpError ? socialErrorMessage(live.rsvpError) : undefined;
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     <FeedHeader title="Live Post" subtitle="Live Events"><Button size="sm" disabled={live.pending || live.loading} onClick={() => openNew()}><Plus className="size-4" />New Event</Button><Button variant="ghost" size="icon" aria-label="Refresh Live Events" disabled={live.pending || live.loading} onClick={() => { void live.refresh(); }}><RefreshCw className="size-4" /></Button></FeedHeader>
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-      <div className="mx-auto grid w-full max-w-6xl gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <aside aria-label="Live Events" className={`${floatingGlassClasses} min-w-0 p-3 lg:col-start-2 lg:row-start-1 lg:self-start`}>
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain lg:overflow-hidden">
+      <div className="grid w-full gap-4 p-4 pt-0 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)]">
+        <aside aria-label="Live Events" className={`${floatingGlassClasses} min-w-0 p-3 lg:min-h-0 lg:col-start-2 lg:row-start-1 lg:overflow-y-auto lg:overscroll-contain`}>
           <h2 className="mb-3 px-2 text-sm font-semibold">Your Events</h2>
           {live.loading || live.rsvpLoading ? <p role="status" className="p-2 text-sm">Loading Events…</p> : null}
           {rsvpError ? <div role="alert" className="mb-3 space-y-2 px-2 text-xs"><p>{rsvpError}</p>{rsvpError === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" disabled={live.pending} onClick={() => { void live.refresh(); }}>Retry RSVP Events</Button>}</div> : null}
           <LivePostEventSections rows={rows} pending={live.pending} />
         </aside>
-        <section aria-label="Live Event Workspace" className="min-w-0 lg:col-start-1 lg:row-start-1">
+        <section aria-label="Live Event Workspace" className="min-w-0 lg:min-h-0 lg:col-start-1 lg:row-start-1 lg:overflow-y-auto lg:overscroll-contain">
           {error ? <div role="alert" className="mb-4 space-y-2 rounded-xl border p-3 text-sm"><p>{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button size="sm" variant="outline" disabled={live.pending} onClick={() => { setFailure(undefined); void live.refresh(); }}>Retry Loading</Button>}</div> : null}
           {!event ? <div className={`${floatingGlassClasses} flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center`}><h2 className="text-lg font-semibold">Start a Live Event</h2><p className="max-w-sm text-sm text-muted-foreground">Publish updates to a new blog article, a Bluesky thread, or both.</p><Button disabled={live.pending || live.loading} onClick={() => openNew()}>New Event</Button></div> : <>
             <header className="mb-4 space-y-2"><h2 className="break-words text-2xl font-semibold">{event.title}</h2><p className="text-sm text-muted-foreground">{destinationLabels[event.destination]}</p>{event.tags.length ? <p className="break-words text-xs text-muted-foreground">{event.tags.map(tag => `#${tag}`).join(" ")}</p> : null}</header>
