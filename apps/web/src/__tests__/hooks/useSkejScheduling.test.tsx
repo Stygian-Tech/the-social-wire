@@ -1,3 +1,5 @@
+import * as Entitlements from "@/lib/proEntitlements";
+import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -14,7 +16,11 @@ const personal = { did: owner } as unknown as OAuthSession, linked = { did: bran
 let cache: QueryClient;
 let registered = true;
 const restores: (() => void)[] = [];
+let isPro = true;
 beforeEach(() => {
+  isPro = true;
+  const entitlement = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => entitlement.mockRestore());
+  const access = spyOn(Entitlements, "requirePro").mockImplementation(async () => { if (!isPro) throw new Error(Entitlements.PRO_REQUIRED_MESSAGE); }); restores.push(() => access.mockRestore());
   registered = true;
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did: owner }, getOAuthSession: () => personal } as ReturnType<typeof Auth.useAuth>); restores.push(() => auth.mockRestore());
@@ -132,4 +138,29 @@ test("revokes a deferred write synchronously across unlink and relink registry e
   expect(revisions).toContain(0);
   expect(revisions).toContain(2);
   readiness.mockRestore();
+});
+
+test("skips scheduling reads, brand restore, and writes for Free viewers", async () => {
+  isPro = false;
+  const create = spyOn(Client, "createSkejSchedule").mockResolvedValue({} as Client.SkejScheduleSummary); restores.push(() => create.mockRestore());
+  const { result } = renderHook(() => useSkejScheduling(owner, brand), { wrapper });
+  await act(async () => {});
+  expect(Client.getSkejSchedulingReadiness).not.toHaveBeenCalled();
+  expect(Client.listSkejSchedules).not.toHaveBeenCalled();
+  expect(Sessions.restoreBrandAccount).not.toHaveBeenCalled();
+  await act(async () => { await expect(result.current.schedule("Free Draft", "2099-01-01T12:00:00Z")).rejects.toThrow("Requires Social Wire Pro"); });
+  expect(create).not.toHaveBeenCalled();
+  expect(Sessions.restoreBrandAccount).not.toHaveBeenCalled();
+});
+test("revokes captured scheduling actor guards and writes after downgrade", async () => {
+  const create = spyOn(Client, "createSkejSchedule").mockResolvedValue({} as Client.SkejScheduleSummary); restores.push(() => create.mockRestore());
+  const { result, rerender } = renderHook(() => useSkejScheduling(owner, brand, { includeSchedules: false }), { wrapper });
+  await waitFor(() => expect(result.current.readiness.data?.connected).toBe(true));
+  const actor = (Client.getSkejSchedulingReadiness as typeof Client.getSkejSchedulingReadiness & { mock: { calls: [Parameters<typeof Client.getSkejSchedulingReadiness>[0]][] } }).mock.calls[0][0];
+  expect(() => actor.assertCurrentActor()).not.toThrow();
+  isPro = false;
+  rerender();
+  expect(() => actor.assertCurrentActor()).toThrow();
+  await act(async () => { await expect(result.current.schedule("Downgraded Draft", "2099-01-01T12:00:00Z")).rejects.toThrow(); });
+  expect(create).not.toHaveBeenCalled();
 });

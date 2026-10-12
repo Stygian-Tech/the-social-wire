@@ -155,6 +155,12 @@
     {
       "surface": "openapi",
       "method": "GET",
+      "path": "/v1/subscription/entitlements",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
       "path": "/v1/analytics/summary",
       "classification": "first-party-rest"
     },
