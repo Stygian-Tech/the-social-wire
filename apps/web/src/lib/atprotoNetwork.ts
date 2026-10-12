@@ -72,7 +72,7 @@ export function atprotoScopesForNetwork(scopes: string, network = getAtprotoNetw
   // The isolated sandbox has no video service. Preserve the publisher's
   // network boundary before applying the independent chat-reporting boundary.
   const isolated = network.plcDirectory !== PLC_DIRECTORY || network.publicAppView !== PUBLIC_APPVIEW || network.appViewDid !== APPVIEW_DID;
-  const supported = isolated ? scopes.split(" ").filter(scope => !["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app"].includes(scope)).join(" ") : scopes;
+  const supported = isolated ? scopes.split(" ").filter(scope => !["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=*"].includes(scope)).join(" ") : scopes;
   const reporting = network.chatServiceDid === CHAT_SERVICE_DID && network.appLabelers === undefined
     ? supported
     : supported.split(" ").filter(scope => scope !== "rpc:com.atproto.moderation.createReport?aud=did:plc:ar7c4by46qjdydhdevvrndac%23atproto_labeler").join(" ");

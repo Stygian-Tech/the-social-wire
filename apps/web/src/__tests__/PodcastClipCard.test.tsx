@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as auth from "@/hooks/useAuth";
@@ -9,6 +9,7 @@ import * as publisher from "@/lib/podcasts/blueskyClipPublisher";
 import * as profiles from "@/hooks/useViewerProfile";
 import { PodcastClipCard } from "@/components/Podcasts/PodcastClipCard";
 import type { PodcastClip } from "@/lib/podcasts/client";
+import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 const restores: (() => void)[] = [];
 beforeEach(() => {
   for (const [name, value] of Object.entries({ requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0), cancelAnimationFrame: clearTimeout })) {
@@ -22,7 +23,8 @@ const clip: PodcastClip = { id: "private-clip", episodeId: "episode", title: "Pr
 function setup() {
   const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
   const state = { oauth, stored: oauth.did };
-  const authSpy = spyOn(auth, "useAuth").mockImplementation(() => ({ session: { did: state.oauth.did }, getOAuthSession: () => state.oauth }) as ReturnType<typeof auth.useAuth>);
+  const signIn = mock(async (did: string) => { void did; });
+  const authSpy = spyOn(auth, "useAuth").mockImplementation(() => ({ session: { did: state.oauth.did }, getOAuthSession: () => state.oauth, signIn }) as unknown as ReturnType<typeof auth.useAuth>);
   const stored = spyOn(storage, "getStoredOAuthDid").mockImplementation(() => state.stored);
   let pauses = 0;
   const audio = spyOn(player, "usePodcastPlayer").mockReturnValue({ playing: true, toggle: () => { pauses++; } } as ReturnType<typeof player.usePodcastPlayer>);
@@ -33,8 +35,40 @@ function setup() {
   const profile = spyOn(profiles, "useViewerProfile").mockReturnValue({ data: { did: oauth.did, displayName: "Podcast Fan", handle: "podcast.example" } } as ReturnType<typeof profiles.useViewerProfile>);
   restores.push(() => profile.mockRestore());
   restores.push(() => authSpy.mockRestore(), () => stored.mockRestore(), () => audio.mockRestore(), () => media.mockRestore(), () => create.mockRestore(), () => revoke.mockRestore(), () => publish.mockRestore());
-  return { state, oauth, media, create, revoke, publish, pauses: () => pauses };
+  return { state, oauth, media, create, revoke, publish, signIn, pauses: () => pauses };
 }
+for (const failure of [new Error('Missing required scope "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app"'), new Error(SCOPE_RECOVERY_MESSAGE)]) {
+  it(`offers explicit login recovery for clip publication: ${failure.message}`, async () => {
+    const test = setup();
+    test.publish.mockRejectedValue(failure);
+    render(<PodcastClipCard clip={clip} />);
+    fireEvent.click(screen.getByRole("button", { name: "Post to Bluesky" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Commentary" }), { target: { value: "Keep My Commentary" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review Post" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish to Bluesky" }));
+    const recover = await screen.findByRole("button", { name: "Log In Again" });
+    expect(screen.getByRole("dialog").textContent).toContain(SCOPE_RECOVERY_MESSAGE);
+    expect(screen.getByText("Keep My Commentary")).toBeTruthy();
+    expect(test.signIn).not.toHaveBeenCalled();
+    expect(test.publish).toHaveBeenCalledTimes(1);
+    expect(test.revoke).not.toHaveBeenCalled();
+    fireEvent.click(recover);
+    await waitFor(() => expect(test.signIn).toHaveBeenCalledWith(test.oauth.did));
+    expect(test.publish).toHaveBeenCalledTimes(1);
+  });
+}
+it("keeps ordinary publication failures retryable without offering login recovery", async () => {
+  const test = setup();
+  test.publish.mockRejectedValue(new Error("Video Service Unavailable"));
+  render(<PodcastClipCard clip={clip} />);
+  fireEvent.click(screen.getByRole("button", { name: "Post to Bluesky" }));
+  await screen.findByRole("textbox", { name: "Commentary" });
+  fireEvent.click(screen.getByRole("button", { name: "Review Post" }));
+  fireEvent.click(screen.getByRole("button", { name: "Publish to Bluesky" }));
+  await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Video Service Unavailable"));
+  expect(screen.queryByRole("button", { name: "Log In Again" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Publish to Bluesky" }).hasAttribute("disabled")).toBe(false);
+});
 it("loads the actual private MP4 and pauses audio only when the user plays video", async () => {
   const test = setup();
   const view = render(<PodcastClipCard clip={clip} />);
