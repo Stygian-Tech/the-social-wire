@@ -1,4 +1,4 @@
-import { AppBskyFeedPost, AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichText, type AppBskyFeedDefs } from "@atproto/api";
+import { AppBskyFeedPost, AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichText, type AppBskyEmbedRecord, type AppBskyFeedDefs } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
@@ -12,12 +12,15 @@ export async function createBlueskyPost(args: {
   session: OAuthSession;
   text: string;
   replyTo?: AppBskyFeedDefs.PostView;
+  quoteTo?: AppBskyFeedDefs.PostView;
   assertCurrentAccount?: () => void;
 }): Promise<{ uri: string; cid: string }> {
   if (!args.text.trim()) throw new Error("Write something before posting.");
   const length = postTextLength(args.text);
   if (length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts must contain at most 300 characters and 3,000 UTF-8 bytes.");
+  if (args.replyTo && args.quoteTo) throw new Error("Choose either a reply or a quote post.");
   const reply = args.replyTo ? replyReferences(args.replyTo) : undefined;
+  const embed = args.quoteTo ? quoteEmbed(args.quoteTo) : undefined;
   args.assertCurrentAccount?.();
   const richText = new RichText({ text: args.text });
   await richText.detectFacets(createAuthenticatedAppViewAgent(args.session));
@@ -27,7 +30,16 @@ export async function createBlueskyPost(args: {
     features: facet.features.filter(feature => !AppBskyRichtextFacet.isMention(feature) || feature.did.startsWith("did:")),
   })).filter(facet => facet.features.length);
   args.assertCurrentAccount?.();
-  return createOAuthAgent(args.session).post({ text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}) });
+  return createOAuthAgent(args.session).post({ text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) });
+}
+
+function quoteEmbed(post: AppBskyFeedDefs.PostView): AppBskyEmbedRecord.Main & { $type: "app.bsky.embed.record" } {
+  if (post.viewer?.embeddingDisabled) throw new Error("Quotes are disabled for this post.");
+  const record = { uri: post.uri, cid: post.cid };
+  if (!ComAtprotoRepoStrongRef.validateMain(record).success || !/^at:\/\/did:[^/?#]+\/app\.bsky\.feed\.post\/[^/?#]+$/.test(record.uri)) {
+    throw new Error("This quote requires a valid post reference.");
+  }
+  return { $type: "app.bsky.embed.record", record };
 }
 
 function replyReferences(post: AppBskyFeedDefs.PostView): AppBskyFeedPost.ReplyRef {
