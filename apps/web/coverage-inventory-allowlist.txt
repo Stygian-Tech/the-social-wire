@@ -30,7 +30,6 @@ src/components/SavedLinks/SavedLinkPublicationChip.tsx
 src/components/SavedLinks/SavedLinkRowActions.tsx
 src/components/SavedLinks/SavedLinkSocialToolbar.tsx
 src/components/SavedLinks/SavedLinksBrowser.tsx
-src/components/shared/EnvironmentBanner.tsx
 src/components/shared/ListColumnError.tsx
 src/components/shared/ResizableListColumn.tsx
 src/hooks/usePublicationSidebarProjection.ts
