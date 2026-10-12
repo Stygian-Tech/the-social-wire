@@ -33,8 +33,9 @@ test("bounded account and reader panes use the whole viewport without podcast re
   const inset = shell?.querySelector('[data-slot="sidebar-inset"]');
   expect(inset?.classList.contains("bg-transparent")).toBe(true);
   expect(inset?.classList.contains("bg-background")).toBe(false);
-  // Reserve the mobile bar plus its floating inset and safe area.
-  expect(inset?.classList.contains("pb-[calc(5rem+env(safe-area-inset-bottom))]")).toBe(true);
+  // Navigation clearance is inherited by content; the route viewport stays full height.
+  expect(inset?.classList.contains("app-mobile-navigation-shell")).toBe(true);
+  expect(inset?.classList.contains("pb-[calc(5rem+env(safe-area-inset-bottom))]")).toBe(false);
   expect(inset?.classList.contains("pb-16")).toBe(false);
-  expect(inset?.classList.contains("md:pb-0")).toBe(true);
+  expect(inset?.classList.contains("md:pb-0")).toBe(false);
 });

@@ -23,6 +23,9 @@ describe("compact chat input", () => {
     const props = { id: "message", label: "Message", text: "Draft", onChange: () => {}, valid: true, pending: false, onSend: () => {} };
     const view = render(<SocialMessageInput {...props} />);
     const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    expect(input.closest(".floating-glass")?.classList.contains("floating-glass")).toBe(true);
+    expect(input.closest(".floating-glass")?.classList.contains("border-border/60")).toBe(true);
+    expect(input.closest(".floating-glass")?.classList.contains("rounded-3xl")).toBe(true);
     Object.defineProperty(input, "scrollHeight", { configurable: true, value: 500 });
     view.rerender(<SocialMessageInput {...props} text="Long multiline draft" />);
     expect(input.style.height).toBe("160px");

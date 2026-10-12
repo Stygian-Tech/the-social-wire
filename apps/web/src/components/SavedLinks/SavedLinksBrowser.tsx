@@ -8,6 +8,7 @@ import { SavedLinkPublicationChip } from "@/components/SavedLinks/SavedLinkPubli
 import { SavedLinkCardActions } from "@/components/SavedLinks/SavedLinkCardActions";
 import { SavedLinkRowActions } from "@/components/SavedLinks/SavedLinkRowActions";
 import { SavedLinksTagToolbar } from "@/components/SavedLinks/SavedLinksTagToolbar";
+import { attachFloatingGlassControlsOverlay } from "@/components/shared/floatingGlassScrollOverlay";
 import { ListColumnError } from "@/components/shared/ListColumnError";
 import {
   ContextMenu,
@@ -213,7 +214,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
   let content;
   if (isLoading) {
     content = (
-      <div className="space-y-2 p-2">
+      <div className="shrink-0 space-y-2 p-2">
         {Array.from({ length: 7 }).map((_, index) => (
           <Skeleton key={index} className="h-32 w-full rounded-lg" />
         ))}
@@ -234,7 +235,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
     );
   } else {
     content = (
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pt-2">
+      <div className="shrink-0">
         {filteredData.map((row) => {
           const id = rowId(row);
           const card = (
@@ -352,22 +353,24 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
 
   return (
     <>
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden border-x border-border/70 bg-background">
-        <SavedLinksTagToolbar
-          viewTagCounts={viewTagCounts}
-          selectedTag={tagFilter}
-          showSaveComposer={!isArchivedView}
-          onSelectTag={selectTag}
-        />
-        {migrationWarning ? (
-          <div
-            role="status"
-            className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-900 dark:text-amber-200"
-          >
-            {migrationWarning}
-          </div>
-        ) : null}
-        {content}
+      <div className="relative mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden border-x border-border/70">
+        <div data-floating-glass-controls ref={attachFloatingGlassControlsOverlay} className="flex flex-col">
+          <SavedLinksTagToolbar
+            viewTagCounts={viewTagCounts}
+            selectedTag={tagFilter}
+            showSaveComposer={!isArchivedView}
+            onSelectTag={selectTag}
+          />
+          {migrationWarning ? (
+            <div
+              role="status"
+              className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-900 dark:text-amber-200"
+            >
+              {migrationWarning}
+            </div>
+          ) : null}
+        </div>
+        <div data-saved-links-scroll className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">{content}</div>
       </div>
       <RssArticleReaderDialog
         open={rssReader !== null}

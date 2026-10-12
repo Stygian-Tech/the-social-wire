@@ -81,6 +81,7 @@
       "devDependencies": {
         "@atproto/crypto": "0.5.4",
         "@atproto/oauth-scopes": "0.5.13",
+        "@atproto/syntax": "0.7.6",
         "@tailwindcss/postcss": "^4",
         "@testing-library/jest-dom": "^6.9.1",
         "@testing-library/react": "^16.3.2",

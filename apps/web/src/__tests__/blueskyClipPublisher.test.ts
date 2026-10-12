@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { PodcastClip } from "@/lib/podcasts/client";
+import { ensureValidTid } from "@atproto/syntax";
 import { PodcastClipAlreadyPublishedError, publishBlueskyPodcastClip, validateBlueskyClipVideo } from "@/lib/podcasts/blueskyClipPublisher";
 const cid = "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
 const clip = (id: string): PodcastClip => ({ id, episodeId: "episode", startSeconds: 0, endSeconds: 20, title: "Podcast Clip", status: "complete", createdAt: "2026-10-11T12:00:00.000Z" });
@@ -19,6 +20,7 @@ function setup(options: { quota?: Record<string, unknown>; processing?: boolean;
     fetchHandler: async (path: string, init?: RequestInit) => {
       const url = new URL(path, "https://alice.pds.example"), method = url.pathname.split("/").at(-1)!;
       const body = init?.body ? await new Response(init.body).json() as Record<string, unknown> : undefined;
+      if (method === "com.atproto.repo.createRecord" && body?.collection === "app.bsky.feed.post") ensureValidTid(String(body.rkey));
       calls.push({ method, body, url }); let response: Response;
       if (method === "com.atproto.repo.getRecord") response = record ? Response.json({ uri: options.existingUri ?? `at://${did}/app.bsky.feed.post/${url.searchParams.get("rkey")}`, cid, value: record }) : Response.json({ error: "RecordNotFound" }, { status: 400 });
       else if (method === "com.atproto.server.getServiceAuth") response = Response.json({ token: "service-token" });
