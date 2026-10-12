@@ -143,7 +143,9 @@ export const PDS_READ_STATE_REPO_SCOPES = [
 export const BLUESKY_PODCAST_VIDEO_SCOPES = [
   "blob:video/mp4",
   "rpc:com.atproto.repo.uploadBlob?aud=*",
-  "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app",
+  // OAuth RPC audiences require a service fragment; the video JWT audience
+  // is a bare DID. Grant only this method, and keep requests video-service-bound.
+  "rpc:app.bsky.video.getUploadLimits?aud=*",
 ] as const;
 
 export const AT_PROTO_OAUTH_SCOPES = [

@@ -52,7 +52,7 @@ describe("Social route layout", () => {
     const frame = scroll.parentElement!;
     expect(within(nav).getAllByRole("link")).toHaveLength(60);
     expect(aside.className).toContain("overflow-hidden");
-    expect(aside.className).toContain("p-3");
+    expect(aside.className).toContain("p-4");
     expect(frame.className).toContain("rounded-2xl");
     expect(frame.className).toContain("overflow-hidden");
     expect(frame.className).toContain("p-3");

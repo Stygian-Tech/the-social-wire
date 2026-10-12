@@ -48,6 +48,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 describe("read feed header", () => {
+  it.each([["finance", "Finance"], ["sports", "Sports"]])("provides the shared route header for %s without unrelated reader actions", (routeFeed, title) => {
+    feed = routeFeed;
+    const { container } = render(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));
+    const heading = screen.getByRole("heading", { name: title, level: 1 });
+    expect(heading.closest("header")).toBe(container.querySelector("header"));
+    expect(screen.getByRole("button", { name: "Toggle Sidebar" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Refresh The Wire|Refresh Your Circle/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark All/ })).toBeNull();
+    expect(retryWire).not.toHaveBeenCalled();
+    expect(retryCircle).not.toHaveBeenCalled();
+  });
   it.each([["wire", "The Wire"], ["circle", "Your Circle"]])("centers the %s header with shared symmetric padding and preserves refresh", (routeFeed, title) => {
     feed = routeFeed;
     const { container } = render(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));

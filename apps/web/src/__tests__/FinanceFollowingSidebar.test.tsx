@@ -57,5 +57,5 @@ it("uses the full viewport for its independent scrolling rail", () => {
  expect(screen.getByRole("complementary").className).toContain("p-3");
  expect(screen.getByRole("link", {name: "All Finance"}).className).toContain("min-h-8");
  expect(screen.getByRole("link", {name: "All Finance"}).className).toContain("pointer-coarse:min-h-11");
- expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-3rem)]");
+ expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)]");
 });

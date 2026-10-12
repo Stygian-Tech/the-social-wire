@@ -8,7 +8,7 @@ import type { FinanceFeedDefinition, FinanceSelection } from "@/lib/financeFeedC
 export function FinanceFollowingSidebar({ definitions, selections, loading = false, error = false, feedID, onFeedChange }: {
   definitions: readonly FinanceFeedDefinition[]; selections: readonly FinanceSelection[]; loading?: boolean; error?: boolean; feedID: string; onFeedChange?: (id: string) => void;
 }) {
-  const sidebar = useViewportSidebar("[data-finance-scroll]");
+  const sidebar = useViewportSidebar("[data-slot=sidebar-wrapper]", 1280);
   const followed = new Set(selections.filter(selection => selection.kind === "instrument").map(selection => selection.reference));
   const rows = definitions.filter(feed => feed.kind === "instrument" && feed.instrumentIDs.length === 1 && followed.has(feed.instrumentIDs[0])).sort((a, b) => a.title.localeCompare(b.title));
   const followedSectors = new Set(selections.filter(selection => selection.kind === "sector").map(selection => selection.reference));
@@ -17,7 +17,7 @@ export function FinanceFollowingSidebar({ definitions, selections, loading = fal
     if (!onFeedChange || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault(); onFeedChange(id);
   }} className={`${floatingSidebarRowClassName} hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground ${all ? "mt-2 font-medium" : ""}`}><ChartNoAxesCombined aria-hidden="true" className="size-4 shrink-0" /><span className="min-w-0 break-words">{title}</span></a>;
-  return <aside ref={sidebar} aria-labelledby="finance-following-heading" className={`${floatingSidebarClassName} relative z-10 hidden xl:sticky xl:top-4 xl:block xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-3rem)] xl:overflow-y-auto xl:overscroll-contain`}>
+  return <aside ref={sidebar} aria-labelledby="finance-following-heading" className={`${floatingSidebarClassName} relative z-10 hidden xl:fixed xl:right-4 xl:top-[calc(var(--environment-banner-height,0px)+1rem)] xl:w-[17rem] xl:block xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] xl:overflow-y-auto xl:overscroll-contain`}>
     <h2 id="finance-following-heading" className="text-base font-semibold">Following in Finance</h2>
     {link("finance", "All Finance", true)}
     {loading ? <p role="status" className="mt-2 text-sm text-muted-foreground">Loading Your Interests…</p> : null}

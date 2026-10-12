@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isAtprotoOauthScope, ScopePermissions } from "@atproto/oauth-scopes";
 import {
   AT_PROTO_OAUTH_SCOPES,
   BLUESKY_PODCAST_VIDEO_SCOPES,
@@ -23,8 +24,18 @@ import {
 import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 
 describe("atprotoOAuthScopes", () => {
+  it("retains video permissions through provider validation and authorizes only the quota method", () => {
+    const granted = AT_PROTO_OAUTH_SCOPES.split(" ").filter(isAtprotoOauthScope);
+    for (const scope of BLUESKY_PODCAST_VIDEO_SCOPES) expect(granted).toContain(scope);
+    const permissions = new ScopePermissions(granted);
+    expect(permissions.allowsRpc({ aud: "did:web:video.bsky.app", lxm: "app.bsky.video.getUploadLimits" })).toBe(true);
+    expect(permissions.allowsRpc({ aud: "did:web:video.bsky.app", lxm: "app.bsky.video.uploadVideo" })).toBe(false);
+    const legacy = "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app";
+    expect(isAtprotoOauthScope(legacy)).toBe(false);
+    expect(new ScopePermissions([legacy].filter(isAtprotoOauthScope)).allowsRpc({ aud: "did:web:video.bsky.app", lxm: "app.bsky.video.getUploadLimits" })).toBe(false);
+  });
   it("grants only MP4 upload and the exact video quota/PDS delegation methods", () => {
-    expect(BLUESKY_PODCAST_VIDEO_SCOPES).toEqual(["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app"]);
+    expect(BLUESKY_PODCAST_VIDEO_SCOPES).toEqual(["blob:video/mp4", "rpc:com.atproto.repo.uploadBlob?aud=*", "rpc:app.bsky.video.getUploadLimits?aud=*"]);
     for (const scope of BLUESKY_PODCAST_VIDEO_SCOPES) expect(AT_PROTO_OAUTH_SCOPES.split(" ")).toContain(scope);
     expect(AT_PROTO_OAUTH_SCOPES).not.toContain("blob:video/*");
     expect(AT_PROTO_OAUTH_SCOPES).not.toContain("rpc:*?");

@@ -37,6 +37,7 @@ test("Podcasts scrolls behind its player and releases the inset when playback cl
     const content = screen.getByRole("main");
     const player = screen.getByRole("complementary", { name: "Podcast Player" });
     expect(content.classList.contains("overflow-y-auto")).toBe(true);
+    expect(content.classList.contains("lg:overflow-hidden")).toBe(true);
     expect(content.classList.contains("min-h-0")).toBe(true);
     expect(content.parentElement).toBe(player.parentElement);
     expect(player.previousElementSibling).toBe(content);

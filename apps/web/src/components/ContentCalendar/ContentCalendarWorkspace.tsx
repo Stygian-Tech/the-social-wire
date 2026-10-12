@@ -1,7 +1,6 @@
 "use client";
 
-import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
-
+import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBrandAccounts } from "@/hooks/useBrandAccounts";
@@ -15,8 +14,10 @@ export function ContentCalendarWorkspace() {
 function AccountCalendarWorkspace({ ownerDid }: { ownerDid: string }) {
   const accounts = useBrandAccounts(ownerDid);
   const [actorDid, setActorDid] = useState(ownerDid);
-  return <section data-analytics-ignore className="flex min-h-0 w-full flex-col overflow-y-auto p-3 sm:p-4">
-    <header className={`${floatingGlassClasses} mb-4 flex flex-wrap items-center justify-between gap-3 p-3`}><h1 className="text-xl font-semibold">Content Calendar</h1><div className="w-full max-w-sm"><SocialComposeAccountPicker label="Account" ownerDid={ownerDid} accounts={accounts} actorDid={actorDid} disabled={false} onChange={setActorDid} /></div></header>
+  return <section data-analytics-ignore className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+    <FeedHeader title="Content Calendar"><div className="w-full max-w-sm"><SocialComposeAccountPicker label="Account" ownerDid={ownerDid} accounts={accounts} actorDid={actorDid} disabled={false} onChange={setActorDid} /></div></FeedHeader>
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pt-0">
     {actorDid !== ownerDid && !accounts.includes(actorDid) ? <p role="alert" className="py-6 text-center text-sm text-muted-foreground">This Brand Account Is No Longer Linked.</p> : <ContentCalendarAccount key={`${ownerDid}:${actorDid}`} ownerDid={ownerDid} actorDid={actorDid} />}
+    </div>
   </section>;
 }
