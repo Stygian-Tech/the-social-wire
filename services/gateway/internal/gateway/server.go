@@ -51,6 +51,9 @@ func (s *Server) Handler() http.Handler {
 		s.Limiter = &RequestLimiter{}
 	}
 	for _, route := range Routes {
+		if strings.HasPrefix(route.Target, "/v1/analytics/") && !s.Config.ToolsEnabled {
+			continue
+		}
 		if route.Service == "circle" && !s.Config.Serves("circle") {
 			continue
 		}

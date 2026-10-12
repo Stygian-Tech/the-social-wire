@@ -16,7 +16,7 @@ type Config struct {
 	EndpointPolicy                                                                                                               *gatewaycore.EndpointPolicy
 	Environment, Address, DatabaseURL, RedisURL, CacheBackend, InternalSecret, InstanceID, Version, Region, WireSecret, WireMode string
 	MaximumConnections                                                                                                           int
-	PodcastsEnabled, TelemetryEnabled                                                                                            bool
+	PodcastsEnabled, ToolsEnabled, TelemetryEnabled                                                                              bool
 	Auth                                                                                                                         gatewaycore.AuthConfig
 	Modes                                                                                                                        map[string]string
 	WireRemote, FinanceRemote, SportsRemote                                                                                      *corpuscore.RemoteConfig
@@ -131,6 +131,10 @@ func Parse(env map[string]string) (Config, error) {
 	c.InstanceID = env["RAILWAY_REPLICA_ID"]
 	if c.InstanceID == "" {
 		c.InstanceID, _ = os.Hostname()
+	}
+	c.ToolsEnabled = c.Environment != "prod"
+	if raw := strings.TrimSpace(env["TOOLS_ENABLED"]); raw != "" {
+		c.ToolsEnabled = strings.EqualFold(raw, "true")
 	}
 	c.PodcastsEnabled = strings.EqualFold(env["PODCASTS_ENABLED"], "true")
 	c.TelemetryEnabled = true

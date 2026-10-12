@@ -61,7 +61,7 @@ func TestCreatorToolsProxyRequiresProBeforeContactingUpstream(t *testing.T) {
 		w.Write([]byte(`{"ok":true}`))
 	}))
 	defer up.Close()
-	p := Proxy{Config: Config{AppViewURL: up.URL, ProGatingEnabled: true, ProDIDs: map[string]bool{"did:plc:pro": true}}, Internal: up.Client()}
+	p := Proxy{Config: Config{ToolsEnabled: true, AppViewURL: up.URL, ProGatingEnabled: true, ProDIDs: map[string]bool{"did:plc:pro": true}}, Internal: up.Client()}
 	for _, route := range Routes {
 		if route.Target != "/v1/analytics/summary" && route.Target != "/v1/analytics/refresh" && route.Target != "/v1/analytics/events" && route.Target != "/xrpc/app.thesocialwire.appview.getFeed" {
 			continue

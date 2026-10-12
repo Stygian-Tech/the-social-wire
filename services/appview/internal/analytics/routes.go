@@ -21,6 +21,7 @@ type Content interface {
 	Validate(context.Context, string) error
 }
 type Routes struct {
+	Enabled  bool
 	Store    Storage
 	Provider Content
 	Now      func() time.Time
@@ -28,6 +29,9 @@ type Routes struct {
 }
 
 func (a Routes) Register(mux *http.ServeMux) {
+	if !a.Enabled {
+		return
+	}
 	mux.HandleFunc("GET /v1/analytics/summary", a.handle)
 	mux.HandleFunc("POST /v1/analytics/refresh", a.handle)
 	mux.HandleFunc("POST /v1/analytics/events", a.handle)

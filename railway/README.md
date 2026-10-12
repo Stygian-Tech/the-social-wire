@@ -9,8 +9,8 @@ are managed by the scoped Infrastructure as Code partial in
 `/.railway/railway.ts`. Keep service build roots at `/` so Docker and Railpack
 builds can access shared monorepo packages.
 
-Development's Podcast Media bucket and Podcast Media Worker are also declared
-in this graph through `/.railway/podcasts.ts`. They are omitted from Production;
+Environment-specific Podcast Media buckets and Podcast Media Workers are declared
+in this graph through `/.railway/podcasts.ts` for Development and Production;
 new podcast resources do not use a legacy service config path.
 
 | Railway Service | Config File |

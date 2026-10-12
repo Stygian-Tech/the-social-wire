@@ -79,3 +79,23 @@ func TestLocalSandboxPolicyIsConfinedToLocalAppView(t *testing.T) {
 		}
 	}
 }
+
+func TestToolsEnvironmentGate(t *testing.T) {
+	for _, test := range []struct {
+		environment, flag string
+		enabled           bool
+	}{
+		{"prod", "", false}, {"prod", "false", false}, {"prod", "true", true},
+		{"dev", "", true}, {"local", "", true}, {"dev", "false", false}, {"dev", "true", true}, {"prod", "invalid", false},
+	} {
+		t.Run(test.environment+"/"+test.flag, func(t *testing.T) {
+			c, err := Parse(map[string]string{"APP_ENV": test.environment, "TOOLS_ENABLED": test.flag, "DATABASE_URL": "postgres://local/test", "ENABLE_THIN_APPVIEW": "true"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.ToolsEnabled != test.enabled {
+				t.Fatalf("enabled=%v", c.ToolsEnabled)
+			}
+		})
+	}
+}

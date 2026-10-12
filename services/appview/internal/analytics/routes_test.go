@@ -41,7 +41,7 @@ func (f *fixture) Validate(context.Context, string) error { f.valid++; return ni
 func TestAuthenticationCanonicalAuthorIsolationAndRateAdmission(t *testing.T) {
 	f := &fixture{}
 	mux := http.NewServeMux()
-	Routes{Store: f, Provider: f, Limits: &Limits{}}.Register(mux)
+	Routes{Enabled: true, Store: f, Provider: f, Limits: &Limits{}}.Register(mux)
 	call := func(method, path, body, did string) int {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		if did != "" {
@@ -107,5 +107,26 @@ func TestCanonicalCacheReusesSuccessfulOwnershipWithoutSkippingInitialValidation
 	p.mu.Unlock()
 	if e := p.Validate(context.Background(), "at://did:plc:a/app.bsky.feed.post/one"); e != nil || f.valid != 2 {
 		t.Fatal("expired ownership not revalidated", e, f.valid)
+	}
+}
+
+func TestDisabledToolsDoesNotRegisterAnalytics(t *testing.T) {
+	mux := http.NewServeMux()
+	// No storage/provider is supplied: disabled routes must never invoke either.
+	Routes{Enabled: false}.Register(mux)
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/v1/analytics/summary"}, {"POST", "/v1/analytics/refresh"}, {"POST", "/v1/analytics/events"},
+	} {
+		for _, did := range []string{"", "did:plc:viewer"} {
+			r := httptest.NewRequest(route.method, route.path, nil)
+			if did != "" {
+				r = r.WithContext(gatewaycore.ContextWithAuth(r.Context(), gatewaycore.AuthContext{DID: did}))
+			}
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("%s=%d", route.path, w.Code)
+			}
+		}
 	}
 }

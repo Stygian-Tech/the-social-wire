@@ -10,7 +10,7 @@ import (
 
 type Config struct {
 	EndpointPolicy                                                            *gatewaycore.EndpointPolicy
-	PodcastsEnabled                                                           bool
+	PodcastsEnabled, ToolsEnabled                                             bool
 	Environment, Address, DatabaseURL, RedisURL, CacheBackend                 string
 	AppViewURL, OperationsURL, ProjectionURL, LatrURL                         string
 	AppViewSecret, OperationsSecret, LatrClientID, LatrAPIKey, LatrCredential string
@@ -36,6 +36,10 @@ func ParseConfig(env map[string]string) (Config, error) {
 		return c, policyError
 	}
 	c.EndpointPolicy = policy
+	c.ToolsEnabled = c.Environment != "prod"
+	if raw := strings.TrimSpace(env["TOOLS_ENABLED"]); raw != "" {
+		c.ToolsEnabled = strings.EqualFold(raw, "true")
+	}
 	c.PodcastsEnabled = strings.EqualFold(env["PODCASTS_ENABLED"], "true")
 	c.ProDIDs = make(map[string]bool)
 	c.ProGatingEnabled = strings.EqualFold(strings.TrimSpace(env["SOCIALWIRE_PRO_GATING_ENABLED"]), "true")
