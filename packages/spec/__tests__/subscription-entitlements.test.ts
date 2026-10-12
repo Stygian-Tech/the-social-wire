@@ -15,6 +15,8 @@ it("documents authenticated server-owned plans and paid creator reads without bl
   expect(schema.required).toEqual(["viewerDid", "plan"]);
   expect(schema.properties.plan.enum).toEqual(["free", "pro"]);
   expect(operation.description).toContain("SOCIALWIRE_PRO_DIDS");
+  expect(operation.description).toContain("Pro enforcement defaults off");
+  expect(operation.description).toContain("SOCIALWIRE_PRO_GATING_ENABLED");
   expect(spec.paths["/v1/analytics/summary"].get.responses["403"]).toBeDefined();
   expect(spec.paths["/v1/analytics/refresh"].post.responses["403"]).toBeDefined();
   expect(spec.paths["/v1/analytics/events"].post.responses["403"]).toBeUndefined();

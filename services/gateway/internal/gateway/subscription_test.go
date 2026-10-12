@@ -61,7 +61,7 @@ func TestCreatorToolsProxyRequiresProBeforeContactingUpstream(t *testing.T) {
 		w.Write([]byte(`{"ok":true}`))
 	}))
 	defer up.Close()
-	p := Proxy{Config: Config{AppViewURL: up.URL, ProDIDs: map[string]bool{"did:plc:pro": true}}, Internal: up.Client()}
+	p := Proxy{Config: Config{AppViewURL: up.URL, ProGatingEnabled: true, ProDIDs: map[string]bool{"did:plc:pro": true}}, Internal: up.Client()}
 	for _, route := range Routes {
 		if route.Target != "/v1/analytics/summary" && route.Target != "/v1/analytics/refresh" && route.Target != "/v1/analytics/events" && route.Target != "/xrpc/app.thesocialwire.appview.getFeed" {
 			continue
@@ -95,6 +95,39 @@ func TestCreatorToolsProxyRequiresProBeforeContactingUpstream(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+func TestProGatingDefaultsOffWithoutBypassingAuthentication(t *testing.T) {
+	for _, flag := range []string{"", "false", "true"} {
+		config, err := ParseConfig(map[string]string{"SOCIALWIRE_PRO_GATING_ENABLED": flag})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.ProGatingEnabled != (flag == "true") {
+			t.Fatalf("unexpected gating for %q", flag)
+		}
+		if config.hasPro("did:plc:free") {
+			t.Fatal("disabled gating must not grant a paid plan")
+		}
+		for _, did := range []string{"", gatewaycore.AnonymousDiscoveryDID, "did:plc:free"} {
+			r := httptest.NewRequest("GET", "/v1/analytics/summary", nil)
+			if did != "" {
+				r = r.WithContext(gatewaycore.ContextWithAuth(r.Context(), gatewaycore.AuthContext{DID: did}))
+			}
+			w := httptest.NewRecorder()
+			allowed := requirePro(w, r, config)
+			want := http.StatusUnauthorized
+			if did == "did:plc:free" {
+				want = http.StatusOK
+				if config.ProGatingEnabled {
+					want = http.StatusForbidden
+				}
+			}
+			if w.Code != want || allowed != (want == http.StatusOK) {
+				t.Fatalf("flag=%q did=%q allowed=%v status=%d", flag, did, allowed, w.Code)
+			}
 		}
 	}
 }

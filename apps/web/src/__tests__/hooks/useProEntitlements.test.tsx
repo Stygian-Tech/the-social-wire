@@ -8,6 +8,8 @@ import { useProEntitlements } from "@/hooks/useProEntitlements";
 const restores: (() => void)[] = [];
 afterEach(() => { cleanup(); restores.splice(0).forEach(restore => restore()); });
 it("denies access while loading, on viewer change, and after a refresh failure", async () => {
+  const gating = spyOn(client, "isProGatingEnabled").mockReturnValue(true);
+  restores.push(() => gating.mockRestore());
   let did = "did:plc:first";
   const authSpy = spyOn(auth, "useAuth").mockImplementation(() => ({ session: { did }, getOAuthSession: () => ({ did } as unknown as OAuthSession), oauthSessionReloadSeq: 0 } as ReturnType<typeof auth.useAuth>));
   let resolve: (value: client.ProEntitlements) => void = () => {};
@@ -28,4 +30,22 @@ it("denies access while loading, on viewer change, and after a refresh failure",
   fetch.mockRejectedValue(new Error("Unavailable"));
   await act(async () => { await view.result.current.refetch(); });
   await waitFor(() => expect(view.result.current.isPro).toBe(false));
+});
+
+it("permits signed-in feature access without fetching when gating is disabled", async () => {
+  let did: string | undefined = "did:plc:free";
+  const gating = spyOn(client, "isProGatingEnabled").mockReturnValue(false);
+  const authSpy = spyOn(auth, "useAuth").mockImplementation(() => ({ session: did ? { did } : undefined, getOAuthSession: () => ({ did } as unknown as OAuthSession), oauthSessionReloadSeq: 0 } as ReturnType<typeof auth.useAuth>));
+  const fetch = spyOn(client, "getProEntitlements");
+  restores.push(() => gating.mockRestore(), () => authSpy.mockRestore(), () => fetch.mockRestore());
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  restores.push(() => cache.clear());
+  const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={cache}>{children}</QueryClientProvider>;
+  const view = renderHook(useProEntitlements, { wrapper });
+  expect(view.result.current.isPro).toBe(true);
+  expect(fetch).not.toHaveBeenCalled();
+  did = undefined;
+  view.rerender();
+  expect(view.result.current.isPro).toBe(false);
+  expect(fetch).not.toHaveBeenCalled();
 });

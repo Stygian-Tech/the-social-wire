@@ -4,6 +4,10 @@ import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 export type ProEntitlements = { viewerDid: string; plan: "free" | "pro" };
 export const PRO_REQUIRED_MESSAGE = "This Feature Requires Social Wire Pro.";
 
+export function isProGatingEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_PRO_GATING_ENABLED === "true";
+}
+
 /** Entitlements come only from the authenticated server, never browser storage. */
 export async function getProEntitlements(session: OAuthSession, signal?: AbortSignal): Promise<ProEntitlements> {
   const response = await gatewayFetch(session, "/v1/subscription/entitlements", { signal, cache: "no-store" });
@@ -14,5 +18,6 @@ export async function getProEntitlements(session: OAuthSession, signal?: AbortSi
 }
 
 export async function requirePro(session: OAuthSession): Promise<void> {
+  if (!isProGatingEnabled()) return;
   if ((await getProEntitlements(session)).plan !== "pro") throw new Error(PRO_REQUIRED_MESSAGE);
 }
