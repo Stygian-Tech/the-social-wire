@@ -12,7 +12,7 @@ import {
   SIDEBAR_WIDTH_MAX_PX,
 } from "@/lib/sidebarWidthStorage"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useClientHydrated } from "@/hooks/useClientHydrated"
+import { useSidebarMounted } from "@/hooks/useSidebarMounted"
 import { cn } from "@/lib/utils"
 import { appChromePaddingClassName } from "@/components/shared/appChromeStyles"
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles"
@@ -208,7 +208,7 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
-  const showMobileSidebar = useClientHydrated() && isMobile
+  const showMobileSidebar = useSidebarMounted() && isMobile
 
   if (collapsible === "none") {
     return (
@@ -347,6 +347,7 @@ function SidebarResizeHandle({
     setSidebarWidthPx,
     setSidebarResizing,
   } = useSidebar()
+  const mounted = useSidebarMounted()
 
   const clampWidth = React.useCallback((value: number) => {
     return Math.min(
@@ -421,7 +422,7 @@ function SidebarResizeHandle({
     [clampWidth, isMobile, open, setSidebarWidthPx, side]
   )
 
-  if (isMobile || !open) {
+  if ((mounted && isMobile) || !open) {
     return null
   }
 

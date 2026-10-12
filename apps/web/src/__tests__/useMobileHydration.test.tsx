@@ -4,7 +4,7 @@ import { hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { useIsMobile } from "@/hooks/use-mobile";
 import * as Mobile from "@/hooks/use-mobile";
-import { Sidebar, SidebarProvider } from "@/components/ui/sidebar";
+import { Sidebar, SidebarProvider, SidebarResizeHandle } from "@/components/ui/sidebar";
 
 const restores: (() => void)[] = [];
 let root: Root | undefined;
@@ -75,11 +75,12 @@ describe("responsive layout hydration", () => {
   it("hydrates a sidebar after its parent context has already switched to mobile", async () => {
     const mobile = spyOn(Mobile, "useIsMobile").mockReturnValue(false);
     restores.push(() => mobile.mockRestore());
-    const layout = <SidebarProvider><Sidebar><p>Navigation Items</p></Sidebar></SidebarProvider>;
+    const layout = <SidebarProvider><Sidebar><p>Navigation Items</p><SidebarResizeHandle /></Sidebar></SidebarProvider>;
     container = document.createElement("div");
     container.innerHTML = renderToString(layout);
     document.body.append(container);
     expect(container.querySelector('[data-slot="sidebar-container"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="sidebar-resize-handle"]')).not.toBeNull();
     mobile.mockReturnValue(true);
     const errors: unknown[] = [];
     await act(async () => {
