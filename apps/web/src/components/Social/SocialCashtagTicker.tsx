@@ -1,4 +1,5 @@
 "use client";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 
 import { useEffect, useState } from "react";
 import { FinanceTickerEmbed } from "@/components/FinanceTickerMarquee";
@@ -15,7 +16,7 @@ export function SocialCashtagTicker({ symbols }: { symbols: string }) {
     return () => { observer.disconnect(); media?.removeEventListener("change", update); };
   }, []);
   const config = JSON.stringify({ symbols, theme });
-  return <section aria-label="Cashtag Market Ticker" onClick={event => event.stopPropagation()} className="min-w-0 overflow-hidden rounded-xl border [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]">
+  return <section aria-label="Cashtag Market Ticker" onClick={event => event.stopPropagation()} className={`${floatingGlassClasses} min-w-0 overflow-hidden rounded-xl`}>
     {reducedMotion ? <div className="flex flex-wrap gap-3 p-3 text-sm">{symbols.split(",").map(symbol => <a key={symbol} href={`https://www.tradingview.com/symbols/${symbol.replace(":", "-")}/`} target="_blank" rel="noopener noreferrer">${symbol.split(":")[1]}</a>)}</div> : <FinanceTickerEmbed key={config} config={config} />}
     {reducedMotion ? <div className="tradingview-widget-copyright px-3 py-1 text-xs text-muted-foreground"><a href="https://www.tradingview.com/markets/" target="_blank" rel="noopener nofollow noreferrer">Ticker Tape by TradingView</a></div> : null}
   </section>;

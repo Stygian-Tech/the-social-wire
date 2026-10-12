@@ -110,7 +110,7 @@ function ReadContentInset({ children }: { children: React.ReactNode }) {
     >
       <ReadArticleFilterBar />
       <main
-        data-feed-header-shell={editorialNewsRoute ? undefined : "true"}
+        data-feed-header-shell="true"
         className="flex min-h-0 flex-1 overflow-hidden"
       >
         {children}

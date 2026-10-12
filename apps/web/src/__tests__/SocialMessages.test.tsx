@@ -141,6 +141,14 @@ describe("Messages workspace", () => {
     await waitFor(() => expect(write.mock.calls.some(call => call[2].kind === "addReaction" && call[2].messageId === "m" && call[2].value === "❤️")).toBe(true));
   });
   it("renders the native immediate parent and keeps the composer outside the scrolling history", async () => {
+    const observed = new Map<Element, () => void>();
+    const observerDescriptor = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
+    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: class {
+      constructor(private callback: () => void) {}
+      observe(element: Element) { observed.set(element, this.callback); }
+      disconnect() {}
+    } });
+    restores.push(() => { if (observerDescriptor) Object.defineProperty(globalThis, "ResizeObserver", observerDescriptor); else Reflect.deleteProperty(globalThis, "ResizeObserver"); });
     const parent = { $type: "chat.bsky.convo.defs#messageView" as const, id: "parent", rev: "1", text: "The text being replied to", sender: { did: alice }, sentAt: "2026-10-10T00:00:00Z" };
     const reply = { ...parent, id: "reply", text: "My response", sender: { did: bob }, replyTo: parent };
     const list = spyOn(Chat, "getBlueskyConversations").mockImplementation(async args => ({ convos: args.status === "request" ? [] : [convo] })); restores.push(() => list.mockRestore());
@@ -161,6 +169,22 @@ describe("Messages workspace", () => {
     expect(log.contains(input)).toBe(false);
     expect(log.className.includes("flex-1")).toBe(true);
     expect(input.closest("form")?.className.includes("shrink-0")).toBe(true);
+    const footer = input.closest("form")!.parentElement!;
+    expect(log.nextElementSibling).toBe(footer);
+    expect(log.getAttribute("data-floating-glass-scroll-bottom")).toBe("true");
+    let footerHeight = 48;
+    footer!.style.marginTop = "12px";
+    footer!.getBoundingClientRect = () => ({ height: footerHeight }) as DOMRect;
+    observed.get(footer!)?.();
+    expect(chatPane.style.getPropertyValue("--floating-glass-bottom-extent")).toBe("60px");
+    footerHeight = 160;
+    observed.get(footer!)?.();
+    expect(chatPane.style.getPropertyValue("--floating-glass-bottom-extent")).toBe("172px");
+    fireEvent.click(screen.getByRole("button", { name: "Message Actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete For Me" }));
+    expect(log.nextElementSibling).toBe(footer);
+    expect(footer!.contains(screen.getByRole("alert"))).toBe(true);
+    expect(log.getAttribute("data-floating-glass-scroll-bottom")).toBe("true");
     const contacts = screen.getByRole("complementary", { name: "Conversations" });
     expect(contacts.contains(screen.getByRole("button", { name: "New Conversation" }))).toBe(true);
     expect(contacts.contains(input)).toBe(false);

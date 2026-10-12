@@ -29,7 +29,7 @@ export function FinanceTickerMarquee({ feed, hidden }: { feed?: FinanceFeedDefin
     const config = JSON.stringify({ symbols: symbols.map(symbol => symbol.proName).join(","), theme });
     // The provider owns its attribution row; reserve space beside it on narrow tickers.
     return (
-        <section data-topic-topbar aria-label="Market Ticker" className={`@container sticky top-4 z-20 m-4 shrink-0 overflow-hidden ${floatingGlassClasses} [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]`}>
+        <section data-topic-topbar aria-label="Market Ticker" className={`@container sticky top-4 z-20 m-4 shrink-0 overflow-hidden ${floatingGlassClasses}`}>
             {staticDisplay ? (
                 <nav aria-label="Ticker Stocks" className="flex gap-4 overflow-x-auto px-4 py-3 text-sm">
                     {symbols.map(symbol => <TickerLink key={symbol.instrumentID} symbol={symbol} />)}
@@ -80,7 +80,7 @@ export function FinanceTickerEmbed({ config }: { config: string }) {
         tape.style.display = "block";
         tape.style.width = "100%";
         tape.style.colorScheme = theme;
-        tape.style.setProperty("--tv-widget-background-color", theme === "dark" ? "#080808" : "var(--background)");
+        tape.style.setProperty("--tv-widget-background-color", "transparent");
         target.appendChild(tape);
         const fail = () => { if (active) { window.clearTimeout(timer); setUnavailable(true); } };
         const ready = () => { if (active) { window.clearTimeout(timer); setUnavailable(false); } };

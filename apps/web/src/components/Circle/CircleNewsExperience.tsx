@@ -1,5 +1,7 @@
 "use client";
 
+import { attachFloatingGlassControlsOverlay } from "@/components/shared/floatingGlassScrollOverlay";
+
 import { useMemo } from "react";
 import { Network } from "lucide-react";
 
@@ -185,7 +187,8 @@ export function CircleNewsExperience({
 
   return (
     <CircleStoryActionsProvider refresh={() => edition.refetch()}>
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="relative flex h-full min-h-0 flex-col">
+        <div data-floating-glass-controls ref={attachFloatingGlassControlsOverlay}>
         {stale ? (
           <div
             role="status"
@@ -195,6 +198,7 @@ export function CircleNewsExperience({
           </div>
         ) : null}
         <CircleActionsError />
+        </div>
         <div className="min-h-0 flex-1">
           <WireNewsEditionLayout
             pages={layoutPages}
