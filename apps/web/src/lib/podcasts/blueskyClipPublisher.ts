@@ -5,6 +5,7 @@ import { getAtprotoNetwork } from "@/lib/atprotoNetwork";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
 import type { PodcastClip } from "./client";
 import { PodcastClipAlreadyPublishedError } from "./podcastClipAlreadyPublishedError";
+import { podcastClipPostRkey } from "./podcastClipPostRkey";
 export { PodcastClipAlreadyPublishedError } from "./podcastClipAlreadyPublishedError";
 
 export const BLUESKY_CLIP_MAX_BYTES = 300_000_000;
@@ -80,8 +81,7 @@ export async function publishBlueskyPodcastClip(args: BlueskyPodcastClipPublishA
   await validateBlueskyClipVideo(video); guard(args);
   const network = getAtprotoNetwork();
   if (network.plcDirectory !== "https://plc.directory" || network.publicAppView !== "https://public.api.bsky.app" || network.appViewDid !== "did:web:api.bsky.app") throw new Error("Bluesky video publishing is unavailable in the isolated local sandbox.");
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${session.did}\n${clip.id}`)); guard(args);
-  const rkey = `clip-${Array.from(new Uint8Array(digest), n => n.toString(16).padStart(2, "0")).join("")}`;
+  const rkey = await podcastClipPostRkey(session.did, clip.id, clip.createdAt); guard(args);
   const key = `${session.did}/${rkey}`;
   if (activePublishes.has(key)) throw new Error("This clip is already being published.");
   activePublishes.add(key);
