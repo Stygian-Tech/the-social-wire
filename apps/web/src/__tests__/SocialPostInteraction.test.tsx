@@ -51,6 +51,15 @@ describe("Social Post Interactions", () => {
   view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post: { ...post, replyCount: 999 } }} moderation={moderation} /></QueryClientProvider>);
   expect(screen.getByRole("button", { name: "Reply (999)" }).textContent).toBe("999");
  });
+ it("retains conversation presentation for a record-only reply with missing feed context", () => {
+  const cid = "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+  show({ post: { ...post, record: { ...post.record, reply: {
+    parent: { uri: `${post.uri}parent`, cid }, root: { uri: `${post.uri}root`, cid },
+  } } } });
+  expect(screen.getByLabelText("Post Conversation")).toBeTruthy();
+  expect(screen.getByText("Original post unavailable.")).toBeTruthy();
+  expect(screen.getByText("Replying To an unavailable post")).toBeTruthy();
+ });
  it("renders parent and reply in one card and omits a later standalone parent", () => {
   const parent = { ...post, replyCount: 99, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Grouped Parent", createdAt: "2026-10-10T00:00:00Z" } };
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }), oauthSessionReloadSeq: 0 } as unknown as ReturnType<typeof Auth.useAuth>);

@@ -4,6 +4,7 @@ import { getAtprotoNetwork } from "@/lib/atprotoNetwork";
 import { LocalAppViewAgent } from "@/lib/localAppViewAgent";
 import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import type { SocialModerationOpts } from "@/lib/socialModerationTypes";
+import { hydrateSocialReplies } from "./hydrateSocialReplies";
 
 export type SocialFeed = {
   kind: "following" | "feed" | "list";
@@ -191,7 +192,7 @@ export async function getBlueskySocialPage(args: {
     : args.feed.kind === "feed"
       ? await agent.app.bsky.feed.getFeed({ ...params, feed: args.feed.uri }, options)
       : await agent.app.bsky.feed.getListFeed({ ...params, list: args.feed.uri }, options);
-  return response.data;
+  return { ...response.data, feed: await hydrateSocialReplies(agent, response.data.feed, args.signal) };
 }
 
 /** Keep repost identity while deduplicating overlaps between paginated results. */

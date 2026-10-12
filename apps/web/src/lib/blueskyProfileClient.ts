@@ -1,6 +1,7 @@
 import { AppBskyFeedPost, type ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createAuthenticatedAppViewAgent, type BlueskySocialPage } from "@/lib/blueskySocialClient";
+import { hydrateSocialReplies } from "./hydrateSocialReplies";
 
 export type ProfileSection = "posts" | "replies" | "media" | "likes";
 
@@ -30,7 +31,8 @@ export async function getBlueskyProfilePage(args: {
   const response = args.tab === "likes"
     ? await agent.app.bsky.feed.getActorLikes(params, options)
     : await agent.app.bsky.feed.getAuthorFeed({ ...params, filter: AUTHOR_FILTERS[args.tab] }, options);
-  return args.tab === "replies"
-    ? { ...response.data, feed: response.data.feed.filter(item => AppBskyFeedPost.isRecord(item.post.record) && !!item.post.record.reply) }
-    : response.data;
+  const feed = args.tab === "replies"
+    ? response.data.feed.filter(item => AppBskyFeedPost.isRecord(item.post.record) && !!item.post.record.reply)
+    : response.data.feed;
+  return { ...response.data, feed: await hydrateSocialReplies(agent, feed, args.signal) };
 }

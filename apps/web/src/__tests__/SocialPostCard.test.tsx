@@ -94,6 +94,16 @@ describe("Social Post Rendering", () => {
     expect(withheld).toContain("Replying To a withheld post");
     expect(withheld).not.toContain('class="break-all hover:underline"');
   });
+  it("labels record-only replies when feed metadata is missing", () => {
+    const value = item();
+    value.post.record = { ...value.post.record, reply: {
+      parent: { uri: "at://did:plc:parent/app.bsky.feed.post/parent", cid: value.post.cid },
+      root: { uri: "at://did:plc:parent/app.bsky.feed.post/root", cid: value.post.cid },
+    } };
+    const html = card(value);
+    expect(html).toContain("Replying To an unavailable post");
+    expect(html).toContain("lucide-message-circle");
+  });
   it("does not attribute ordinary feed posts to a like or quote", () => {
     const html = card(item());
     expect(html).not.toContain("lucide-heart");

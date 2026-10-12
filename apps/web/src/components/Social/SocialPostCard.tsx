@@ -21,6 +21,7 @@ import { SocialCashtags } from "./SocialCashtags";
 import { SocialPostTimestamp } from "./SocialPostTimestamp";
 import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
 import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
+import { socialReplyMetadata } from "@/lib/socialReplyMetadata";
 
 export function SocialPostCard({
   item,
@@ -42,6 +43,7 @@ export function SocialPostCard({
   analyticsSurface?: "social-feed" | "post-viewer" | "messages";
 }) {
   const post = item.post;
+  const reply = socialReplyMetadata(item);
   const record = AppBskyFeedPost.validateRecord(post.record);
   const decision = moderateSocialPost(post, moderation);
   const content = decision.ui("contentList");
@@ -108,8 +110,8 @@ export function SocialPostCard({
             : `by ${repost.displayName || repost.handle}`}
           </span></p>
       ) : null}
-      {item.reply ? (
-        <SocialReplyLabel reply={item.reply} moderation={moderation} />
+      {reply ? (
+        <SocialReplyLabel reply={reply} moderation={moderation} />
       ) : null}
       {hasQuotedPost ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
