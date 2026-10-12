@@ -1,3 +1,4 @@
+import { toolsEnabled } from "@/lib/toolsEnabled";
 import { BrowserOAuthClient, OAuthClient, OAuthCallbackError, type BrowserOAuthClientLoadOptions, type BrowserOAuthClientOptions } from "@atproto/oauth-client-browser";
 import { assertOAuthDiscoverableClientId, atprotoLoopbackClientMetadata } from "@atproto/oauth-types";
 import { BRAND_LINK_STATE_PREFIX, assertBrandAccountAvailable, validateBrandLinkIntent } from "./brandAccountStorage";
@@ -21,6 +22,7 @@ export class BrandAwareOAuthClient extends BrowserOAuthClient {
     await this.stateStore.del(stateKey!);
     const appState = stored.appState;
     const requireOwnerPro = async () => {
+      if (!toolsEnabled()) throw new Error("Tools Are Not Available In This Environment.");
       const intent = validateBrandLinkIntent(appState, this.primaryDid());
       const session = await OAuthClient.prototype.restore.call(this, intent.ownerDid);
       validateBrandLinkIntent(appState, this.primaryDid());
@@ -29,6 +31,7 @@ export class BrandAwareOAuthClient extends BrowserOAuthClient {
       validateBrandLinkIntent(appState, this.primaryDid());
     };
     try {
+      if (!toolsEnabled()) throw new Error("Tools Are Not Available In This Environment.");
       validateBrandLinkIntent(appState, this.primaryDid());
       if (params.has("response")) throw new Error("JARM Is Not Supported.");
       if (params.has("error")) throw new OAuthCallbackError(params, undefined, appState);

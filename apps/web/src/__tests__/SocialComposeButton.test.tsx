@@ -1,3 +1,4 @@
+import * as Tools from "@/lib/toolsEnabled";
 import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -232,4 +233,19 @@ it("drops a selected brand composer after downgrade without publishing its draft
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
   expect(brandPublish).not.toHaveBeenCalled();
   expect(personalPublish).not.toHaveBeenCalled();
+});
+
+it("keeps personal posting usable without brand or scheduling controls when Tools is disabled", async () => {
+  const gate = spyOn(Tools, "toolsEnabled").mockReturnValue(false); restores.push(() => gate.mockRestore());
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: `at://${oauth.did}/app.bsky.feed.post/new`, cid: "cid" }); restores.push(() => publish.mockRestore());
+  const field = await open();
+  expect(screen.queryByLabelText("Post As")).toBeNull();
+  expect(screen.queryByText("Schedule Post")).toBeNull();
+  expect(screen.queryByText("Multi-account support and scheduling require Pro.")).toBeNull();
+  expect(scheduling.useSkejScheduling).toHaveBeenLastCalledWith(oauth.did, oauth.did, { enabled: false, includeSchedules: false });
+  fireEvent.change(field, { target: { value: "Personal Production Post" } });
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByRole("status");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][0].session).toBe(oauth);
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { toolsEnabled } from "@/lib/toolsEnabled";
 import { useProEntitlements } from "@/hooks/useProEntitlements";
 import { requirePro } from "@/lib/proEntitlements";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -13,14 +14,15 @@ import { cancelSkejSchedule, createSkejSchedule, getSkejSchedulingReadiness, lis
 
 export function useSkejScheduling(ownerDid: string, actorDid: string, options: { enabled?: boolean; includeSchedules?: boolean } = {}) {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
-  const { isPro } = useProEntitlements();
+  const { isPro: proAccess } = useProEntitlements();
+  const isPro = toolsEnabled() && proAccess;
   const access = useRef(isPro);
   useLayoutEffect(() => { access.current = isPro; }, [isPro]);
   const accounts = useBrandAccounts(ownerDid);
   const client = useQueryClient();
   const linkage = useRef(0);
   const [revision, setRevision] = useState(0);
-  useLayoutEffect(() => onBrandAccountsChanged(() => { linkage.current++; setRevision(linkage.current); }), []);
+  useLayoutEffect(() => { if (toolsEnabled()) return onBrandAccountsChanged(() => { linkage.current++; setRevision(linkage.current); }); }, []);
   const generation = useMemo(() => ({ ownerDid, actorDid, oauthSessionReloadSeq, revision }), [ownerDid, actorDid, oauthSessionReloadSeq, revision]);
   const current = useRef({ ownerDid, actorDid, mounted: true, generation });
   const writing = useRef(false);

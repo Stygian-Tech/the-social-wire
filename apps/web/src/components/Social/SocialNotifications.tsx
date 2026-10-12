@@ -1,5 +1,6 @@
 "use client";
 
+import { toolsEnabled } from "@/lib/toolsEnabled";
 import { useCallback, useState } from "react";
 import { useBrandAccounts } from "@/hooks/useBrandAccounts";
 import { includeBrandNotifications, setIncludeBrandNotifications } from "@/lib/brandAccounts/brandNotificationPreferences";
@@ -73,8 +74,8 @@ function SocialNotificationsViewer() {
     </FeedHeader>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" key={session?.did}>
       <div className="mx-auto flex max-w-2xl flex-col gap-4 p-3 sm:p-4">
-        {session ? <BrandNotificationSections ownerDid={session.did} accounts={brandAccounts} included={includeBrands} setIncluded={changeIncludeBrands} onUnread={reportBrandUnread} /> : null}
-        {includeBrands && brandAccounts.length ? <h2 className="font-semibold">Personal Notifications</h2> : null}
+        {toolsEnabled() && session ? <BrandNotificationSections ownerDid={session.did} accounts={brandAccounts} included={includeBrands} setIncluded={changeIncludeBrands} onUnread={reportBrandUnread} /> : null}
+        {toolsEnabled() && includeBrands && brandAccounts.length ? <h2 className="font-semibold">Personal Notifications</h2> : null}
         {markSeen.isError || unread.isError ? <section role="alert" className="flex flex-col items-start gap-2"><p className="text-sm text-destructive">{socialDiscoveryErrorMessage(markSeen.error ?? unread.error, "Notifications")}</p>{socialDiscoveryErrorMessage(markSeen.error ?? unread.error, "Notifications") === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" onClick={() => { void unread.refetch(); }}>Retry Unread Status</Button>}</section> : null}
         {error ? <section role="alert" className="flex flex-col items-start gap-3 py-4">
           <h2 className="text-lg font-semibold">Notifications Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>

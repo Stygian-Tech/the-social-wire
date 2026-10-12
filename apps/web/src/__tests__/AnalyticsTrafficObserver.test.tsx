@@ -1,3 +1,4 @@
+import * as Tools from "@/lib/toolsEnabled";
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
@@ -66,4 +67,10 @@ it("discards a queued event when the OAuth identity mismatches and continues aft
   oauthDid = did; fetch.mockRejectedValueOnce(new Error("Network Offline"));
   act(() => { emit(event); emit({ ...event, event: "outbound_click" }); });
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+});
+
+it("does not register tracking or emit requests when Tools is unavailable", () => {
+  const gate = spyOn(Tools, "toolsEnabled").mockReturnValue(false); restores.push(() => gate.mockRestore());
+  const { stop, fetch } = setup(); render(<AnalyticsTrafficObserver />);
+  expect(stop).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
 });

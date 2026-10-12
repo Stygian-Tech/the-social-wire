@@ -1,3 +1,4 @@
+import * as Tools from "@/lib/toolsEnabled";
 import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
@@ -64,4 +65,15 @@ it("revokes a restored brand session and captured actor guard on downgrade", asy
   expect(result.current.session).toBeUndefined();
   expect(() => previousGuard()).toThrow("Changed");
   expect(() => result.current.assertCurrentActor()).toThrow("Changed");
+});
+
+it("does not expose or restore persisted brand identities when Tools is unavailable to a Pro viewer", () => {
+  const gate = spyOn(Tools, "toolsEnabled").mockReturnValue(false); restores.push(() => gate.mockRestore());
+  const restore = spyOn(Sessions, "restoreBrandAccount"); restores.push(() => restore.mockRestore());
+  const { result } = renderHook(() => ({ accounts: useBrandAccounts(owner), actor: useBrandAccountSession(owner, "did:plc:brand") }));
+  expect(result.current.accounts).toEqual([]);
+  expect(result.current.actor.session).toBeUndefined();
+  expect(Sessions.listBrandAccounts).not.toHaveBeenCalled();
+  expect(restore).not.toHaveBeenCalled();
+  expect(() => result.current.actor.assertCurrentActor()).toThrow();
 });

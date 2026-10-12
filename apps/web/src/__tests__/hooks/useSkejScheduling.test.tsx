@@ -1,3 +1,4 @@
+import * as Tools from "@/lib/toolsEnabled";
 import * as Entitlements from "@/lib/proEntitlements";
 import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
@@ -162,5 +163,16 @@ test("revokes captured scheduling actor guards and writes after downgrade", asyn
   rerender();
   expect(() => actor.assertCurrentActor()).toThrow();
   await act(async () => { await expect(result.current.schedule("Downgraded Draft", "2099-01-01T12:00:00Z")).rejects.toThrow(); });
+  expect(create).not.toHaveBeenCalled();
+});
+
+test("disables scheduling queries and rejects mutations when Tools is unavailable to a Pro viewer", async () => {
+  const gate = spyOn(Tools, "toolsEnabled").mockReturnValue(false); restores.push(() => gate.mockRestore());
+  const create = spyOn(Client, "createSkejSchedule"); restores.push(() => create.mockRestore());
+  const { result } = renderHook(() => useSkejScheduling(owner, owner), { wrapper });
+  expect(Client.getSkejSchedulingReadiness).not.toHaveBeenCalled();
+  expect(Client.listSkejSchedules).not.toHaveBeenCalled();
+  await act(async () => { await expect(result.current.schedule("Hidden Tool", "2099-01-01T12:00:00Z")).rejects.toThrow(); });
+  expect(Client.getSkejSchedulingReadiness).not.toHaveBeenCalled();
   expect(create).not.toHaveBeenCalled();
 });

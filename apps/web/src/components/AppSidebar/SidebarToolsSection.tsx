@@ -1,3 +1,4 @@
+import { toolsEnabled } from "@/lib/toolsEnabled";
 import { LockKeyhole } from "lucide-react";
 import { useProEntitlements } from "@/hooks/useProEntitlements";
 import { CalendarDays, ChartNoAxesCombined, FilePenLine, Radio, UsersRound, Video } from "lucide-react";
@@ -13,6 +14,11 @@ const tools = [
 ] as const;
 
 export function SidebarToolsSection({ pathname, onNavigate }: { pathname: string; onNavigate: (href: string) => void }) {
+  if (!toolsEnabled()) return null;
+  return <EnabledToolsSection pathname={pathname} onNavigate={onNavigate} />;
+}
+
+function EnabledToolsSection({ pathname, onNavigate }: { pathname: string; onNavigate: (href: string) => void }) {
   const { isPro } = useProEntitlements();
   return <SidebarGroup className="pb-1 pt-1">
     <SidebarGroupLabel>Tools {!isPro ? <span className="ml-2 text-[10px]">Pro</span> : null}</SidebarGroupLabel>

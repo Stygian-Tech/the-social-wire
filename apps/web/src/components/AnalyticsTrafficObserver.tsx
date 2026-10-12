@@ -1,5 +1,6 @@
 "use client";
 
+import { toolsEnabled } from "@/lib/toolsEnabled";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { observeAnalyticsTraffic, type AnalyticsEvent } from "@/lib/analyticsTracking";
@@ -10,7 +11,7 @@ export function AnalyticsTrafficObserver() {
   const { session, getOAuthSession } = useAuth();
   const did = session?.did;
   useEffect(() => {
-    if (!did || navigator.doNotTrack === "1") return;
+    if (!toolsEnabled() || !did || navigator.doNotTrack === "1") return;
     const ac = new AbortController();
     let queue = Promise.resolve();
     let queued = 0;

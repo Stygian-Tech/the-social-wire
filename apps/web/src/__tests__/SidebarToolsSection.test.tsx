@@ -1,3 +1,4 @@
+import * as Tools from "@/lib/toolsEnabled";
 import * as Pro from "@/hooks/useProEntitlements";
 import { afterAll, afterEach, beforeAll, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -31,4 +32,12 @@ it("marks every Tools destination as locked for Free viewers while keeping its g
   }
   fireEvent.click(screen.getByRole("button", { name: "Analytics" }));
   expect(onNavigate).toHaveBeenCalledWith("/analytics");
+});
+
+it("hides every Tools destination when deployment access is disabled, including for Pro viewers", () => {
+  const gate = spyOn(Tools, "toolsEnabled").mockReturnValue(false); restores.push(() => gate.mockRestore());
+  const entitlement = spyOn(Pro, "useProEntitlements"); restores.push(() => entitlement.mockRestore());
+  render(<SidebarProvider><SidebarToolsSection pathname="/social" onNavigate={() => {}} /></SidebarProvider>);
+  expect(screen.queryByLabelText("Tools")).toBeNull();
+  expect(entitlement).not.toHaveBeenCalled();
 });

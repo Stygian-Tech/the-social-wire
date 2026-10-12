@@ -1,5 +1,6 @@
 "use client";
 
+import { toolsEnabled } from "@/lib/toolsEnabled";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SquarePen } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -29,13 +30,15 @@ export function SocialComposeButton() {
 
 function SocialAccountComposeButton() {
   const { session, getOAuthSession } = useAuth();
-  const { isPro } = useProEntitlements();
+  const { isPro: proAccess } = useProEntitlements();
+  const toolsAvailable = toolsEnabled();
+  const isPro = toolsAvailable && proAccess;
   const cache = useQueryClient();
   const accounts = useBrandAccounts(session?.did ?? "");
   const [selectedActor, setSelectedActor] = useState<string>();
   const actorDid = isPro ? selectedActor ?? session?.did : session?.did;
   const [open, setOpen] = useState(false);
-  const scheduler = useSkejScheduling(session?.did ?? "", session?.did ?? "", { enabled: open && actorDid === session?.did, includeSchedules: false });
+  const scheduler = useSkejScheduling(session?.did ?? "", session?.did ?? "", { enabled: toolsAvailable && open && actorDid === session?.did, includeSchedules: false });
   const [mode, setMode] = useState<"now" | "schedule">("now");
   const [scheduledAt, setScheduledAt] = useState("");
   const [scheduled, setScheduled] = useState(false);
@@ -104,14 +107,14 @@ function SocialAccountComposeButton() {
       <DialogContent className="sm:max-w-lg" showCloseButton={!pending}>
         <DialogTitle>New Post</DialogTitle>
         <DialogDescription>Share a Post on Bluesky</DialogDescription>
-        <SocialComposeAccountPicker ownerDid={session.did} accounts={accounts} actorDid={actorDid!} disabled={pending} onChange={did => { setSelectedActor(did); setText(""); setError(undefined); }} />
+        {toolsAvailable ? <SocialComposeAccountPicker ownerDid={session.did} accounts={accounts} actorDid={actorDid!} disabled={pending} onChange={did => { setSelectedActor(did); setText(""); setError(undefined); }} /> : null}
         {actorDid !== session.did ? <SocialBrandComposeContent key={`${session.did}:${actorDid}`} ownerDid={session.did} actorDid={actorDid!} onPendingChange={value => { busy.current = value; setPending(value); }} close={() => changeOpen(false)} onPublished={wasScheduled => { setOpen(false); setScheduled(wasScheduled); setPosted(true); }} /> : <form key={session.did} className="flex min-w-0 flex-col gap-3" onSubmit={event => { event.preventDefault(); void publish(); }}>
           <label htmlFor="social-compose-text" className="sr-only">Post Text</label>
           <SocialPeopleTextField id="social-compose-text" autoFocus value={text} disabled={pending} onValueChange={setText} rows={6} placeholder="What's Happening?" className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
           <SocialComposePreview text={text} />
           <p aria-live="polite" className={`text-right text-sm ${length > 300 ? "text-destructive" : "text-muted-foreground"}`}>{length}/300</p>
           {bytes > 3000 ? <p className="text-sm text-destructive">Post Text Exceeds the Size Limit</p> : null}
-          {isPro ? <ScheduleTimingControls mode={mode} value={scheduledAt} disabled={pending} onModeChange={setMode} onChange={setScheduledAt} /> : <p className="text-xs text-muted-foreground">Multi-account support and scheduling require Pro.</p>}
+          {isPro ? <ScheduleTimingControls mode={mode} value={scheduledAt} disabled={pending} onModeChange={setMode} onChange={setScheduledAt} /> : toolsAvailable ? <p className="text-xs text-muted-foreground">Multi-account support and scheduling require Pro.</p> : null}
           {(isPro && mode === "schedule") ? <SchedulingReadiness connected={scheduler.readiness.data?.connected} pending={scheduler.readiness.isPending} failed={scheduler.readiness.isError} connectUrl={scheduler.connectUrl} retry={() => { void scheduler.readiness.refetch(); }} /> : null}
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
           {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : null}
