@@ -1,6 +1,6 @@
 "use client";
 
-import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
+import { floatingGlassBarClasses } from "@/components/shared/floatingChromeStyles";
 import { Headphones, Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MessagesSquare, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import {
@@ -61,7 +61,7 @@ export function MobileFeedNavigation({
   return (
     <nav
       aria-label="Feed Navigation"
-      className={`${floatingGlassClasses} fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-40 grid px-1 md:hidden`}
+      className={`${floatingGlassBarClasses} fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-40 grid px-1 md:hidden`}
       style={{ gridTemplateColumns: `repeat(${primaryItems.length + (overflowItems.length > 0 || onOpenLists ? 1 : 0)}, minmax(0, 1fr))` }}
     >
       {primaryItems.map(({ feed, label: defaultLabel, icon: Icon }) => {

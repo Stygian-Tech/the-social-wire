@@ -109,7 +109,12 @@ function ReadContentInset({ children }: { children: React.ReactNode }) {
       className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses} ${editorialFeed && !searchParams.get("list") ? "" : "lg:mr-64"}`}
     >
       <ReadArticleFilterBar />
-      <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
+      <main
+        data-feed-header-shell={editorialNewsRoute ? undefined : "true"}
+        className="flex min-h-0 flex-1 overflow-hidden"
+      >
+        {children}
+      </main>
     </SidebarInset>
   );
 }

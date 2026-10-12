@@ -1,9 +1,10 @@
-/** Let direct feed scroll panes pass behind their floating header. */
+/** Let feed scroll panes, including the reader shell, pass behind their header. */
 export function attachFeedHeaderScrollOverlay(header: HTMLElement) {
   const parent = header.parentElement;
   const scrollPane = header.nextElementSibling;
   if (!parent || !(scrollPane instanceof HTMLElement) ||
-      !scrollPane.classList.contains("overflow-y-auto") ||
+      (!scrollPane.classList.contains("overflow-y-auto") &&
+       !scrollPane.hasAttribute("data-feed-header-shell")) ||
       typeof ResizeObserver === "undefined") return;
 
   const previousExtent = parent.style.getPropertyValue("--feed-header-extent");
@@ -11,7 +12,9 @@ export function attachFeedHeaderScrollOverlay(header: HTMLElement) {
   const previousMarker = scrollPane.getAttribute("data-feed-header-scroll");
   const contentPadding = window.getComputedStyle(scrollPane).paddingTop;
   scrollPane.style.setProperty("--feed-header-content-padding", contentPadding);
-  scrollPane.setAttribute("data-feed-header-scroll", "true");
+  if (!scrollPane.hasAttribute("data-feed-header-shell")) {
+    scrollPane.setAttribute("data-feed-header-scroll", "true");
+  }
 
   const updateExtent = () => {
     const style = window.getComputedStyle(header);
