@@ -251,16 +251,16 @@ describe("CI workflow configuration", () => {
           scripts: { "test:coverage": "bun coverage-fixture.ts" },
         }));
         writeFileSync(join(directory, "coverage-fixture.ts"),
-          'await Bun.write("coverage-executed", "yes"); process.exit(23);');
+          'await Bun.write("coverage-executed", "yes"); console.log("coverage output preserved"); process.exit(23);');
         const command = parsed.jobs[job].steps.find(step => step.name === "Test")?.run;
         expect(command).toBeDefined();
-        const args = command!.trim().split(/\s+/).slice(1);
-        const result = spawnSync(process.execPath, args, {
+        const result = spawnSync("bash", ["-e", "-c", command!], {
           cwd: fixture,
-          env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` },
+          env: { ...process.env, RUNNER_TEMP: fixture, PATH: `${dirname(process.execPath)}:${process.env.PATH}` },
           encoding: "utf8",
         });
         expect(result.status).toBe(23);
+        expect(result.stdout).toContain("coverage output preserved");
         expect(readFileSync(join(directory, "coverage-executed"), "utf8")).toBe("yes");
       }
     } finally {
