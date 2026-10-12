@@ -1,11 +1,28 @@
-import { afterAll, afterEach, expect, it, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as gateway from "@/lib/socialWireGatewayClient";
-import { getProEntitlements, requirePro } from "@/lib/proEntitlements";
+import { getProEntitlements, isProGatingEnabled, requirePro } from "@/lib/proEntitlements";
 
 const session = { did: "did:plc:viewer" } as unknown as OAuthSession;
 const fetch = spyOn(gateway, "gatewayFetch");
-afterEach(() => fetch.mockReset());
+const originalGating = process.env.NEXT_PUBLIC_PRO_GATING_ENABLED;
+beforeEach(() => { process.env.NEXT_PUBLIC_PRO_GATING_ENABLED = "true"; });
+afterEach(() => {
+  fetch.mockReset();
+  if (originalGating === undefined) delete process.env.NEXT_PUBLIC_PRO_GATING_ENABLED;
+  else process.env.NEXT_PUBLIC_PRO_GATING_ENABLED = originalGating;
+});
+it("defaults enforcement off and skips entitlement requests unless explicitly enabled", async () => {
+  for (const flag of [undefined, "", "false", "invalid"]) {
+    if (flag === undefined) delete process.env.NEXT_PUBLIC_PRO_GATING_ENABLED;
+    else process.env.NEXT_PUBLIC_PRO_GATING_ENABLED = flag;
+    expect(isProGatingEnabled()).toBe(false);
+    await requirePro(session);
+  }
+  expect(fetch).not.toHaveBeenCalled();
+  process.env.NEXT_PUBLIC_PRO_GATING_ENABLED = "true";
+  expect(isProGatingEnabled()).toBe(true);
+});
 it("accepts only server entitlements bound to the authenticated viewer", async () => {
   fetch.mockResolvedValue(Response.json({ viewerDid: session.did, plan: "pro" }));
   expect(await getProEntitlements(session)).toEqual({ viewerDid: session.did, plan: "pro" });

@@ -38,7 +38,7 @@ func requirePro(w http.ResponseWriter, r *http.Request, config Config) bool {
 		writeError(w, http.StatusUnauthorized, "Authentication required")
 		return false
 	}
-	if !config.hasPro(auth.DID) {
+	if config.ProGatingEnabled && !config.hasPro(auth.DID) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "ProRequired", "message": "A Pro subscription is required"})
 		return false
 	}

@@ -14,7 +14,7 @@ func podcastScope(scope string, enabled bool) string {
 	fields := strings.Fields(scope)
 	kept := fields[:0]
 	for _, field := range fields {
-		if field != "repo:app.thesocialwire.podcast.clip?action=create&action=update&action=delete" && field != "blob:video/mp4" && field != "rpc:com.atproto.repo.uploadBlob?aud=*" && field != "rpc:app.bsky.video.getUploadLimits?aud=*" {
+		if field != "repo:app.thesocialwire.podcast.clip?action=create&action=update&action=delete" && field != "blob:video/mp4" && field != "rpc:com.atproto.repo.uploadBlob?aud=*" && field != "rpc:app.bsky.video.getUploadLimits?aud=did:web:video.bsky.app" && field != "rpc:app.bsky.video.getUploadLimits?aud=*" {
 			kept = append(kept, field)
 		}
 	}

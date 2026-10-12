@@ -2,14 +2,15 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { getProEntitlements } from "@/lib/proEntitlements";
+import { getProEntitlements, isProGatingEnabled } from "@/lib/proEntitlements";
 
 export function useProEntitlements() {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
   const did = session?.did;
+  const gatingEnabled = isProGatingEnabled();
   const query = useQuery({
     queryKey: ["proEntitlements", did, oauthSessionReloadSeq],
-    enabled: !!did,
+    enabled: !!did && gatingEnabled,
     staleTime: 0,
     refetchInterval: 60_000,
     retry: false,
@@ -19,5 +20,6 @@ export function useProEntitlements() {
       return getProEntitlements(oauth, signal);
     },
   });
-  return { ...query, isPro: !!did && !query.isError && query.data?.viewerDid === did && query.data.plan === "pro" };
+  // isPro represents feature access; disabling enforcement does not change the viewer's plan.
+  return { ...query, isPro: !!did && (!gatingEnabled || (!query.isError && query.data?.viewerDid === did && query.data.plan === "pro")) };
 }
