@@ -58,3 +58,26 @@ test("leaves complex panes and browsers without ResizeObserver unchanged", () =>
   expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("");
   expect(pane.hasAttribute("data-feed-header-scroll")).toBe(false);
 });
+
+test("measures a reader shell without adding a non-scrolling padding layer", () => {
+  const disconnect = mock(() => {});
+  globalThis.ResizeObserver = class {
+    observe = () => {};
+    disconnect = disconnect;
+    unobserve = () => {};
+  } as unknown as typeof ResizeObserver;
+  const { parent, header, pane } = fixture(false);
+  pane.setAttribute("data-feed-header-shell", "");
+  const nestedScroller = document.createElement("div");
+  nestedScroller.setAttribute("data-entry-list-scroll", "");
+  pane.append(nestedScroller);
+  header.getBoundingClientRect = () => ({ height: 48 }) as DOMRect;
+
+  const detach = attachFeedHeaderScrollOverlay(header);
+  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("64px");
+  expect(pane.hasAttribute("data-feed-header-scroll")).toBe(false);
+  expect(nestedScroller.parentElement).toBe(pane);
+  detach?.();
+  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("");
+  expect(disconnect).toHaveBeenCalledTimes(1);
+});

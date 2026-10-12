@@ -401,9 +401,13 @@ html[data-bold-text="true"] {
   box-shadow: 0 2px 10px -6px oklch(0 0 0 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.035);
 }
 
+.floating-glass-bar {
+  --floating-glass-opacity: 40%;
+}
+
 @supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {
   .floating-glass {
-    background-color: color-mix(in oklch, var(--background) 90%, transparent);
+    background-color: color-mix(in oklch, var(--background) var(--floating-glass-opacity, 65%), transparent);
     -webkit-backdrop-filter: blur(12px) saturate(110%);
     backdrop-filter: blur(12px) saturate(110%);
   }
@@ -423,4 +427,13 @@ html[data-bold-text="true"] {
   box-sizing: border-box;
   margin-top: calc(-1 * var(--feed-header-extent));
   padding-top: calc(var(--feed-header-extent) + var(--feed-header-content-padding, 0px));
+}
+
+/* The reader scroll pane is nested inside main rather than beside its header. */
+[data-feed-header-shell] {
+  margin-top: calc(-1 * var(--feed-header-extent, 0px));
+}
+
+[data-feed-header-shell] [data-entry-list-scroll] {
+  padding-top: calc(var(--feed-header-extent, 0px) + 0.5rem);
 }
