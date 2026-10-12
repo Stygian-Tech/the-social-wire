@@ -12,6 +12,8 @@ struct PreferencesRecord: Codable, Equatable, Sendable {
     var hideFinanceCrypto: Bool? = nil
     var showSports: Bool? = nil
     var hideSportsScores: Bool? = nil
+    var showSocial: Bool? = nil
+    var showPodcasts: Bool? = nil
     var showTopLevelFeedUnreadCounts: Bool?
     var feedsWithUnreadCounts: [String]?
     var rssArticleOpenMode: String?
@@ -30,6 +32,8 @@ struct PreferencesRecord: Codable, Equatable, Sendable {
         case hideFinanceCrypto
         case showSports
         case hideSportsScores
+        case showSocial
+        case showPodcasts
         case showTopLevelFeedUnreadCounts
         case feedsWithUnreadCounts
         case rssArticleOpenMode

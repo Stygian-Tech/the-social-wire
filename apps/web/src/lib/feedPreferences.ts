@@ -24,6 +24,8 @@ export type FeedDisplayPreferences = {
   showCircle: boolean;
   showFinance: boolean;
   showSports: boolean;
+  showSocial: boolean;
+  showPodcasts: boolean;
   hideSportsScores: boolean;
   hideFinancePerformance: boolean;
   hideFinanceCrypto: boolean;
@@ -37,6 +39,8 @@ export const DEFAULT_FEED_DISPLAY_PREFERENCES: FeedDisplayPreferences = {
   showCircle: true,
   showFinance: true,
   showSports: true,
+  showSocial: true,
+  showPodcasts: true,
   hideSportsScores: false,
   hideFinancePerformance: false,
   hideFinanceCrypto: false,
@@ -69,6 +73,8 @@ export function normalizeFeedDisplayPreferences(
         | "showCircle"
         | "showFinance"
         | "showSports"
+        | "showSocial"
+        | "showPodcasts"
         | "hideSportsScores"
         | "hideFinancePerformance"
         | "hideFinanceCrypto"
@@ -98,6 +104,8 @@ export function normalizeFeedDisplayPreferences(
     showCircle: value?.showCircle !== false,
     showFinance: value?.showFinance !== false,
     showSports: value?.showSports !== false,
+    showSocial: value?.showSocial !== false,
+    showPodcasts: value?.showPodcasts !== false,
     hideSportsScores: value?.hideSportsScores === true,
     hideFinancePerformance: value?.hideFinancePerformance === true,
     hideFinanceCrypto: value?.hideFinanceCrypto === true,

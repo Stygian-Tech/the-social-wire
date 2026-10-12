@@ -168,6 +168,14 @@ struct SettingsView: View {
                 FeedDisplayPicker(title: "Sports", supportsCount: false, canHide: true,
                     selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showSports, showsCount: false) },
                         set: { option in Task { await appModel.setSportsVisible(option != .hideFeed) } }))
+                FeedDisplayPicker(title: "Social", supportsCount: false, canHide: true,
+                    selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showSocial, showsCount: false) },
+                        set: { option in Task { await appModel.setSocialVisible(option != .hideFeed) } }))
+                    .disabled(appModel.isSavingDiscoveryFeedVisibility)
+                FeedDisplayPicker(title: "Podcasts", supportsCount: false, canHide: true,
+                    selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showPodcasts, showsCount: false) },
+                        set: { option in Task { await appModel.setPodcastsVisible(option != .hideFeed) } }))
+                    .disabled(appModel.isSavingDiscoveryFeedVisibility)
                 Toggle("Hide Sports Scores", isOn: Binding(
                     get: { appModel.feedPreferences.hideSportsScores },
                     set: { value in Task { await appModel.setSportsScoresHidden(value) } }))

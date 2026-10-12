@@ -6,6 +6,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     var showWire: Bool
     var showFinance: Bool
     var showSports: Bool
+    var showSocial: Bool
+    var showPodcasts: Bool
     var hideSportsScores: Bool
     var hideFinancePerformance: Bool
     var hideFinanceCrypto: Bool
@@ -28,6 +30,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         hideFinanceCrypto: Bool = false,
         showSports: Bool = true,
         hideSportsScores: Bool = false,
+        showSocial: Bool = true,
+        showPodcasts: Bool = true,
         articleOpenMode: ArticleOpenMode = .original
     ) {
         let unique = visibleFeeds.reduce(into: [ReaderListSource]()) { result, source in
@@ -47,6 +51,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         self.hideFinanceCrypto = hideFinanceCrypto
         self.showSports = showSports
         self.hideSportsScores = hideSportsScores
+        self.showSocial = showSocial
+        self.showPodcasts = showPodcasts
     }
 
     init(record: PreferencesRecord?) {
@@ -70,6 +76,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
             hideFinanceCrypto: record?.hideFinanceCrypto ?? false,
             showSports: record?.showSports ?? true,
             hideSportsScores: record?.hideSportsScores ?? false,
+            showSocial: record?.showSocial ?? true,
+            showPodcasts: record?.showPodcasts ?? true,
             articleOpenMode: record?.rssArticleOpenMode.flatMap(ArticleOpenMode.init(rawValue:))
                 ?? .original
         )
@@ -89,6 +97,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         case hideFinanceCrypto
         case showSports
         case hideSportsScores
+        case showSocial
+        case showPodcasts
         case showTopLevelFeedUnreadCounts
         case articleOpenMode
         case rssArticleOpenMode
@@ -129,6 +139,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
             hideFinanceCrypto: try container.decodeIfPresent(Bool.self, forKey: .hideFinanceCrypto) ?? false,
             showSports: try container.decodeIfPresent(Bool.self, forKey: .showSports) ?? true,
             hideSportsScores: try container.decodeIfPresent(Bool.self, forKey: .hideSportsScores) ?? false,
+            showSocial: try container.decodeIfPresent(Bool.self, forKey: .showSocial) ?? true,
+            showPodcasts: try container.decodeIfPresent(Bool.self, forKey: .showPodcasts) ?? true,
             articleOpenMode: cachedArticleOpenMode ?? legacyArticleOpenMode ?? .original
         )
     }
@@ -144,6 +156,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         try container.encode(hideFinanceCrypto, forKey: .hideFinanceCrypto)
         try container.encode(showSports, forKey: .showSports)
         try container.encode(hideSportsScores, forKey: .hideSportsScores)
+        try container.encode(showSocial, forKey: .showSocial)
+        try container.encode(showPodcasts, forKey: .showPodcasts)
         try container.encode(!feedsWithUnreadCounts.isEmpty, forKey: .showTopLevelFeedUnreadCounts)
         try container.encode(articleOpenMode, forKey: .articleOpenMode)
     }
