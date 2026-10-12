@@ -58,6 +58,7 @@ export const BLUESKY_SOCIAL_REPO_SCOPES = [
   "repo:app.bsky.feed.like?action=create&action=delete",
   "repo:app.bsky.feed.repost?action=create&action=delete",
   "repo:app.bsky.graph.block?action=create&action=delete",
+  "repo:app.bsky.graph.follow?action=create",
 ] as const;
 
 /** Authenticated Social reads are routed through the viewer PDS AppView proxy. */

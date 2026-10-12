@@ -86,7 +86,7 @@ it("Explore filters blocked posts and actors and fails closed when moderation re
   catalog.mockRejectedValue(new Error("Your moderation settings could not be loaded. Please retry."));
   await act(async () => { await queryClient.invalidateQueries({ queryKey: ["blueskySocial", alice, "catalog"] }); });
   expect(await screen.findByText("Explore Unavailable")).toBeTruthy();
-  expect(screen.queryByText("Suggested People")).toBeNull();
+  expect(screen.getByRole("region", { name: "Suggested People" })).toBeTruthy();
 });
 
 it("Notifications shows unread rows and hydrated interactive posts, then marks seen explicitly", async () => {
@@ -202,4 +202,16 @@ it("Trending Topics updates Posts search and the shareable Explore URL", async (
   expect(replaceRoute).toHaveBeenCalledWith("/social/explore?q=science&type=posts", { scroll: false });
   expect((screen.getByRole("textbox", { name: "Search Bluesky" }) as HTMLInputElement).value).toBe("science");
   expect(screen.queryByText("Trending Topics")).toBeNull();
+});
+
+it("groups Explore search, trends, feeds and people into separate cards", async () => {
+  restoreSpy(spyOn(Client, "getSocialExplorePage").mockResolvedValue({ actors: [actor], posts: [] }));
+  render(<SocialExplore />, { wrapper: Wrapper });
+  await screen.findByText("Other");
+  for (const name of ["Search", "Trending Topics", "Recommended Feeds", "Suggested People"]) {
+    const region = screen.getByRole("region", { name });
+    expect(region.tagName).toBe("SECTION");
+    expect(region.className).toContain("p-3");
+    expect(region.parentElement?.tagName).toBe("DIV");
+  }
 });

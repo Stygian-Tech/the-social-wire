@@ -15,6 +15,7 @@ const safety = (did: string): ModerationOpts => ({ userDid: did, prefs: { adultC
 it("uses configured public AppView without viewer identity, OAuth or added grants", async () => {
   restore(spyOn(Network, "getAtprotoNetwork").mockReturnValue({ publicAppView: "https://local.test", plcDirectory: "https://plc.test", handleResolver: "https://local.test", appViewDid: "did:web:local.test", appLabelers: [] }));
   const controller = new AbortController();
+  const response = { topics: [{ topic: "Space", description: "A new mission launches.", link: "/search?q=space" }], suggested: [{ topic: "Science", description: "New discoveries.", link: "/search?q=science" }] };
   const fetch = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     expect(url.origin).toBe("https://local.test");
@@ -22,9 +23,9 @@ it("uses configured public AppView without viewer identity, OAuth or added grant
     const headers = new Headers(init?.headers);
     expect(headers.has("authorization")).toBe(false); expect(headers.has("atproto-proxy")).toBe(false);
     expect(init?.signal).toBe(controller.signal);
-    return Response.json(url.pathname.endsWith("getTrendingTopics") ? { topics: [], suggested: [] } : { feeds: [] });
+    return Response.json(url.pathname.endsWith("getTrendingTopics") ? response : { feeds: [] });
   }, { preconnect: globalThis.fetch.preconnect })); restore(fetch);
-  expect(await Client.getSocialTrendingTopics(controller.signal)).toEqual({ topics: [], suggested: [] });
+  expect(await Client.getSocialTrendingTopics(controller.signal)).toEqual(response);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 it("preserves unsupported service errors rather than reporting an empty successful section", async () => {

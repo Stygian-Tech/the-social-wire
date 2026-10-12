@@ -17,7 +17,7 @@ function state(overrides: Record<string, unknown> = {}) {
   restores.push(() => hook.mockRestore());
   return { value, mutate };
 }
-it("uses topic search and existing Open/Save feed actions", () => {
+it("uses topic search and existing Open/Add feed actions", () => {
   const { mutate } = state(); let searched = "";
   render(<SocialExploreDiscovery moderation={moderation} savedFeeds={[]} enabled search={value => { searched = value; }} />);
   const topics = screen.getByRole("list", { name: "Trending Topics" });
@@ -25,7 +25,7 @@ it("uses topic search and existing Open/Save feed actions", () => {
   fireEvent.click(within(topics).getByRole("button", { name: "Space News" }));
   expect(searched).toBe("space news");
   expect(screen.getByRole("link", { name: "Open Feed" }).getAttribute("href")).toBe(`/social?feed=${encodeURIComponent(feed.uri)}`);
-  fireEvent.click(screen.getByRole("button", { name: "Save Feed" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Feed" }));
   expect(mutate).toHaveBeenCalledWith(feed.uri);
 });
 it("filters blocked feeds and gates metadata without moderation", () => {
@@ -68,8 +68,8 @@ it("falls back to text for untrusted topic links", () => {
 it("saved feeds stay idempotent in discovery and offer the full feed directory", () => {
   state();
   render(<SocialExploreDiscovery moderation={moderation} savedFeeds={[{ kind: "feed", uri: feed.uri, name: feed.displayName, pinned: false }]} enabled search={() => {}} />);
-  expect((screen.getByRole("button", { name: "Saved" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByRole("button", { name: "Save Feed" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Added" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Add Feed" })).toBeNull();
   expect(screen.getByRole("link", { name: "Browse All Feeds" }).getAttribute("href")).toBe("/social/feeds");
 });
 
@@ -82,4 +82,41 @@ it("shows sanitized recommendation avatars and withholds unsafe image sources", 
   value.feeds = { data: [{ ...feed, avatar: "javascript:alert(1)" }], isPending: false, isError: false };
   view.rerender(<SocialExploreDiscovery moderation={moderation} savedFeeds={[]} enabled search={() => {}} />);
   expect(screen.getByTestId("feed-avatar").getAttribute("data-source")).toBe("");
+});
+
+it("shows descriptions for trending and suggested topics and keeps description clicks searchable", () => {
+  state({ topics: { data: { topics: [{ topic: "Space", displayName: "Space News", description: "  A new mission launches.  ", link: "/search?q=space%20news" }], suggested: [{ topic: "Science", description: "<script>plain text</script>", link: "/search?q=science" }] }, isPending: false, isError: false } });
+  const search = mock((query: string) => { void query; });
+  render(<SocialExploreDiscovery moderation={moderation} savedFeeds={[]} enabled search={search} />);
+  const topics = screen.getByRole("list", { name: "Trending Topics" });
+  expect(topics.className).toContain("divide-y");
+  expect(topics.className).toContain("divide-border");
+  const description = within(topics).getByText("A new mission launches.");
+  expect(description.closest("button")?.textContent).toContain("Space News");
+  fireEvent.click(description);
+  expect(search).toHaveBeenCalledWith("space news");
+  expect(within(topics).getByText("<script>plain text</script>")).toBeTruthy();
+  expect(topics.querySelector("script")).toBeNull();
+});
+
+it("keeps topics with absent, empty or whitespace-only descriptions title-only", () => {
+  state({ topics: { data: { topics: [{ topic: "Space", link: "" }, { topic: "Science", description: "", link: "" }, { topic: "Nature", description: " \n ", link: "" }], suggested: [] }, isPending: false, isError: false } });
+  render(<SocialExploreDiscovery moderation={moderation} savedFeeds={[]} enabled search={() => {}} />);
+  const topics = screen.getByRole("list", { name: "Trending Topics" });
+  for (const title of ["Space", "Science", "Nature"]) {
+    const button = within(topics).getByRole("button", { name: title });
+    expect(button.textContent).toBe(title);
+    expect(button.querySelectorAll("span")).toHaveLength(1);
+  }
+});
+
+
+it("places trending topics and recommended feeds in separate cards", () => {
+  state();
+  render(<SocialExploreDiscovery moderation={moderation} savedFeeds={[]} enabled search={() => {}} />);
+  const topics = screen.getByRole("region", { name: "Trending Topics" });
+  const feeds = screen.getByRole("region", { name: "Recommended Feeds" });
+  expect(topics).not.toBe(feeds);
+  expect(topics.className).toContain("floating-glass");
+  expect(feeds.className).toContain("floating-glass");
 });

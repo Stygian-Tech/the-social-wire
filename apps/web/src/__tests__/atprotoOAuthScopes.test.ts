@@ -127,6 +127,7 @@ describe("atprotoOAuthScopes", () => {
       "repo:app.bsky.feed.like?action=create&action=delete",
       "repo:app.bsky.feed.repost?action=create&action=delete",
       "repo:app.bsky.graph.block?action=create&action=delete",
+      "repo:app.bsky.graph.follow?action=create",
     ]);
     expect(ARTICLE_PUBLISHING_SCOPES).toEqual([
       "repo:site.standard.document?action=create&action=update",

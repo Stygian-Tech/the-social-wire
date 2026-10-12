@@ -6,8 +6,6 @@ src/app/api/latr-gateway/debug/credentials/route.ts
 src/app/archive/layout.tsx
 src/app/archive/page.tsx
 src/app/layout.tsx
-src/app/me/layout.tsx
-src/app/me/page.tsx
 src/app/me/publications/page.tsx
 src/app/read/ClosePublicationsSheetOnMobilePubRoute.tsx
 src/app/read/[...pubId]/page.tsx

@@ -439,6 +439,10 @@ html[data-bold-text="true"] {
   padding-top: calc(var(--floating-glass-top-extent, 0px) + 0.5rem);
 }
 
+[data-floating-glass-shell-top] [data-account-scroll] {
+  padding-top: var(--floating-glass-top-extent, 0px);
+}
+
 [data-floating-glass-controls] {
   position: absolute;
   inset-inline: 0;

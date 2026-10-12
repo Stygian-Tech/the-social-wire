@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-// Web baseline includes the reviewed least-privilege Social, Articles, and chat moderation grants.
+// Web baseline includes the reviewed least-privilege Social (including create-only Follow), Articles, and chat moderation grants.
 // Native baseline includes the explicitly enabled Standard Reader Lists permissions
 // in the published native authorization request order.
 func TestPodcastDisabledMetadataKeepsProductionScope(t *testing.T) {
 	for _, fixture := range []struct{ path, scope, digest string }{
-		{"/oauth-client-metadata.json", webScope, "bec7f2e3b39f3e441d9705c9c3ef4308ef2db05ad1a56a1790d7583004978151"},
+		{"/oauth-client-metadata.json", webScope, "0a0e27bcf61ff00c2bcfa60044308b8344dbd32b993785092a3e414804f795e4"},
 		{"/ios-client-metadata.json", iosScope, "7001b4367000f36cab50a5cf3e517f23353b9ef7cb37b90c4310661b761d4a9d"},
 	} {
 		for _, enabled := range []bool{false, true} {

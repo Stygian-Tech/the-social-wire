@@ -90,7 +90,16 @@ jobs:
       - name: Typecheck shared PDS read-state protocol
         run: bun --cwd packages/read-state typecheck
       - name: Test
-        run: bun run --cwd apps/web test:coverage
+        # Let Bun finish both coverage reporters before writing to the runner's log pipe.
+        run: |
+          coverage_log="$(mktemp "${RUNNER_TEMP}/web-coverage.XXXXXX")"
+          trap 'rm -f "$coverage_log"' EXIT
+          set +e
+          bun run --cwd apps/web test:coverage > "$coverage_log" 2>&1
+          coverage_status=$?
+          set -e
+          cat "$coverage_log"
+          exit "$coverage_status"
         env:
           NEXT_PUBLIC_APP_ENV: test
 
