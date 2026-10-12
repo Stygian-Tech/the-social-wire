@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, Heart, Repeat2 } from "lucide-react";
+import { Bookmark, Heart } from "lucide-react";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import { useBlueskyBookmark } from "@/hooks/useBlueskyBookmarks";
 import { useBlueskyPostEngagement } from "@/hooks/useBlueskyPostEngagement";
@@ -10,6 +10,7 @@ import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { formatSocialEngagementCount } from "@/lib/formatSocialEngagementCount";
 import { SocialReplyButton } from "./SocialReplyButton";
 import { SocialPostMenu } from "./SocialPostMenu";
+import { SocialRepostButton } from "./SocialRepostButton";
 
 export function SocialPostActions({ post, moderation }: { post: AppBskyFeedDefs.PostView; moderation: ModerationOpts }) {
   const { engagement, toggleLike, toggleRepost, isPending, error } = useBlueskyPostEngagement(post, moderation);
@@ -19,7 +20,7 @@ export function SocialPostActions({ post, moderation }: { post: AppBskyFeedDefs.
     <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-6 text-sm text-muted-foreground" aria-label="Post Actions">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-6">
       <SocialReplyButton post={post} className={button} moderation={moderation} />
-      <button className={`${button} ${engagement.repost ? "text-green-600 dark:text-green-400" : ""}`} title={`${engagement.repostCount} Reposts`} aria-label={`Repost (${engagement.repostCount})`} aria-pressed={!!engagement.repost} disabled={isPending} onClick={toggleRepost}><Repeat2 className="size-4" /><span>{formatSocialEngagementCount(engagement.repostCount)}</span></button>
+      <SocialRepostButton post={post} moderation={moderation} className={`${button} ${engagement.repost ? "text-green-600 dark:text-green-400" : ""}`} reposted={!!engagement.repost} repostCount={engagement.repostCount} pending={isPending} onRepost={toggleRepost} />
       <button className={`${button} ${engagement.like ? "text-rose-600 dark:text-rose-400" : ""}`} title={`${engagement.likeCount} Likes`} aria-label={`Like (${engagement.likeCount})`} aria-pressed={!!engagement.like} disabled={isPending} onClick={toggleLike}><Heart className={`size-4 ${engagement.like ? "fill-current" : ""}`} /><span>{formatSocialEngagementCount(engagement.likeCount)}</span></button>
       </div>
       <div className="grid shrink-0 grid-cols-2 items-center gap-2">

@@ -164,6 +164,8 @@ describe("on-page post viewer", () => {
     expect(engage.mock.calls[0]![0]).toMatchObject({ kind: "like", uri: reply.uri, cid: reply.cid });
     await waitFor(() => expect((replies.getByRole("button", { name: "Repost (0)" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(replies.getByRole("button", { name: "Repost (0)" }));
+    expect(engage).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Repost" }));
     await waitFor(() => expect(engage).toHaveBeenCalledTimes(2));
     expect(engage.mock.calls[1]![0]).toMatchObject({ kind: "repost", uri: reply.uri, cid: reply.cid });
     fireEvent.click(replies.getByRole("button", { name: "Bookmark Post" }));

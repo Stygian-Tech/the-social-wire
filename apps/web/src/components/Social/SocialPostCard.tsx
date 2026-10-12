@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Remote PDS media preserve publisher formats. */
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Repeat2 } from "lucide-react";
 import {
   AppBskyFeedDefs,
   AppBskyFeedPost,
@@ -83,7 +84,8 @@ export function SocialPostCard({
         if (target instanceof Element && event.currentTarget.contains(target) && !target.closest('a, button, input, video, audio') && !window.getSelection()?.toString()) { event.stopPropagation(); onOpen(); }
       } : undefined}>
       {repost ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Repeat2 aria-hidden="true" className="size-3 shrink-0" /><span>
           Reposted{" "}
           {reposterList?.filter ||
           reposterList?.blur ||
@@ -93,7 +95,7 @@ export function SocialPostCard({
           reposterIdentity?.noOverride
             ? "by an account"
             : `by ${repost.displayName || repost.handle}`}
-        </p>
+          </span></p>
       ) : null}
       {item.reply ? (
         <SocialReplyLabel reply={item.reply} moderation={moderation} />
