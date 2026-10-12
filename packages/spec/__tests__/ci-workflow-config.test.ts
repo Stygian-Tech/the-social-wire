@@ -250,18 +250,26 @@ describe("CI workflow configuration", () => {
         writeFileSync(join(directory, "package.json"), JSON.stringify({
           scripts: { "test:coverage": "bun coverage-fixture.ts" },
         }));
-        writeFileSync(join(directory, "coverage-fixture.ts"),
-          'await Bun.write("coverage-executed", "yes"); process.exit(23);');
         const command = parsed.jobs[job].steps.find(step => step.name === "Test")?.run;
         expect(command).toBeDefined();
-        const args = command!.trim().split(/\s+/).slice(1);
-        const result = spawnSync(process.execPath, args, {
-          cwd: fixture,
-          env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` },
-          encoding: "utf8",
-        });
-        expect(result.status).toBe(23);
-        expect(readFileSync(join(directory, "coverage-executed"), "utf8")).toBe("yes");
+        for (const status of [0, 23]) {
+          rmSync(join(directory, "coverage-executed"), { force: true });
+          writeFileSync(join(directory, "coverage-fixture.ts"),
+            `await Bun.write("coverage-executed", "yes"); console.log("coverage-fixture-output"); process.exit(${status});`);
+          // Actions executes run blocks with a shell, including buffered coverage steps.
+          const result = spawnSync("bash", ["-e", "-c", command!], {
+            cwd: fixture,
+            env: {
+              ...process.env,
+              PATH: `${dirname(process.execPath)}:${process.env.PATH}`,
+              RUNNER_TEMP: fixture,
+            },
+            encoding: "utf8",
+          });
+          expect(result.status).toBe(status);
+          expect(result.stdout).toContain("coverage-fixture-output");
+          expect(readFileSync(join(directory, "coverage-executed"), "utf8")).toBe("yes");
+        }
       }
     } finally {
       rmSync(fixture, { recursive: true, force: true });
