@@ -165,11 +165,13 @@ it("tracks animated sticky topbar height for sidebar margin and available viewpo
 
 it("uses the full viewport for its independent scrolling rail", () => {
  render(<SportsFollowingSidebar {...props} />);
- expect(screen.getByRole("complementary").className).toContain("rounded-xl");
+ expect(screen.getByRole("complementary").className).toContain("rounded-2xl");
+ expect(screen.getByRole("complementary").className).toContain("floating-glass");
+ expect(screen.getByRole("complementary").className).not.toContain("bg-background");
  expect(screen.getByRole("complementary").className).toContain("p-3");
  expect(screen.getByRole("link", {name: "All Sports"}).className).toContain("min-h-8");
  expect(screen.getByRole("link", {name: "All Sports"}).className).toContain("pointer-coarse:min-h-11");
- expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)]");
+ expect(screen.getByRole("complementary").className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-3rem)]");
 });
 
 it("distinguishes failed catalog requests from failed selections and confirmed empty interests", () => {

@@ -40,7 +40,7 @@ export function SportsFollowingSidebar({ entities, definitions, selections, load
   }, [selections, definitions, entities, locale]);
   const sections = [...groups, { title: "Other Interests", kinds: [...new Set(rows.filter(entity => !groups.some(group => group.kinds.includes(entity.kind))).map(entity => entity.kind))], icon: Trophy }];
 
-  return <aside ref={sidebar} aria-labelledby="sports-following-heading" className={`${floatingSidebarClassName} relative z-10 hidden xl:sticky xl:top-4 xl:block xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] xl:overflow-y-auto xl:overscroll-contain`}>
+  return <aside ref={sidebar} aria-labelledby="sports-following-heading" className={`${floatingSidebarClassName} relative z-10 hidden xl:sticky xl:top-4 xl:block xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-3rem)] xl:overflow-y-auto xl:overscroll-contain`}>
     <h2 id="sports-following-heading" className="text-base font-semibold">Following in Sports</h2>
     <Link href="/read?feed=sports" aria-current={feedID === "sports" ? "page" : undefined}
       onClick={event => {

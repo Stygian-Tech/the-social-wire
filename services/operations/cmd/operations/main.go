@@ -100,6 +100,7 @@ func run() error {
 		return err
 	}
 	store.FingerprintSecret = config.FingerprintSecret
+	store.TabUsageEnvironment = config.TabUsageEnvironment
 	telemetryDB := stdlib.OpenDBFromPool(pool)
 	defer telemetryDB.Close()
 	exporter := &telemetrycore.PostgresExporter{DB: telemetryDB, Environment: config.Environment}

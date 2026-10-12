@@ -16,7 +16,8 @@ import (
 // PublicHTTP pins each request to a DNS-admitted public IP. TLS still validates
 // the publisher hostname. It never accepts a redirect without fresh admission.
 type PublicHTTP struct {
-	DNS *gatewaycore.PublicDNSValidator
+	DNS    *gatewaycore.PublicDNSValidator
+	Policy *gatewaycore.EndpointPolicy
 }
 
 func (h PublicHTTP) Get(ctx context.Context, raw string, headers http.Header, maxBytes, redirects int) (int, http.Header, []byte, error) {
@@ -37,7 +38,15 @@ func (h PublicHTTP) GetWithURL(ctx context.Context, raw string, headers http.Hea
 		if err != nil || parsed.User != nil {
 			return 0, nil, nil, "", gatewaycore.ErrInvalidEndpoint
 		}
-		address, err := dns.Validate(ctx, current)
+		var address string
+		if h.Policy != nil {
+			_, err = h.Policy.NormalizeBase(current)
+			if err == nil {
+				address, err = h.Policy.ValidateAddress(ctx, current)
+			}
+		} else {
+			address, err = dns.Validate(ctx, current)
+		}
 		if err != nil {
 			return 0, nil, nil, "", err
 		}
@@ -125,4 +134,22 @@ func ValidatePDSBase(raw string) string {
 	}
 	u.Path = ""
 	return strings.TrimRight(u.String(), "/")
+}
+
+// validatedPDSBase retains the stricter PDS authority shape under the local
+// policy: no paths, query strings, fragments, or embedded credentials.
+func validatedPDSBase(raw string, policy *gatewaycore.EndpointPolicy) string {
+	publicBase := ValidatePDSBase(raw)
+	if policy == nil || publicBase != "" {
+		return publicBase
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !strings.HasSuffix(strings.ToLower(u.Hostname()), ".test") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return ""
+	}
+	base, err := policy.NormalizeBase(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(base, "/")
 }

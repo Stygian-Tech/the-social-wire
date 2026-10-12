@@ -48,7 +48,7 @@ export default function ArchiveLayout({ children }: { children: React.ReactNode 
   }
 
   return (
-    <SidebarProvider className={`mx-auto ${appViewportHeightClasses} max-w-[70rem] overflow-hidden overscroll-none`}>
+    <SidebarProvider className={`${appViewportHeightClasses} overflow-hidden overscroll-none`}>
       <PublicationSidebarProvider>
       <ReadRouteProvider>
         <Suspense fallback={null}>

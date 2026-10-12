@@ -1,6 +1,8 @@
 "use client";
+import { PodcastClipsLibrary } from "./PodcastClipsLibrary";
 import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
 import { PodcastLibrarySearch } from "./PodcastLibrarySearch";
+import { PodcastUnsubscribeDialog } from "./PodcastUnsubscribeDialog";
 import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
 import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
 import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
@@ -27,6 +29,7 @@ import {
   savePodcastDownload,
   type PodcastDownload,
 } from "@/lib/podcasts/offline";
+import { PodcastEpisodeProgress } from "./PodcastEpisodeProgress";
 import { PodcastEpisodeDetailsDialog } from "./PodcastEpisodeDetailsDialog";
 import { PodcastShowDetails } from "./PodcastShowDetails";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
@@ -48,6 +51,7 @@ function PodcastViewerLibrary() {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [unsubscribeShow, setUnsubscribeShow] = useState<PodcastShow | null>(null);
   const [downloads, setDownloads] = useState<PodcastDownload[]>([]);
   const [downloadStatus, setDownloadStatus] = useState<Record<string, string>>(
     {},
@@ -63,8 +67,8 @@ function PodcastViewerLibrary() {
   const [loading, setLoading] = useState(false);
   const [preparingEpisode, setPreparingEpisode] = useState<string | null>(null);
   const downloadEpisodes = useMemo(() => downloads.map(item => item.episode), [downloads]);
-  const searching = !previewShowId && (searchScope === "discover" || !!searchQuery.trim());
-  const search = usePodcastLibrarySearch({ viewer, query: searchQuery, scope: searchScope === "discover" ? "directory" : "library", showId: searchScope === "library" && feed === "show" ? showId ?? undefined : undefined, downloaded: searchScope === "library" && feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
+  const searching = feed !== "clips" && !previewShowId && (searchScope === "discover" || !!searchQuery.trim());
+  const search = usePodcastLibrarySearch({ viewer, query: feed === "clips" ? "" : searchQuery, scope: searchScope === "discover" ? "directory" : "library", showId: searchScope === "library" && feed === "show" ? showId ?? undefined : undefined, downloaded: searchScope === "library" && feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
   const showNames = useMemo(() => new Map([...shows, ...search.shows].map(show => [show.id, show.title.trim()])), [shows, search.shows]);
   const controllers = useRef(new Map<string, AbortController>());
   useEffect(() => () => controllers.current.get("directory-action")?.abort(), [searchQuery, searchScope]);
@@ -100,7 +104,7 @@ function PodcastViewerLibrary() {
   }, [load, cancelLibraryLoad]);
   useEffect(() => {
     const oauth = getOAuthSession();
-    if (searching || !oauth || !navigator.onLine || feed === "downloads" || (feed === "show" && !showId)) return;
+    if (feed === "clips" || searching || !oauth || !navigator.onLine || feed === "downloads" || (feed === "show" && !showId)) return;
     const controller = new AbortController();
     const path = feed === "show"
       ? `episodes?showId=${encodeURIComponent(showId!)}`
@@ -219,30 +223,36 @@ function PodcastViewerLibrary() {
   const downloaded = new Set(downloads.map((item) => item.episode.id));
   const displayed = searching ? search.episodes : podcastFeedEpisodes(feed, episodes, downloadEpisodes, player.state.queue);
   const selectedShow = (previewShowId || (searchScope === "library" && feed === "show")) ? shows.find((show) => show.id === showId) : undefined;
-  const heading = searchScope === "discover" ? "Search Podcasts" : selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
+  const heading = searchScope === "discover" ? "Search Podcasts" : selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes", clips: "Clips" }[feed]);
   const selectFeed = (next: PodcastFeed, id?: string) => {
     setPreviewShowId(null);
     if (searchScope === "discover") { setSearchScope("library"); setSearchQuery(""); }
+    setSearchQuery("");
     setFeed(next);
     setShowId(id ?? null);
     setEpisodes([]);
     setCursor(undefined);
     setError(null);
   };
+  async function changeSubscription(show: PodcastShow, remove: boolean) {
+    const oauth = getOAuthSession();
+    if (!oauth || oauth.did !== viewer) throw new Error("Sign In to Subscribe");
+    await writePodcastSubscription(oauth, oauth.did, show, remove);
+    if (getOAuthSession()?.did !== viewer) return;
+    await player.changeState({ subscriptions: remove
+      ? player.state.subscriptions.filter((id) => id !== show.id)
+      : [...new Set([...player.state.subscriptions, show.id])] });
+    if (remove) {
+      if (show.visibility === "private") setShows((current) => current.filter((item) => item.id !== show.id));
+      if (feed === "show" && showId === show.id) selectFeed("recent");
+    }
+  }
   async function subscribe(show: PodcastShow) {
-    await action(async () => {
-      const oauth = getOAuthSession();
-      if (!oauth || !session) throw new Error("Sign In to Subscribe");
-      const remove = player.state.subscriptions.includes(show.id);
-      await writePodcastSubscription(oauth, session.did, show, remove);
-      await player.changeState({ subscriptions: remove
-        ? player.state.subscriptions.filter((id) => id !== show.id)
-        : [...new Set([...player.state.subscriptions, show.id])] });
-      if (show.visibility === "private" && remove) {
-        setShows((current) => current.filter((item) => item.id !== show.id));
-        selectFeed("recent");
-      }
-    });
+    if (player.state.subscriptions.includes(show.id)) {
+      setUnsubscribeShow(show);
+      return;
+    }
+    await action(() => changeSubscription(show, false));
   }
   async function playEpisode(item: PodcastEpisode) {
     if (item.visibility === "private") setPreparingEpisode(item.id);
@@ -270,6 +280,7 @@ function PodcastViewerLibrary() {
             <button type="button" className="inline-flex min-h-7 shrink-0 items-center gap-1 rounded border px-1.5 text-xs hover:bg-accent pointer-coarse:min-h-11" aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}><Plus aria-hidden="true" className="size-3.5" />Add a Podcast</button>
           </div>
         </header>
+        {feed === "clips" ? <PodcastClipsLibrary /> : <>
         {!previewShowId ? <PodcastLibrarySearch
           scope={searchScope}
           query={searchQuery}
@@ -339,7 +350,7 @@ function PodcastViewerLibrary() {
           setError(null);
         }}><ArrowLeft aria-hidden="true" className="size-3.5" />Back to Search</button> : null}
         {selectedShow ? <PodcastShowDetails show={selectedShow} action={
-          <button type="button" className={compactButton} disabled={busy} onClick={() => void subscribe(selectedShow)}>
+          <button type="button" className={`${compactButton} ${player.state.subscriptions.includes(selectedShow.id) ? "text-destructive" : ""}`} disabled={busy} onClick={() => void subscribe(selectedShow)}>
             {player.state.subscriptions.includes(selectedShow.id) ? <Minus aria-hidden="true" className="size-3.5" /> : <Plus aria-hidden="true" className="size-3.5" />}
             {player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}
           </button>
@@ -359,11 +370,12 @@ function PodcastViewerLibrary() {
         {!searching && loading ? <p role="status" className="text-sm text-muted-foreground">Loading Episodes…</p> : null}
         <ul className="space-y-3">
           {displayed.map((item) => (
-            <li key={item.id} data-played={!!player.state.progress[item.id]?.completed} className="rounded-xl border p-4 transition-colors data-[played=true]:border-border/60 data-[played=true]:bg-muted/40">
-              <PodcastEpisodeDetailsDialog episode={item} played={!!player.state.progress[item.id]?.completed} showName={showNames.get(item.showId)} onTimecode={seconds => {
+            <li key={item.id} data-played={!!player.state.progress[item.id]?.completed} className="rounded-xl border p-4 transition-colors hover:bg-accent/30 focus-within:bg-accent/30 data-[played=true]:border-border/60 data-[played=true]:bg-muted/40 data-[played=true]:hover:bg-accent/30 data-[played=true]:focus-within:bg-accent/30">
+              <PodcastEpisodeDetailsDialog episode={item} played={!!player.state.progress[item.id]?.completed} inProgress={(player.episode?.id === item.id ? player.position : player.state.progress[item.id]?.positionSeconds ?? 0) > 0} showName={showNames.get(item.showId)} onTimecode={seconds => {
                 if (player.episode?.id === item.id) player.seek(seconds);
                 else void player.play(item, seconds);
               }} />
+              <PodcastEpisodeProgress position={player.episode?.id === item.id ? player.position : player.state.progress[item.id]?.positionSeconds ?? 0} duration={player.episode?.id === item.id ? player.duration || item.durationSeconds : item.durationSeconds} completed={!!player.state.progress[item.id]?.completed} />
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <PodcastEpisodeActionButton
                   icon={Play}
@@ -489,9 +501,15 @@ function PodcastViewerLibrary() {
           </button>
         ) : null}
         {feed === "downloads" ? <p className="text-xs text-muted-foreground">Offline Audio: {(downloads.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)} MB. Save Audio exports a file to your device.</p> : null}
+        </>}
       </section>
       <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto">
-        <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} discoverActive={searchScope === "discover"} onDiscover={() => { setPreviewShowId(null); setSearchQuery(""); setSearchScope("discover"); setError(null); }} />
+        <PodcastUnsubscribeDialog key={unsubscribeShow?.id ?? "closed"} show={unsubscribeShow} onClose={() => setUnsubscribeShow(null)} onConfirm={async (show) => {
+          setBusy(true);
+          try { await changeSubscription(show, true); }
+          finally { setBusy(false); }
+        }} />
+        <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} busy={busy} onUnsubscribe={setUnsubscribeShow} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} discoverActive={searchScope === "discover"} onDiscover={() => { setPreviewShowId(null); setFeed("recent"); setSearchQuery(""); setSearchScope("discover"); setError(null); }} />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { useLayoutEffect, useRef, useState } from "react";
 import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useFinanceFeed } from "@/hooks/useFinanceFeed";
@@ -62,7 +63,7 @@ export default function FinanceExperience({ feedID = "finance", onFeedChange }: 
       {selectedFeed || feedID === "finance" ? <FinanceTickerMarquee feed={selectedFeed} hidden={performanceHidden} /> : null}
       <div className="grid min-w-0 gap-5 p-4 pt-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="@container/finance min-w-0">
-      <header className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/finance:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
+      <header className={`mb-4 grid grid-cols-2 items-center gap-2 p-3 @min-[24rem]/finance:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem] ${floatingGlassClasses}`}>
         <h1 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/finance:max-w-56">{selectedFeed?.title ?? "Finance"}</h1>
         <div className="col-start-1 row-start-2 flex min-w-0 items-center text-sm @min-[24rem]/finance:col-start-2 @min-[24rem]/finance:row-start-1">
           <FinanceFeedPicker definitions={definitions} feedID={feedID} companySearch={companySearch} onFeedChange={onFeedChange} />

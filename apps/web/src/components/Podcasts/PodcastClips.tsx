@@ -1,98 +1,41 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
-import { useAuth } from "@/hooks/useAuth";
-import { gatewayFetch } from "@/lib/socialWireGatewayClient";
-import {
-  podcastRequest,
-  publishPodcastClip,
-  unpublishPodcastClip,
-  type PodcastClip,
-  type PodcastEpisode,
-} from "@/lib/podcasts/client";
-import { validateClipBounds, formatPodcastTime } from "@/lib/podcasts/playback";
+import { usePodcastClipAccount } from "@/hooks/usePodcastClipAccount";
+import { usePodcastClips } from "@/hooks/usePodcastClips";
+import { podcastRequest, type PodcastEpisode } from "@/lib/podcasts/client";
+import { validateClipBounds } from "@/lib/podcasts/playback";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
-const button = "inline-flex min-h-8 items-center justify-center rounded border px-2.5 text-xs hover:bg-accent pointer-coarse:min-h-11";
+import { PodcastClipCard } from "./PodcastClipCard";
+import { podcastClipButton } from "./podcastClipStyles";
+
 export function PodcastClips({ episode }: { episode: PodcastEpisode }) {
   const viewer = usePodcastViewer();
-  return <PodcastViewerClips key={`${viewer ?? "signed-out"}:${episode.id}`} episode={episode} viewer={viewer} />;
+  return <PodcastViewerClips key={`${viewer ?? "signed-out"}:${episode.id}`} episode={episode} />;
 }
-function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; viewer: string | null }) {
-  const { session, getOAuthSession } = useAuth();
+function PodcastViewerClips({ episode }: { episode: PodcastEpisode }) {
+  const { requireSession, assertCurrentAccount } = usePodcastClipAccount();
+  const { clips, error: pollError, refresh } = usePodcastClips(episode.id);
   const player = usePodcastPlayer();
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(30);
   const [title, setTitle] = useState(episode.title);
-  const [includeCaptions, setIncludeCaptions] = useState(true);
-  const [clips, setClips] = useState<PodcastClip[]>([]);
-  const [pollError, setPollError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
+  const running = useRef(false);
   useEffect(() => {
     if (preview && player.position >= end) {
       if (player.playing) player.toggle();
       queueMicrotask(() => setPreview(false));
     }
   }, [preview, player, end]);
-  useEffect(() => {
-    const controller = new AbortController();
-    let pending = false;
-    const refresh = async () => {
-      const oauth = getOAuthSession();
-      if (pending || !viewer || oauth?.did !== viewer) return;
-      pending = true;
-      try {
-        const page = await podcastRequest<{ clips: PodcastClip[] }>(oauth, "clips", "GET", undefined, controller.signal);
-        if (!controller.signal.aborted && getOAuthSession()?.did === viewer) {
-          setClips(page.clips.filter(clip => clip.episodeId === episode.id));
-          setPollError(null);
-        }
-      } catch {
-        if (!controller.signal.aborted && getOAuthSession()?.did === viewer)
-          setPollError("Clips Could Not Load. Retrying…");
-      } finally {
-        pending = false;
-      }
-    };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [getOAuthSession, episode.id, viewer]);
-  function clipSession() {
-    const oauth = getOAuthSession();
-    if (!viewer || oauth?.did !== viewer) throw new Error("Account Is Loading");
-    return oauth;
-  }
   async function run(action: () => Promise<void>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (reason) {
-      setError(reason instanceof Error && reason.message === "Account Is Loading" ? "Account Is Loading. Please Retry." : "Clip Action Failed. Please Retry.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function exportAsset(clip: PodcastClip, format: "audio" | "video") {
-    const oauth = clipSession();
-    if (!oauth) throw new Error("Sign in to export a draft");
-    const response = await gatewayFetch(
-      oauth,
-      `/v1/podcasts/assets?clipId=${encodeURIComponent(clip.id)}&format=${format}`,
-    );
-    if (!response.ok) throw new Error(`Export failed (${response.status})`);
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${clip.title.replace(/[^a-z0-9 -]/gi, "").slice(0, 80) || "Podcast Clip"}.${format === "audio" ? "m4a" : "mp4"}`;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    if (running.current) return;
+    running.current = true; setBusy(true); setError(null);
+    try { await action(); }
+    catch (reason) { setError(reason instanceof Error && reason.message.startsWith("Account Is Loading") ? "Account Is Loading. Please Retry." : "Clip Action Failed. Please Retry."); }
+    finally { running.current = false; setBusy(false); }
   }
   const valid = validateClipBounds(
     start,
@@ -118,7 +61,7 @@ function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; view
             className="ml-2 w-24 rounded border bg-background p-2"
           />
         </label>
-        <button className={button} onClick={() => setStart(player.position)}>
+        <button className={podcastClipButton} onClick={() => setStart(player.position)}>
           Start Here
         </button>
         <label className="text-sm">
@@ -132,7 +75,7 @@ function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; view
             className="ml-2 w-24 rounded border bg-background p-2"
           />
         </label>
-        <button className={button} onClick={() => setEnd(player.position)}>
+        <button className={podcastClipButton} onClick={() => setEnd(player.position)}>
           End Here
         </button>
         <input
@@ -142,20 +85,9 @@ function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; view
           className="min-h-11 flex-1 rounded border bg-background px-3"
         />
       </div>
-      <label className="flex min-h-11 items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={includeCaptions}
-          onChange={(event) => setIncludeCaptions(event.target.checked)}
-        />
-        Include Captions
-        <span className="text-muted-foreground">
-          When a Publisher Transcript Is Available
-        </span>
-      </label>
       <div className="flex gap-2">
         <button
-          className={button}
+          className={podcastClipButton}
           disabled={!valid || busy}
           onClick={() => {
             player.seek(start);
@@ -163,29 +95,25 @@ function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; view
             setPreview(true);
           }}
         >
-          Preview Clip
+          Preview Audio Range
         </button>
         <button
-          className={button}
+          className={podcastClipButton}
           disabled={!valid || busy}
           onClick={() =>
             void run(async () => {
-              const oauth = clipSession();
+              const oauth = requireSession();
               if (!oauth) throw new Error("Sign in to create clips");
+              assertCurrentAccount();
               await podcastRequest(oauth, "clips", "POST", {
                 episodeId: episode.id,
                 startSeconds: start,
                 endSeconds: end,
                 title,
-                includeCaptions,
+                includeCaptions: false,
               });
-              const page = await podcastRequest<{ clips: PodcastClip[] }>(
-                oauth,
-                "clips",
-              );
-              setClips(
-                page.clips.filter((clip) => clip.episodeId === episode.id),
-              );
+              assertCurrentAccount();
+              await refresh();
             })
           }
         >
@@ -203,148 +131,7 @@ function PodcastViewerClips({ episode, viewer }: { episode: PodcastEpisode; view
         </p>
       ) : null}
       <ul className="space-y-3">
-        {clips.map((clip) => (
-          <li key={clip.id} className="rounded border p-3">
-            <p className="font-medium">{clip.title}</p>
-            <p className="text-sm text-muted-foreground">
-              {formatPodcastTime(clip.startSeconds)}–
-              {formatPodcastTime(clip.endSeconds)} · {clip.status}
-            </p>
-            {clip.error ? (
-              <p className="text-sm text-destructive">{clip.error}</p>
-            ) : null}
-            <div className="mt-2 flex flex-wrap gap-2">
-              {clip.status === "failed" ? (
-                <button
-                  className={button}
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      const oauth = clipSession();
-                      if (!oauth) throw new Error("Sign In to Retry Exports");
-                      const job = clip.jobId
-                        ? { id: clip.jobId }
-                        : await podcastRequest<{ id: string }>(
-                            oauth,
-                            `jobs?clipId=${encodeURIComponent(clip.id)}`,
-                          );
-                      await podcastRequest(oauth, "jobs", "POST", {
-                        jobId: job.id,
-                      });
-                      setClips((items) =>
-                        items.map((item) =>
-                          item.id === clip.id
-                            ? { ...item, status: "queued" }
-                            : item,
-                        ),
-                      );
-                    })
-                  }
-                >
-                  Retry Exports
-                </button>
-              ) : null}
-              {clip.audioUrl ? (
-                <button
-                  className={button}
-                  onClick={() => void run(() => exportAsset(clip, "audio"))}
-                >
-                  Audio Export
-                </button>
-              ) : null}
-              {clip.videoUrl ? (
-                <button
-                  className={button}
-                  onClick={() => void run(() => exportAsset(clip, "video"))}
-                >
-                  Audiogram Export
-                </button>
-              ) : null}
-              {!clip.publishedUri ? (
-                <button
-                  className={button}
-                  disabled={busy || !clip.audioUrl || !clip.videoUrl}
-                  onClick={() =>
-                    void run(async () => {
-                      const oauth = clipSession();
-                      if (!oauth || !session) return;
-                      const uri = await publishPodcastClip(
-                        oauth,
-                        session.did,
-                        clip,
-                        episode,
-                      );
-                      setClips((items) =>
-                        items.map((item) =>
-                          item.id === clip.id
-                            ? { ...item, publishedUri: uri }
-                            : item,
-                        ),
-                      );
-                    })
-                  }
-                >
-                  Publish
-                </button>
-              ) : (
-                <>
-                  <a
-                    className={button}
-                    href={`/podcast-clips/${encodeURIComponent(clip.id)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Public Clip
-                  </a>
-                  <button
-                    className={button}
-                    onClick={() =>
-                      void run(async () => {
-                        const url = `${location.origin}/podcast-clips/${encodeURIComponent(clip.id)}`;
-                        if (navigator.share)
-                          await navigator.share({ title: clip.title, url });
-                        else await navigator.clipboard.writeText(url);
-                      })
-                    }
-                  >
-                    Share
-                  </button>
-                  <button
-                    className={button}
-                    onClick={() =>
-                      void navigator.clipboard.writeText(
-                        `<iframe src="${location.origin}/podcast-clips/${encodeURIComponent(clip.id)}/embed" title="Podcast Clip" width="480" height="200" loading="lazy" allow="autoplay"></iframe>`,
-                      )
-                    }
-                  >
-                    Copy Embed
-                  </button>
-                </>
-              )}
-              <button
-                className={button}
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Delete This Clip? This removes its public record and hosted exports.",
-                    )
-                  )
-                    void run(async () => {
-                      const oauth = clipSession();
-                      if (!oauth || !session) return;
-                      await unpublishPodcastClip(oauth, session.did, clip);
-                      setClips((items) =>
-                        items.filter((item) => item.id !== clip.id),
-                      );
-                    });
-                }}
-              >
-                Delete Clip
-              </button>
-            </div>
-          </li>
-        ))}
+        {clips.map(clip => <li key={clip.id}><PodcastClipCard clip={clip} episode={episode} onChanged={refresh} /></li>)}
       </ul>
     </section>
   );

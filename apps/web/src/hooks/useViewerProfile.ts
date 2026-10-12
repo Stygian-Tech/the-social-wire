@@ -15,13 +15,17 @@ import {
 export const VIEWER_PROFILE_QUERY_KEY = (did: string) =>
   ["viewerProfile", did] as const;
 
-/** Fields read by the sidebar; sourced from App View or repo fallback. */
+/** Profile fields sourced from AppView; repository fallback supplies only available text. */
 export type ViewerProfileSlice = {
   did: string;
   handle?: string;
   displayName?: string;
   avatar?: string;
   description?: string;
+  banner?: string;
+  followersCount?: number;
+  followsCount?: number;
+  postsCount?: number;
 };
 
 /**
@@ -41,7 +45,7 @@ export function useViewerProfile() {
 
   return useQuery({
     queryKey: VIEWER_PROFILE_QUERY_KEY(did ?? ""),
-    queryFn: async (): Promise<ViewerProfileSlice | null> => {
+    queryFn: async ({ signal }): Promise<ViewerProfileSlice | null> => {
       if (!did) return null;
       if (dummyReaderDataEnabled) return dummyViewerProfile;
 
@@ -49,7 +53,8 @@ export function useViewerProfile() {
       try {
         const res = await appViewAgent.api.app.bsky.actor.getProfile({
           actor: did,
-        });
+        }, { signal });
+        signal.throwIfAborted();
         const d = res.data;
         return {
           did: d.did,
@@ -57,16 +62,23 @@ export function useViewerProfile() {
           displayName: d.displayName,
           avatar: d.avatar,
           description: d.description,
+          banner: d.banner,
+          followersCount: d.followersCount,
+          followsCount: d.followsCount,
+          postsCount: d.postsCount,
         };
       } catch {
+        signal.throwIfAborted();
         const oauthSession = getOAuthSession();
         if (!oauthSession) return null;
+        if (oauthSession.did !== did) throw new Error("Your account changed. Please reload your profile.");
         const pdsAgent = createOAuthAgent(oauthSession);
         const rec = await pdsAgent.api.com.atproto.repo.getRecord({
           repo: did,
           collection: "app.bsky.actor.profile",
           rkey: "self",
-        });
+        }, { signal });
+        signal.throwIfAborted();
         const val = rec.data.value as Record<string, unknown>;
         const str = (v: unknown): string | undefined =>
           typeof v === "string" ? v : undefined;

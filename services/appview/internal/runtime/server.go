@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"errors"
+	"github.com/stygian-tech/the-social-wire/packages/go/analyticscore"
+	"log"
 	"net"
 	"net/http"
 	"time"
@@ -25,6 +27,25 @@ func (h *Host) Run(ctx context.Context) error {
 		h.wg.Add(1)
 		go func() { defer h.wg.Done(); h.sampleRedis(h.ctx) }()
 	}
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		store := analyticscore.Store{DB: h.DB}
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			sweep, cancel := context.WithTimeout(h.ctx, 10*time.Second)
+			if err := store.Cleanup(sweep, time.Now()); err != nil && h.ctx.Err() == nil {
+				log.Printf("creator analytics retention sweep failed: %v", err)
+			}
+			cancel()
+			select {
+			case <-h.ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	select {

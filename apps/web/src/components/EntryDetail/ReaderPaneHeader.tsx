@@ -1,5 +1,6 @@
 "use client";
 
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { ChevronLeft } from "lucide-react";
 import { ArticleSocialToolbar } from "@/components/EntryDetail/ArticleSocialToolbar";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ export function ReaderPaneHeader({
   const title = entry?.title?.trim() || fallbackTitle;
 
   return (
-    <div className="sticky top-0 z-30 flex min-h-[52px] shrink-0 items-center gap-2 border-b bg-background/90 px-1.5 py-1 backdrop-blur-md md:px-3">
+    <div className={`${floatingGlassClasses} sticky top-2 z-30 m-2 flex min-h-[52px] shrink-0 items-center gap-2 px-1.5 py-1 md:px-3`}>
       <Button
         type="button"
         variant="ghost"

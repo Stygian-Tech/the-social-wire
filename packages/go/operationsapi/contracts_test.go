@@ -198,3 +198,21 @@ func TestEventStreamReplaysCursorAndStopsOnCancellation(t *testing.T) {
 		t.Fatal(w.Code, w.Header(), store.after, w.Body.String())
 	}
 }
+
+func TestLocalTabUsageOverrideDoesNotBroadenOperationsEnvironment(t *testing.T) {
+	config, err := ConfigFromEnvironment(map[string]string{"APP_ENV": "dev", "DATABASE_URL": "postgres://test", "OPERATIONS_TAB_USAGE_ENVIRONMENT": "local"})
+	if err != nil || config.Environment != "dev" || config.TabUsageEnvironment != "local" {
+		t.Fatalf("local telemetry override rejected: %v", err)
+	}
+	for _, env := range []map[string]string{
+		{"APP_ENV": "prod", "OPERATIONS_TAB_USAGE_ENVIRONMENT": "local"},
+		{"APP_ENV": "dev", "OPERATIONS_TAB_USAGE_ENVIRONMENT": "prod"},
+		{"APP_ENV": "dev", "OPERATIONS_TAB_USAGE_ENVIRONMENT": "local", "RAILWAY_ENVIRONMENT_ID": "fixture"},
+		{"APP_ENV": "dev", "OPERATIONS_TAB_USAGE_ENVIRONMENT": "local", "RAILWAY_ENVIRONMENT_NAME": "Development"},
+	} {
+		env["DATABASE_URL"] = "postgres://test"
+		if _, err := ConfigFromEnvironment(env); err == nil {
+			t.Fatal("accepted unsafe telemetry override")
+		}
+	}
+}

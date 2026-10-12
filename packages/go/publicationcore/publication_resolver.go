@@ -143,7 +143,7 @@ func (r Resolver) https(ctx context.Context, input string) ResolveResponse {
 	if chosen != nil {
 		return ResolveResponse{Result: chosen}
 	}
-	return resolveError("Could not find a standard.site publication marker for this domain or a reachable RSS/Atom feed. Try a publication AT-URI or a direct feed URL.")
+	return resolveError("Could not find a standard.site publication marker for this domain or a reachable article RSS/Atom feed. Try a publication AT-URI or a direct feed URL. Subscribe to audio feeds in Podcasts.")
 }
 func feedBody(body []byte) bool {
 	lower := strings.ToLower(string(body))
@@ -176,6 +176,9 @@ func (r Resolver) discoverRSS(ctx context.Context, page *url.URL) string {
 		return ""
 	}
 	if feedBody(body) {
+		if podcastFeedBody(body) {
+			return ""
+		}
 		return page.String()
 	}
 	candidates := alternateFeeds(string(body), page)
@@ -200,7 +203,7 @@ func (r Resolver) discoverRSS(ctx context.Context, page *url.URL) string {
 		active++
 		go func() {
 			status, body := r.get(work, feed, "application/rss+xml, application/atom+xml, application/xml, text/xml, */*", 512*1024)
-			if (status == 200 || status == 403 || status == 406 || status == 415) && feedBody(body) {
+			if (status == 200 || status == 403 || status == 406 || status == 415) && feedBody(body) && !podcastFeedBody(body) {
 				results <- feed
 			} else {
 				results <- ""

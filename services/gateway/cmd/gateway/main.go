@@ -85,11 +85,11 @@ func run() error {
 			defer redisClient.Close()
 		}
 	}
-	public := gatewaycore.NewPublicHTTPClient(nil)
+	public := gatewaycore.NewHTTPClientWithPolicy(config.EndpointPolicy)
 	defer public.CloseIdleConnections()
 	namespace := socialwireredis.NewKeyNamespace(config.Environment, "")
 	cache := &gateway.RecordCache{DB: db, Redis: redisClient, Backend: config.CacheBackend, Namespace: namespace}
-	preferences := &gateway.Preferences{Repo: &gatewaycore.RepoClient{Client: public, PLCURL: config.Auth.PLCURL}, Cache: cache, Context: ctx}
+	preferences := &gateway.Preferences{Repo: &gatewaycore.RepoClient{Client: public, PLCURL: config.Auth.PLCURL, Policy: config.EndpointPolicy}, Cache: cache, Context: ctx}
 	service := &gateway.Server{Config: config, DB: db, Public: public, Preferences: preferences, Limiter: &gateway.RequestLimiter{Redis: redisClient, Namespace: namespace}, Region: env["RAILWAY_REPLICA_REGION"]}
 	telemetryEnabled := env["OPERATIONS_TELEMETRY_ENABLED"] == "" || memberTruthy(env["OPERATIONS_TELEMETRY_ENABLED"])
 	if telemetryEnabled {

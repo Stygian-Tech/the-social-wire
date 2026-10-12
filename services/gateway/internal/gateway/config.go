@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	EndpointPolicy                                                            *gatewaycore.EndpointPolicy
 	PodcastsEnabled                                                           bool
 	Environment, Address, DatabaseURL, RedisURL, CacheBackend                 string
 	AppViewURL, OperationsURL, ProjectionURL, LatrURL                         string
@@ -28,6 +29,11 @@ func ParseConfig(env map[string]string) (Config, error) {
 		return v
 	}
 	c := Config{Environment: get("APP_ENV", "local"), DatabaseURL: get("DATABASE_URL", ""), RedisURL: get("REDIS_URL", ""), AppViewURL: get("APPVIEW_BASE_URL", ""), OperationsURL: get("OPERATIONS_BASE_URL", ""), ProjectionURL: get("PROJECTION_POOL_BASE_URL", get("CHARYBDIS_BASE_URL", "")), LatrURL: get("LATR_IOS_PROXY_URL", ""), AppViewSecret: get("GATEWAY_APPVIEW_INTERNAL_SECRET", ""), OperationsSecret: get("GATEWAY_OPERATIONS_INTERNAL_SECRET", ""), LatrClientID: get("LATR_IOS_PROXY_CLIENT_ID", ""), LatrAPIKey: get("LATR_IOS_PROXY_API_KEY", ""), LatrCredential: get("LATR_IOS_PROXY_CLIENT_CREDENTIAL", ""), PublicOrigin: get("OAUTH_PUBLIC_ORIGIN", ""), IOSOrigin: get("OAUTH_IOS_METADATA_ORIGIN", ""), OperationsOrigin: get("OAUTH_OPERATIONS_ORIGIN", ""), Modes: map[string]string{}}
+	policy, policyError := gatewaycore.NewEndpointPolicy(env)
+	if policyError != nil {
+		return c, policyError
+	}
+	c.EndpointPolicy = policy
 	c.PodcastsEnabled = strings.EqualFold(env["PODCASTS_ENABLED"], "true")
 	if c.Environment != "local" && c.Environment != "dev" && c.Environment != "prod" {
 		return c, fmt.Errorf("APP_ENV must be local, dev or prod")
@@ -74,7 +80,7 @@ func ParseConfig(env map[string]string) (Config, error) {
 	if len(secret) < 32 || len(secret) > 4096 {
 		return c, fmt.Errorf("attestation receipt secret must contain 32..4096 bytes")
 	}
-	c.Auth = gatewaycore.AuthConfig{PLCURL: get("ATPROTO_PLC_URL", "https://plc.directory"), SupplementalJWKS: get("OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON", ""), AttestationSecret: secret, RequireKnownClient: truthy(env["OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT"]), AllowedClientIDs: split(get("OAUTH_GATEWAY_ALLOWED_CLIENT_IDS", "") + " " + get("OAUTH_OPERATIONS_CLIENT_ID", "")), AllowedAudiences: split(env["OAUTH_GATEWAY_ALLOWED_AUDIENCES"])}
+	c.Auth = gatewaycore.AuthConfig{Policy: policy, PLCURL: get("ATPROTO_PLC_URL", "https://plc.directory"), SupplementalJWKS: get("OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON", ""), AttestationSecret: secret, RequireKnownClient: truthy(env["OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT"]), AllowedClientIDs: split(get("OAUTH_GATEWAY_ALLOWED_CLIENT_IDS", "") + " " + get("OAUTH_OPERATIONS_CLIENT_ID", "")), AllowedAudiences: split(env["OAUTH_GATEWAY_ALLOWED_AUDIENCES"])}
 	c.AllowedOrigins = split(env["CORS_ALLOWED_ORIGINS"])
 	if len(c.AllowedOrigins) == 0 && c.PublicOrigin != "" {
 		c.AllowedOrigins = append(c.AllowedOrigins, c.PublicOrigin)

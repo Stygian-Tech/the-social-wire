@@ -4,9 +4,12 @@ import { GET } from "@/app/api/bluesky-card-thumb/route";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
-function requestFor(target: string): Request {
+function requestFor(target: string, original = false): Request {
   const params = new URLSearchParams({ url: target });
-  return new Request(`https://thesocialwire.app/api/bluesky-card-thumb?${params}`);
+  if (original) params.set("purpose", "original");
+  return new Request(
+    `https://thesocialwire.app/api/bluesky-card-thumb?${params}`,
+  );
 }
 
 describe("GET /api/bluesky-card-thumb", () => {
@@ -36,7 +39,7 @@ describe("GET /api/bluesky-card-thumb", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(
-      new Uint8Array([1, 2, 3])
+      new Uint8Array([1, 2, 3]),
     );
   });
 
@@ -46,10 +49,11 @@ describe("GET /api/bluesky-card-thumb", () => {
   });
 
   it("rejects non-image responses", async () => {
-    globalThis.fetch = mock(async () =>
-      new Response("nope", {
-        headers: { "content-type": "text/html" },
-      })
+    globalThis.fetch = mock(
+      async () =>
+        new Response("nope", {
+          headers: { "content-type": "text/html" },
+        }),
     ) as unknown as typeof fetch;
 
     const res = await GET(requestFor("https://cdn.example/page"));
@@ -57,16 +61,77 @@ describe("GET /api/bluesky-card-thumb", () => {
   });
 
   it("rejects images over the Bluesky external-card size limit", async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(new Uint8Array([1]), {
-        headers: {
-          "content-length": "1000001",
-          "content-type": "image/jpeg",
-        },
-      })
+    globalThis.fetch = mock(
+      async () =>
+        new Response(new Uint8Array([1]), {
+          headers: {
+            "content-length": "1000001",
+            "content-type": "image/jpeg",
+          },
+        }),
     ) as unknown as typeof fetch;
 
     const res = await GET(requestFor("https://cdn.example/large.jpg"));
     expect(res.status).toBe(413);
+  });
+  it("preserves full-size original bytes above the thumbnail limit", async () => {
+    const bytes = new Uint8Array(1_100_000);
+    bytes[0] = 7;
+    bytes[bytes.length - 1] = 9;
+    globalThis.fetch = mock(
+      async () =>
+        new Response(bytes, {
+          headers: {
+            "content-type": "image/jpeg",
+            "content-length": String(bytes.length),
+          },
+        }),
+    ) as unknown as typeof fetch;
+    const res = await GET(
+      requestFor("https://cdn.bsky.app/original.jpg", true),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/jpeg");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(bytes);
+  });
+  it("enforces the original limit from headers and streamed bytes", async () => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response("x", {
+          headers: {
+            "content-type": "image/jpeg",
+            "content-length": "10000001",
+          },
+        }),
+    ) as unknown as typeof fetch;
+    expect(
+      (await GET(requestFor("https://cdn.bsky.app/large.jpg", true))).status,
+    ).toBe(413);
+    globalThis.fetch = mock(
+      async () =>
+        new Response(new Uint8Array(10_000_001), {
+          headers: { "content-type": "image/jpeg" },
+        }),
+    ) as unknown as typeof fetch;
+    expect(
+      (await GET(requestFor("https://cdn.bsky.app/large.jpg", true))).status,
+    ).toBe(413);
+  });
+  it("rejects private and non-HTTPS original redirects before following them", async () => {
+    for (const location of [
+      "https://127.0.0.1/secret",
+      "http://cdn.example/image.jpg",
+      "https://user:pass@cdn.example/image.jpg",
+    ]) {
+      const upstream = mock(async (_url: URL, init?: RequestInit) => {
+        expect(init?.redirect).toBe("manual");
+        return new Response(null, { status: 302, headers: { location } });
+      });
+      globalThis.fetch = upstream as unknown as typeof fetch;
+      expect(
+        (await GET(requestFor("https://cdn.example/redirect", true))).status,
+      ).toBe(400);
+      expect(upstream).toHaveBeenCalledTimes(1);
+    }
   });
 });

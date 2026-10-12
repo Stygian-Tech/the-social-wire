@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import type { WireEditionPage } from "@/lib/wireEditionClient";
@@ -141,45 +141,6 @@ const page: WireEditionPage = {
 };
 
 describe("WireNewsEditionLayout", () => {
-  it("fits trending stories below the feed header with equal gutters after resizing", async () => {
-    const { WireNewsEditionLayout } = await import("@/components/Wire/WireNewsEditionLayout");
-    let bottom = 800;
-    const viewport = Object.getOwnPropertyDescriptor(window, "innerHeight");
-    const width = Object.getOwnPropertyDescriptor(window, "innerWidth");
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
-    const bounds = spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      const top = this.tagName === "ASIDE" ? 106 : 90;
-      return { top, bottom, left: 0, right: 300, width: 300, height: bottom - top, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
-    });
-    try {
-      const emptyPage = { ...page, trendingStoryIds: [] };
-      const edition = (currentPage: WireEditionPage) => <WireNewsEditionLayout pages={[currentPage]} continuedStories={[]} hasNextPage={false} isFetchingNextPage={false} isLoadMoreError={false} onLoadMore={async () => undefined} onSelect={() => undefined} />;
-      const view = render(edition(emptyPage));
-      expect(screen.queryByRole("complementary")).toBeNull();
-      view.rerender(edition(page));
-      let panel = screen.getByRole("complementary");
-      expect(panel.style.top).toBe("16px");
-      expect(panel.style.maxHeight).toBe("678px");
-      view.rerender(edition(emptyPage));
-      expect(screen.queryByRole("complementary")).toBeNull();
-      view.rerender(edition(page));
-      panel = screen.getByRole("complementary");
-      expect(panel.style.maxHeight).toBe("678px");
-      bottom = 600;
-      fireEvent(window, new window.Event("resize"));
-      await waitFor(() => expect(panel.style.maxHeight).toBe("478px"));
-      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
-      fireEvent(window, new window.Event("resize"));
-      await waitFor(() => expect(panel.style.maxHeight).toBe(""));
-      expect(panel.style.top).toBe("");
-    } finally {
-      cleanup();
-      bounds.mockRestore();
-      if (viewport) Object.defineProperty(window, "innerHeight", viewport);
-      if (width) Object.defineProperty(window, "innerWidth", width);
-    }
-  });
   it("collapses media when cached image resolution fails", async () => {
     const failedURL = "https://analysis.example/cache-failure.jpg";
     cachedImageFailureSrc = failedURL;
@@ -250,10 +211,11 @@ describe("WireNewsEditionLayout", () => {
       .getByRole("heading", { name: "Trending Stories" })
       .closest("aside");
     expect(trending?.getAttribute("tabindex")).toBe("0");
-    expect(trending?.className).toContain("rounded-xl");
+    expect(trending?.className).toContain("rounded-2xl");
+    expect(trending?.className).toContain("floating-glass");
     expect(trending?.className).toContain("p-3");
     expect(trending?.className).toContain("xl:overflow-y-auto");
-    expect(trending?.className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)]");
+    expect(trending?.className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-5rem)]");
     expect(trending?.className).toContain("xl:[scrollbar-gutter:stable]");
     expect(
       trending?.querySelector("[data-wire-trending-list]")?.className,

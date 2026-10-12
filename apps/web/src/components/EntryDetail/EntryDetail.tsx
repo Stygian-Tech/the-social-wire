@@ -67,6 +67,8 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
 
   return (
     <article
+      data-analytics-subject={entry.entryId}
+      data-analytics-surface="article-reader"
       className={cn(
         "flex min-h-0 w-full max-w-none flex-1 flex-col px-3 pb-8 pt-1 sm:px-4 sm:pt-2 md:px-6 lg:px-8",
         showEmbed ? "md:pb-2" : "md:pb-8 lg:pb-10"

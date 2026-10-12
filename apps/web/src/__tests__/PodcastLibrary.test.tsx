@@ -61,7 +61,8 @@ it("adds a tokenized private RSS feed without a public subscription write", asyn
   expect(write).not.toHaveBeenCalled();
   expect(requestPaths).not.toContain("resolve");
   expect(screen.queryByText("Map RSS to AT Protocol")).toBeNull();
-  expect(screen.getByRole("complementary", { name: "Podcast Library" }).className).toContain("rounded-xl");
+  expect(screen.getByRole("complementary", { name: "Podcast Library" }).className).toContain("rounded-2xl");
+  expect(screen.getByRole("complementary", { name: "Podcast Library" }).className).toContain("floating-glass");
   expect(screen.getByRole("complementary", { name: "Podcast Library" }).className).toContain("p-3");
   expect(screen.getByRole("button", { name: "Recently Added" }).className).toContain("min-h-8");
   expect(screen.getByRole("button", { name: "Recently Added" }).className).toContain("pointer-coarse:min-h-11");
@@ -173,6 +174,9 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   expect(unsubscribe.className).toContain("min-h-8");
   expect(unsubscribe.className).toContain("pointer-coarse:min-h-11");
   fireEvent.click(unsubscribe);
+  const confirmation = await screen.findByRole("dialog");
+  expect(write).not.toHaveBeenCalled();
+  fireEvent.click(within(confirmation).getByRole("button", { name: "Unsubscribe" }));
   await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, true));
   expect(changes).toEqual([{ subscriptions: [] }]);
 });
@@ -308,7 +312,10 @@ it("updates Played indicators while preserving episode positions and usable play
   const fresh = screen.getByRole("button", { name: "Show Notes: Fresh Episode" }).closest("li")!;
   expect(finished.getAttribute("data-played")).toBe("true");
   expect(within(finished).getByText("Played")).toBeTruthy();
-  expect(within(fresh).getByText("Unplayed")).toBeTruthy();
+  expect(within(fresh).getByText("In Progress")).toBeTruthy();
+  expect(within(fresh).getByText("0:35 / 2:00")).toBeTruthy();
+  expect(within(fresh).getByText("1:25 Left")).toBeTruthy();
+  expect(within(fresh).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("29");
   fireEvent.click(within(fresh).getByRole("button", { name: "Mark Played" }));
   await waitFor(() => expect(within(fresh).getByText("Played")).toBeTruthy());
   expect(fresh.getAttribute("data-played")).toBe("true");
@@ -320,7 +327,7 @@ it("updates Played indicators while preserving episode positions and usable play
   expect(playback).toEqual(["fresh"]);
   expect(within(fresh).getByRole("button", { name: "Play" }).hasAttribute("disabled")).toBe(false);
   fireEvent.click(within(fresh).getByRole("button", { name: "Mark Unplayed" }));
-  await waitFor(() => expect(within(fresh).getByText("Unplayed")).toBeTruthy());
+  await waitFor(() => expect(within(fresh).getByText("In Progress")).toBeTruthy());
   expect(fresh.getAttribute("data-played")).toBe("false");
   expect(within(fresh).getByRole("heading").classList.contains("text-muted-foreground")).toBe(false);
   expect(changes[1]?.progress?.fresh?.positionSeconds).toBe(35);
@@ -385,3 +392,33 @@ for (const outcome of ["success", "resolve failure", "write failure"] as const) 
     expect(requests.filter(path => path === "search")).toHaveLength(1);
   });
 }
+
+it("opens viewer-wide Clips without fetching episodes and returns to Search", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const paths: string[] = [];
+  const authMock = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
+  const playerMock = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state: client.initialPodcastState(), episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
+  let completeDownloads: (value: offline.PodcastDownload[]) => void = () => {};
+  const local = spyOn(offline, "listPodcastDownloads").mockImplementation(() => new Promise(resolve => { completeDownloads = resolve; }));
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
+    paths.push(path);
+    if (path === "shows") return { shows: [] } as T;
+    if (path === "clips") return { clips: [{ id: "draft", episodeId: "other-episode", title: "My Prepared Clip", startSeconds: 5, endSeconds: 20, status: "queued", createdAt: "2026-10-11T12:00:00Z" }] } as T;
+    return { episodes: [] } as T;
+  });
+  restores.push(() => authMock.mockRestore(), () => playerMock.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  render(<PodcastLibrary />);
+  await screen.findByText("Subscribe to a Podcast to See New Episodes");
+  paths.length = 0;
+  fireEvent.click(screen.getByRole("button", { name: "Clips" }));
+  await screen.findByText("My Prepared Clip");
+  // Complete the earlier library bootstrap while Clips is already active.
+  await act(async () => { completeDownloads([]); });
+  expect(screen.getByRole("button", { name: "Clips" }).getAttribute("aria-current")).toBe("page");
+  expect(paths).toContain("clips");
+  expect(paths.some(path => path.startsWith("episodes"))).toBe(false);
+  expect(screen.queryByLabelText("Search Your Library")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  await screen.findByLabelText("Search Podcasts");
+  expect(screen.queryByRole("region", { name: "Your Podcast Clips" })).toBeNull();
+});

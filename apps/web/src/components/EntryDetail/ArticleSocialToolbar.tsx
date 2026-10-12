@@ -1,5 +1,7 @@
 "use client";
 
+import { SocialPeopleTextField } from "@/components/Social/SocialPeopleTextField";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
@@ -353,8 +355,9 @@ export function ArticleSocialToolbar({
       ) : (
         <div
           className={cn(
-            "-mx-1 w-full border-b border-border pb-3 mb-2 sm:-mx-0 sm:pb-3.5 sm:mb-3 md:mb-1 md:pb-2",
-            "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:mx-0 max-md:mb-0 max-md:flex max-md:w-screen max-md:flex-nowrap max-md:items-center max-md:gap-2 max-md:overflow-x-auto max-md:border-b-0 max-md:border-t max-md:bg-background/95 max-md:px-3 max-md:pt-2 max-md:pb-[calc(env(safe-area-inset-bottom)+2.5rem)] max-md:shadow-[0_-16px_36px_-28px_oklch(0_0_0/0.55)] max-md:backdrop-blur-md max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden",
+            floatingGlassClasses,
+            "mb-2 w-auto p-2 sm:mb-3 md:mb-1",
+            "max-md:fixed max-md:inset-x-2 max-md:bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] max-md:z-40 max-md:mx-0 max-md:mb-0 max-md:flex max-md:flex-nowrap max-md:items-center max-md:gap-2 max-md:overflow-x-auto max-md:px-3 max-md:pt-2 max-md:pb-2 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden",
             "max-md:[&>button]:h-11 max-md:[&>button]:min-h-[44px] max-md:[&>button]:min-w-[44px] max-md:[&>button]:flex-1 max-md:[&>button]:basis-0 max-md:[&>button]:px-0",
             "max-md:[&>a]:h-11 max-md:[&>a]:min-h-[44px] max-md:[&>a]:min-w-[44px] max-md:[&>a]:flex-1 max-md:[&>a]:basis-0 max-md:[&>a]:px-0",
             "md:flex md:flex-wrap md:items-center md:gap-2",
@@ -570,10 +573,10 @@ export function ArticleSocialToolbar({
           </DialogHeader>
           <div className="grid gap-2 py-2">
             <Label htmlFor="reply-text">Reply</Label>
-            <textarea
+            <SocialPeopleTextField
               id="reply-text"
               value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
+              onValueChange={setReplyText}
               placeholder="Write a reply..."
               rows={4}
               className="flex min-h-[100px] w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
@@ -617,10 +620,10 @@ export function ArticleSocialToolbar({
           </DialogHeader>
           <div className="grid gap-2 py-2">
             <Label htmlFor="post-text">Comment</Label>
-            <textarea
+            <SocialPeopleTextField
               id="post-text"
               value={postText}
-              onChange={(e) => { const next = e.target.value; for (const tag of selectedTagsRef.current) { if (insertFinanceCashtag(next, tag) !== next) { selectedTagsRef.current.delete(tag); recordComposition("removal"); } } setPostText(next); }}
+              onValueChange={(next) => { for (const tag of selectedTagsRef.current) { if (insertFinanceCashtag(next, tag) !== next) { selectedTagsRef.current.delete(tag); recordComposition("removal"); } } setPostText(next); }}
               placeholder="Add your thoughts..."
               rows={4}
               className="flex min-h-[100px] w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"

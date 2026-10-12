@@ -1,40 +1,22 @@
-import { afterEach, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import React, { useState } from "react";
+import { useState } from "react";
+import * as Suggestions from "@/hooks/useLoginHandleSuggestions";
+import * as AvatarComponent from "@/components/shared/Avatar";
 
-const MockInput = React.forwardRef<
-  HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement>
->((props, ref) => <input ref={ref} {...props} />);
-MockInput.displayName = "MockInput";
-
-afterEach(cleanup);
-
-mock.module("@/hooks/useLoginHandleSuggestions", () => ({
-  useLoginHandleSuggestions: () => ({
+const restores: (() => void)[] = [];
+beforeEach(() => {
+  const suggestions = spyOn(Suggestions, "useLoginHandleSuggestions").mockReturnValue({
     data: [
-      {
-        did: "did:plc:alice",
-        handle: "alice.bsky.social",
-        displayName: "Alice",
-      },
-      {
-        did: "did:plc:alicia",
-        handle: "alicia.example",
-        displayName: "Alicia",
-      },
+      { did: "did:plc:alice", handle: "alice.bsky.social", displayName: "Alice" },
+      { did: "did:plc:alicia", handle: "alicia.example", displayName: "Alicia" },
     ],
     isFetching: false,
-  }),
-}));
-
-mock.module("@/components/ui/input", () => ({
-  Input: MockInput,
-}));
-
-mock.module("@/components/shared/Avatar", () => ({
-  Avatar: ({ alt }: { alt: string }) => <span>{alt}</span>,
-}));
+  } as unknown as ReturnType<typeof Suggestions.useLoginHandleSuggestions>);
+  const avatar = spyOn(AvatarComponent, "Avatar").mockImplementation(({ alt }) => <span>{alt}</span>);
+  restores.push(() => suggestions.mockRestore(), () => avatar.mockRestore());
+});
+afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 it("supports keyboard typeahead selection and can reopen", async () => {
   const { LoginHandleTypeahead } = await import(

@@ -34,6 +34,17 @@ afterAll(() => {
 });
 
 describe("MobileFeedNavigation", () => {
+  it("puts Social in More and keeps reader Following separate", () => {
+    const onSelect = mock(() => undefined);
+    render(<MobileFeedNavigation currentFeed="social" visibleFeeds={new Set(["social", "wire", "circle", "subscribed", "following"])} onSelect={onSelect} />);
+    expect(screen.getByRole("button", { name: "Following" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("button", { name: "More Feeds" }).getAttribute("aria-current")).toBe("page");
+    fireEvent.click(screen.getByRole("button", { name: "More Feeds" }));
+    const social = screen.getByRole("menuitem", { name: "Social" });
+    expect(social.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(social);
+    expect(onSelect).toHaveBeenCalledWith("social");
+  });
   it("shows the Podcasts Beta badge in a primary mobile slot", () => {
     const onSelect = mock(() => undefined);
     render(<MobileFeedNavigation currentFeed="podcasts" visibleFeeds={new Set(["podcasts"])} onSelect={onSelect} />);

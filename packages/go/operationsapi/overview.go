@@ -22,6 +22,7 @@ type Overview struct {
 	Evidence           map[string]EvidenceMetadata    `json:"evidence"`
 	Capabilities       *Capabilities                  `json:"capabilities,omitempty"`
 	Counts             LifecycleCounts                `json:"counts"`
+	TabUsage           *TabUsageSummary               `json:"tabUsage,omitempty"`
 	Viewers            *ViewerCounts                  `json:"viewers,omitempty"`
 	ViewerHistory      []ViewerCounts                 `json:"viewerHistory"`
 	Durability         *DurabilitySnapshot            `json:"durability,omitempty"`
@@ -32,11 +33,17 @@ func (s *PostgresStore) Overview(ctx context.Context, at time.Time, capabilities
 	var streams []StreamState
 	var counts LifecycleCounts
 	var viewers *ViewerCounts
+	var tabUsage *TabUsageSummary
 	history := []ViewerCounts{}
 	var durability *DurabilitySnapshot
 	var servicesErr, streamsErr, countsErr error
 	var wg sync.WaitGroup
-	tasks := []func(){func() { services, servicesErr = s.ListServiceStates(ctx) }, func() { streams, streamsErr = s.ListStreamStates(ctx) }, func() { counts, countsErr = s.LifecycleCounts(ctx) }, func() {
+	tasks := []func(){func() {
+		value, err := s.FetchTabUsage(ctx, at)
+		if err == nil {
+			tabUsage = value
+		}
+	}, func() { services, servicesErr = s.ListServiceStates(ctx) }, func() { streams, streamsErr = s.ListStreamStates(ctx) }, func() { counts, countsErr = s.LifecycleCounts(ctx) }, func() {
 		value, err := s.FetchViewerCounts(ctx, at)
 		if err == nil {
 			viewers = value
@@ -74,5 +81,5 @@ func (s *PostgresStore) Overview(ctx context.Context, at time.Time, capabilities
 		databaseEvidence.LastSuccessfulAt = &database.ObservedAt
 		databaseEvidence.DegradedReason = nil
 	}
-	return Overview{Services: services, Ingestion: authority.State, IngestionSources: streams, JetstreamEndpoints: []EndpointState{}, Commands: []WorkerCommand{}, Gaps: []Gap{}, Backfills: []BackfillJob{}, Alerts: []Alert{}, RecentTraces: []TraceSpan{}, MetricRollups: []MetricRollup{}, Database: database, RefreshedAt: WireTime{at}, Evidence: map[string]EvidenceMetadata{"services": ServiceEvidence(services, at), "ingestion": authority.Evidence, "database": databaseEvidence}, Capabilities: capabilities, Counts: counts, Viewers: viewers, ViewerHistory: history, Durability: durability}, nil
+	return Overview{Services: services, Ingestion: authority.State, IngestionSources: streams, JetstreamEndpoints: []EndpointState{}, Commands: []WorkerCommand{}, Gaps: []Gap{}, Backfills: []BackfillJob{}, Alerts: []Alert{}, RecentTraces: []TraceSpan{}, MetricRollups: []MetricRollup{}, Database: database, RefreshedAt: WireTime{at}, Evidence: map[string]EvidenceMetadata{"services": ServiceEvidence(services, at), "ingestion": authority.Evidence, "database": databaseEvidence}, Capabilities: capabilities, Counts: counts, Viewers: viewers, TabUsage: tabUsage, ViewerHistory: history, Durability: durability}, nil
 }

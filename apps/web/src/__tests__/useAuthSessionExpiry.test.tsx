@@ -36,3 +36,10 @@ it("clears provider auth state when the OAuth session expires", async () => {
 
   expect(screen.getByText("signed-out")).toBeTruthy();
 });
+
+it("does not sign out the personal provider when a linked account expires", async () => {
+  process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "true";
+  render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+  await act(async () => { invalidateOAuthSession("did:plc:linked-brand", new Error("expired")); });
+  expect(screen.getByText("signed-in:did:plc:socialwire-dummy-viewer")).toBeTruthy();
+});

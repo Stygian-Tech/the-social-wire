@@ -17,7 +17,7 @@ describe("Podcast library feed selection", () => {
     const { container } = render(<SidebarProvider><SidebarAudioSection enabled active onSelect={() => calls.push("podcasts")} /><PublicationTabs visibleFeeds={new Set()} activeTab={null} onTabChange={() => {}} /><SidebarTopicsSection visibleFeeds={new Set()} /></SidebarProvider>);
     expect(screen.getByText("Audio")).toBeTruthy();
     expect(screen.getByText("Beta")).toBeTruthy();
-    expect(screen.queryByText("Feeds")).toBeNull();
+    expect(screen.queryByText("News")).toBeNull();
     expect(screen.queryByText("Topics")).toBeNull();
     expect(container.querySelector('[aria-label="Audio"]')?.contains(screen.getByRole("tab", { name: "Podcasts, Beta" }))).toBe(true);
     fireEvent.click(screen.getByRole("tab", { name: "Podcasts, Beta" }));
@@ -28,6 +28,7 @@ describe("Podcast library feed selection", () => {
   });
   it("keeps queue order and resolves offline episodes without displaying unrelated episodes", () => {
     expect(podcastFeedEpisodes("queue", [episode("b"), episode("unrelated")], [episode("a")], ["a", "b", "missing"]).map(item => item.id)).toEqual(["a", "b"]);
+    expect(podcastFeedEpisodes("clips", [episode("online")], [], [])).toEqual([]);
     expect(podcastFeedEpisodes("downloads", [episode("online")], [episode("offline")], []).map(item => item.id)).toEqual(["offline"]);
   });
   it("changes center feed selections and lists only subscribed shows", () => {
@@ -40,7 +41,8 @@ describe("Podcast library feed selection", () => {
     fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
     fireEvent.click(screen.getByRole("button", { name: /Up Next/ }));
     fireEvent.click(screen.getByRole("button", { name: /My Show/ }));
-    expect(calls).toEqual([["downloads"], ["queue"], ["show", "owned"]]);
+    fireEvent.click(screen.getByRole("button", { name: "Clips" }));
+    expect(calls).toEqual([["downloads"], ["queue"], ["show", "owned"], ["clips"]]);
     expect(screen.queryByText("Unsubscribed Show")).toBeNull();
     expect(screen.getByText("Private Feed")).toBeTruthy();
   });

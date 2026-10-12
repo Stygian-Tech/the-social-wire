@@ -5,6 +5,7 @@ struct PodcastShowView: View {
     let show: PodcastShow
     @State private var query = ""
     @State private var search = PodcastSearchModel()
+    @State private var showToUnsubscribe: PodcastShow?
 
     var body: some View {
         let identity = PodcastSearchIdentity(viewer: library.viewer, query: query, kind: "episodes", showId: show.id)
@@ -13,8 +14,12 @@ struct PodcastShowView: View {
                 PodcastArtworkView(url: show.artworkUrl, size: 96)
                 if show.isPrivate { Label("Private RSS Feed", systemImage: "lock.fill") }
                 if let description = show.description { Text(description).font(.subheadline) }
-                Button(library.state.subscriptions.contains(show.id) ? "Unsubscribe" : "Subscribe") { Task { await library.toggleSubscription(show) } }
-                    .disabled(show.isPrivate && !library.state.subscriptions.contains(show.id))
+                if library.state.subscriptions.contains(show.id) {
+                    Button("Unsubscribe", role: .destructive) { showToUnsubscribe = show }
+                } else {
+                    Button("Subscribe") { Task { await library.toggleSubscription(show) } }
+                        .disabled(show.isPrivate)
+                }
             }
             if let hosts = show.hosts, !hosts.isEmpty {
                 Section("Hosts") {
@@ -35,6 +40,7 @@ struct PodcastShowView: View {
             if let error = library.error { Text(error).foregroundStyle(.red) }
         }
         .navigationTitle(show.title)
+        .modifier(PodcastUnsubscribeConfirmation(show: $showToUnsubscribe))
         .searchable(text: $query, prompt: "Search Show Episodes")
         .task(id: identity) { await search.search(identity, fetch: library.searchPage) }
         .task { await library.loadEpisodes(show: show) }

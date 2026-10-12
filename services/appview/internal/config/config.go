@@ -13,6 +13,7 @@ import (
 // Config selects only PostgreSQL-backed Go stores. Local runs require an explicit
 // DATABASE_URL; the Swift SQLite backend is not silently substituted.
 type Config struct {
+	EndpointPolicy                                                                                                               *gatewaycore.EndpointPolicy
 	Environment, Address, DatabaseURL, RedisURL, CacheBackend, InternalSecret, InstanceID, Version, Region, WireSecret, WireMode string
 	MaximumConnections                                                                                                           int
 	PodcastsEnabled, TelemetryEnabled                                                                                            bool
@@ -24,6 +25,11 @@ type Config struct {
 
 func Parse(env map[string]string) (Config, error) {
 	c := Config{Environment: strings.ToLower(strings.TrimSpace(env["APP_ENV"])), DatabaseURL: env["DATABASE_URL"], RedisURL: env["REDIS_URL"], InternalSecret: env["GATEWAY_APPVIEW_INTERNAL_SECRET"], Version: env["RAILWAY_DEPLOYMENT_ID"], Region: env["RAILWAY_REPLICA_REGION"], MaximumConnections: 2, Modes: map[string]string{}, EnvironmentValues: map[string]string{}}
+	policy, policyError := gatewaycore.NewEndpointPolicy(env)
+	if policyError != nil {
+		return c, policyError
+	}
+	c.EndpointPolicy = policy
 	for k, v := range env {
 		c.EnvironmentValues[k] = v
 	}
@@ -139,7 +145,7 @@ func Parse(env map[string]string) (Config, error) {
 	if secret != "" && (len(secret) < 32 || len(secret) > 4096) {
 		return c, errors.New("invalid PDS attestation receipt secret")
 	}
-	c.Auth = gatewaycore.AuthConfig{PLCURL: plc, SupplementalJWKS: env["OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON"], AttestationSecret: secret, RequireKnownClient: Truthy(env["OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT"]), AllowedClientIDs: Split(env["OAUTH_GATEWAY_ALLOWED_CLIENT_IDS"] + " " + env["OAUTH_OPERATIONS_CLIENT_ID"]), AllowedAudiences: Split(env["OAUTH_GATEWAY_ALLOWED_AUDIENCES"])}
+	c.Auth = gatewaycore.AuthConfig{Policy: policy, PLCURL: plc, SupplementalJWKS: env["OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON"], AttestationSecret: secret, RequireKnownClient: Truthy(env["OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT"]), AllowedClientIDs: Split(env["OAUTH_GATEWAY_ALLOWED_CLIENT_IDS"] + " " + env["OAUTH_OPERATIONS_CLIENT_ID"]), AllowedAudiences: Split(env["OAUTH_GATEWAY_ALLOWED_AUDIENCES"])}
 	return c, nil
 }
 func (c Config) Serves(name string) bool { return c.Modes[name] == "api" || c.Modes[name] == "visible" }

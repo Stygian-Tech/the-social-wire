@@ -242,15 +242,16 @@ export function tokenScopesAllowSemble(scopeValue: unknown): boolean {
   const scopes = String(scopeValue ?? "")
     .split(/\s+/)
     .filter(Boolean);
-  const collections = [
-    SEMBLE_CARD_COLLECTION,
-    SEMBLE_COLLECTION_COLLECTION,
-    SEMBLE_COLLECTION_LINK_COLLECTION,
-    SEMBLE_COLLECTION_LINK_REMOVAL_COLLECTION,
-    SEMBLE_CONNECTION_COLLECTION,
-  ];
-  return collections.every((collection) =>
-    (["create", "update", "delete"] as const).every((action) =>
+  // Collection records are read-only here. putRecord updates require both
+  // create and update permissions, even when the record already exists.
+  const requiredActions = [
+    [SEMBLE_CARD_COLLECTION, ["create", "update"]],
+    [SEMBLE_COLLECTION_LINK_COLLECTION, ["create", "delete"]],
+    [SEMBLE_COLLECTION_LINK_REMOVAL_COLLECTION, ["create"]],
+    [SEMBLE_CONNECTION_COLLECTION, ["create", "update"]],
+  ] as const;
+  return requiredActions.every(([collection, actions]) =>
+    actions.every((action) =>
       scopes.some((scope) => scopeAllowsAction(scope, collection, action)),
     ),
   );

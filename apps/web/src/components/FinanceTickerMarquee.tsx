@@ -1,5 +1,6 @@
 "use client";
 
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { useEffect, useRef, useState } from "react";
 import type { FinanceFeedDefinition } from "@/lib/financeFeedClient";
 import { financeTickerSymbols, type FinanceTickerSymbol } from "@/lib/financeTickerSymbols";
@@ -26,16 +27,17 @@ export function FinanceTickerMarquee({ feed, hidden }: { feed?: FinanceFeedDefin
     if (!enabled) return null;
     const staticDisplay = paused || reducedMotion;
     const config = JSON.stringify({ symbols: symbols.map(symbol => symbol.proName).join(","), theme });
+    // The provider owns its attribution row; reserve space beside it on narrow tickers.
     return (
-        <section data-topic-topbar aria-label="Market Ticker" className="sticky top-0 z-20 border-b bg-background dark:bg-[#080808] [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]">
+        <section data-topic-topbar aria-label="Market Ticker" className={`@container sticky top-2 z-20 m-2 shrink-0 overflow-hidden ${floatingGlassClasses} [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]`}>
             {staticDisplay ? (
                 <nav aria-label="Ticker Stocks" className="flex gap-4 overflow-x-auto px-4 py-3 text-sm">
                     {symbols.map(symbol => <TickerLink key={symbol.instrumentID} symbol={symbol} />)}
                 </nav>
-            ) : <TickerEmbed key={config} config={config} />}
-            <div className={`flex items-center gap-3 px-4 py-1 text-xs text-muted-foreground ${staticDisplay ? "justify-between" : "justify-end"}`}>
+            ) : <div className="pb-1 pr-28 @[28rem]:pr-0"><FinanceTickerEmbed key={config} config={config} /></div>}
+            <div className={`flex items-center gap-3 px-3 text-xs text-muted-foreground ${staticDisplay ? "justify-between py-1" : "absolute right-0 bottom-0 pb-0.5"}`}>
                 {staticDisplay ? <TickerAttribution /> : null}
-                {!reducedMotion ? <button type="button" className="rounded px-2 py-1 hover:bg-muted focus-visible:outline focus-visible:outline-2" onClick={() => setPaused(value => !value)}>{paused ? "Resume Ticker" : "Pause Ticker"}</button> : <span>Motion Reduced</span>}
+                {!reducedMotion ? <button type="button" className="shrink-0 cursor-pointer rounded px-2 py-0.5 hover:bg-muted focus-visible:outline focus-visible:outline-2" onClick={() => setPaused(value => !value)}>{paused ? "Resume Ticker" : "Pause Ticker"}</button> : <span className="shrink-0">Motion Reduced</span>}
             </div>
         </section>
     );
@@ -49,7 +51,7 @@ function TickerLink({ symbol }: { symbol: FinanceTickerSymbol }) {
     return <a className="shrink-0 hover:underline" href={`/read?feed=finance&financeFeed=${encodeURIComponent(`instrument:${symbol.instrumentID}`)}`}>{symbol.proName.split(":")[1]} <span className="text-muted-foreground">{symbol.title}</span></a>;
 }
 
-function TickerEmbed({ config }: { config: string }) {
+export function FinanceTickerEmbed({ config }: { config: string }) {
     const host = useRef<HTMLDivElement>(null);
     const widget = useRef<HTMLDivElement>(null);
     const [visible, setVisible] = useState(false);

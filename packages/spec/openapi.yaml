@@ -53,6 +53,85 @@ components:
         apps should not rely on Social Wire production API hosts without an explicit arrangement.
 
   schemas:
+    CreatorEngagement:
+      type: [object, 'null']
+      required: [likes, replies, reposts, quotes]
+      properties:
+        likes: {type: integer, minimum: 0}
+        replies: {type: integer, minimum: 0}
+        reposts: {type: integer, minimum: 0}
+        quotes: {type: integer, minimum: 0}
+    CreatorTracking:
+      type: object
+      required: [impressions, views, outboundClicks, ctr]
+      properties:
+        impressions: {type: integer, minimum: 0}
+        views: {type: integer, minimum: 0}
+        outboundClicks: {type: integer, minimum: 0}
+        ctr: {type: [number, 'null'], minimum: 0, maximum: 100}
+    CreatorAnalyticsItem:
+      type: object
+      required: [uri, kind, title, url, publishedAt, engagement, tracking, refreshedAt]
+      properties:
+        uri: {type: string}
+        kind: {type: string, enum: [post, article]}
+        title: {type: string}
+        url: {type: string}
+        publishedAt: {type: string}
+        engagement: {$ref: '#/components/schemas/CreatorEngagement'}
+        tracking: {$ref: '#/components/schemas/CreatorTracking'}
+        refreshedAt: {type: string, format: date-time}
+    CreatorAnalyticsSummary:
+      type: object
+      required: [items, totals, series, coverage]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/CreatorAnalyticsItem'}}
+        totals:
+          type: object
+          required: [engagement, tracking]
+          properties:
+            engagement: {$ref: '#/components/schemas/CreatorEngagement'}
+            tracking: {$ref: '#/components/schemas/CreatorTracking'}
+        series:
+          type: array
+          description: UTC daily cumulative platform snapshots alongside period Social Wire event counts. Null platform counts mean no snapshot that day.
+          items:
+            type: object
+            required: [day, likes, replies, reposts, quotes, impressions, views, outboundClicks, ctr]
+            properties:
+              day: {type: string, format: date}
+              likes: {type: [integer, 'null'], minimum: 0}
+              replies: {type: [integer, 'null'], minimum: 0}
+              reposts: {type: [integer, 'null'], minimum: 0}
+              quotes: {type: [integer, 'null'], minimum: 0}
+              impressions: {type: [integer, 'null'], minimum: 0}
+              views: {type: [integer, 'null'], minimum: 0}
+              outboundClicks: {type: [integer, 'null'], minimum: 0}
+              ctr: {type: [number, 'null'], minimum: 0, maximum: 100}
+        coverage:
+          type: object
+          required: [sampledAt, engagementKnownItems, totalItems, excludesSelf, trackingRetentionDays, snapshotStart, trackingStart, inventoryComplete, trackingScope, platformImpressions, snapshotSemantics]
+          properties:
+            sampledAt: {type: [string, 'null'], format: date-time}
+            engagementKnownItems: {type: integer, minimum: 0}
+            totalItems: {type: integer, minimum: 0}
+            excludesSelf: {type: boolean}
+            trackingRetentionDays: {type: integer}
+            snapshotStart: {type: [string, 'null'], format: date}
+            trackingStart: {type: [string, 'null'], format: date}
+            inventoryComplete: {type: boolean}
+            trackingScope: {type: string, enum: [social-wire]}
+            platformImpressions: {type: 'null'}
+            snapshotSemantics: {type: string}
+        cursor: {type: string, description: Last canonical subject URI on this page; omitted at the end.}
+    CreatorAnalyticsEvent:
+      type: object
+      additionalProperties: false
+      required: [subjectUri, event, surface]
+      properties:
+        subjectUri: {type: string, description: Canonical AT-URI for a public Bluesky post or standard.site document; author is validated against its PDS.}
+        event: {type: string, enum: [impression, view, outbound_click]}
+        surface: {type: string, enum: [social-feed, article-feed, post-viewer, article-reader, messages]}
     PodcastStateSnapshot: {"type": "object", "required": ["revision", "state"], "properties": {"revision": {"type": "integer", "minimum": 0}, "state": {"$ref": "#/components/schemas/PodcastListenerState"}}}
     PodcastDirectoryCandidate: {"type": "object", "required": ["provider", "id", "title", "feedUrl"], "properties": {"provider": {"type": "string", "enum": ["podcastindex"]}, "id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "artworkUrl": {"type": "string"}, "feedUrl": {"type": "string", "description": "Public HTTPS RSS candidate; resolve before subscribing."}}}
     PodcastSearchRequest: {"type": "object", "required": ["query"], "properties": {"query": {"type": "string", "minLength": 2, "maxLength": 200}, "scope": {"type": "string", "enum": ["library", "directory"], "default": "library"}, "kind": {"type": "string", "enum": ["all", "shows", "episodes"], "default": "all"}, "showId": {"type": "string", "maxLength": 2048}, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}, "cursor": {"type": "string", "maxLength": 4096}}}
@@ -1183,6 +1262,31 @@ components:
         database: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
       additionalProperties: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
 
+    OperationsTabUsage:
+      type: object
+      additionalProperties: false
+      required: [observedAt, trackingStart, dau, wau, mau, tabs]
+      properties:
+        sourceEnvironment: { type: string, enum: [local, dev, prod] }
+        observedAt: { type: string, format: date-time }
+        trackingStart: { type: [string, "null"], format: date-time }
+        dau: { type: integer, minimum: 0 }
+        wau: { type: integer, minimum: 0 }
+        mau: { type: integer, minimum: 0 }
+        tabs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [tab, dau, wau, mau, opens, dwellMs]
+            properties:
+              tab: { type: string, enum: [home, explore, notifications, messages, bookmarks, lists, feeds, saved, archive, wire, circle, finance, sports, subscribed, following, podcasts, articles, live-post, livestream, brand-accounts, analytics, profile, content-calendar] }
+              dau: { type: integer, minimum: 0 }
+              wau: { type: integer, minimum: 0 }
+              mau: { type: integer, minimum: 0 }
+              opens: { type: integer, minimum: 0 }
+              dwellMs: { type: number, minimum: 0 }
+
     OperationsOverview:
       type: object
       additionalProperties: false
@@ -1224,6 +1328,7 @@ components:
         evidence: { $ref: "#/components/schemas/OperationsOverviewEvidence" }
         capabilities: { $ref: "#/components/schemas/OperationsCapabilities" }
         counts: { $ref: "#/components/schemas/OperationsLifecycleCounts" }
+        tabUsage: { anyOf: [{ $ref: "#/components/schemas/OperationsTabUsage" }, { type: "null" }] }
         viewers: { anyOf: [{ $ref: "#/components/schemas/OperationsViewerCounts" }, { type: "null" }] }
         viewerHistory:
           type: array
@@ -2781,31 +2886,93 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { description: Circle hide state unavailable. }
 
+  /v1/analytics/summary:
+    get:
+      operationId: getCreatorAnalytics
+      summary: Read Viewer-Owned Creator Analytics
+      tags: [Analytics]
+      security: [{ATProtoOAuthDPoP: []}]
+      description: Current known platform engagement and separately scoped Social Wire traffic. No historical platform impressions or external blog traffic are inferred. Daily snapshots begin on refresh. Views and clicks from the author are excluded.
+      parameters: &creatorAnalyticsParameters
+        - {in: query, name: days, schema: {type: integer, minimum: 1, maximum: 90, default: 30}}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - {in: query, name: cursor, schema: {type: string}, description: Viewer-owned canonical subject URI.}
+      responses:
+        '200': {description: Account-Scoped Analytics, content: {application/json: {schema: {$ref: '#/components/schemas/CreatorAnalyticsSummary'}}}}
+        '400': {description: Invalid Range Or Cursor}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {description: Request Limit Reached}
+        '503': {description: Analytics Storage Unavailable}
+  /v1/analytics/refresh:
+    post:
+      operationId: refreshCreatorAnalytics
+      summary: Refresh Platform Inventory And Engagement Snapshot
+      tags: [Analytics]
+      security: [{ATProtoOAuthDPoP: []}]
+      description: Refreshes bounded public PDS inventory and AppView counters for the authenticated author. Coverage identifies partial inventory; cumulative snapshots never imply historic daily interactions. Limited to one refresh per minute per viewer.
+      parameters: *creatorAnalyticsParameters
+      responses:
+        '200': {description: Refreshed Analytics, content: {application/json: {schema: {$ref: '#/components/schemas/CreatorAnalyticsSummary'}}}}
+        '400': {description: Invalid Range Or Cursor}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {description: Refresh Limit Reached}
+        '502': {description: Platform Data Unavailable}
+        '503': {description: Analytics Storage Unavailable}
+  /v1/analytics/events:
+    post:
+      operationId: recordCreatorAnalyticsEvent
+      summary: Record A Bounded Social Wire Observation
+      tags: [Analytics]
+      security: [{ATProtoOAuthDPoP: []}]
+      description: Authenticated observations are deduplicated by subject, event, and daily viewer pseudonym. No raw viewer DID, IP, user agent, destination URL, or message text is stored. Author traffic is excluded; canonical ownership is verified. Pseudonyms expire after 30 days and snapshots/aggregates after 90 days. CTR uses the same scoped denominator and is null without impressions. Cross-origin iframe clicks and external platform traffic are not observed.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreatorAnalyticsEvent'}}}
+      responses:
+        '202': {description: Observation Accepted Or Already Recorded}
+        '400': {description: Invalid Observation}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {description: Canonical Public Content Unavailable}
+        '429': {description: Observation Limit Reached}
+        '503': {description: Analytics Storage Unavailable}
+
   /v1/telemetry/client-performance:
     post:
       operationId: recordClientPerformance
-      summary: Record bounded reader performance telemetry
+      summary: Record bounded reader performance or tab usage telemetry
       description: |
         Accepts allowlisted aggregate measurements only. DIDs, publication IDs, URLs,
-        entry IDs, titles, and arbitrary dimensions are not accepted.
+        entry IDs, titles, and arbitrary dimensions are not accepted. Tab usage stores only a
+        secret-derived pseudonym with the UTC day and allowlisted tab, retained for 30 days.
       tags: [Telemetry]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [event, durationMs, feedType, cacheState, outcome, environment]
-              properties:
-                event:
-                  type: string
-                  enum: [cached_feed_paint, uncached_feed_paint, feed_switch, fresh_merge, feed_error]
-                durationMs: { type: number, minimum: 0, maximum: 60000 }
-                feedType: { type: string, enum: [aggregate, publication] }
-                cacheState: { type: string, enum: [hit, miss] }
-                outcome: { type: string, enum: [success, error] }
-                environment: { type: string, enum: [local, dev, test, production] }
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [event, durationMs, feedType, cacheState, outcome, environment]
+                  properties:
+                    event: { type: string, enum: [cached_feed_paint, uncached_feed_paint, feed_switch, fresh_merge, feed_error] }
+                    durationMs: { type: number, minimum: 0, maximum: 60000 }
+                    feedType: { type: string, enum: [aggregate, publication] }
+                    cacheState: { type: string, enum: [hit, miss] }
+                    outcome: { type: string, enum: [success, error] }
+                    environment: { type: string, enum: [local, dev, test, production] }
+                - type: object
+                  additionalProperties: false
+                  required: [event, tab, durationMs, environment]
+                  properties:
+                    event: { type: string, enum: [tab_open, tab_dwell] }
+                    tab: { type: string, enum: [home, explore, notifications, messages, bookmarks, lists, feeds, saved, archive, wire, circle, finance, sports, subscribed, following, podcasts, articles, live-post, livestream, brand-accounts, analytics, profile, content-calendar] }
+                    durationMs:
+                      type: number
+                      minimum: 0
+                      maximum: 60000
+                      description: Exactly zero for tab_open; greater than zero for tab_dwell.
+                    environment: { type: string, enum: [local, dev, test, production] }
       responses:
         "202":
           description: Sample accepted into the bounded telemetry buffer.
@@ -4947,3 +5114,6 @@ tags:
 
   - name: Podcasts
     description: Audio Podcast Listener and Explicitly Published Clips
+
+  - name: Analytics
+    description: Creator engagement snapshots and scoped Social Wire observations

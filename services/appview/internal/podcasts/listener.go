@@ -30,6 +30,9 @@ func (s *Service) Hydrate(ctx context.Context, auth gatewaycore.AuthContext) ([]
 		}
 		for _, item := range page.Records {
 			values := recordValues(&item)
+			if !isPodcastSubscription(values) {
+				continue
+			}
 			feed, hasFeed := values["feedUrl"].(string)
 			source, hasSource := values["externalRef"].(string)
 			if hasFeed && !podcastcore.PublicRSSURLAllowed(feed) {
@@ -111,6 +114,23 @@ func (s *Service) Hydrate(ctx context.Context, auth gatewaycore.AuthContext) ([]
 	private, err := s.PrivateShows(ctx, auth.DID)
 	return append(shows, private...), err
 }
+
+func isPodcastSubscription(values map[string]any) bool {
+	category, _ := values["category"].(string)
+	if category = strings.TrimSpace(category); category != "" {
+		return strings.EqualFold(category, "podcast")
+	}
+	// Native podcast collections identify the medium even on older records that
+	// predate the category marker. RSS enclosures alone do not imply subscription.
+	sourceType, _ := values["sourceType"].(string)
+	if !strings.EqualFold(strings.TrimSpace(sourceType), "atproto.collection") {
+		return false
+	}
+	source, _ := values["externalRef"].(string)
+	_, collection, _, valid := atParts(source)
+	return valid && podcastcore.ProtocolCollections[collection] != ""
+}
+
 func (s *Service) CanonicalState(ctx context.Context, state podcastcore.ListenerState) (podcastcore.ListenerState, error) {
 	state.NormalizePlaybackSpeed()
 	ids := append([]string{}, state.Queue...)

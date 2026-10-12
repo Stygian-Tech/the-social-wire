@@ -75,6 +75,7 @@ describe("OPML import", () => {
     expect(parseOpmlFeeds("<opml><body /></opml>")).toEqual([]);
   });
 
+  // Parsing 10,001 real XML nodes under coverage can exceed Bun's default timeout on CI.
   it("rejects excessive outline counts without recursive traversal", () => {
     const outlines = Array.from(
       { length: MAX_OPML_OUTLINES + 1 },
@@ -84,7 +85,7 @@ describe("OPML import", () => {
     expect(() => parseOpmlFeeds(`<opml><body>${outlines}</body></opml>`)).toThrow(
       `more than ${MAX_OPML_OUTLINES.toLocaleString()} outlines`
     );
-  });
+  }, 15_000);
 
   it("dedupes equivalent file entries and marks existing subscriptions", () => {
     const parsed = parseOpmlFeeds(`<opml><body>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { createRailwayContext, project, type BucketNode, type ServiceNode } from "railway/iac";
 import graph, { partial } from "../../../.railway/railway";
 
@@ -9,6 +9,26 @@ const plan = (environmentName: string) => graph(createRailwayContext({ environme
 const existing = ["Ingress Controller", "Projection Pool", "Coordinator"];
 
 describe("Development podcast deployment graph", () => {
+  it("copies workspace file dependencies before the frozen install", () => {
+    const dockerfile = readFileSync(join(root, "services/podcast-worker/Dockerfile"), "utf8");
+    const beforeInstall = dockerfile.split("RUN bun install --frozen-lockfile")[0]!;
+    const copies = [...beforeInstall.matchAll(/^COPY (\S+) (\S+)$/gm)];
+    const sources = copies.map((copy) => copy[1]!);
+    const manifests = sources.filter((source) => source.endsWith("/package.json"));
+    expect(manifests.length).toBeGreaterThan(0);
+    for (const manifest of manifests) {
+      const pkg = JSON.parse(readFileSync(join(root, manifest), "utf8"));
+      for (const dependencies of [pkg.dependencies, pkg.devDependencies, pkg.optionalDependencies]) {
+        for (const dependency of Object.values(dependencies ?? {})) {
+          if (typeof dependency !== "string" || !dependency.startsWith("file:")) continue;
+          const target = relative(root, resolve(root, manifest, "..", dependency.slice(5)));
+          expect(existsSync(join(root, target))).toBe(true);
+          expect(sources.some((source) => target === source || target.startsWith(`${source}/`))).toBe(true);
+        }
+      }
+    }
+  });
+
   it("adds a private bucket and one worker to Development while preserving the partial", async () => {
     const development = await plan("dev");
     expect(partial).toBe("indexing-consolidation");

@@ -1,3 +1,4 @@
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -71,7 +72,7 @@ export default function Home() {
         />
         <div className="absolute inset-0 -z-10 bg-background/70" />
 
-        <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
+        <header className={`${floatingGlassClasses} mx-auto my-2 flex w-[calc(100%-1rem)] max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8`}>
           <Link href="/" className="flex min-w-0 items-center gap-3">
             <Image
               src={iconSrc}

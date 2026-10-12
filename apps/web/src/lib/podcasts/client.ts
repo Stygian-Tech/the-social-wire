@@ -1,6 +1,7 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { gatewayFetch, gatewayBaseUrl } from "@/lib/socialWireGatewayClient";
 import { createOAuthAgent } from "@/lib/atprotoClient";
+import { podcastSubscriptionMatchesShow } from "./subscriptionMatch";
 import type { SilenceInterval } from "./playback";
 export type PodcastChapter = { startSeconds: number; title: string; artworkUrl?: string; url?: string };
 export type PodcastPerson = { name: string; role?: string; imageUrl?: string; url?: string };
@@ -141,11 +142,22 @@ export async function writePodcastSubscription(
     .join("");
   const collection = "app.skyreader.feed.subscription";
   if (remove) {
-    await agent.com.atproto.repo.deleteRecord({
-      repo: viewer,
-      collection,
-      rkey,
-    });
+    // Imported/native subscriptions can have different record keys. Only remove
+    // podcast records for this show, even when News uses the same RSS URL.
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    do {
+      const page = await agent.com.atproto.repo.listRecords({ repo: viewer, collection, limit: 100, cursor });
+      for (const item of page.data.records) {
+        const record = item.value as Record<string, unknown>;
+        const key = item.uri.split("/").pop();
+        const matches = podcastSubscriptionMatchesShow(record, show, key, rkey);
+        if (matches && key) await agent.com.atproto.repo.deleteRecord({ repo: viewer, collection, rkey: key });
+      }
+      cursor = page.data.cursor;
+      if (cursor && seen.has(cursor)) throw new Error("Subscription Pagination Stalled. Please Retry.");
+      if (cursor) seen.add(cursor);
+    } while (cursor);
     return;
   }
   const date = new Date().toISOString();
@@ -178,7 +190,9 @@ export async function publishPodcastClip(
   viewer: string,
   clip: PodcastClip,
   episode: PodcastEpisode,
+  assertCurrentAccount?: () => void,
 ): Promise<string> {
+  assertCurrentAccount?.();
   if (episode.visibility === "private") throw new Error("Private Feed Episodes Cannot Be Published");
   if (!clip.audioUrl || !clip.videoUrl)
     throw new Error("Wait for the clip exports to finish before publishing");
@@ -205,6 +219,7 @@ export async function publishPodcastClip(
       createdAt: clip.createdAt,
     },
   });
+  assertCurrentAccount?.();
   await podcastRequest(oauth, "clips/publish", "POST", {
     clipId: clip.id,
     uri: result.data.uri,
@@ -215,7 +230,9 @@ export async function unpublishPodcastClip(
   oauth: OAuthSession,
   viewer: string,
   clip: PodcastClip,
+  assertCurrentAccount?: () => void,
 ): Promise<void> {
+  assertCurrentAccount?.();
   if (clip.publishedUri) {
     const match = clip.publishedUri.match(/^at:\/\/([^/]+)\/([^/]+)\/([^/]+)$/);
     if (!match || match[1] !== viewer)
@@ -226,6 +243,7 @@ export async function unpublishPodcastClip(
       rkey: match[3],
     });
   }
+  assertCurrentAccount?.();
   await podcastRequest(
     oauth,
     `clips?clipId=${encodeURIComponent(clip.id)}`,

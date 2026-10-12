@@ -7,9 +7,9 @@ describe("AppSidebarBrandHeader", () => {
   let restoreImageSpy: (() => void) | undefined;
 
   beforeEach(() => {
-    const imageFixture = (({ alt, className }: ImageProps) => (
+    const imageFixture = (({ alt, className, src }: ImageProps) => (
       // eslint-disable-next-line @next/next/no-img-element -- scoped test double for next/image.
-      <img alt={alt} className={className} />
+      <img alt={alt} className={className} src={typeof src === "string" ? src : undefined} />
     )) as typeof NextImage.default;
     const imageSpy = spyOn(NextImage, "default").mockImplementation(imageFixture);
     restoreImageSpy = () => imageSpy.mockRestore();
@@ -28,6 +28,11 @@ describe("AppSidebarBrandHeader", () => {
     const { container } = render(<AppSidebarBrandHeader />);
 
     const logo = container.querySelector("img");
+    const darkLogo = container.querySelector('img[src="/icons/social-wire-icon-dark-192.png"]');
+    expect(logo?.getAttribute("src")).toBe("/icons/social-wire-icon-light-192.png");
+    expect(logo?.className).toContain("dark:hidden");
+    expect(darkLogo?.className).toContain("dark:block");
+    expect(darkLogo?.getAttribute("alt")).toBe("");
     const title = screen.getByText("The Social Wire");
 
     expect(logo?.parentElement?.className).toContain("gap-x-1.5");
