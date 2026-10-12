@@ -40,6 +40,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
 async function mount() { await act(async () => { render(<QueryClientProvider client={client}><SidebarProvider><SocialMessages /></SidebarProvider></QueryClientProvider>); }); }
 describe("Messages workspace", () => {
+  it("uses the supplied group name in the list, header, and deletion confirmation", async () => {
+    const group = { ...convo, kind: { $type: "chat.bsky.convo.defs#groupConvo" as const, name: "Project Chat", memberCount: 20, createdAt: "2026-10-11T00:00:00Z", lockStatus: "unlocked" } };
+    const list = spyOn(Chat, "getBlueskyConversations").mockImplementation(async args => ({ convos: args.status === "request" ? [] : [group] })); restores.push(() => list.mockRestore());
+    const messages = spyOn(Chat, "getBlueskyMessages").mockResolvedValue({ messages: [] }); restores.push(() => messages.mockRestore());
+    const write = spyOn(Chat, "performBlueskyChatAction").mockResolvedValue({ convo: group }); restores.push(() => write.mockRestore());
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*Project Chat/ }));
+    expect(await screen.findByRole("heading", { name: "Project Chat" })).toBeTruthy();
+    expect(screen.getByText("20 Participants")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Conversation Actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete Conversation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete Conversation?" });
+    expect(within(dialog).getByText("This deletes “Project Chat” for you. Other participants keep their messages.")).toBeTruthy();
+    expect(write).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ kind: "leave" }));
+  });
   it("shows the local service limitation without requesting chats", async () => {
     const network = spyOn(Network, "getAtprotoNetwork").mockReturnValue({ publicAppView: "https://appview.test", plcDirectory: "https://plc.test", handleResolver: "https://appview.test", appViewDid: "did:web:appview.test" }); restores.push(() => network.mockRestore());
     const list = spyOn(Chat, "getBlueskyConversations").mockResolvedValue({ convos: [] }); restores.push(() => list.mockRestore());
@@ -342,7 +357,7 @@ describe("Messages workspace", () => {
     const messages = spyOn(Chat, "getBlueskyMessages").mockResolvedValue({ messages: [safeMessage] }); restores.push(() => messages.mockRestore());
     const write = spyOn(Chat, "performBlueskyChatAction").mockResolvedValue({ convo: group }); restores.push(() => write.mockRestore());
     await mount();
-    fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*charlie\.test/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*Group/ }));
     await screen.findByText("Safe group message");
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Reply to the group" } });
     fireEvent.click(screen.getByRole("button", { name: "Send Message" }));

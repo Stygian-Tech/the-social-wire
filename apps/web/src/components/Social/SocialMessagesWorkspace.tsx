@@ -23,6 +23,7 @@ import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialChatMessage } from "./SocialChatMessage";
 import { chatMessageDays } from "@/lib/chatMessageDays";
+import { chatConversationName } from "@/lib/chatConversationName";
 
 export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: string; draft?: string }) {
   const [convoId, setConvoId] = useState<string>();
@@ -94,7 +95,9 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
   }
   const headerContact = activeMembers[0] ?? active?.members.find(member => member.did === viewerDid);
   const firstContact = headerContact ? contact(headerContact) : undefined;
-  const header = firstContact ? { ...firstContact, name: activeMembers.length > 1 ? activeMembers.map(contact).map(member => member.name).join(", ") : firstContact.name } : undefined;
+  const header = active ? { avatar: firstContact?.avatar, name: chatConversationName(active, activeMembers.length ? activeMembers.map(contact).map(member => member.name) : firstContact ? [firstContact.name] : []) } : undefined;
+  const confirmedConversation = confirm?.kind === "leave" ? convos.find(convo => convo.id === confirm.convoId) : undefined;
+  const confirmedConversationName = confirmedConversation ? chatConversationName(confirmedConversation, confirmedConversation.members.filter(member => member.did !== viewerDid).map(contact).map(member => member.name)) : undefined;
   const messages = [...new Map((chat.messages.data?.pages.flatMap(page => page.messages) ?? []).filter(message => "id" in message).map(message => [String(message.id), message])).values()].reverse();
   const messageDays = chatMessageDays(messages);
   const viewport = useRef<HTMLDivElement>(null);
@@ -151,9 +154,9 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
     finally { lock.current = false; }
   }
   return <div className="flex min-h-0 flex-1 flex-col">
-    <FeedHeader title={header?.name ?? "Messages"} subtitle={pendingRequest ? "Pending Message Request" : active?.muted ? "Muted Conversation" : activeMembers.length > 1 ? `${activeMembers.length + 1} Participants` : active ? "Private Conversation" : "Private Conversations"} leading={header ? <Avatar src={header.avatar} alt="" size={36} className="shrink-0" /> : undefined} >
+    <FeedHeader title={header?.name ?? "Messages"} subtitle={pendingRequest ? "Pending Message Request" : active?.muted ? "Muted Conversation" : isGroup ? `${group?.memberCount ?? activeMembers.length + 1} Participants` : active ? "Private Conversation" : "Private Conversations"} leading={header ? <Avatar src={header.avatar} alt="" size={36} className="shrink-0" /> : undefined} >
       {active ? <div className="flex shrink-0 items-center gap-1"><Button variant="outline" size="sm" disabled={chat.action.isPending} onClick={() => { void perform({ kind: active.muted ? "unmute" : "mute", convoId: active.id }); }}>{active.muted ? <BellOff aria-hidden className="size-4" /> : null}{active.muted ? "Unmute" : "Mute"}</Button>
-        <DropdownMenu><DropdownMenuTrigger disabled={chat.action.isPending} aria-label="Conversation Actions" render={<Button variant="ghost" size="icon-sm" />}><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end">
+        <DropdownMenu><DropdownMenuTrigger disabled={chat.action.isPending} aria-label="Conversation Actions" render={<Button variant="ghost" size="icon-sm" />}><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-max min-w-56 whitespace-nowrap">
           <DropdownMenuItem disabled={active.unreadCount === 0} onClick={() => { void perform({ kind: "read", convoId: active.id }); }}>Mark As Read</DropdownMenuItem>
           {activeMembers.filter(member => member.did !== viewerDid).map(member => {
             const isBlocked = blocked[member.did] ?? !!member.viewer?.blocking;
@@ -176,7 +179,7 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
           {visibleConvos.map(convo => {
             const contacts = convo.members.filter(member => member.did !== viewerDid);
             const safeContacts = contacts.map(contact);
-            const name = safeContacts.map(contact => contact.name).join(", ") || "Conversation";
+            const name = chatConversationName(convo, safeContacts.map(contact => contact.name));
             return <SocialConversationRow key={convo.id} convo={convo} viewerDid={viewerDid} name={name} avatar={safeContacts[0]?.avatar} selected={convo.id === convoId} pending={chat.action.isPending} previewHidden={previewHidden(convo)} onSelect={() => { setConvoId(convo.id); setActionError(undefined); setNotice(undefined); setDeleteId(undefined); setReply(undefined); }} onAction={kind => { setActionError(undefined); if (kind === "leave") setConfirm({ kind, convoId: convo.id }); else void perform({ kind, convoId: convo.id }); }} />;
           })}
           {listing.hasNextPage ? <Button variant="outline" disabled={listing.isFetchingNextPage} onClick={() => { void listing.fetchNextPage(); }}>More Conversations</Button> : null}
@@ -213,7 +216,7 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
     </div>}
     {confirm ? <Dialog open onOpenChange={open => { if (!open && !chat.action.isPending) setConfirm(undefined); }}><DialogContent showCloseButton={!chat.action.isPending}>
       <DialogTitle>{confirm.kind === "leave" ? "Delete Conversation?" : confirm.kind === "block" ? "Block Account?" : "Unblock Account?"}</DialogTitle>
-      <DialogDescription>{confirm.kind === "leave" ? "This deletes the conversation for you. Other participants keep their messages." : confirm.kind === "block" ? "This account will be blocked across Bluesky. You can unblock it later." : "This removes your Bluesky block for this account."}</DialogDescription>
+      <DialogDescription>{confirm.kind === "leave" ? `This deletes ${confirmedConversationName ? `“${confirmedConversationName}”` : "the conversation"} for you. Other participants keep their messages.` : confirm.kind === "block" ? "This account will be blocked across Bluesky. You can unblock it later." : "This removes your Bluesky block for this account."}</DialogDescription>
       {actionError ? <p role="alert" className="text-destructive">{actionError}</p> : null}
       <DialogFooter><DialogClose disabled={chat.action.isPending} render={<Button variant="outline" />}>Cancel</DialogClose><Button variant={confirm.kind === "unblock" ? "default" : "destructive"} disabled={chat.action.isPending} onClick={() => { if (confirm.kind === "leave") void perform({ kind: "leave", convoId: confirm.convoId }); else if (confirm.subjectDid) void perform({ kind: confirm.kind, convoId: confirm.convoId, subjectDid: confirm.subjectDid, ...(confirm.kind === "unblock" && createdBlocks.current.has(confirm.subjectDid) ? { blockingUri: active?.members.find(member => member.did === confirm.subjectDid)?.viewer?.blocking ?? createdBlocks.current.get(confirm.subjectDid) } : {}) }); }}>{confirm.kind === "leave" ? "Delete Conversation" : confirm.kind === "block" ? "Block Account" : "Unblock Account"}</Button></DialogFooter>
     </DialogContent></Dialog> : null}
