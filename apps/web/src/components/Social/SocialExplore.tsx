@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { moderateProfile } from "@atproto/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
-import { Avatar } from "@/components/shared/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,8 +18,7 @@ import { SocialExploreDiscovery } from "./SocialExploreDiscovery";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
-import { socialHttpsUrl } from "./socialUrls";
-import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
+import { SocialExplorePersonCard } from "./SocialExplorePersonCard";
 
 export function SocialExplore() {
   const { session } = useAuth();
@@ -69,32 +66,31 @@ function SocialExploreViewer() {
   return <div className="flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title="Explore" subtitle="Social" />
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" key={session?.did}>
-      <div className={`${floatingGlassClasses} mx-auto my-2 flex w-[calc(100%-1rem)] max-w-2xl flex-col gap-4 p-3 sm:p-4`}>
-        <form className="flex gap-2" onSubmit={event => { event.preventDefault(); search(draft.trim(), kind); }}>
-          <Input aria-label="Search Bluesky" placeholder="Search Posts and People" value={draft} maxLength={500} onChange={event => setDraft(event.target.value)} />
-          <Button type="submit">Search</Button>
-        </form>
-        <div role="group" aria-label="Search Type" className="flex gap-2">
-          <Button variant={kind === "posts" ? "default" : "outline"} aria-pressed={kind === "posts"} onClick={() => search(query, "posts")}>Posts</Button>
-          <Button variant={kind === "people" ? "default" : "outline"} aria-pressed={kind === "people"} onClick={() => search(query, "people")}>People</Button>
-        </div>
+      <div className="mx-auto my-2 flex w-[calc(100%-1rem)] max-w-2xl flex-col gap-4">
+        <section aria-label="Search" className={`${floatingGlassClasses} flex flex-col gap-4 p-3 sm:p-4`}>
+          <h2 className="text-lg font-semibold">Search</h2>
+          <form className="flex gap-2" onSubmit={event => { event.preventDefault(); search(draft.trim(), kind); }}>
+            <Input aria-label="Search Bluesky" placeholder="Search Posts and People" value={draft} maxLength={500} onChange={event => setDraft(event.target.value)} />
+            <Button type="submit">Search</Button>
+          </form>
+          <div role="group" aria-label="Search Type" className="flex gap-2">
+            <Button variant={kind === "posts" ? "default" : "outline"} aria-pressed={kind === "posts"} onClick={() => search(query, "posts")}>Posts</Button>
+            <Button variant={kind === "people" ? "default" : "outline"} aria-pressed={kind === "people"} onClick={() => search(query, "people")}>People</Button>
+          </div>
+        </section>
         <SocialExploreDiscovery moderation={moderation} savedFeeds={catalog.data?.feeds ?? []} enabled={!query} search={value => { setDraft(value); search(value, "posts"); }} />
-        {error ? <section role="alert" className="flex flex-col items-start gap-3 py-4">
-          <h2 className="text-lg font-semibold">Explore Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>
-          {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={() => { void refresh(); }}>Retry</Button>}
-        </section> : !moderation || results.isPending ? <SocialTimelineSkeleton /> : <>
-          {!query ? <h2 className="text-lg font-semibold">Suggested People</h2> : null}
-          {posts.map(post => <InteractiveSocialPost key={post.uri} item={{ post }} moderation={moderation} />)}
-          {actors.map(actor => {
-            const avatarHidden = moderateProfile(actor, moderation).ui("avatar").blur;
-            return <Link key={actor.did} href={socialProfilePageHref(actor.did, `/social/explore${params?.toString() ? `?${params.toString()}` : ""}`)} className="flex items-start gap-3 rounded-2xl border bg-card p-4">
-              <Avatar src={avatarHidden ? undefined : socialHttpsUrl(actor.avatar)} alt="" size={40} />
-              <div className="min-w-0 flex-1"><p className="break-words font-semibold">{actor.displayName || actor.handle}</p><p className="break-all text-sm text-muted-foreground">@{actor.handle}</p>{actor.description ? <p className="mt-2 whitespace-pre-wrap break-words text-sm">{actor.description}</p> : null}</div>
-            </Link>;
-          })}
-          {!posts.length && !actors.length ? <p className="py-8 text-center text-sm text-muted-foreground">{query ? "No matching results to show." : "No suggestions to show right now."}</p> : null}
-          {results.hasNextPage ? <Button variant="outline" disabled={results.isFetchingNextPage} onClick={() => { void results.fetchNextPage(); }}>{results.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}
-        </>}
+        <section aria-label={query ? "Search Results" : "Suggested People"} className={`${floatingGlassClasses} flex flex-col gap-4 p-3 sm:p-4`}>
+          <h2 className="text-lg font-semibold">{query ? "Search Results" : "Suggested People"}</h2>
+          {error ? <div role="alert" className="flex flex-col items-start gap-3 py-4">
+            <h2 className="text-lg font-semibold">Explore Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>
+            {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={() => { void refresh(); }}>Retry</Button>}
+          </div> : !moderation || results.isPending ? <SocialTimelineSkeleton /> : <>
+            {posts.map(post => <InteractiveSocialPost key={post.uri} item={{ post }} moderation={moderation} />)}
+            {actors.map(actor => <SocialExplorePersonCard key={actor.did} actor={actor} moderation={moderation} returnTo={`/social/explore${params?.toString() ? `?${params.toString()}` : ""}`} />)}
+            {!posts.length && !actors.length ? <p className="py-8 text-center text-sm text-muted-foreground">{query ? "No matching results to show." : "No suggestions to show right now."}</p> : null}
+            {results.hasNextPage ? <Button variant="outline" disabled={results.isFetchingNextPage} onClick={() => { void results.fetchNextPage(); }}>{results.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}
+          </>}
+        </section>
       </div>
     </div>
   </div>;
