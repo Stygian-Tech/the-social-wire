@@ -83,6 +83,42 @@ describe("Bluesky post creation", () => {
     });
     expect(await createBlueskyPost({ session, text: "Reply Text", replyTo })).toEqual(result);
   });
+  it("posts a native quote embed directly to the viewer PDS while resolving facets", async () => {
+    const requests: Request[] = [];
+    const session = sessionFor(request => {
+      requests.push(request);
+      if (request.method === "com.atproto.identity.resolveHandle") return { did: "did:plc:bob" };
+      expect(request.headers.get("atproto-proxy")).toBeNull();
+      expect(request.body).toMatchObject({ repo: did, collection: "app.bsky.feed.post", record: {
+        text: "@bob.test Quote", embed: { $type: "app.bsky.embed.record", record: { uri: replyTo.uri, cid: replyTo.cid } },
+        facets: [{ features: [{ $type: "app.bsky.richtext.facet#mention", did: "did:plc:bob" }] }],
+      } });
+      expect(request.body!.record).not.toHaveProperty("reply");
+      return result;
+    });
+    expect(await createBlueskyPost({ session, text: "@bob.test Quote", quoteTo: replyTo })).toEqual(result);
+    expect(requests.map(request => request.method)).toEqual(["com.atproto.identity.resolveHandle", "com.atproto.repo.createRecord"]);
+  });
+  it("rejects disabled quotes, invalid references, and combined reply and quote before network", async () => {
+    let requests = 0;
+    const session = sessionFor(() => { requests++; return result; });
+    const invalidTargets = [
+      { ...replyTo, viewer: { embeddingDisabled: true } },
+      { ...replyTo, uri: "https://bsky.app/profile/bob.test/post/target" },
+      { ...replyTo, uri: "at://did:plc:bob/app.bsky.feed.like/target" },
+      { ...replyTo, cid: "" },
+    ];
+    for (const target of invalidTargets) await expect(createBlueskyPost({ session, text: "@bob.test Quote", quoteTo: target })).rejects.toThrow();
+    await expect(createBlueskyPost({ session, text: "@bob.test Quote", replyTo, quoteTo: replyTo })).rejects.toThrow("Choose either a reply or a quote post.");
+    expect(requests).toBe(0);
+  });
+  it("keeps quote account guards before lookup and before the PDS write", async () => {
+    let requests = 0, checks = 0;
+    const session = sessionFor(() => { requests++; return { did: "did:plc:bob" }; });
+    await expect(createBlueskyPost({ session, text: "@bob.test Quote", quoteTo: replyTo, assertCurrentAccount: () => { if (++checks === 2) throw new Error("Account changed"); } })).rejects.toThrow("Account changed");
+    expect(requests).toBe(1);
+    expect(checks).toBe(2);
+  });
   it("preserves thread ancestry when replying to a reply and still resolves mention facets", async () => {
     const root = { uri: "at://did:plc:carol/app.bsky.feed.post/root", cid: result.cid };
     const nested = { ...replyTo, record: { ...replyTo.record, reply: { root, parent: root } } };
