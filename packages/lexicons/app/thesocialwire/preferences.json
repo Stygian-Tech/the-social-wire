@@ -122,6 +122,16 @@
             "maxLength": 64,
             "description": "ISO 8601 timestamp when this preferences record was last updated."
           },
+          "showSocial": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the Social navigation section."
+          },
+          "showPodcasts": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the Podcasts navigation section when available."
+          },
           "showSports": {
             "type": "boolean",
             "default": true

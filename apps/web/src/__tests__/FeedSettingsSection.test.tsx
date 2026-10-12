@@ -55,7 +55,7 @@ afterEach(() => {
 test("all feeds expose independent visibility controls", () => {
   render(<FeedSettingsSection />);
   expect(screen.queryByText("Always Visible")).toBeNull();
-  for (const label of ["The Wire", "Your Circle", "Finance", "Subscribed", "Following"]) {
+  for (const label of ["The Wire", "Your Circle", "Finance", "Sports", "Social", "Podcasts", "Subscribed", "Following"]) {
     expect(screen.getByRole("switch", { name: `Show ${label}` })).toBeDefined();
   }
   fireEvent.click(screen.getByRole("switch", { name: "Show Read Later" }));

@@ -32,6 +32,22 @@ describe("lexicon JSON schemas", () => {
     expect(ids).toContain("link.latr.saved.external");
   });
 
+  it("keeps Social and Podcasts visibility optional, boolean, and visible by default", () => {
+    const schema = JSON.parse(readFileSync(join(ROOT, "app/thesocialwire/preferences.json"), "utf8"));
+    const record = schema.defs.main.record;
+    const lexicons = new Lexicons([schema]);
+    const legacy = { $type: schema.id, createdAt: "2026-10-11T12:00:00Z", updatedAt: "2026-10-11T12:00:00Z" };
+    expect(() => lexicons.assertValidRecord(schema.id, legacy)).not.toThrow();
+    for (const field of ["showSocial", "showPodcasts"]) {
+      expect(record.required).not.toContain(field);
+      expect(record.properties[field].default).toBe(true);
+      for (const visible of [true, false]) {
+        expect(() => lexicons.assertValidRecord(schema.id, { ...legacy, [field]: visible })).not.toThrow();
+      }
+      expect(() => lexicons.assertValidRecord(schema.id, { ...legacy, [field]: "false" })).toThrow();
+    }
+  });
+
   it("stores only non-sensitive Semble destination metadata", () => {
     const schema = JSON.parse(
       readFileSync(join(ROOT, "app/thesocialwire/preferences.json"), "utf8")
