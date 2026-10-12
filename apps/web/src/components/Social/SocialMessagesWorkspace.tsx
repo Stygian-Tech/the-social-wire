@@ -167,7 +167,7 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
         </DropdownMenuContent></DropdownMenu>
       </div> : null}
     </FeedHeader>
-    {!chat.available ? <section role="status" className="space-y-2 p-6"><h2 className="font-semibold">Messages Unavailable Locally</h2><p className="text-sm text-muted-foreground">{LOCAL_CHAT_UNAVAILABLE}</p></section> : <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4">
+    {!chat.available ? <section role="status" className="space-y-2 p-6"><h2 className="font-semibold">Messages Unavailable Locally</h2><p className="text-sm text-muted-foreground">{LOCAL_CHAT_UNAVAILABLE}</p></section> : <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
       {error ? <section role="alert" className="mb-4 rounded-lg border p-3"><p className="text-sm">{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" onClick={() => { void listing.refetch(); void catalog.refetch(); if (convoId) void chat.messages.refetch(); }}>Retry</Button>}</section> : null}
       {notice ? <p role="status" className="mb-3 text-sm">{notice}</p> : null}
       <div className="grid min-h-0 w-full flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 md:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px] md:grid-rows-[minmax(0,1fr)]">

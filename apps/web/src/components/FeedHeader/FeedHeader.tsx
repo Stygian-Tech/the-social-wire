@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
+import { appChromeMarginClassName } from "@/components/shared/appChromeStyles";
 import { cn } from "@/lib/utils";
 import { attachFeedHeaderScrollOverlay } from "./feedHeaderScrollOverlay";
 
@@ -24,10 +25,12 @@ export function FeedHeader({
 }: FeedHeaderProps) {
   return (
     <header
+      data-slot="feed-header"
       ref={(header) => header ? attachFeedHeaderScrollOverlay(header) : undefined}
       className={cn(
         floatingGlassClasses,
-        "relative z-20 m-2 flex min-h-12 shrink-0 flex-wrap items-center gap-2 px-2 py-1 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4",
+        appChromeMarginClassName,
+        "relative z-20 flex min-h-12 shrink-0 flex-wrap items-center gap-2 px-2 py-1 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4",
         className,
       )}
     >

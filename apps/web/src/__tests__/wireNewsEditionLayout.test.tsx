@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import type { WireEditionPage } from "@/lib/wireEditionClient";
@@ -215,7 +215,7 @@ describe("WireNewsEditionLayout", () => {
     expect(trending?.className).toContain("floating-glass");
     expect(trending?.className).toContain("p-3");
     expect(trending?.className).toContain("xl:overflow-y-auto");
-    expect(trending?.className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-5rem)]");
+    expect(trending?.className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)]");
     expect(trending?.className).toContain("xl:[scrollbar-gutter:stable]");
     expect(
       trending?.querySelector("[data-wire-trending-list]")?.className,
@@ -332,7 +332,7 @@ describe("WireNewsEditionLayout", () => {
     );
     expect(scrollContainer?.className).toContain("overflow-y-auto");
     expect(scrollContainer?.firstElementChild?.className).toContain(
-      "max-w-[calc(var(--reader-shell-width)-var(--sidebar-width))]",
+      "xl:grid-cols-[minmax(0,1fr)_19rem]",
     );
   });
 
@@ -441,4 +441,42 @@ describe("WireNewsEditionLayout", () => {
     expect(container.querySelector(".font-serif")).toBeNull();
     expect(container.querySelector("[style*='font-family']")).toBeNull();
   });
+  it("bounds the fixed trending rail to its shell after a resize and removes desktop bounds on mobile", async () => {
+    const { WireTrendingStories } = await import("@/components/Wire/WireTrendingStories");
+    const width = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    const height = Object.getOwnPropertyDescriptor(window, "innerHeight");
+    let paneBottom = 700;
+    const computed = window.getComputedStyle;
+    const positioning = spyOn(window, "getComputedStyle").mockImplementation(element => {
+      const style = computed(element);
+      return element.tagName === "ASIDE" ? new Proxy(style, { get: (target, key) => key === "position" ? "fixed" : Reflect.get(target, key) }) : style;
+    });
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1400, writable: true });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
+    const geometry = spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const top = this.getAttribute("data-slot") === "sidebar-wrapper" ? 100 : 116;
+      const bottom = this.getAttribute("data-slot") === "sidebar-wrapper" ? paneBottom : 950;
+      return { x: 0, y: top, top, bottom, left: 0, right: 300, width: 300, height: bottom - top, toJSON() {} } as DOMRect;
+    });
+    try {
+      const { container } = render(<div data-slot="sidebar-wrapper"><WireTrendingStories stories={[{ entryId: "rail", title: "Story", publicationId: "pub", publishedAt: "2026-10-11T00:00:00Z" }]} onSelect={() => undefined} /></div>);
+      const panel = container.querySelector("aside")!;
+      expect(panel.style.top).toBe("116px");
+      expect(panel.style.maxHeight).toBe("568px");
+      paneBottom = 500;
+      fireEvent.resize(window);
+      await waitFor(() => expect(panel.style.maxHeight).toBe("368px"));
+      window.innerWidth = 900;
+      fireEvent.resize(window);
+      await waitFor(() => expect(panel.style.maxHeight).toBe(""));
+      expect(panel.style.top).toBe("");
+    } finally {
+      cleanup();
+      geometry.mockRestore();
+      positioning.mockRestore();
+      if (width) Object.defineProperty(window, "innerWidth", width);
+      if (height) Object.defineProperty(window, "innerHeight", height);
+    }
+  });
+
 });

@@ -141,3 +141,17 @@ test("refreshes scheduled event sections each minute and cleans up its clock", a
   cleanup();
   expect(clear).toHaveBeenCalledWith(42);
 });
+
+
+test("bounds long event navigation and event history in separate desktop scroll panes", async () => {
+  state.events = Array.from({ length: 40 }, (_, index) => ({ ...event, uri: `${event.uri}-${index}`, title: `Event ${index}` }));
+  await mount();
+  const sidebar = screen.getByRole("complementary", { name: "Live Events" });
+  const workspace = screen.getByRole("region", { name: "Live Event Workspace" });
+  expect(sidebar.classList.contains("lg:overflow-y-auto")).toBe(true);
+  expect(workspace.classList.contains("lg:overflow-y-auto")).toBe(true);
+  expect(sidebar.parentElement!.classList.contains("lg:grid-rows-[minmax(0,1fr)]")).toBe(true);
+  expect(sidebar.parentElement!.classList.contains("lg:h-full")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /Event 39/ }));
+  expect(screen.getByRole("heading", { name: "Event 39" })).toBeTruthy();
+});

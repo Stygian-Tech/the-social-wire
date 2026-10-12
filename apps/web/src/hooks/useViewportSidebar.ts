@@ -1,18 +1,24 @@
 "use client";
 
 import { useLayoutEffect, useRef } from "react";
+import { APP_CHROME_GUTTER_PX } from "@/components/shared/appChromeStyles";
 
 /** Constrain a sticky panel to the visible area of its owning scroll pane. */
-export function useViewportSidebar(scrollHostSelector: string) {
+export function useViewportSidebar(scrollHostSelector: string, minViewportWidth = 0, enabled = true) {
   const sidebar = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const panel = sidebar.current;
     const scrollHost = panel?.closest<HTMLElement>(scrollHostSelector);
-    if (!panel || !scrollHost) return;
+    if (!enabled || !panel || !scrollHost) return;
     let frame = 0;
     let topbar: HTMLElement | undefined;
     const measure = () => {
       frame = 0;
+      if (window.innerWidth < minViewportWidth) {
+        panel.style.removeProperty("top");
+        panel.style.removeProperty("max-height");
+        return;
+      }
       const currentTopbar = scrollHost.querySelector<HTMLElement>(":scope > [data-topic-topbar]") ?? undefined;
       if (currentTopbar !== topbar) {
         if (topbar) observer?.unobserve(topbar);
@@ -21,11 +27,12 @@ export function useViewportSidebar(scrollHostSelector: string) {
       }
       const host = scrollHost.getBoundingClientRect();
       const barBottom = topbar?.getBoundingClientRect().bottom ?? host.top;
-      const stickyOffset = Math.max(0, barBottom - host.top) + 16;
-      panel.style.top = `${stickyOffset}px`;
+      const stickyOffset = Math.max(0, barBottom - host.top) + APP_CHROME_GUTTER_PX;
+      const fixed = window.getComputedStyle(panel).position === "fixed";
+      panel.style.top = `${fixed ? host.top + stickyOffset : stickyOffset}px`;
       const top = Math.max(panel.getBoundingClientRect().top, host.top + stickyOffset);
       const bottom = Math.min(window.innerHeight, host.bottom);
-      panel.style.maxHeight = `${Math.max(0, bottom - top - 16)}px`;
+      panel.style.maxHeight = `${Math.max(0, bottom - top - APP_CHROME_GUTTER_PX)}px`;
     };
     const schedule = () => {
       if (typeof window.requestAnimationFrame !== "function") { measure(); return; }
@@ -47,6 +54,6 @@ export function useViewportSidebar(scrollHostSelector: string) {
       mutations.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [scrollHostSelector]);
+  }, [scrollHostSelector, minViewportWidth, enabled]);
   return sidebar;
 }

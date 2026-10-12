@@ -47,8 +47,8 @@ function BrandAccountsManager({ ownerDid }: { ownerDid: string }) {
   }
   return <div data-analytics-ignore className="flex min-h-0 min-w-0 flex-1 flex-col">
     <FeedHeader title="Brand Accounts" subtitle="Manage Bluesky Accounts Without Switching Your Personal Account"><Button size="sm" disabled={busy} onClick={() => { setHandle(""); setError(undefined); setLinkOpen(true); }}>Link Account</Button></FeedHeader>
-    {callbackFailed ? <p role="alert" className="mx-3 rounded-xl border p-3 text-sm">Brand Account Authorization Failed. Select Link Account to Try Again.</p> : null}
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 lg:flex-row lg:overflow-hidden">
+    {callbackFailed ? <p role="alert" className="mx-4 rounded-xl border p-3 text-sm">Brand Account Authorization Failed. Select Link Account to Try Again.</p> : null}
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:flex-row lg:overflow-hidden">
       <aside className="shrink-0 space-y-3 rounded-2xl border p-3 lg:w-64 lg:overflow-y-auto" aria-label="Linked Brand Accounts">{!accounts.length ? <p className="py-6 text-center text-sm text-muted-foreground">No Brand Accounts Linked Yet</p> : accounts.map(did => <BrandAccountSidebarRow key={did} did={did} selected={acting === did} disabled={busy} onSelect={() => setSelected(did)} onUnlink={() => { setError(undefined); setUnlink(did); }} />)}{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}</aside>
       <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">{acting ? <BrandAccountViewer key={`${ownerDid}:${acting}`} ownerDid={ownerDid} brandDid={acting} /> : <p className="p-8 text-center text-muted-foreground">Select a Linked Account or Link a Brand Account to Begin.</p>}</section>
     </div>

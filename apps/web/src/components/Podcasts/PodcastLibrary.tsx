@@ -1,4 +1,5 @@
 "use client";
+import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { PodcastClipsLibrary } from "./PodcastClipsLibrary";
 import { PodcastPlaybackDefaults } from "./PodcastPlaybackDefaults";
 import { PodcastLibrarySearch } from "./PodcastLibrarySearch";
@@ -271,15 +272,15 @@ function PodcastViewerLibrary() {
     } catch { setError("Audio Could Not Be Saved. Please Retry."); }
   }
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6">
-      <section className="min-w-0 space-y-5">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold">Podcasts</h1>
+    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-4 p-4 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
+      <section className="min-w-0 lg:flex lg:min-h-0 lg:flex-col">
+        <FeedHeader title="Podcasts" className="m-0 mb-4">
           <div className="flex items-center gap-2">
             <PodcastPlaybackDefaults player={player} />
             <button type="button" className="inline-flex min-h-7 shrink-0 items-center gap-1 rounded border px-1.5 text-xs hover:bg-accent pointer-coarse:min-h-11" aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}><Plus aria-hidden="true" className="size-3.5" />Add a Podcast</button>
           </div>
-        </header>
+        </FeedHeader>
+        <div className="space-y-5 overscroll-contain lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {feed === "clips" ? <PodcastClipsLibrary /> : <>
         {!previewShowId ? <PodcastLibrarySearch
           scope={searchScope}
@@ -502,8 +503,9 @@ function PodcastViewerLibrary() {
         ) : null}
         {feed === "downloads" ? <p className="text-xs text-muted-foreground">Offline Audio: {(downloads.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)} MB. Save Audio exports a file to your device.</p> : null}
         </>}
+        </div>
       </section>
-      <div className="min-w-0 self-start lg:sticky lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto">
+      <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden">
         <PodcastUnsubscribeDialog key={unsubscribeShow?.id ?? "closed"} show={unsubscribeShow} onClose={() => setUnsubscribeShow(null)} onConfirm={async (show) => {
           setBusy(true);
           try { await changeSubscription(show, true); }

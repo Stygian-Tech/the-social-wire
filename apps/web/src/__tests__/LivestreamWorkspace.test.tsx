@@ -44,3 +44,13 @@ test("unavailable status is not invented as zero, unsafe custom nodes fail visib
   await mount(); expect(screen.getByText("Concurrent Viewers: Unavailable")).toBeDefined(); expect(screen.getByText("Total Playback Sessions: Unavailable")).toBeDefined();
   fireEvent.change(screen.getByLabelText("Custom Streamplace Node"), { target: { value: "http://localhost:8080" } }); fireEvent.click(screen.getByRole("button", { name: "Connect Node" })); expect(screen.getByRole("alert").textContent).toContain("Public HTTPS");
 });
+
+
+test("keeps the shared livestream top bar outside its scrolling workspace", async () => {
+  await mount();
+  const header = screen.getByRole("heading", { name: "Livestream" }).closest("header")!;
+  expect(header.classList.contains("floating-glass")).toBe(true);
+  expect(header.parentElement!.classList.contains("overflow-hidden")).toBe(true);
+  expect(header.nextElementSibling!.classList.contains("overflow-y-auto")).toBe(true);
+  expect(header.nextElementSibling!.classList.contains("min-h-0")).toBe(true);
+});
