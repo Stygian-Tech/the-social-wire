@@ -33,20 +33,20 @@ test("measures wrapped header extent and restores scoped styles on detach", () =
   const { parent, header, pane } = fixture();
   let height = 48;
   header.getBoundingClientRect = () => ({ height }) as DOMRect;
-  parent.style.setProperty("--feed-header-extent", "old");
+  parent.style.setProperty("--floating-glass-top-extent", "old");
   const detach = attachFeedHeaderScrollOverlay(header);
-  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("64px");
-  expect(pane.style.getPropertyValue("--feed-header-content-padding")).toBe("12px");
-  expect(pane.dataset.feedHeaderScroll).toBe("true");
+  expect(parent.style.getPropertyValue("--floating-glass-top-extent")).toBe("64px");
+  expect(pane.style.getPropertyValue("--floating-glass-top-content-padding")).toBe("12px");
+  expect(pane.dataset.floatingGlassScrollTop).toBe("true");
   expect(observe).toHaveBeenCalledWith(header);
   height = 96;
   resized();
-  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("112px");
+  expect(parent.style.getPropertyValue("--floating-glass-top-extent")).toBe("112px");
   detach?.();
   expect(disconnect).toHaveBeenCalledTimes(1);
-  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("old");
-  expect(pane.style.getPropertyValue("--feed-header-content-padding")).toBe("");
-  expect(pane.hasAttribute("data-feed-header-scroll")).toBe(false);
+  expect(parent.style.getPropertyValue("--floating-glass-top-extent")).toBe("old");
+  expect(pane.style.getPropertyValue("--floating-glass-top-content-padding")).toBe("");
+  expect(pane.hasAttribute("data-floating-glass-scroll-top")).toBe(false);
 });
 
 test("leaves complex panes and browsers without ResizeObserver unchanged", () => {
@@ -55,8 +55,8 @@ test("leaves complex panes and browsers without ResizeObserver unchanged", () =>
   pane.className = "overflow-y-auto";
   globalThis.ResizeObserver = undefined as unknown as typeof ResizeObserver;
   expect(attachFeedHeaderScrollOverlay(header)).toBeUndefined();
-  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("");
-  expect(pane.hasAttribute("data-feed-header-scroll")).toBe(false);
+  expect(parent.style.getPropertyValue("--floating-glass-top-extent")).toBe("");
+  expect(pane.hasAttribute("data-floating-glass-scroll-top")).toBe(false);
 });
 
 test("measures a reader shell without adding a non-scrolling padding layer", () => {
@@ -74,10 +74,10 @@ test("measures a reader shell without adding a non-scrolling padding layer", () 
   header.getBoundingClientRect = () => ({ height: 48 }) as DOMRect;
 
   const detach = attachFeedHeaderScrollOverlay(header);
-  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("64px");
-  expect(pane.hasAttribute("data-feed-header-scroll")).toBe(false);
+  expect(parent.style.getPropertyValue("--floating-glass-top-extent")).toBe("64px");
+  expect(pane.hasAttribute("data-floating-glass-scroll-top")).toBe(false);
   expect(nestedScroller.parentElement).toBe(pane);
   detach?.();
-  expect(parent.style.getPropertyValue("--feed-header-extent")).toBe("");
+  expect(parent.style.getPropertyValue("--floating-glass-top-extent")).toBe("");
   expect(disconnect).toHaveBeenCalledTimes(1);
 });

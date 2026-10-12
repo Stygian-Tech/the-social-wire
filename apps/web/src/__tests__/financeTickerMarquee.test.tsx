@@ -93,7 +93,7 @@ describe("Finance Ticker Marquee", () => {
         expect(dark.type).toBe("module");
         const darkTape = container.querySelector("tv-ticker-tape") as HTMLElement;
         expect(darkTape.getAttribute("theme")).toBe("dark");
-        expect(darkTape.style.getPropertyValue("--tv-widget-background-color")).toBe("#080808");
+        expect(darkTape.style.getPropertyValue("--tv-widget-background-color")).toBe("transparent");
         rerender(<FinanceTickerMarquee hidden={false} feed={feed([appleID])} />);
         const apple = await showTicker(container);
         expect(apple.type).toBe("module");

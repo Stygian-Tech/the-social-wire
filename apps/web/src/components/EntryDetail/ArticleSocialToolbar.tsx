@@ -1,7 +1,7 @@
 "use client";
 
 import { SocialPeopleTextField } from "@/components/Social/SocialPeopleTextField";
-import { floatingGlassBarClasses } from "@/components/shared/floatingChromeStyles";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
@@ -355,7 +355,7 @@ export function ArticleSocialToolbar({
       ) : (
         <div
           className={cn(
-            floatingGlassBarClasses,
+            floatingGlassClasses,
             "mb-2 w-auto p-2 sm:mb-3 md:mb-1",
             "max-md:fixed max-md:inset-x-2 max-md:bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] max-md:z-40 max-md:mx-0 max-md:mb-0 max-md:flex max-md:flex-nowrap max-md:items-center max-md:gap-2 max-md:overflow-x-auto max-md:px-3 max-md:pt-2 max-md:pb-2 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden",
             "max-md:[&>button]:h-11 max-md:[&>button]:min-h-[44px] max-md:[&>button]:min-w-[44px] max-md:[&>button]:flex-1 max-md:[&>button]:basis-0 max-md:[&>button]:px-0",

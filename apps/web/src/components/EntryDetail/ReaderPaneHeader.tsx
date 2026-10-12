@@ -1,6 +1,7 @@
 "use client";
 
-import { floatingGlassBarClasses } from "@/components/shared/floatingChromeStyles";
+import { attachFloatingGlassScrollOverlay } from "@/components/shared/floatingGlassScrollOverlay";
+import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { ChevronLeft } from "lucide-react";
 import { ArticleSocialToolbar } from "@/components/EntryDetail/ArticleSocialToolbar";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ export function ReaderPaneHeader({
   const title = entry?.title?.trim() || fallbackTitle;
 
   return (
-    <div className={`${floatingGlassBarClasses} sticky top-2 z-30 m-2 flex min-h-[52px] shrink-0 items-center gap-2 px-1.5 py-1 md:px-3`}>
+    <div ref={(surface) => surface ? attachFloatingGlassScrollOverlay(surface, "top") : undefined} className={`${floatingGlassClasses} sticky top-2 z-30 m-2 flex min-h-[52px] shrink-0 items-center gap-2 px-1.5 py-1 md:px-3`}>
       <Button
         type="button"
         variant="ghost"
