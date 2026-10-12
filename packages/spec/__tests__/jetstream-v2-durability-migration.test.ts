@@ -11,12 +11,8 @@ const legacyTool = readFileSync(
   join(repositoryRoot, "scripts/operations/legacy-gap-incidents.sql"),
   "utf8",
 )
-const postgresOperationsStore = readFileSync(
-  join(repositoryRoot, "packages/swift/OperationsCore/Sources/OperationsCore/PostgresOperationsStore+DurableIngestion.swift"),
-  "utf8",
-)
-const sqliteOperationsStore = readFileSync(
-  join(repositoryRoot, "packages/swift/OperationsCore/Sources/OperationsCore/SQLiteOperationsStore+DurableIngestion.swift"),
+const operationsStore = readFileSync(
+  join(repositoryRoot, "packages/go/operationsapi/durability_store.go"),
   "utf8",
 )
 
@@ -46,8 +42,14 @@ describe("Jetstream V2 durable ingestion migration", () => {
   })
 
   it("counts only dead letters that have not been reconciled", () => {
-    expect(postgresOperationsStore).toContain("status = 'dead_letter' AND reconciled_at IS NULL")
-    expect(sqliteOperationsStore).toContain("status = 'dead_letter' AND reconciled_at IS NULL")
+    const query = operationsStore.match(/tx\.Query\(budget, `([^`]+)`/)?.[1]
+    expect(query).toBeDefined()
+    expect(query).toMatch(/count\(\*\) FILTER\(WHERE status\s*=\s*'dead_letter' AND reconciled_at IS NULL\)/)
+    expect(query).toContain("WHERE environment=$1 GROUP BY source_generation")
+    expect(query).toContain("count(*) FILTER(WHERE status='filtered_scope')")
+    expect(operationsStore).toContain("&value.FilteredScope, &value.DeadLetters, &value.Total")
+    expect(operationsStore).toContain("context.WithTimeout(ctx, 3*time.Second)")
+    expect(operationsStore).toContain("statement_timeout='2s'")
   })
 
   it("retains and links legacy gap evidence without converting timestamp cursors to V2 sequences", () => {

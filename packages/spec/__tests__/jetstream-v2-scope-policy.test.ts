@@ -15,12 +15,12 @@ const goInboxBatch = readFileSync(
   join(repositoryRoot, "services/jetstream-ingest/internal/store/inbox_batch.go"),
   "utf8",
 )
-const swiftPolicy = readFileSync(
-  join(repositoryRoot, "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewStore.swift"),
+const projectionPolicy = readFileSync(
+  join(repositoryRoot, "packages/go/thinappviewcore/inbox_store.go"),
   "utf8",
 )
 const postgresStore = readFileSync(
-  join(repositoryRoot, "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/PostgresThinAppViewStore.swift"),
+  join(repositoryRoot, "packages/go/thinappviewcore/inbox_sql.go"),
   "utf8",
 )
 const migration = readFileSync(
@@ -39,19 +39,30 @@ const authorCollections = [
   "com.standard.entry",
 ]
 const viewerCollections = [
+  "app.thesocialwire.finance.selection",
+  "app.thesocialwire.sports.selection",
+  "app.thesocialwire.readState",
   "app.skyreader.feed.subscription",
   "site.standard.graph.subscription",
 ]
 
+function projectionCollections(name: string): string[] {
+  const declaration = projectionPolicy.match(new RegExp(String.raw`var ${name} = \[\]string\{([^}]+)\}`))?.[1]
+  if (!declaration) throw new Error(`Missing projection collection role ${name}`)
+  return [...declaration.matchAll(/"([^"]+)"/g)].map(match => match[1]!).sort()
+}
+
 describe("Jetstream V2 role-aware scope policy", () => {
-  it("keeps the Go admission and Swift projection collection roles aligned", () => {
+  it("keeps the Go admission and Go projection collection roles aligned", () => {
+    expect(projectionCollections("publicationAuthorCollections")).toEqual([...authorCollections].sort())
+    expect(projectionCollections("viewerCollections")).toEqual([...viewerCollections].sort())
     for (const collection of authorCollections) {
       expect(goInboxBatch).toContain(`'${collection}'`)
-      expect(swiftPolicy).toContain(`"${collection}"`)
+      expect(projectionPolicy).toContain(`"${collection}"`)
     }
     for (const collection of viewerCollections) {
       expect(goInboxBatch).toContain(`'${collection}'`)
-      expect(swiftPolicy).toContain(`"${collection}"`)
+      expect(projectionPolicy).toContain(`"${collection}"`)
     }
     expect(goStore).toContain("p.stageInboxEvents(ctx, tx, events[start:end])")
     expect(goInboxBatch).toContain("scope.author_did = incoming.repo_did")
@@ -62,10 +73,18 @@ describe("Jetstream V2 role-aware scope policy", () => {
     expect(authorAdmission).toContain("scope.author_did = incoming.repo_did")
     expect(authorAdmission).not.toContain("viewer_did")
     expect(goInboxBatch).toContain("ON CONFLICT (environment, source_generation, seq) DO NOTHING")
-    expect(postgresStore).toContain("scope.author_did = inbox.repo_did")
-    expect(postgresStore).toContain("feed.viewer_did = inbox.repo_did")
+    expect(postgresStore).toContain("scope.author_did = i.repo_did")
+    const authorClaim = postgresStore.split("OR (i.collection = ANY($4)")[1]?.split("OR (i.collection = ANY($5)")[0]
+    expect(authorClaim).toContain("scope.author_did = i.repo_did")
+    expect(authorClaim).not.toContain("viewer_did")
+    // Admission and worker filtering use the same role lists, rather than accepting
+    // an author document solely because its author is enrolled as a viewer.
+    expect(projectionPolicy).toContain("publicationAuthorCollections, viewerCollections")
+    expect(postgresStore).toContain("inbox.collection = ANY($5) AND NOT EXISTS")
+    expect(postgresStore).toContain("inbox.collection = ANY($6)")
+    expect(postgresStore).toContain("feed.viewer_did = i.repo_did")
     expect(goConfig).not.toContain('"app.thesocialwire.entryReadState",')
-    expect(swiftPolicy).not.toContain('"app.thesocialwire.entryReadState",')
+    expect(projectionPolicy).not.toContain('"app.thesocialwire.entryReadState",')
   })
 
   it("binds stable scope semantics to the durable source fingerprint", () => {
@@ -76,7 +95,10 @@ describe("Jetstream V2 role-aware scope policy", () => {
       /DefaultSourceGeneration\s*=\s*"jetstream-v2-us-west-v2"/,
     )
     expect(goConfig).toContain('strings.TrimSpace(scopePolicy)')
-    expect(swiftPolicy).toContain('version = "publication-author-viewer-v1"')
+    const admissionVersion = goConfig.match(/DefaultScopePolicy\s*=\s*"([^"]+)"/)?.[1]
+    const projectionVersion = projectionPolicy.match(/IngestionScopePolicyVersion\s*=\s*"([^"]+)"/)?.[1]
+    expect(admissionVersion).toBe("publication-author-viewer-v1")
+    expect(projectionVersion).toBe(admissionVersion)
   })
 
   it("records filtering as an audited terminal outcome instead of application or reconciliation", () => {
@@ -85,6 +107,10 @@ describe("Jetstream V2 role-aware scope policy", () => {
     expect(migration).toContain("filtered_scope_at")
     expect(migration).toContain("applied_at IS NULL")
     expect(migration).toContain("reconciled_at IS NULL")
+    expect(postgresStore).toContain("SET status = 'filtered_scope', filtered_scope_policy = $8")
+    expect(postgresStore).toContain("filtered_scope_at = $3, applied_at = NULL, reconciled_at = NULL")
+    expect(postgresStore).toContain("lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL")
+    expect(projectionPolicy).toContain("IngestionScopePolicyVersion, expires")
     expect(postgresStore).toContain("status IN ('applied', 'filtered_scope')")
     expect(postgresStore).toContain("status NOT IN ('applied', 'filtered_scope')")
   })
