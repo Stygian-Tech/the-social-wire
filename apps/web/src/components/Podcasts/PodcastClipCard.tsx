@@ -5,6 +5,8 @@ import { fetchPodcastClipAsset } from "@/lib/podcasts/clipAsset";
 import { podcastRequest, publishPodcastClip, unpublishPodcastClip, type PodcastClip, type PodcastEpisode } from "@/lib/podcasts/client";
 import { publishBlueskyPodcastClip, PodcastClipAlreadyPublishedError } from "@/lib/podcasts/blueskyClipPublisher";
 import { formatPodcastTime } from "@/lib/podcasts/playback";
+import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { SocialPermissionRecovery } from "@/components/Social/SocialPermissionRecovery";
 import { usePodcastPlayer } from "./PodcastPlayerProvider";
 import { PodcastClipPreview } from "./PodcastClipPreview";
 import { PodcastClipComposer } from "./PodcastClipComposer";
@@ -56,7 +58,7 @@ function ViewerClipCard({ clip, episode, onChanged }: { clip: PodcastClip; episo
     if (!operation.signal.aborted) {
         try { assertCurrentAccount();
           if (reason instanceof PodcastClipAlreadyPublishedError) { setPostUri(reason.uri); setComposer(false); }
-          setError(reason instanceof Error ? reason.message : "Clip Action Failed. Please Retry."); } catch { /* Discard stale account results. */ }
+          setError(isMissingOAuthScope(reason) ? SCOPE_RECOVERY_MESSAGE : reason instanceof Error ? reason.message : "Clip Action Failed. Please Retry."); } catch { /* Discard stale account results. */ }
       }
     } finally {
       running.current = false;
@@ -84,6 +86,7 @@ function ViewerClipCard({ clip, episode, onChanged }: { clip: PodcastClip; episo
       setError("Video Could Not Play. Please Retry Preview.");
     }} /> : null}
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+    {!composer && error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : null}
     {progress ? <p role="status" className="text-sm text-muted-foreground">{progress}</p> : null}
     {postUri ? <p role="status" className="text-sm">Published to Bluesky. <a className="text-primary underline" href={`/social/post?uri=${encodeURIComponent(postUri)}`}>View Post</a></p> : null}
     <div className="flex flex-wrap gap-2">
