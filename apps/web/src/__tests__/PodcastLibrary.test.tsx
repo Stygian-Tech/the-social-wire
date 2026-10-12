@@ -157,7 +157,10 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   await screen.findByText("Matched Science Episode");
   expect(screen.getByText("Matched Science Episode").closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
   expect(screen.queryByText("Recent Episode")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Clear Search" }));
+  const clear = screen.getByRole("button", { name: "Clear" });
+  expect(clear.className).toContain("min-h-8");
+  expect(clear.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  fireEvent.click(clear);
   await screen.findByText("Recent Episode");
   fireEvent.change(input, { target: { value: "science" } });
   const results = await screen.findByRole("region", { name: "Matching Shows" });
@@ -238,6 +241,7 @@ it("clears private library terms before directory search and previews before exp
   });
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
   render(<PodcastLibrary />);
+  fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "private library terms" } });
   fireEvent.click(within(screen.getByRole("complementary", { name: "Podcast Library" })).getByRole("button", { name: "Search" }));
   const input = screen.getByRole("searchbox", { name: "Search Podcasts" }) as HTMLInputElement;
@@ -250,7 +254,7 @@ it("clears private library terms before directory search and previews before exp
   expect(write).not.toHaveBeenCalled();
   expect(changes).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Preview Podcast" }));
-  await screen.findByRole("button", { name: "Subscribe" });
+  await screen.findByRole("button", { name: "Back to Search" });
   expect(requests.find(request => request.path === "resolve")?.body).toEqual({ url: show.feedUrl });
   expect(write).not.toHaveBeenCalled();
   const showHeader = screen.getByRole("heading", { name: show.title }).closest("header")!;
@@ -258,9 +262,13 @@ it("clears private library terms before directory search and previews before exp
   expect(screen.getAllByRole("button", { name: "Subscribe" })).toHaveLength(1);
   expect(subscribe.className).toContain("min-h-8");
   expect(subscribe.className).toContain("pointer-coarse:min-h-11");
-  fireEvent.click(subscribe);
+  await act(async () => { fireEvent.click(subscribe); });
   await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, false));
   expect(changes).toEqual([{ subscriptions: [show.id] }]);
+  fireEvent.click(screen.getByRole("button", { name: "Back to Search" }));
+  expect((screen.getByRole("searchbox", { name: "Search Podcasts" }) as HTMLInputElement).value).toBe("science");
+  expect(screen.getByRole("button", { name: "Preview Podcast" })).toBeTruthy();
+  expect(requests.filter(request => request.path === "search")).toHaveLength(1);
   const sidebar = within(screen.getByRole("complementary", { name: "Podcast Library" }));
   fireEvent.click(sidebar.getByRole("button", { name: "Search" }));
   fireEvent.change(screen.getByRole("searchbox", { name: "Search Podcasts" }), { target: { value: "another discovery query" } });
@@ -329,6 +337,61 @@ it("updates Played indicators while preserving episode positions and usable play
   expect(within(await screen.findByRole("dialog")).getByText("Publisher show notes")).toBeTruthy();
 });
 
+for (const outcome of ["success", "resolve failure", "write failure"] as const) {
+  it(`subscribes directly from directory results with ${outcome}`, async () => {
+    const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+    const getOAuthSession = () => oauth;
+    const changes: Partial<client.PodcastState>[] = [];
+    const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
+    const player = spyOn(playerModule, "usePodcastPlayer").mockImplementation(function useFixturePlayer() {
+      const [state, setState] = useState(client.initialPodcastState());
+      return { state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async patch => {
+        changes.push(patch);
+        setState(current => ({ ...current, ...patch }));
+      } };
+    });
+    const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+    const write = spyOn(client, "writePodcastSubscription").mockImplementation(async () => {
+      if (outcome === "write failure") throw new Error("Write failed");
+    });
+    const show: client.PodcastShow = { id: "canonical-show", title: "Science Podcast", sourceKind: "rss", feedUrl: "https://example.org/feed" };
+    const requests: string[] = [];
+    const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => {
+      requests.push(path);
+      if (path === "shows") return { shows: [] } as T;
+      if (path === "search") return { shows: [], episodes: [], candidates: [{ provider: "podcastindex", id: "pi:1", title: show.title, feedUrl: show.feedUrl }], hasMore: false } as T;
+      if (path === "resolve") {
+        if (outcome === "resolve failure") throw new Error("Resolve failed");
+        return { show, episodes: [] } as T;
+      }
+      return { episodes: [] } as T;
+    });
+    restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
+    render(<PodcastLibrary />);
+    fireEvent.click(within(screen.getByRole("complementary", { name: "Podcast Library" })).getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "science" } });
+    const results = await screen.findByRole("region", { name: "Podcast Index Results" });
+    await within(results).findByText(show.title);
+    fireEvent.click(within(results).getByRole("button", { name: "Subscribe" }));
+    if (outcome === "success") {
+      const subscribed = await within(results).findByRole("button", { name: "Subscribed" });
+      expect(subscribed.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(subscribed);
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, false);
+      expect(changes).toEqual([{ subscriptions: [show.id] }]);
+    } else {
+      await screen.findByRole("alert");
+      await waitFor(() => expect(within(results).getByRole("button", { name: "Subscribe" }).hasAttribute("disabled")).toBe(false));
+      expect(changes).toEqual([]);
+      expect(write).toHaveBeenCalledTimes(outcome === "resolve failure" ? 0 : 1);
+    }
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("science");
+    expect(within(results).getByRole("button", { name: "Preview Podcast" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Back to Search" })).toBeNull();
+    expect(requests.filter(path => path === "search")).toHaveLength(1);
+  });
+}
 
 it("opens viewer-wide Clips without fetching episodes and returns to Search", async () => {
   const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;

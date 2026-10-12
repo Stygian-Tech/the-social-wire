@@ -27,11 +27,12 @@ const restores: (() => void)[] = [];
 const push = mock((path: string) => { void path; });
 const liked = mock((uri: string) => { void uri; });
 let posts: AppBskyFeedDefs.PostView[];
+let notificationRows: typeof notification[];
 let cache: QueryClient;
 function restore(spy: { mockRestore(): void }) { restores.push(() => spy.mockRestore()); }
 function Wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={cache}><SidebarProvider>{children}</SidebarProvider></QueryClientProvider>; }
 beforeEach(() => {
-  push.mockClear(); liked.mockClear();
+  push.mockClear(); liked.mockClear(); notificationRows = [notification];
   cache = new QueryClient(); posts = [makePost(rootUri, "Thread root"), makePost(parentUri, "Immediate parent"), makePost(replyUri, replyRecord.text)];
   const media = Object.getOwnPropertyDescriptor(window, "matchMedia");
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
@@ -41,7 +42,7 @@ beforeEach(() => {
   restore(spyOn(Navigation, "usePathname").mockReturnValue("/social/notifications"));
   restore(spyOn(Navigation, "useSearchParams").mockReturnValue(new URLSearchParams() as ReturnType<typeof Navigation.useSearchParams>));
   restore(spyOn(Catalog, "useBlueskySocialCatalog").mockReturnValue({ data: { feeds: [], moderation: safety }, isError: false, isPending: false } as unknown as ReturnType<typeof Catalog.useBlueskySocialCatalog>));
-  restore(spyOn(Notifications, "useSocialNotifications").mockImplementation(() => ({ data: { pages: [{ notifications: [notification], posts }] }, isPending: false, isError: false }) as unknown as ReturnType<typeof Notifications.useSocialNotifications>));
+  restore(spyOn(Notifications, "useSocialNotifications").mockImplementation(() => ({ data: { pages: [{ notifications: notificationRows, posts }] }, isPending: false, isError: false }) as unknown as ReturnType<typeof Notifications.useSocialNotifications>));
   restore(spyOn(Notifications, "useSocialNotificationUnread").mockReturnValue({ data: 1 } as unknown as ReturnType<typeof Notifications.useSocialNotificationUnread>));
   restore(spyOn(Notifications, "useMarkSocialNotificationsSeen").mockReturnValue({ mutate: () => {}, isPending: false } as unknown as ReturnType<typeof Notifications.useMarkSocialNotificationsSeen>));
   restore(spyOn(Actions, "SocialPostActions").mockImplementation(({ post }) => <><button onClick={() => liked(post.uri)}>Like {(post.record as { text: string }).text}</button></>));
@@ -90,4 +91,31 @@ it("withholds moderated parent content/actions without hiding the safe reply", a
   expect(screen.queryByText("Immediate parent")).toBeNull();
   expect(screen.queryByRole("button", { name: "Like Immediate parent" })).toBeNull();
   expect(screen.getByRole("button", { name: "Like The actual nested reply" })).toBeTruthy();
+});
+
+it("groups likes across pages with unique people, one post and unread state from any member", async () => {
+  const like = { ...notification, reason: "like", uri: `at://${author.did}/app.bsky.feed.like/one`, reasonSubject: parentUri, record: { ...replyRecord, subject: { uri: parentUri, cid } }, isRead: true };
+  const carol = { ...author, did: "did:plc:carol", handle: "carol.test", displayName: "Carol" };
+  const dan = { ...author, did: "did:plc:dan", handle: "dan.test", displayName: "Dan" };
+  const older = [like, { ...like, author: carol, uri: "at://did:plc:carol/app.bsky.feed.like/two", isRead: false }, { ...like, author: dan, uri: "at://did:plc:dan/app.bsky.feed.like/three" }];
+  restore(spyOn(Notifications, "useSocialNotifications").mockImplementation(() => ({ data: { pages: [{ notifications: [like], posts }, { notifications: older, posts }] }, isPending: false, isError: false }) as unknown as ReturnType<typeof Notifications.useSocialNotifications>));
+  render(<SocialNotifications />, { wrapper: Wrapper });
+  expect(screen.getAllByText("Liked Your Post")).toHaveLength(1);
+  expect(screen.getAllByText("Immediate parent")).toHaveLength(1);
+  expect(screen.getByText("Unread")).toBeTruthy();
+  const summary = screen.getByLabelText("Show People: Bob and Carol + 1");
+  fireEvent.click(summary);
+  expect(summary.parentElement?.getAttribute("open")).not.toBeNull();
+  expect(screen.getByRole("link", { name: "Dan" }).getAttribute("href")).toBe(socialProfilePageHref(dan.did, "/social/notifications"));
+});
+
+it("filters blocked actors before calculating grouped summaries", () => {
+  notificationRows = [
+    { ...notification, reason: "follow", uri: "at://did:plc:bob/app.bsky.graph.follow/one" },
+    { ...notification, reason: "follow", uri: "at://did:plc:blocked/app.bsky.graph.follow/two", author: { ...author, did: "did:plc:blocked", displayName: "Blocked", viewer: { blocking: `at://${did}/app.bsky.graph.block/one` } } } as typeof notification,
+  ];
+  render(<SocialNotifications />, { wrapper: Wrapper });
+  expect(screen.getAllByText("Followed You")).toHaveLength(1);
+  expect(screen.queryByText(/Blocked/)).toBeNull();
+  expect(screen.queryByText("Bob and Blocked")).toBeNull();
 });

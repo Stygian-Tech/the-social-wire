@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { PodcastArtwork } from "./PodcastArtwork";
 import type { PodcastShow } from "@/lib/podcasts/client";
 
@@ -22,7 +23,7 @@ export function PodcastLibrarySearch({ scope, query, label, valid, loading, erro
     <div className="space-y-2">
       {scope === "discover" ? <p className="text-xs text-muted-foreground">Search Public Podcasts with <a className="underline" href="https://podcastindex.org" target="_blank" rel="noreferrer">Podcast Index</a>. Only searches entered here are sent to the directory.</p> : null}
       <label htmlFor="podcast-library-search" className="block text-sm font-medium">{label}</label>
-      <div className="flex min-w-0 gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <input
           id="podcast-library-search"
           type="search"
@@ -32,7 +33,7 @@ export function PodcastLibrarySearch({ scope, query, label, valid, loading, erro
           placeholder={scope === "discover" ? "Find a Public Podcast" : "Shows, Episodes, or Hosts"}
           className="min-h-11 w-full min-w-0 rounded-lg border bg-background px-3 text-sm"
         />
-        {searching ? <button type="button" className={button} onClick={() => onQuery("")}>Clear Search</button> : null}
+        {searching ? <button type="button" className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded border px-2 text-xs hover:bg-accent pointer-coarse:min-h-11" onClick={() => onQuery("")}><X aria-hidden="true" className="size-3.5" />Clear</button> : null}
       </div>
       {searching && !valid ? <p className="text-sm text-muted-foreground">Enter at Least 2 Characters</p> : null}
       {searching && loading ? <p role="status" className="text-sm text-muted-foreground">{scope === "discover" ? "Searching Podcast Index…" : "Searching Your Library…"}</p> : null}
