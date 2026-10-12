@@ -19,6 +19,7 @@ type Config struct {
 	AllowedOrigins                                                            []string
 	Auth                                                                      gatewaycore.AuthConfig
 	ProDIDs                                                                   map[string]bool
+	ProGatingEnabled                                                          bool
 }
 
 func ParseConfig(env map[string]string) (Config, error) {
@@ -37,6 +38,7 @@ func ParseConfig(env map[string]string) (Config, error) {
 	c.EndpointPolicy = policy
 	c.PodcastsEnabled = strings.EqualFold(env["PODCASTS_ENABLED"], "true")
 	c.ProDIDs = make(map[string]bool)
+	c.ProGatingEnabled = strings.EqualFold(strings.TrimSpace(env["SOCIALWIRE_PRO_GATING_ENABLED"]), "true")
 	for _, did := range split(env["SOCIALWIRE_PRO_DIDS"]) {
 		c.ProDIDs[did] = true
 	}
