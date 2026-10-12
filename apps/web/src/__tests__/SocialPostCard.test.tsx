@@ -26,7 +26,7 @@ function item(
   return {
     post: {
       uri: "at://did:plc:other/app.bsky.feed.post/3abc",
-      cid: "bafyreia",
+      cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku",
       author,
       record: {
         $type: "app.bsky.feed.post",
@@ -73,9 +73,47 @@ describe("Social Post Rendering", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).toContain("Reposted by Other");
+    expect(html).toContain("lucide-repeat-2");
+    expect(html.indexOf("Reposted by Other")).toBeLessThan(html.indexOf("Open Profile: Other"));
     expect(html).toContain(
       "https://bsky.app/profile/did%3Aplc%3Aother/post/3abc",
     );
+  });
+  it("adds a small reply glyph before the author without revealing unavailable or withheld parents", () => {
+    const value = item();
+    const parent = { ...value.post, $type: "app.bsky.feed.defs#postView" as const };
+    value.reply = { root: parent, parent };
+    const html = card(value);
+    expect(html).toContain("lucide-message-circle");
+    expect(html.indexOf("Replying To")).toBeLessThan(html.indexOf("Open Profile: Other"));
+    const unavailable = card({ ...value, reply: { root: parent, parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: value.post.uri, notFound: true } } });
+    expect(unavailable).toContain("lucide-message-circle");
+    expect(unavailable).toContain("Replying To an unavailable post");
+    const withheld = card({ ...value, reply: { root: parent, parent: { ...parent, author: { ...author, viewer: { muted: true } } } } });
+    expect(withheld).toContain("lucide-message-circle");
+    expect(withheld).toContain("Replying To a withheld post");
+    expect(withheld).not.toContain('class="break-all hover:underline"');
+  });
+  it("labels record-only replies when feed metadata is missing", () => {
+    const value = item();
+    value.post.record = { ...value.post.record, reply: {
+      parent: { uri: "at://did:plc:parent/app.bsky.feed.post/parent", cid: value.post.cid },
+      root: { uri: "at://did:plc:parent/app.bsky.feed.post/root", cid: value.post.cid },
+    } };
+    const html = card(value);
+    expect(html).toContain("Replying To an unavailable post");
+    expect(html).toContain("lucide-message-circle");
+  });
+  it("does not attribute ordinary feed posts to a like or quote", () => {
+    const html = card(item());
+    expect(html).not.toContain("lucide-heart");
+    expect(html).not.toContain("lucide-quote");
+    expect(html).not.toContain("Quoted Post");
+    const nonPostRecord = card(item({ embed: {
+      $type: "app.bsky.embed.record#view",
+      record: { $type: "app.bsky.embed.record#viewRecord", uri: "at://did:plc:other/app.bsky.graph.list/abc", cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", author, value: { $type: "app.bsky.graph.list", name: "A List" }, indexedAt: "2026-10-09T10:00:00.000Z" },
+    } }));
+    expect(nonPostRecord).not.toContain("lucide-quote");
   });
   it("omits blocked posts and withholds muted posts before images load", () => {
     const embed = {
@@ -141,7 +179,7 @@ describe("Social Post Rendering", () => {
           record: {
             $type: "app.bsky.embed.record#viewRecord",
             uri: "at://did:plc:quoted/app.bsky.feed.post/abc",
-            cid: "bafyreia",
+            cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku",
             author: {
               did: "did:plc:quoted",
               handle: "quoted.test",
@@ -303,7 +341,7 @@ describe("Social Post Rendering", () => {
           record: {
             $type: "app.bsky.embed.record#viewRecord",
             uri: "at://did:plc:quoted/app.bsky.feed.post/abc",
-            cid: "bafyreia",
+            cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku",
             author: { did: "did:plc:quoted", handle: "quoted.test" },
             value: {
               $type: "app.bsky.feed.post",
@@ -328,6 +366,8 @@ describe("Social Post Rendering", () => {
       }),
     );
     expect(html).toContain("Allowed quote");
+    expect(html).toContain("lucide-quote");
+    expect(html.indexOf("Quoted Post")).toBeLessThan(html.indexOf("Open Profile: Other"));
     expect(html).toContain('alt="A mountain at sunrise"');
   });
   it("renders media quotes whose nested record view omits its optional type", () => {
@@ -345,11 +385,16 @@ describe("Social Post Rendering", () => {
     };
     const html = card(item({ embed }));
     expect(html).toContain("A quote beside its media");
+    expect(html).toContain("lucide-quote");
+    expect(html.indexOf("Quoted Post")).toBeLessThan(html.indexOf("Open Profile: Other"));
     expect(html).toContain('alt="An outer gallery photo"');
     expect(html).not.toContain("Attachment unavailable");
     const blocked = card(item({ embed: { ...embed, record: { record: { ...embed.record.record, author: { ...embed.record.record.author, viewer: { blocking: "at://did:plc:viewer/app.bsky.graph.block/abc" } } } } } }));
     expect(blocked).not.toContain("A quote beside its media");
     expect(blocked).not.toContain("media.jpg");
+    expect(blocked).not.toContain("lucide-quote");
+    const mediaWithheld = card(item({ embed, labels: [{ src: "did:plc:labeler", uri: item().post.uri, val: "porn", cts: "2026-10-09T10:00:00.000Z" }] }));
+    expect(mediaWithheld).not.toContain("lucide-quote");
   });
 
   it("shares safe filtering for malformed records with the timeline", () => {

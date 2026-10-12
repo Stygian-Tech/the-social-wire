@@ -4,6 +4,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import {
+  AppBskyEmbedRecord,
+  AppBskyEmbedRecordWithMedia,
   AppBskyFeedDefs,
   AppBskyFeedPost,
   moderateProfile,
@@ -13,11 +15,13 @@ import { moderateSocialPost } from "./socialModeration";
 import { SocialPostEmbed } from "./SocialPostEmbed";
 import { SocialRichText } from "./SocialRichText";
 import { SocialReplyLabel } from "./SocialReplyLabel";
+import { SocialActionGlyph } from "./SocialActionGlyph";
 import { SocialPostLabels } from "./SocialPostLabels";
 import { SocialCashtags } from "./SocialCashtags";
 import { SocialPostTimestamp } from "./SocialPostTimestamp";
 import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
 import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
+import { socialReplyMetadata } from "@/lib/socialReplyMetadata";
 
 export function SocialPostCard({
   item,
@@ -39,6 +43,7 @@ export function SocialPostCard({
   analyticsSurface?: "social-feed" | "post-viewer" | "messages";
 }) {
   const post = item.post;
+  const reply = socialReplyMetadata(item);
   const record = AppBskyFeedPost.validateRecord(post.record);
   const decision = moderateSocialPost(post, moderation);
   const content = decision.ui("contentList");
@@ -74,6 +79,15 @@ export function SocialPostCard({
   const reposter = repost ? moderateProfile(repost, moderation) : undefined;
   const reposterIdentity = reposter?.ui("displayName");
   const reposterList = reposter?.ui("profileList");
+  const quotedRecord: AppBskyEmbedRecord.View["record"] | undefined = AppBskyEmbedRecord.isView(post.embed)
+    ? post.embed.record
+    : AppBskyEmbedRecordWithMedia.isView(post.embed)
+      ? post.embed.record.record
+      : undefined;
+  const quotedPost = AppBskyEmbedRecord.validateViewRecord(quotedRecord);
+  const hasQuotedPost =
+    !media.blur && !media.filter && !media.noOverride &&
+    quotedPost.success && AppBskyFeedPost.isRecord(quotedPost.value.value);
   const timestamp = Number.isNaN(Date.parse(record.value.createdAt)) ? post.indexedAt : record.value.createdAt;
   const date = new Date(timestamp);
   return (
@@ -83,7 +97,8 @@ export function SocialPostCard({
         if (target instanceof Element && event.currentTarget.contains(target) && !target.closest('a, button, input, video, audio') && !window.getSelection()?.toString()) { event.stopPropagation(); onOpen(); }
       } : undefined}>
       {repost ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <SocialActionGlyph reason="repost" /><span>
           Reposted{" "}
           {reposterList?.filter ||
           reposterList?.blur ||
@@ -93,10 +108,16 @@ export function SocialPostCard({
           reposterIdentity?.noOverride
             ? "by an account"
             : `by ${repost.displayName || repost.handle}`}
-        </p>
+          </span></p>
       ) : null}
-      {item.reply ? (
-        <SocialReplyLabel reply={item.reply} moderation={moderation} />
+      {reply ? (
+        <SocialReplyLabel reply={reply} moderation={moderation} />
+      ) : null}
+      {hasQuotedPost ? (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <SocialActionGlyph reason="quote" />
+          <span>Quoted Post</span>
+        </p>
       ) : null}
       <div className="flex items-center gap-3">
         <Link href={socialProfilePageHref(post.author.did)} aria-label={`Open Profile: ${name}`} className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-ring">{image ? (

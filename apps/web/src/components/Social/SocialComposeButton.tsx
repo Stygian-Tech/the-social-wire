@@ -17,6 +17,7 @@ import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { SocialComposePreview } from "./SocialComposePreview";
 import { SocialPeopleTextField } from "./SocialPeopleTextField";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 
@@ -105,6 +106,7 @@ function SocialAccountComposeButton() {
         {actorDid !== session.did ? <SocialBrandComposeContent key={`${session.did}:${actorDid}`} ownerDid={session.did} actorDid={actorDid!} onPendingChange={value => { busy.current = value; setPending(value); }} close={() => changeOpen(false)} onPublished={wasScheduled => { setOpen(false); setScheduled(wasScheduled); setPosted(true); }} /> : <form key={session.did} className="flex min-w-0 flex-col gap-3" onSubmit={event => { event.preventDefault(); void publish(); }}>
           <label htmlFor="social-compose-text" className="sr-only">Post Text</label>
           <SocialPeopleTextField id="social-compose-text" autoFocus value={text} disabled={pending} onValueChange={setText} rows={6} placeholder="What's Happening?" className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
+          <SocialComposePreview text={text} />
           <p aria-live="polite" className={`text-right text-sm ${length > 300 ? "text-destructive" : "text-muted-foreground"}`}>{length}/300</p>
           {bytes > 3000 ? <p className="text-sm text-destructive">Post Text Exceeds the Size Limit</p> : null}
           <ScheduleTimingControls mode={mode} value={scheduledAt} disabled={pending} onModeChange={setMode} onChange={setScheduledAt} />

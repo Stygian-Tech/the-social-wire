@@ -45,10 +45,11 @@ describe("viewer profile feed transport", () => {
     const post = { uri: `at://${did}/app.bsky.feed.post/one`, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", author: { did, handle: "alice.test" }, indexedAt: "2026-10-09T00:00:00Z" };
     const record = { $type: "app.bsky.feed.post", text: "Post", createdAt: "2026-10-09T00:00:00Z" };
     const reply = { ...post, uri: `at://${did}/app.bsky.feed.post/reply`, record: { ...record, reply: { root: { uri: post.uri, cid: post.cid }, parent: { uri: post.uri, cid: post.cid } } } };
-    const session = { did, fetchHandler: async () => Response.json({ cursor: "reply-page-2", feed: [{ post: { ...post, record } }, { post: reply }] }) } as unknown as OAuthSession;
+    const session = { did, fetchHandler: async (path: string) => path.includes("getPosts") ? Response.json({ posts: [{ ...post, record }] }) : Response.json({ cursor: "reply-page-2", feed: [{ post: { ...post, record } }, { post: reply }] }) } as unknown as OAuthSession;
     const page = await getBlueskyProfilePage({ session, tab: "replies", moderation });
     expect(page.feed.map(item => item.post.uri)).toEqual([reply.uri]);
     expect(page.cursor).toBe("reply-page-2");
+    expect(page.feed[0]?.reply?.parent).toMatchObject({ uri: post.uri, author: post.author, $type: "app.bsky.feed.defs#postView" });
   });
 
   it("refuses mismatched safety identity and invalid tabs before any transport", async () => {
