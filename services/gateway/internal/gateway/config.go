@@ -18,6 +18,7 @@ type Config struct {
 	Modes                                                                     map[string]string
 	AllowedOrigins                                                            []string
 	Auth                                                                      gatewaycore.AuthConfig
+	ProDIDs                                                                   map[string]bool
 }
 
 func ParseConfig(env map[string]string) (Config, error) {
@@ -35,6 +36,10 @@ func ParseConfig(env map[string]string) (Config, error) {
 	}
 	c.EndpointPolicy = policy
 	c.PodcastsEnabled = strings.EqualFold(env["PODCASTS_ENABLED"], "true")
+	c.ProDIDs = make(map[string]bool)
+	for _, did := range split(env["SOCIALWIRE_PRO_DIDS"]) {
+		c.ProDIDs[did] = true
+	}
 	if c.Environment != "local" && c.Environment != "dev" && c.Environment != "prod" {
 		return c, fmt.Errorf("APP_ENV must be local, dev or prod")
 	}

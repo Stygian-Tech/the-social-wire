@@ -1,5 +1,6 @@
 "use client";
 
+import { ProFeatureGate } from "@/components/Pro/ProFeatureGate";
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
@@ -18,7 +19,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
   return <SidebarProvider className={`${appViewportHeightClasses} overflow-hidden [--reader-shell-width:80rem]`}>
     <PublicationSidebarProvider><ReadRouteProvider>
       <Suspense fallback={null}><AppSidebar selectedPubId={null} onSelectPub={id => router.push(`/read/${encodeURIComponent(id)}`)} showPublicationsRail={false} /></Suspense>
-      <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses}`}><main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main></SidebarInset>
+      <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses}`}><main className="flex min-h-0 min-w-0 flex-1 overflow-hidden"><ProFeatureGate>{children}</ProFeatureGate></main></SidebarInset>
     </ReadRouteProvider></PublicationSidebarProvider>
   </SidebarProvider>;
 }

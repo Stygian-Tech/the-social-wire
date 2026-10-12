@@ -1,3 +1,4 @@
+import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as Auth from "@/hooks/useAuth";
@@ -12,7 +13,10 @@ const restores: (() => void)[] = [];
 let authState: ReturnType<typeof Auth.useAuth>;
 const replace = mock(() => {});
 const push = mock(() => {});
+let isPro = true;
 beforeEach(() => {
+  isPro = true;
+  const access = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro, isPending: false, isError: false, isFetching: false, refetch: async () => ({}) }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => access.mockRestore());
   replace.mockClear(); push.mockClear();
   authState = { session: null, isLoading: false } as ReturnType<typeof Auth.useAuth>;
   const auth = spyOn(Auth, "useAuth").mockImplementation(() => authState);
