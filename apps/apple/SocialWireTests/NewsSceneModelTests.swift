@@ -75,6 +75,47 @@ struct NewsSceneModelTests {
         #expect(model.primaryTabFeeds.contains(.circle))
     }
 
+    @Test("Podcast navigation honors section visibility while preserving other destinations")
+    func podcastNavigationHonorsVisibility() {
+        var preferences = ReaderFeedPreferences.defaults
+        let visible = NewsTab.available(
+            preferences: preferences, wireCatalog: nil, circleCatalog: nil,
+            podcastsAvailable: true
+        )
+        #expect(visible.contains(.podcasts))
+        preferences.showPodcasts = false
+        let hidden = NewsTab.available(
+            preferences: preferences, wireCatalog: nil, circleCatalog: nil,
+            podcastsAvailable: true
+        )
+        #expect(hidden == visible.filter { $0 != .podcasts })
+
+        let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let scene = NewsSceneModel(defaults: defaults)
+        scene.updateContext(viewerDID: "did:plc:viewer", availableTabs: visible)
+        scene.select(.podcasts, availableTabs: visible)
+        scene.navigate(to: .settings, in: .podcasts)
+        scene.updateContext(viewerDID: "did:plc:viewer", availableTabs: hidden)
+        #expect(scene.selectedTab == .wire)
+        #expect(scene.activeRoute == .settings)
+    }
+
+    @Test("Other feed settings preserve hidden Social and Podcast sections")
+    func unrelatedFeedSettingsPreserveSectionVisibility() async {
+        let model = SocialWireAppModel()
+        model.feedPreferences.showSocial = false
+        model.feedPreferences.showPodcasts = false
+
+        await model.setFeedDisplayOption(.showFeedOnly, for: .subscribed)
+        #expect(!model.feedPreferences.showSocial && !model.feedPreferences.showPodcasts)
+        await model.setFeedVisible(.following, visible: false)
+        #expect(!model.feedPreferences.showSocial && !model.feedPreferences.showPodcasts)
+        await model.setFeedUnreadCountVisible(.subscribed, visible: true)
+        #expect(!model.feedPreferences.showSocial && !model.feedPreferences.showPodcasts)
+    }
+
     @Test("Last tab is restored per viewer")
     func restoresSelectedTabPerViewer() {
         let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"

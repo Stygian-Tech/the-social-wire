@@ -46,6 +46,16 @@ describe("rkeyFromURI", () => {
 });
 
 describe("mergePreferencesRecord", () => {
+  it("preserves disabled Social and Podcasts through unrelated writes and re-enables independently", () => {
+    const hidden = mergePreferencesRecord({ showSocial: false, showPodcasts: false }, null);
+    const updated = mergePreferencesRecord({ rssArticleOpenMode: "reader" }, hidden);
+    expect(updated.showSocial).toBe(false);
+    expect(updated.showPodcasts).toBe(false);
+    const enabled = mergePreferencesRecord({ showSocial: true }, updated);
+    expect(enabled.showSocial).toBe(true);
+    expect(enabled.showPodcasts).toBe(false);
+  });
+
   it("preserves crypto hiding through unrelated saves and supports explicit re-enabling", () => {
     const hidden = mergePreferencesRecord({ hideFinanceCrypto: true }, null);
     const changed = mergePreferencesRecord({ showSports: false }, hidden);

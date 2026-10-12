@@ -193,6 +193,8 @@ export interface PreferencesRecord {
   showCircle?: boolean;
   showFinance?: boolean;
   showSports?: boolean;
+  showSocial?: boolean;
+  showPodcasts?: boolean;
   hideSportsScores?: boolean;
   hideFinancePerformance?: boolean;
   hideFinanceCrypto?: boolean;
@@ -215,6 +217,8 @@ export type PreferencesUpdates = Partial<
     | "showCircle"
     | "showFinance"
     | "showSports"
+    | "showSocial"
+    | "showPodcasts"
     | "hideSportsScores"
     | "hideFinancePerformance"
     | "hideFinanceCrypto"
@@ -242,6 +246,8 @@ export function mergePreferencesRecord(
     ...(previous?.visibleFeeds ? { visibleFeeds: previous.visibleFeeds } : {}),
     ...(previous?.showWire !== undefined ? { showWire: previous.showWire } : {}),
     ...(previous?.showCircle !== undefined ? { showCircle: previous.showCircle } : {}),
+    ...(previous?.showSocial !== undefined ? { showSocial: previous.showSocial } : {}),
+    ...(previous?.showPodcasts !== undefined ? { showPodcasts: previous.showPodcasts } : {}),
     ...(previous?.showSports !== undefined ? { showSports: previous.showSports } : {}),
     ...(previous?.hideSportsScores !== undefined ? { hideSportsScores: previous.hideSportsScores } : {}),
     ...(previous?.showFinance !== undefined ? { showFinance: previous.showFinance } : {}),

@@ -11091,7 +11091,7 @@
         },
         {
           "path": "packages/lexicons/__tests__/lexicons.test.ts",
-          "sha256": "6b29a6bc010c7252643f33b59a0d2656fc32090113dd7de677aeaa4389f21142"
+          "sha256": "ac4204ae40c68856039d68405faa99d6893063834af3dbf2976c170333be53d4"
         },
         {
           "path": "packages/lexicons/__tests__/liveEventLexicon.test.ts",
@@ -11395,7 +11395,7 @@
         },
         {
           "path": "packages/lexicons/app/thesocialwire/preferences.json",
-          "sha256": "e8aab6247f7fea463c1210170ef3448f4f5818de9b5fe6e6c24951dab3d64c92"
+          "sha256": "88d0c847fdffb059e210842b125eeb226f9c44c29f8fb70d866893413fec5115"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/publication/getSidebar.json",

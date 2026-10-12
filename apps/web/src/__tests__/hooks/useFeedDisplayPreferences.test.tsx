@@ -126,8 +126,8 @@ describe("feed display preference persistence", () => {
     expect(loadCachedFeedDisplayPreferences(window.localStorage, did)?.visibleFeeds).toEqual([]);
   });
 
-  for (const feed of ["wire", "circle"] as const) {
-    const field = feed === "wire" ? "showWire" : "showCircle";
+  for (const feed of ["wire", "circle", "social", "podcasts"] as const) {
+    const field = ({ wire: "showWire", circle: "showCircle", social: "showSocial", podcasts: "showPodcasts" } as const)[feed];
     const otherField = feed === "wire" ? "showCircle" : "showWire";
 
     it(`persists hiding ${feed} and shares the committed record with another observer`, async () => {

@@ -464,8 +464,8 @@ export function AppSidebar({
   if (topicNavigationIsVisible(displayPreferences.showSports, sportsCatalog.confirmedEnabled)) visible.add("sports");
   if (topicNavigationIsVisible(displayPreferences.showFinance, financeCatalog.data?.enabled)) visible.add("finance");
 
-  if (podcastsEnabled()) visible.add("podcasts");
-  visible.add("social");
+  if (displayPreferences.showPodcasts && podcastsEnabled()) visible.add("podcasts");
+  if (displayPreferences.showSocial) visible.add("social");
 
   const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
     if (feed === "social") { setOpenMobile(false); router.push("/social"); return; }
@@ -677,15 +677,15 @@ export function AppSidebar({
             </SidebarMenu>
           </SidebarGroup>
           ) : null}
-          <SidebarSocialSection
+          {visible.has("social") ? <SidebarSocialSection
             notificationCount={socialUnread.notificationCount}
             messageCount={socialUnread.messageCount}
             active={currentFeed === "social"}
             activeSection={pathname.split("/")[2] || "home"}
             onNavigate={href => { setOpenMobile(false); router.push(href); }}
             onHome={() => { setOpenMobile(false); router.push("/social"); }}
-          />
-          <SidebarAudioSection enabled={podcastsEnabled()} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} />
+          /> : null}
+          <SidebarAudioSection enabled={visible.has("podcasts")} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} />
           <PublicationTabs
             visibleFeeds={visible}
             activeTab={
