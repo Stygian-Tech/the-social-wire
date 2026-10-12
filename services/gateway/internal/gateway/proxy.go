@@ -22,6 +22,11 @@ func (p *Proxy) Handler(route Route) http.Handler {
 }
 func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	c := p.Config
+	if route.Target == "/v1/analytics/summary" || route.Target == "/v1/analytics/refresh" {
+		if !requirePro(w, r, c) {
+			return
+		}
+	}
 	base, secret := c.AppViewURL, c.AppViewSecret
 	client := p.Internal
 	switch route.Service {

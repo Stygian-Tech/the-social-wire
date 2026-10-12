@@ -1,3 +1,9 @@
+import LivePostLayout from "@/app/live-post/layout";
+import LivestreamLayout from "@/app/livestream/layout";
+import BrandAccountsLayout from "@/app/brand-accounts/layout";
+import ContentCalendarLayout from "@/app/content-calendar/layout";
+import AnalyticsLayout from "@/app/analytics/layout";
+import * as Pro from "@/hooks/useProEntitlements";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as Navigation from "next/navigation";
@@ -17,7 +23,10 @@ const restores: (() => void)[] = [];
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 beforeAll(() => { Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }); });
 afterAll(() => { if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia); else Reflect.deleteProperty(window, "matchMedia"); });
+let isPro = true;
 beforeEach(() => {
+  isPro = true;
+  const access = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro, isPending: false, isError: false, isFetching: false, refetch: async () => ({}) }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => access.mockRestore());
   loading = false; signedIn = true; replace.mockClear(); push.mockClear();
   const auth = spyOn(Auth, "useAuth").mockImplementation(() => ({ session: signedIn ? { did: "did:plc:viewer" } : null, isLoading: loading } as ReturnType<typeof Auth.useAuth>));
   const router = spyOn(Navigation, "useRouter").mockReturnValue({ replace, push } as unknown as ReturnType<typeof Navigation.useRouter>);
@@ -61,4 +70,27 @@ describe("Articles route", () => {
     await act(async () => { ready = true; resolve(); await pending; });
     await waitFor(() => expect(screen.getByText("Ready Editor")).toBeTruthy());
   });
+});
+
+describe("Tools route access", () => {
+  for (const [path, Layout] of [
+    ["/articles", ArticlesLayout],
+    ["/live-post", LivePostLayout],
+    ["/livestream", LivestreamLayout],
+    ["/brand-accounts", BrandAccountsLayout],
+    ["/content-calendar", ContentCalendarLayout],
+    ["/analytics", AnalyticsLayout],
+  ] as const) {
+    it(`denies direct ${path} access to Free viewers before mounting the workspace`, async () => {
+      isPro = false;
+      const workspace = mock(() => <p>Protected Workspace</p>);
+      function ProtectedContent() { return workspace(); }
+      await act(async () => { render(<Layout><ProtectedContent /></Layout>); });
+      expect(screen.getByRole("heading", { name: "Social Wire Pro" })).toBeTruthy();
+      expect(screen.getByText("Tools and multi-account support are available with Pro. Subscriptions are coming soon.")).toBeTruthy();
+      expect(screen.queryByText("Protected Workspace")).toBeNull();
+      expect(workspace).not.toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+    });
+  }
 });

@@ -1,0 +1,20 @@
+meta {
+  name: Get Subscription Entitlements
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/subscription/entitlements
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Returns {viewerDid, plan: "free" | "pro"} for the verified OAuth viewer. Response is private, no-store. Until billing is integrated, configure SOCIALWIRE_PRO_DIDS on Gateway as comma-separated exact DIDs; an unset allowlist grants nobody Pro. A linked brand authenticates as its own DID and requires an explicit grant for creator analytics; an owner's grant is not inherited. Request parameters, plan headers, and local client storage cannot grant access. Analytics summary/refresh return 403 ProRequired for Free viewers; ordinary Reader/Social analytics observations remain available.
+}

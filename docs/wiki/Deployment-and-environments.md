@@ -57,6 +57,15 @@ before Production. See [[Redis]].
 
 ## Configuration safety
 
+Before billing integration, Gateway reads `SOCIALWIRE_PRO_DIDS` as a comma-separated
+allowlist of exact OAuth viewer DIDs (for example, `did:plc:account,did:web:brand.example`).
+An unset or empty value grants everyone the Free plan. Configure grants on Gateway
+in the intended environment; clients read authenticated `/v1/subscription/entitlements`
+and cannot grant themselves Pro. Tools require Pro, including Gateway analytics
+summary and refresh. Linked brands authenticate as their own DID, so creator
+analytics for a brand requires an explicit brand grant even when its owner has Pro.
+Ordinary Reader/Social observation ingestion remains available to Free viewers.
+
 - Set the exact config path on each Railway service; repository files are inactive until selected in Railway.
 - Keep Development on `dev` and Production on `main`.
 - Store secrets and Railway reference variables only in the matching environment.

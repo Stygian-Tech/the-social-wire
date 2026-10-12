@@ -1,6 +1,7 @@
 import { BrowserOAuthClient, OAuthClient, OAuthCallbackError, type BrowserOAuthClientLoadOptions, type BrowserOAuthClientOptions } from "@atproto/oauth-client-browser";
 import { assertOAuthDiscoverableClientId, atprotoLoopbackClientMetadata } from "@atproto/oauth-types";
 import { BRAND_LINK_STATE_PREFIX, assertBrandAccountAvailable, validateBrandLinkIntent } from "./brandAccountStorage";
+import { requirePro } from "@/lib/proEntitlements";
 /** Preserve the browser's personal-account route while retaining SDK token storage. */
 export class BrandAwareOAuthClient extends BrowserOAuthClient {
   constructor(options: BrowserOAuthClientOptions, private readonly primaryDid: () => string | null) { super(options); }
@@ -19,6 +20,14 @@ export class BrandAwareOAuthClient extends BrowserOAuthClient {
     // the regular SDK callback replaces an existing session for the returned DID.
     await this.stateStore.del(stateKey!);
     const appState = stored.appState;
+    const requireOwnerPro = async () => {
+      const intent = validateBrandLinkIntent(appState, this.primaryDid());
+      const session = await OAuthClient.prototype.restore.call(this, intent.ownerDid);
+      validateBrandLinkIntent(appState, this.primaryDid());
+      if (session.did !== intent.ownerDid) throw new Error("Your Personal Account Changed. Reopen Brand Accounts.");
+      await requirePro(session);
+      validateBrandLinkIntent(appState, this.primaryDid());
+    };
     try {
       validateBrandLinkIntent(appState, this.primaryDid());
       if (params.has("response")) throw new Error("JARM Is Not Supported.");
@@ -27,10 +36,12 @@ export class BrandAwareOAuthClient extends BrowserOAuthClient {
       const server = await this.serverFactory.fromIssuer(stored.iss, stored.authMethod, stored.dpopKey);
       const issuer = params.get("iss");
       if ((issuer !== null && (!server.issuer || issuer !== server.issuer)) || (issuer === null && server.serverMetadata.authorization_response_iss_parameter_supported)) throw new Error("OAuth Issuer Mismatch Or Missing Issuer.");
+      await requireOwnerPro();
       const tokenSet = await server.exchangeCode(code, stored.verifier, options.redirect_uri ?? server.clientMetadata.redirect_uris[0]);
       try {
         const intent = validateBrandLinkIntent(appState, this.primaryDid());
         assertBrandAccountAvailable(intent.ownerDid, tokenSet.sub);
+        await requireOwnerPro();
         try { await this.revoke(tokenSet.sub); } catch { /* Same SDK best-effort replacement of a prior brand grant. */ }
         validateBrandLinkIntent(appState, this.primaryDid());
         await this.sessionGetter.setStored(tokenSet.sub, { dpopKey: stored.dpopKey, authMethod: server.authMethod, tokenSet });

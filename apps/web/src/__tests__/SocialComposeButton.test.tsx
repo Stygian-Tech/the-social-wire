@@ -1,3 +1,4 @@
+import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -17,7 +18,10 @@ import { SocialComposeButton } from "@/components/Social/SocialComposeButton";
 const restores: (() => void)[] = [];
 let cache: QueryClient;
 const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+let isPro = true;
 beforeEach(() => {
+  isPro = true;
+  const entitlement = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => entitlement.mockRestore());
   const scheduler = spyOn(scheduling, "useSkejScheduling").mockReturnValue({ readiness: { data: { accountDid: oauth.did, connected: true }, isPending: false, isError: false, refetch: async () => ({}) }, schedules: {}, pending: false, schedule: async () => ({}), cancel: async () => {}, reschedule: async () => {}, connectUrl: "https://skej.test/connect" } as unknown as ReturnType<typeof scheduling.useSkejScheduling>); restores.push(() => scheduler.mockRestore());
   const stored = spyOn(storedAuth, "getStoredOAuthDid").mockReturnValue(oauth.did); restores.push(() => stored.mockRestore());
   const linked = spyOn(brands, "useBrandAccounts").mockReturnValue([]); restores.push(() => linked.mockRestore());
@@ -190,4 +194,42 @@ it("queues personal posts in Skej rather than publishing immediately", async () 
   await screen.findByText("Post Scheduled");
   expect(schedule).toHaveBeenCalledWith("Scheduled Content", new Date(value).toISOString());
   expect(publish).not.toHaveBeenCalled();
+});
+
+it("keeps Free composition personal and offers no scheduling controls", async () => {
+  isPro = false;
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: `at://${oauth.did}/app.bsky.feed.post/free`, cid: "cid" }); restores.push(() => publish.mockRestore());
+  const brandPublish = spyOn(publishing, "publishBrandPost"); restores.push(() => brandPublish.mockRestore());
+  const field = await open();
+  expect((screen.getByRole("combobox", { name: "Post As" }) as HTMLSelectElement).value).toBe(oauth.did);
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+  expect(screen.getByText("Multi-account support and scheduling require Pro.")).toBeTruthy();
+  fireEvent.change(field, { target: { value: "Personal Free Post" } });
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  expect(publish.mock.calls[0][0].session).toBe(oauth);
+  expect(brandPublish).not.toHaveBeenCalled();
+});
+it("drops a selected brand composer after downgrade without publishing its draft", async () => {
+  const brand = { did: "did:plc:brand" } as unknown as OAuthSession;
+  const linked = spyOn(brands, "useBrandAccounts").mockImplementation(() => isPro ? [brand.did] : []); restores.push(() => linked.mockRestore());
+  const connection = spyOn(brands, "useBrandAccountSession").mockReturnValue({ session: brand, error: undefined, generation: 0, retry: () => {}, assertCurrentActor: () => {} }); restores.push(() => connection.mockRestore());
+  const catalog = spyOn(social, "getBlueskySocialCatalog").mockResolvedValue({ moderation: { userDid: brand.did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } }, feeds: [] } as Awaited<ReturnType<typeof social.getBlueskySocialCatalog>>); restores.push(() => catalog.mockRestore());
+  const agent = spyOn(social, "createAuthenticatedAppViewAgent").mockReturnValue({ app: { bsky: { actor: { getProfile: async () => ({ data: { did: brand.did, handle: "brand.test", displayName: "Brand" } }) } } } } as ReturnType<typeof social.createAuthenticatedAppViewAgent>); restores.push(() => agent.mockRestore());
+  const brandPublish = spyOn(publishing, "publishBrandPost"); restores.push(() => brandPublish.mockRestore());
+  const personalPublish = spyOn(compose, "createBlueskyPost"); restores.push(() => personalPublish.mockRestore());
+  const view = render(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Post As" }), { target: { value: brand.did } });
+  fireEvent.change(await screen.findByRole("textbox", { name: "Brand Post Text" }), { target: { value: "Private Brand Draft" } });
+  isPro = false;
+  view.rerender(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
+  expect(screen.queryByRole("textbox", { name: "Brand Post Text" })).toBeNull();
+  expect((screen.getByRole("combobox", { name: "Post As" }) as HTMLSelectElement).value).toBe(oauth.did);
+  expect((screen.getByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement).value).toBe("");
+  expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  expect(brandPublish).not.toHaveBeenCalled();
+  expect(personalPublish).not.toHaveBeenCalled();
 });
