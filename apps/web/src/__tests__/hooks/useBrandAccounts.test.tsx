@@ -1,13 +1,17 @@
+import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Sessions from "@/lib/brandAccounts/brandAccountSessions";
 import * as Auth from "@/lib/auth";
-import { useBrandAccountSession } from "@/hooks/useBrandAccounts";
+import { useBrandAccounts, useBrandAccountSession } from "@/hooks/useBrandAccounts";
 
 const restores: (() => void)[] = [];
 let owner: string; let linked: string[];
+let isPro = true;
 beforeEach(() => {
+  isPro = true;
+  const entitlement = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => entitlement.mockRestore());
   owner = "did:plc:owner"; linked = ["did:plc:brand", "did:plc:other"];
   const hint = spyOn(Auth, "getStoredOAuthDid").mockImplementation(() => owner); restores.push(() => hint.mockRestore());
   const list = spyOn(Sessions, "listBrandAccounts").mockImplementation(() => linked); restores.push(() => list.mockRestore());
@@ -38,4 +42,26 @@ it("shows restore errors and retries without stale actor state", async () => {
   const { result } = renderHook(() => useBrandAccountSession("did:plc:owner", "did:plc:brand"));
   await waitFor(() => expect(result.current.error).toBe("Expired Authorization"));
   act(() => result.current.retry()); await waitFor(() => expect(result.current.session?.did).toBe("did:plc:brand")); expect(result.current.error).toBeUndefined();
+});
+
+it("hides linked accounts and never restores their sessions for Free viewers", async () => {
+  isPro = false;
+  const restore = spyOn(Sessions, "restoreBrandAccount").mockResolvedValue({ did: "did:plc:brand" } as unknown as OAuthSession); restores.push(() => restore.mockRestore());
+  const { result } = renderHook(() => ({ accounts: useBrandAccounts("did:plc:owner"), actor: useBrandAccountSession("did:plc:owner", "did:plc:brand") }));
+  await act(async () => {});
+  expect(result.current.accounts).toEqual([]);
+  expect(result.current.actor.session).toBeUndefined();
+  expect(restore).not.toHaveBeenCalled();
+  expect(() => result.current.actor.assertCurrentActor()).toThrow("Changed");
+});
+it("revokes a restored brand session and captured actor guard on downgrade", async () => {
+  const restore = spyOn(Sessions, "restoreBrandAccount").mockResolvedValue({ did: "did:plc:brand" } as unknown as OAuthSession); restores.push(() => restore.mockRestore());
+  const { result, rerender } = renderHook(() => useBrandAccountSession("did:plc:owner", "did:plc:brand"));
+  await waitFor(() => expect(result.current.session?.did).toBe("did:plc:brand"));
+  const previousGuard = result.current.assertCurrentActor;
+  isPro = false;
+  rerender();
+  expect(result.current.session).toBeUndefined();
+  expect(() => previousGuard()).toThrow("Changed");
+  expect(() => result.current.assertCurrentActor()).toThrow("Changed");
 });

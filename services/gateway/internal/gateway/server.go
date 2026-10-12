@@ -87,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 		s.Preferences.Register(mux, auth)
 	}
 	mux.Handle("POST /v1/telemetry/client-performance", auth(http.HandlerFunc(s.performance)))
+	mux.Handle("GET /v1/subscription/entitlements", auth(http.HandlerFunc(s.subscriptionEntitlements)))
 	return s.requestTrace(s.cors(mux))
 }
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {

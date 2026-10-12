@@ -1,14 +1,24 @@
 import { OAuthClient, type OAuthSession } from "@atproto/oauth-client-browser";
-import { getOAuthClientForScopes, getStoredOAuthDid, localLoopbackCanonicalHref } from "@/lib/auth";
+import { getOAuthClientForScopes, getSession, getStoredOAuthDid, localLoopbackCanonicalHref } from "@/lib/auth";
+import { requirePro } from "@/lib/proEntitlements";
 import { atprotoScopesForNetwork, authorizationScopesForClient } from "@/lib/atprotoNetwork";
 import { observeOAuthScopeErrors } from "@/lib/oauthScopeRecovery";
 import { BRAND_ACCOUNT_OAUTH_SCOPES } from "./brandAccountScopes";
 import { BRAND_LINK_STATE_PREFIX, cancelBrandLinkIntent, createBrandLinkIntent, listBrandAccounts, removeBrandAccount } from "./brandAccountStorage";
 export { listBrandAccounts, onBrandAccountsChanged } from "./brandAccountStorage";
 function requireOwner(ownerDid: string): void { if (getStoredOAuthDid() !== ownerDid) throw new Error("Your Personal Account Changed. Reopen Brand Accounts."); }
+async function requireOwnerPro(ownerDid: string): Promise<void> {
+  requireOwner(ownerDid);
+  const ownerSession = await getSession();
+  requireOwner(ownerDid);
+  if (!ownerSession || ownerSession.did !== ownerDid) throw new Error("Your Personal Account Changed. Reopen Brand Accounts.");
+  await requirePro(ownerSession);
+  requireOwner(ownerDid);
+}
 export async function restoreBrandAccount(ownerDid: string, brandDid: string): Promise<OAuthSession> {
   requireOwner(ownerDid);
   if (brandDid === ownerDid || !listBrandAccounts(ownerDid).includes(brandDid)) throw new Error("This Brand Account Is Not Linked To Your Personal Account.");
+  await requireOwnerPro(ownerDid);
   const client = await getOAuthClientForScopes(BRAND_ACCOUNT_OAUTH_SCOPES); requireOwner(ownerDid);
   // BrowserOAuthClient.restore changes the global active-account hint. The public
   // core method restores the same SDK-managed DID session without switching it.
@@ -19,6 +29,7 @@ export async function restoreBrandAccount(ownerDid: string, brandDid: string): P
 }
 export async function linkBrandAccount(ownerDid: string, handle: string): Promise<void> {
   requireOwner(ownerDid); if (!handle.trim() || handle.trim() === ownerDid) throw new Error("Enter A Different Brand Account Handle Or DID.");
+  await requireOwnerPro(ownerDid);
   const canonical = localLoopbackCanonicalHref(window.location.href);
   if (canonical) { window.location.replace(canonical); return; }
   const client = await getOAuthClientForScopes(BRAND_ACCOUNT_OAUTH_SCOPES); requireOwner(ownerDid);
