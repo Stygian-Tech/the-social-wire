@@ -14,6 +14,7 @@ final class SocialWireGatewayClient {
     private let auth: ATProtoOAuthService
     private let baseURL: URL
     private let urlSession: URLSession
+    private let transport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?
 
     nonisolated static let wireViewerModerationNSIDs = [
         "app.bsky.actor.getPreferences",
@@ -90,11 +91,13 @@ final class SocialWireGatewayClient {
     init(
         auth: ATProtoOAuthService,
         baseURL: URL = SocialWireAPIEnvironment.baseURL,
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .shared,
+        transport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
     ) {
         self.auth = auth
         self.baseURL = baseURL
         self.urlSession = urlSession
+        self.transport = transport
     }
 
     nonisolated static func preferencesSyncRequest(
@@ -638,28 +641,7 @@ final class SocialWireGatewayClient {
         guard let url = components.url else { throw SocialWireError.invalidURL }
         let session = try await auth.validSession()
 
-        func request() async throws -> URLRequest {
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
-            try await authorize(&request, session: session)
-            return request
-        }
-
-        var (bytes, response) = try await urlSession.bytes(for: request())
-        guard var http = response as? HTTPURLResponse else {
-            throw SocialWireError.badResponse("Missing gateway response.")
-        }
-        await captureNonces(from: http, session: session)
-        if shouldRetryNonceChallenge(http) {
-            bytes.task.cancel()
-            (bytes, response) = try await urlSession.bytes(for: request())
-            guard let retryHTTP = response as? HTTPURLResponse else {
-                throw SocialWireError.badResponse("Missing gateway response.")
-            }
-            http = retryHTTP
-            await captureNonces(from: http, session: session)
-        }
+        let (bytes, http) = try await authorizedStream(url: url, session: session)
         guard (200 ..< 300).contains(http.statusCode) else {
             bytes.task.cancel()
             throw SocialWireError.badResponse("Age-based read options are unavailable. Please try again.")
@@ -765,31 +747,7 @@ final class SocialWireGatewayClient {
 
         let session = try await auth.validSession()
 
-        func authorizedStreamRequest() async throws -> URLRequest {
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
-            try await authorize(&request, session: session)
-            return request
-        }
-
-        var (bytes, response) = try await urlSession.bytes(for: authorizedStreamRequest())
-        guard var http = response as? HTTPURLResponse else {
-            throw SocialWireError.badResponse("Missing gateway response.")
-        }
-        await captureNonces(from: http, session: session)
-
-        // Cold-origin DPoP-nonce challenge: the server replies 401/400 with a fresh DPoP-Nonce when
-        // the client hasn't seeded one yet. Re-authorize with that nonce and retry once (mirrors
-        // authorizedRequest); otherwise a first-launch challenge would fail the whole bootstrap.
-        if shouldRetryNonceChallenge(http) {
-            (bytes, response) = try await urlSession.bytes(for: authorizedStreamRequest())
-            guard let retryHttp = response as? HTTPURLResponse else {
-                throw SocialWireError.badResponse("Missing gateway response.")
-            }
-            http = retryHttp
-            await captureNonces(from: http, session: session)
-        }
+        let (bytes, http) = try await authorizedStream(url: url, session: session)
 
         guard (200 ..< 300).contains(http.statusCode) else {
             throw SocialWireError.badResponse("Bootstrap stream failed (\(http.statusCode)).")
@@ -797,6 +755,32 @@ final class SocialWireGatewayClient {
 
         for try await line in bytes.lines {
             try Self.consumeBootstrapLine(line, onEvent: onEvent)
+        }
+    }
+
+    private func authorizedStream(url: URL, session: AuthSession) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+        try await auth.dpop.withNonceSequence(for: session.pdsURL, exclusive: false) { [self] in
+            for attempt in 0 ..< 2 {
+                try Task.checkCancellation()
+                guard auth.session?.did == session.did, auth.session?.accessToken == session.accessToken else {
+                    throw ReadStateSyncFailure.accountChanged
+                }
+                var request = URLRequest(url: url)
+                request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+                try await authorize(&request, session: session)
+                let (bytes, raw) = try await urlSession.bytes(for: request)
+                guard let response = raw as? HTTPURLResponse else {
+                    bytes.task.cancel()
+                    throw SocialWireError.badResponse("Missing gateway response.")
+                }
+                await captureNonces(from: response, session: session)
+                if attempt == 0, shouldRetryNonceChallenge(response) {
+                    bytes.task.cancel()
+                    continue
+                }
+                return (bytes, response)
+            }
+            throw SocialWireError.badResponse("Gateway stream exhausted nonce recovery.")
         }
     }
 
@@ -839,32 +823,29 @@ final class SocialWireGatewayClient {
         includesCircleGraphProofs: Bool = false,
         expectedViewer: String? = nil
     ) async throws -> GatewayHTTPResult {
+        // A usable server snapshot needs no upstream proofs. Prepare the expensive
+        // nonce pool only after an explicit cache-miss challenge.
         let first = try await authorizedRequest(
-            method: "GET",
-            path: path,
-            query: query,
-            body: nil,
-            contentType: nil,
-            includesWireModerationProofs: includesWireModerationProofs,
-            includesCircleGraphProofs: includesCircleGraphProofs,
+            method: "GET", path: path, query: query, body: nil, contentType: nil,
             expectedViewer: expectedViewer
         )
-        guard !(200 ..< 300).contains(first.statusCode),
-              let envelope = try? JSONDecoder().decode(AppViewErrorEnvelopeDTO.self, from: first.body),
-              envelope.retryable
-        else {
-            return first
-        }
+        let requiresProofs = Self.requiresUpstreamProofs(first)
+            && (includesWireModerationProofs || includesCircleGraphProofs)
+        let retryable = !(200 ..< 300).contains(first.statusCode)
+            && (try? JSONDecoder().decode(AppViewErrorEnvelopeDTO.self, from: first.body))?.retryable == true
+        guard requiresProofs || retryable else { return first }
         return try await authorizedRequest(
-            method: "GET",
-            path: path,
-            query: query,
-            body: nil,
-            contentType: nil,
-            includesWireModerationProofs: includesWireModerationProofs,
-            includesCircleGraphProofs: includesCircleGraphProofs,
+            method: "GET", path: path, query: query, body: nil, contentType: nil,
+            includesWireModerationProofs: requiresProofs && includesWireModerationProofs,
+            includesCircleGraphProofs: requiresProofs && includesCircleGraphProofs,
             expectedViewer: expectedViewer
         )
+    }
+
+    nonisolated static func requiresUpstreamProofs(_ response: GatewayHTTPResult) -> Bool {
+        struct Challenge: Decodable { let error: String }
+        return response.statusCode == 428
+            && (try? JSONDecoder().decode(Challenge.self, from: response.body))?.error == "UpstreamProofRequired"
     }
 
     private func appViewFeedError(
@@ -889,12 +870,22 @@ final class SocialWireGatewayClient {
               url.path == "/v1/podcasts/media" else { throw SocialWireError.invalidURL }
         let session = try await auth.validSession()
         guard session.did == expectedViewer else { throw ReadStateSyncFailure.accountChanged }
-        if let challenge { await captureNonces(from: challenge, session: session) }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("audio/*", forHTTPHeaderField: "Accept")
-        try await authorize(&request, session: session)
-        return request
+        return try await auth.dpop.withNonceSequence(for: session.pdsURL) { [self] in
+            guard auth.session?.did == session.did, auth.session?.accessToken == session.accessToken else {
+                throw ReadStateSyncFailure.accountChanged
+            }
+            if let challenge { await captureNonces(from: challenge, session: session) }
+            let receipt = try await warmSessionAttestation(session: session)
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("audio/*", forHTTPHeaderField: "Accept")
+            try await authorize(&request, session: session)
+            if let receipt { request.setValue(receipt, forHTTPHeaderField: ATProtoSessionDPoP.receiptHeaderName) }
+            // The download dispatches later outside this client. Its attestation
+            // must not consume a nonce reserved by another feed's prepared pool.
+            request.setValue("true", forHTTPHeaderField: ATProtoSessionDPoP.preparedUpstreamDPoPHeaderName)
+            return request
+        }
     }
 
     func podcastAsset(url: URL, expectedViewer: String) async throws -> Data {
@@ -962,84 +953,85 @@ final class SocialWireGatewayClient {
 
         let session = try await auth.validSession()
         if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
-        let wireModerationProofs = includesWireModerationProofs
-            ? try await wireViewerModerationProofPool(session: session)
-            : nil
-        let circleGraphProofs = includesCircleGraphProofs
-            ? try await circleViewerGraphProofPool(session: session)
-            : nil
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body {
-            request.httpBody = body
-        }
-        if let contentType {
-            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        }
+        return try await auth.dpop.withNonceSequence(for: session.pdsURL, exclusive: includesWireModerationProofs || includesCircleGraphProofs) { [self] in
+            let prepared = includesWireModerationProofs || includesCircleGraphProofs
+            for ceremony in 0 ..< (prepared ? 2 : 1) {
+                try Task.checkCancellation()
+                // Attest before advancing the PDS nonce chain. The receipt prevents
+                // Gateway's getSession check from consuming a route proof's nonce.
+                let receipt = prepared ? try await warmSessionAttestation(session: session) : nil
+                let wireProofs = includesWireModerationProofs
+                    ? try await wireViewerModerationProofPool(session: session) : nil
+                let circleProofs = includesCircleGraphProofs
+                    ? try await circleViewerGraphProofPool(session: session) : nil
 
-        try await authorize(&request, session: session)
-        if let wireModerationProofs {
-            request.setValue(wireModerationProofs, forHTTPHeaderField: Self.wireModerationDPoPHeader)
-        }
-        if let circleGraphProofs {
-            request.setValue(circleGraphProofs, forHTTPHeaderField: Self.circleGraphDPoPHeader)
-        }
+                @MainActor func signedRequest() async throws -> URLRequest {
+                    try Task.checkCancellation()
+                    guard auth.session?.did == session.did,
+                          auth.session?.accessToken == session.accessToken else {
+                        throw ReadStateSyncFailure.accountChanged
+                    }
+                    var request = URLRequest(url: url)
+                    request.httpMethod = method
+                    request.setValue("application/json", forHTTPHeaderField: "Accept")
+                    request.httpBody = body
+                    if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+                    if let tag = trimmedEntityTag(ifNoneMatch) { request.setValue(tag, forHTTPHeaderField: "If-None-Match") }
+                    try await authorize(&request, session: session)
+                    if let wireProofs { request.setValue(wireProofs, forHTTPHeaderField: Self.wireModerationDPoPHeader) }
+                    if let circleProofs { request.setValue(circleProofs, forHTTPHeaderField: Self.circleGraphDPoPHeader) }
+                    if let receipt { request.setValue(receipt, forHTTPHeaderField: ATProtoSessionDPoP.receiptHeaderName) }
+                    if prepared { request.setValue("true", forHTTPHeaderField: ATProtoSessionDPoP.preparedUpstreamDPoPHeaderName) }
+                    return request
+                }
 
-        let trimmedNM = trimmedEntityTag(ifNoneMatch)
-        if let trimmedNM, !trimmedNM.isEmpty {
-            request.setValue(trimmedNM, forHTTPHeaderField: "If-None-Match")
-        }
-
-        let (firstData, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw SocialWireError.badResponse("Missing gateway response.")
-        }
-
-        await captureNonces(from: http, session: session)
-
-        let initial = GatewayHTTPResult(
-            statusCode: http.statusCode,
-            etagHeader: http.value(forHTTPHeaderField: "ETag"),
-            requestIdHeader: http.value(forHTTPHeaderField: "X-Request-ID"),
-            body: firstData
-        )
-
-        if shouldRetryNonceChallenge(http) {
-            var retry = URLRequest(url: url)
-            retry.httpMethod = method
-            retry.setValue("application/json", forHTTPHeaderField: "Accept")
-            if let body {
-                retry.httpBody = body
+                var data: Data = Data()
+                var response: HTTPURLResponse?
+                for nonceAttempt in 0 ..< 2 {
+                    let (received, raw) = try await send(try await signedRequest())
+                    guard let http = raw as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing gateway response.") }
+                    data = received; response = http
+                    await captureNonces(from: http, session: session)
+                    if nonceAttempt == 0, shouldRetryNonceChallenge(http) { continue }
+                    break
+                }
+                guard let response else { throw SocialWireError.badResponse("Missing gateway response.") }
+                if prepared, ceremony == 0, ATProtoSessionDPoP.isAttestationRequired(response) { continue }
+                return GatewayHTTPResult(statusCode: response.statusCode,
+                    etagHeader: response.value(forHTTPHeaderField: "ETag"),
+                    requestIdHeader: response.value(forHTTPHeaderField: "X-Request-ID"), body: data)
             }
-            if let contentType {
-                retry.setValue(contentType, forHTTPHeaderField: "Content-Type")
-            }
-            try await authorize(&retry, session: session)
-            if let wireModerationProofs {
-                retry.setValue(wireModerationProofs, forHTTPHeaderField: Self.wireModerationDPoPHeader)
-            }
-            if let circleGraphProofs {
-                retry.setValue(circleGraphProofs, forHTTPHeaderField: Self.circleGraphDPoPHeader)
-            }
-            if let trimmedNM, !trimmedNM.isEmpty {
-                retry.setValue(trimmedNM, forHTTPHeaderField: "If-None-Match")
-            }
-
-            let (retryData, retryResponse) = try await urlSession.data(for: retry)
-            guard let retryHttp = retryResponse as? HTTPURLResponse else {
-                throw SocialWireError.badResponse("Missing gateway response.")
-            }
-            await captureNonces(from: retryHttp, session: session)
-            return GatewayHTTPResult(
-                statusCode: retryHttp.statusCode,
-                etagHeader: retryHttp.value(forHTTPHeaderField: "ETag"),
-                requestIdHeader: retryHttp.value(forHTTPHeaderField: "X-Request-ID"),
-                body: retryData
-            )
+            throw SocialWireError.badResponse("Gateway session attestation did not complete.")
         }
+    }
 
-        return initial
+    private func warmSessionAttestation(session: AuthSession) async throws -> String? {
+        var components = URLComponents(url: baseURL.appending(path: "/xrpc/app.thesocialwire.appview.listEntries"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "authorDid", value: session.did), URLQueryItem(name: "limit", value: "1")]
+        guard let url = components?.url else { throw SocialWireError.invalidURL }
+        for attempt in 0 ..< 2 {
+            try Task.checkCancellation()
+            guard auth.session?.did == session.did, auth.session?.accessToken == session.accessToken else {
+                throw ReadStateSyncFailure.accountChanged
+            }
+            var request = URLRequest(url: url)
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            try await authorize(&request, session: session)
+            let (_, raw) = try await send(request)
+            guard let response = raw as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing session-attestation response.") }
+            await captureNonces(from: response, session: session)
+            if attempt == 0, shouldRetryNonceChallenge(response) { continue }
+            guard (200 ..< 300).contains(response.statusCode) else {
+                throw SocialWireError.badResponse("Session-attestation preflight failed (\(response.statusCode)).")
+            }
+            return ATProtoSessionDPoP.receipt(from: response)
+        }
+        throw SocialWireError.badResponse("Gateway session attestation did not complete.")
+    }
+
+    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        if let transport { return try await transport(request) }
+        return try await urlSession.data(for: request)
     }
 
     private func wireViewerModerationProofPool(session: AuthSession) async throws -> String {
@@ -1053,7 +1045,8 @@ final class SocialWireGatewayClient {
     private func pdsProofPool(nsids: [String], session: AuthSession) async throws -> String {
         var proofs: [String] = []
         for nsid in nsids {
-            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
+            try Task.checkCancellation()
+            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession, transport: transport)
             let url = session.pdsURL.appending(path: "xrpc/\(nsid)")
             proofs.append(
                 try await auth.dpop.proof(

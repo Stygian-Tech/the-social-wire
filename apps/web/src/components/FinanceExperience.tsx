@@ -1,5 +1,7 @@
 "use client";
 
+import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
+
 import { useLayoutEffect, useRef, useState } from "react";
 import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useFinanceFeed } from "@/hooks/useFinanceFeed";
@@ -20,6 +22,7 @@ import { OUTBOUND_WINDOW_FEATURES } from "@/lib/outboundLinks";
 export default function FinanceExperience({ feedID = "finance", onFeedChange }: { feedID?: string; onFeedChange?: (id: string) => void }) {
   const { preferences, setHideFinancePerformance, setHideFinanceCrypto } = useFeedDisplayPreferences();
   const finance = useFinanceFeed(feedID, preferences.hideFinanceCrypto);
+  useFeedFirstContentTiming(`finance:${feedID}:${finance.viewerDID ?? "public"}`, finance.items.length > 0, !finance.feed.isFetchedAfterMount);
   const definitions = (finance.catalog?.data?.feeds ?? []).filter(feed => !preferences.hideFinanceCrypto || feed.assetKind !== "crypto");
   const [companySearch, setCompanySearch] = useState("");
   const selectedFeed = definitions.find(feed => feed.id === feedID);

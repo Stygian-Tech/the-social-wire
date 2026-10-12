@@ -49,6 +49,9 @@ func (m *ModerationService) Require(ctx context.Context, auth *gatewaycore.AuthC
 		return fresh, nil
 	}
 	if err != nil {
+		if strings.TrimSpace(rawProofs) == "" {
+			return nil, ErrUpstreamProofRequired
+		}
 		if stale := m.Cache.Usable(auth.DID, now); stale != nil {
 			return stale, nil
 		}

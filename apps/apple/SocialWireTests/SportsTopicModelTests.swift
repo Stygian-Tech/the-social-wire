@@ -27,6 +27,18 @@ struct SportsTopicModelTests {
         #expect(!topic.isLoading)
     }
 
+    @Test("refresh loads stories after reconciliation without obsolete cancelled results")
+    func cancelledRefresh() async throws {
+        let topic = fixture()
+        let request = Task { await topic.refresh(language: "en") }
+        try await Task.sleep(for: .milliseconds(10))
+        request.cancel()
+        await request.value
+        #expect(topic.page == nil)
+        #expect(topic.error == nil)
+        #expect(!topic.isLoading)
+    }
+
     private func fixture() -> SportsTopicModel {
         let auth = ATProtoOAuthService()
         let configuration = URLSessionConfiguration.ephemeral

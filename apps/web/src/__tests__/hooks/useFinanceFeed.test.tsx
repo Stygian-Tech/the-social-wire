@@ -91,3 +91,86 @@ it("isolates hidden crypto generations and never reuses the visible continuation
  expect(requested.filter(request => request.hideCrypto).every(request => request.cursor !== "visible-cursor")).toBe(true);
  expect(requested.some(request => request.hideCrypto && request.cursor === "hidden-cursor")).toBe(true);
 });
+
+it("loads server news while optional selection controls are still pending", async () => {
+ let finish!: (items: FinanceSelection[]) => void;
+ const pending = new Promise<FinanceSelection[]>(resolve => { finish = resolve; });
+ mock.module("@/lib/FinanceFeedClient", () => ({ ...realFinance,
+   listFinanceSelections: () => pending,
+   getFinance: async () => { requests++; return page; },
+ }));
+ const { result } = renderHook(() => useFinanceFeed(), { wrapper });
+ await waitFor(() => expect(result.current.items).toHaveLength(1));
+ expect(result.current.selectionsLoading).toBe(true);
+ expect(requests).toBe(1);
+ await act(async () => { finish([{ kind: "sector", reference: "technology", createdAt: "now", updatedAt: "now" }]); });
+ await waitFor(() => expect(result.current.selectionsLoading).toBe(false));
+ expect(requests).toBe(1);
+});
+
+it("keeps the cold generation available on remount after initial controls resolve", async () => {
+ let finish!: (items: FinanceSelection[]) => void;
+ const pending = new Promise<FinanceSelection[]>(resolve => { finish = resolve; });
+ mock.module("@/lib/FinanceFeedClient", () => ({ ...realFinance, listFinanceSelections: () => pending, getFinance: async () => { requests++; return page; } }));
+ const first = renderHook(() => useFinanceFeed(), { wrapper });
+ await waitFor(() => expect(first.result.current.items).toHaveLength(1));
+ await act(async () => { finish([{ kind: "sector", reference: "technology", createdAt: "now", updatedAt: "now" }]); });
+ await waitFor(() => expect(first.result.current.selectionsLoading).toBe(false));
+ first.unmount();
+ const second = renderHook(() => useFinanceFeed(), { wrapper });
+ await waitFor(() => expect(second.result.current.items).toHaveLength(1));
+ expect(requests).toBe(1);
+});
+
+it("restarts only page one when a different client's controls change", async () => {
+ const calls: { cursor?: string; refreshSelections?: boolean }[] = [];
+ mock.module("@/lib/FinanceFeedClient", () => ({ ...realFinance, listFinanceSelections: async () => records,
+   getFinance: async (args: { cursor?: string; refreshSelections?: boolean }) => { calls.push(args); return { ...page, generationId: args.refreshSelections ? "external" : "old", cursor: args.cursor ? undefined : "continuation" }; },
+ }));
+ const { result } = renderHook(() => useFinanceFeed(), { wrapper });
+ await waitFor(() => expect(result.current.items).toHaveLength(1));
+ await act(async () => { await result.current.feed.fetchNextPage(); });
+ await waitFor(() => expect(result.current.feed.data?.pages).toHaveLength(2));
+ await act(async () => { client.setQueryData(["financeSelections", oauth.did, 0], [{ kind: "sector", reference: "technology", createdAt: "now", updatedAt: "now" }]); });
+ await waitFor(() => expect(result.current.feed.data?.pages[0]?.generationId).toBe("external"));
+ expect(result.current.feed.data?.pages).toHaveLength(1);
+ expect(calls.at(-1)?.cursor).toBeUndefined();
+ expect(calls.at(-1)?.refreshSelections).toBe(true);
+});
+
+it("coalesces overlapping explicit first-page refreshes", async () => {
+ let finish!: (value: FinancePage) => void;
+ const pending = new Promise<FinancePage>(resolve => { finish = resolve; });
+ let refreshes = 0;
+ mock.module("@/lib/FinanceFeedClient", () => ({ ...realFinance, listFinanceSelections: async () => records,
+   getFinance: async (args: { refreshSelections?: boolean }) => { if (args.refreshSelections) { refreshes++; return pending; } return page; },
+ }));
+ const { result } = renderHook(() => useFinanceFeed(), { wrapper });
+ await waitFor(() => expect(result.current.items).toHaveLength(1));
+ let first!: Promise<void>; let second!: Promise<void>;
+ act(() => { first = result.current.refresh(); second = result.current.refresh(); });
+ await waitFor(() => expect(refreshes).toBe(1));
+ await act(async () => { finish({ ...page, generationId: "refreshed" }); await Promise.all([first, second]); });
+ expect(refreshes).toBe(1);
+ expect(result.current.feed.data?.pages).toHaveLength(1);
+});
+
+it("publishes manual-refresh content before delayed controls then reconciles another client's interests", async () => {
+ let finish!: (items: FinanceSelection[]) => void;
+ const pending = new Promise<FinanceSelection[]>(resolve => { finish = resolve; });
+ let controlReads = 0, changed = false;
+ mock.module("@/lib/FinanceFeedClient", () => ({ ...realFinance,
+   listFinanceSelections: async () => { controlReads++; return controlReads === 1 ? [] : pending; },
+   getFinance: async (args: { refreshSelections?: boolean }) => ({ ...page, generationId: changed ? "reconciled" : args.refreshSelections ? "fresh" : "old" }),
+ }));
+ const { result } = renderHook(() => useFinanceFeed(), { wrapper });
+ await waitFor(() => expect(result.current.feed.data?.pages[0]?.generationId).toBe("old"));
+ await act(async () => { await result.current.refresh(); });
+ await waitFor(() => expect(result.current.feed.data?.pages[0]?.generationId).toBe("fresh"));
+ expect(controlReads).toBe(2);
+ expect(result.current.selections).toEqual([]);
+ await act(async () => { changed = true; finish([{ kind: "sector", reference: "technology", createdAt: "now", updatedAt: "now" }]); });
+ await waitFor(() => expect(result.current.feed.data?.pages[0]?.generationId).toBe("reconciled"));
+ expect(result.current.selections).toHaveLength(1);
+ expect(result.current.feed.data?.pages).toHaveLength(1);
+});

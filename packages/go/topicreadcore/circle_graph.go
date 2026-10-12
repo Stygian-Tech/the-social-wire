@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"hash/fnv"
 	"sort"
 	"strings"
@@ -93,6 +94,9 @@ func (s *CircleGraphService) Snapshot(ctx context.Context, viewer string, exclud
 		return CircleGraphResult{Graph: *cached}, nil
 	}
 	graph, err := s.build(ctx, viewer, exclusions, now)
+	if errors.Is(err, ErrUpstreamProofRequired) {
+		return CircleGraphResult{}, err
+	}
 	if err == nil {
 		if s.Cache != nil {
 			_ = s.Cache.StoreGraph(ctx, graph, exclusions, now)

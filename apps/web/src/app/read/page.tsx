@@ -29,7 +29,7 @@ function ReadIndexContent() {
   const list = params.get("list");
   const folder = params.get("folder");
   const feed = params.get("feed");
-  const catalog = useWireFeedCatalog();
+  const catalog = useWireFeedCatalog({ enabled: feed === "wire" });
   const [selectionState, setSelectionState] = useState<{
     loaded: boolean;
     feed: ReaderFeedSelection | null;

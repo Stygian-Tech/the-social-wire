@@ -10,11 +10,11 @@ import (
 )
 
 func (s *SportsStore) Catalog(ctx context.Context) ([]sportscore.Entity, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT payload::text FROM sports_entities ORDER BY entity_id LIMIT 50000`)
+	rows, closeRows, err := corpuscore.QueryRows(ctx, s.DB, `SELECT payload::text FROM sports_entities ORDER BY entity_id LIMIT 50000`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows()
 	out := []sportscore.Entity{}
 	count := 0
 	for rows.Next() {

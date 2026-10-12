@@ -1,3 +1,4 @@
+import { gatewayFetchWithProofChallenge } from "@/lib/upstreamProofChallenge";
 import { feedResponseError } from "@/lib/feedResponseError";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
@@ -5,7 +6,6 @@ import { createUpstreamDpopProofPool } from "@/lib/latrGatewayUpstreamDpop";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import {
   gatewayBaseUrl,
-  gatewayFetch,
 } from "@/lib/socialWireGatewayClient";
 import { socialWireXrpc } from "@/lib/socialWireXrpc";
 import type { EntryListItem } from "@/lib/atprotoClient";
@@ -138,16 +138,15 @@ export async function discoveryGatewayFetch(args: {
   if (!args.oauthSession) {
     return publicGatewayFetch(args.path, { method: "GET", signal: args.signal });
   }
-  const moderationDpopProofPool =
-    args.moderationDpopProofPool ??
-    (await createWireModerationDpopProofPool(args.oauthSession));
-  return gatewayFetch(args.oauthSession, args.path, {
-    method: "GET",
-    signal: args.signal,
-    headers: {
-      [WIRE_MODERATION_DPOP_HEADER]: moderationDpopProofPool,
-    },
-  });
+  return gatewayFetchWithProofChallenge(
+    args.oauthSession,
+    args.path,
+    { method: "GET", signal: args.signal },
+    WIRE_MODERATION_DPOP_HEADER,
+    () => args.moderationDpopProofPool
+      ? Promise.resolve(args.moderationDpopProofPool)
+      : createWireModerationDpopProofPool(args.oauthSession!),
+  );
 }
 
 const publicResponseError = feedResponseError;

@@ -14,7 +14,8 @@ import (
 
 func TestSportsPostgresSnapshotLiveChangesAndResolverGate(t *testing.T) {
 	db := selectionDB(t)
-	ctx := context.Background()
+	dbPhases := map[string]int{}
+	ctx := WithFeedPhaseObserver(context.Background(), func(phase string, _ time.Duration) { dbPhases[phase]++ })
 	now := time.Now().UTC().Truncate(time.Second)
 	id := "88888888-2222-2222-2222-222222222222"
 	entity := sportscore.Entity{ID: "topic-sports-team", Name: "Fixture Football Club", Kind: "team", CompetitionIDs: []string{}, Aliases: []string{}, ProviderIDs: map[string]string{}, Memberships: []sportscore.Membership{}, Active: true}
@@ -52,12 +53,18 @@ func TestSportsPostgresSnapshotLiveChangesAndResolverGate(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Cursor == nil {
 		t.Fatal(page, err)
 	}
+	if fixture.batchCalls != 1 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 {
+		t.Fatal("first-page batch budget", fixture.batchCalls, fixture.itemCalls)
+	}
 	changed := fixture.items["y"]
 	changed.Title = "A soup recipe for dinner"
 	fixture.items["y"] = changed
 	next, err := s.Page(ctx, *page.Cursor, 1, "en", "", false, now, "sports", nil)
 	if err != nil || len(next.Items) != 1 || next.Items[0].Story.ItemID != "z" || next.Cursor != nil {
 		t.Fatal(next, err)
+	}
+	if fixture.batchCalls != 2 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 2 || dbPhases["db-query"] != 2 {
+		t.Fatal("continuation batch budget", fixture.batchCalls, fixture.itemCalls)
 	}
 	outside := "outside-us"
 	if _, err = s.Page(ctx, *page.Cursor, 1, "en", "", false, now, "sports", &outside); !errors.Is(err, ErrInvalidCursor) {

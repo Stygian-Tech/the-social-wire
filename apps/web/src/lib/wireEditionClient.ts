@@ -1,9 +1,9 @@
+import { gatewayFetchWithProofChallenge } from "@/lib/upstreamProofChallenge";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import { createUpstreamDpopProofPool } from "@/lib/latrGatewayUpstreamDpop";
 import {
   gatewayBaseUrl,
-  gatewayFetch,
 } from "@/lib/socialWireGatewayClient";
 import { socialWireXrpc } from "@/lib/socialWireXrpc";
 import {
@@ -102,17 +102,13 @@ export async function getWireEdition(args: {
 
   let response: Response;
   if (args.oauthSession) {
-    const proofPool =
-      args.moderationDpopProofPool ??
-      (await createUpstreamDpopProofPool(args.oauthSession, [
-        ...WIRE_MODERATION_PROOF_SPECS,
-      ]));
-    response = await gatewayFetch(args.oauthSession, path, {
+    response = await gatewayFetchWithProofChallenge(args.oauthSession, path, {
       method: "GET",
       signal: args.signal,
       cache: args.bypassCache ? "no-store" : "default",
-      headers: { [WIRE_MODERATION_DPOP_HEADER]: proofPool },
-    });
+    }, WIRE_MODERATION_DPOP_HEADER, () => args.moderationDpopProofPool
+      ? Promise.resolve(args.moderationDpopProofPool)
+      : createUpstreamDpopProofPool(args.oauthSession!, [...WIRE_MODERATION_PROOF_SPECS]));
   } else {
     response = await publicGatewayFetch(path, args.signal, args.bypassCache);
   }

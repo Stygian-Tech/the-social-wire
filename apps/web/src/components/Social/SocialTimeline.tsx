@@ -1,9 +1,10 @@
 "use client";
 
+import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
+
 import { RefreshCw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,7 +25,6 @@ export function SocialTimeline() {
   let routeError: string | undefined;
   try { feed = socialFeedFromSearchParams(params); } catch (error) { routeError = socialErrorMessage(error); }
   const { session, signIn } = useAuth();
-  const queryClient = useQueryClient();
   const [reauthorizing, setReauthorizing] = useState(false);
   const [reauthorizeError, setReauthorizeError] = useState(false);
   const catalog = useBlueskySocialCatalog();
@@ -32,6 +32,7 @@ export function SocialTimeline() {
   const timeline = useBlueskySocialTimeline(feed, moderation);
   const selected = catalog.data?.feeds.find(item => item.kind === feed.kind && item.uri === feed.uri) ?? feed;
   const posts = moderation ? flattenSocialPages(timeline.data?.pages ?? []).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
+  useFeedFirstContentTiming(`social:${session?.did}:${feed.kind}:${feed.uri ?? ""}`, !!moderation && posts.length > 0 && !catalog.isError && !timeline.isError, !timeline.isFetchedAfterMount);
   const error = routeError || (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined);
   const loading = !error && (catalog.isPending || timeline.isPending);
   const scrollContainer = useSocialFeedScroll(session?.did, `${feed.kind}:${feed.uri ?? ""}`, !loading && !error && !!moderation);
@@ -47,7 +48,7 @@ export function SocialTimeline() {
   async function refresh() {
     const settings = await catalog.refetch();
     if (!settings.isError && session) {
-      await queryClient.invalidateQueries({ queryKey: ["blueskySocial", session.did, "timeline"] });
+      await timeline.refreshFirstPage(settings.data?.moderation);
     }
   }
 

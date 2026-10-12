@@ -412,9 +412,7 @@ struct NewsShellView: View {
             let topic = appModel.sportsTopic
             topic.bind(viewer: appModel.viewerDID)
             await topic.loadCatalog()
-            async let stories: Void = topic.load(language: Locale.current.language.languageCode?.identifier ?? "en")
-            async let events: Void = topic.loadEvents()
-            _ = await (stories, events)
+            await topic.refresh(language: Locale.current.language.languageCode?.identifier ?? "en")
         case .subscribed, .following, .podcasts:
             break
         }

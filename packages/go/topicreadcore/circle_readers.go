@@ -23,8 +23,11 @@ type CircleReader struct {
 }
 
 func (r *CircleReader) ViewerFollows(ctx context.Context, viewer string) (FollowList, error) {
-	if r.FollowProof == "" || r.Auth.DID != viewer {
+	if r.Auth.DID != viewer {
 		return FollowList{}, ErrUnavailable
+	}
+	if r.FollowProof == "" {
+		return FollowList{}, ErrUpstreamProofRequired
 	}
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()

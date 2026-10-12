@@ -102,7 +102,7 @@ function canDisplayCatalogAvatar(decision: ModerationDecision): boolean {
   });
 }
 
-export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal, options: { includeFeeds?: boolean } = {}): Promise<BlueskySocialCatalog> {
+export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal, options: { includeFeeds?: boolean; onReady?: (catalog: BlueskySocialCatalog) => void } = {}): Promise<BlueskySocialCatalog> {
   const agent = createAuthenticatedAppViewAgent(session);
   const preferences = await agent.getPreferences();
   throwIfAborted(signal);
@@ -134,6 +134,7 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   // Brand engagement needs viewer moderation without saved-feed navigation grants.
   if (options.includeFeeds === false) return { feeds: [], moderation };
   const feeds = socialFeedsFromPreferences(preferences.savedFeeds);
+  options.onReady?.({ feeds, moderation });
   const generators = feeds.filter(feed => feed.kind === "feed");
   const names = new Map<string, string>();
   const avatars = new Map<string, string>();
@@ -180,6 +181,7 @@ export async function getBlueskySocialPage(args: {
   moderation: ModerationOpts;
   cursor?: string;
   signal?: AbortSignal;
+  deferReplyHydration?: boolean;
 }): Promise<BlueskySocialPage> {
   if (args.moderation.userDid !== args.session.did) throw new Error("Your account changed. Please reload this feed.");
   if (args.feed.kind !== "following" && !validFeedUri(args.feed.uri, args.feed.kind)) throw new Error("This social feed link is invalid.");
@@ -192,7 +194,7 @@ export async function getBlueskySocialPage(args: {
     : args.feed.kind === "feed"
       ? await agent.app.bsky.feed.getFeed({ ...params, feed: args.feed.uri }, options)
       : await agent.app.bsky.feed.getListFeed({ ...params, list: args.feed.uri }, options);
-  return { ...response.data, feed: await hydrateSocialReplies(agent, response.data.feed, args.signal) };
+  return { ...response.data, feed: args.deferReplyHydration ? response.data.feed : await hydrateSocialReplies(agent, response.data.feed, args.signal) };
 }
 
 /** Keep repost identity while deduplicating overlaps between paginated results. */
@@ -222,4 +224,12 @@ export function socialErrorMessage(error: unknown): string {
   if (isMissingOAuthScope(error) || (error instanceof Error && error.message === SCOPE_RECOVERY_MESSAGE)) return SCOPE_RECOVERY_MESSAGE;
   if (error instanceof Error && /moderation settings|account changed|social feed link|Choose one social feed/.test(error.message)) return error.message;
   return "This social feed could not be loaded. Please retry.";
+}
+
+/** Optional reply decoration runs after the moderated timeline has painted. */
+export async function hydrateBlueskySocialPage(session: OAuthSession, page: BlueskySocialPage, signal: AbortSignal, moderation: ModerationOpts): Promise<BlueskySocialPage> {
+  const agent = createAuthenticatedAppViewAgent(session);
+  if (moderation.userDid !== session.did) throw new Error("Your account changed. Please reload this feed.");
+  agent.configureLabelers(moderation.prefs.labelers.map(labeler => labeler.did));
+  return { ...page, feed: await hydrateSocialReplies(agent, page.feed, signal) };
 }

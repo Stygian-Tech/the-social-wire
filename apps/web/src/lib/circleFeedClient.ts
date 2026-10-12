@@ -1,3 +1,4 @@
+import { gatewayFetchWithProofChallenge } from "@/lib/upstreamProofChallenge";
 import { feedResponseError } from "@/lib/feedResponseError";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
@@ -178,15 +179,15 @@ export async function getCircleEdition(args: {
   signal?: AbortSignal;
   bypassCache?: boolean;
 }): Promise<CircleEditionPage> {
-  const proofPool = await createUpstreamDpopProofPool(
-    args.oauthSession,
-    [...CIRCLE_GRAPH_PROOF_SPECS],
-  );
-  const request = circleEditionRequest({ ...args, proofPool });
-  const response = await gatewayFetch(
+  const request = circleEditionRequest({ ...args, proofPool: "" });
+  const headers = new Headers(request.init.headers);
+  headers.delete(CIRCLE_GRAPH_DPOP_HEADER);
+  const response = await gatewayFetchWithProofChallenge(
     args.oauthSession,
     request.path,
-    request.init,
+    { ...request.init, headers, signal: args.signal },
+    CIRCLE_GRAPH_DPOP_HEADER,
+    () => createUpstreamDpopProofPool(args.oauthSession, [...CIRCLE_GRAPH_PROOF_SPECS]),
   );
   if (!response.ok) {
     throw await circleResponseError(response, "Your Circle edition failed");

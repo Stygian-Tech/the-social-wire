@@ -4,6 +4,67 @@ import Foundation
 actor DPoPService {
     private var privateKey: P256.Signing.PrivateKey
     private var nonceByOrigin: [String: String] = [:]
+    private struct SequenceWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, any Error>
+        let exclusive: Bool
+    }
+    private var nonceSequenceOwners: [String: Set<UUID>] = [:]
+    private var exclusiveNonceOrigins: Set<String> = []
+    private var nonceSequenceWaiters: [String: [SequenceWaiter]] = [:]
+
+    /// Actor reentrancy alone cannot protect a nonce chain across network awaits.
+    /// Prepared pools own the origin exclusively through dispatch. Ordinary calls
+    /// share a lease, preserving concurrent detail/pagination without entering a pool.
+    func withNonceSequence<Value: Sendable>(
+        for url: URL,
+        exclusive: Bool = true,
+        operation: @MainActor @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let origin = originKey(for: url), id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if nonceSequenceOwners[origin] == nil
+                    || (!exclusive && !exclusiveNonceOrigins.contains(origin) && nonceSequenceWaiters[origin] == nil) {
+                    nonceSequenceOwners[origin, default: []].insert(id)
+                    if exclusive { exclusiveNonceOrigins.insert(origin) }
+                    continuation.resume()
+                } else {
+                    nonceSequenceWaiters[origin, default: []].append(SequenceWaiter(id: id, continuation: continuation, exclusive: exclusive))
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelSequenceWaiter(origin: origin, id: id) }
+        }
+        defer { releaseNonceSequence(origin: origin, id: id) }
+        try Task.checkCancellation()
+        return try await operation()
+    }
+
+    private func cancelSequenceWaiter(origin: String, id: UUID) {
+        guard let index = nonceSequenceWaiters[origin]?.firstIndex(where: { $0.id == id }),
+              let waiter = nonceSequenceWaiters[origin]?.remove(at: index) else { return }
+        waiter.continuation.resume(throwing: CancellationError())
+        if nonceSequenceWaiters[origin]?.isEmpty == true { nonceSequenceWaiters.removeValue(forKey: origin) }
+    }
+
+    private func releaseNonceSequence(origin: String, id: UUID) {
+        guard nonceSequenceOwners[origin]?.remove(id) != nil else { return }
+        guard nonceSequenceOwners[origin]?.isEmpty == true else { return }
+        nonceSequenceOwners.removeValue(forKey: origin)
+        exclusiveNonceOrigins.remove(origin)
+        guard var waiters = nonceSequenceWaiters.removeValue(forKey: origin), !waiters.isEmpty else { return }
+        repeat {
+            let next = waiters.removeFirst()
+            nonceSequenceOwners[origin, default: []].insert(next.id)
+            if next.exclusive { exclusiveNonceOrigins.insert(origin) }
+            next.continuation.resume()
+            if next.exclusive { break }
+        } while waiters.first?.exclusive == false
+        if !waiters.isEmpty { nonceSequenceWaiters[origin] = waiters }
+    }
 
     init(privateKey: P256.Signing.PrivateKey = P256.Signing.PrivateKey()) {
         self.privateKey = privateKey
@@ -66,7 +127,8 @@ actor DPoPService {
     func advancePdsDpopNonce(
         session: AuthSession,
         collection: String = "community.lexicon.bookmarks.bookmark",
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .shared,
+        transport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
     ) async {
         var listComponents = URLComponents(
             url: session.pdsURL.appending(path: "xrpc/com.atproto.repo.listRecords"),
@@ -79,21 +141,22 @@ actor DPoPService {
         ]
         if let listURL = listComponents?.url {
             let nonceBefore = nonceByOrigin[originKey(for: listURL)]
-            await sendPdsDpopProbe(method: "GET", url: listURL, session: session, urlSession: urlSession)
+            await sendPdsDpopProbe(method: "GET", url: listURL, session: session, urlSession: urlSession, transport: transport)
             if nonceByOrigin[originKey(for: listURL)] != nonceBefore {
                 return
             }
         }
 
         let putURL = session.pdsURL.appending(path: "xrpc/com.atproto.repo.putRecord")
-        await sendPdsDpopWriteProbe(url: putURL, session: session, collection: collection, urlSession: urlSession)
+        await sendPdsDpopWriteProbe(url: putURL, session: session, collection: collection, urlSession: urlSession, transport: transport)
     }
 
     private func sendPdsDpopWriteProbe(
         url: URL,
         session: AuthSession,
         collection: String,
-        urlSession: URLSession
+        urlSession: URLSession,
+        transport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?
     ) async {
         let body = """
         {"repo":"\(session.did)","collection":"\(collection)","rkey":"_dpop_nonce_probe","record":{"$type":"\(collection)"}}
@@ -103,6 +166,7 @@ actor DPoPService {
             url: url,
             session: session,
             urlSession: urlSession,
+            transport: transport,
             body: Data(body.utf8)
         )
     }
@@ -112,8 +176,14 @@ actor DPoPService {
         url: URL,
         session: AuthSession,
         urlSession: URLSession,
+        transport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?,
         body: Data? = nil
     ) async {
+        func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+            if let transport { return try await transport(request) }
+            return try await urlSession.data(for: request)
+        }
+
         func signedRequest() throws -> URLRequest {
             var request = URLRequest(url: url)
             request.httpMethod = method
@@ -131,7 +201,7 @@ actor DPoPService {
         }
 
         guard let initial = try? signedRequest(),
-              let (_, response) = try? await urlSession.data(for: initial),
+              let (_, response) = try? await send(initial),
               let http = response as? HTTPURLResponse
         else { return }
 
@@ -140,7 +210,7 @@ actor DPoPService {
         guard [401, 400].contains(http.statusCode),
               http.value(forHTTPHeaderField: "DPoP-Nonce") != nil,
               let retry = try? signedRequest(),
-              let (_, retryResponse) = try? await urlSession.data(for: retry),
+              let (_, retryResponse) = try? await send(retry),
               let retryHttp = retryResponse as? HTTPURLResponse
         else { return }
 
