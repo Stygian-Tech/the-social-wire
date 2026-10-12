@@ -1,3 +1,4 @@
+import * as Mobile from "@/hooks/use-mobile";
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { act, useState } from "react";
@@ -7,11 +8,13 @@ import * as playerModule from "@/components/Podcasts/PodcastPlayerProvider";
 import * as client from "@/lib/podcasts/client";
 import * as device from "@/lib/podcasts/deviceDownload";
 import * as offline from "@/lib/podcasts/offline";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { PodcastLibrary } from "@/components/Podcasts/PodcastLibrary";
 
 const restores: (() => void)[] = [];
 beforeEach(() => {
-  for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "DOMRect", "getComputedStyle"] as const) {
+  const mobile = spyOn(Mobile, "useIsMobile").mockReturnValue(false); restores.push(() => mobile.mockRestore());
+  for (const name of ["HTMLElement", "HTMLButtonElement", "Element", "Node", "MutationObserver", "DOMRect", "getComputedStyle"] as const) {
     const original = Object.getOwnPropertyDescriptor(globalThis, name);
     const value = name === "getComputedStyle" ? window.getComputedStyle.bind(window) : window[name];
     Object.defineProperty(globalThis, name, { configurable: true, value });
@@ -46,7 +49,7 @@ it("adds a tokenized private RSS feed without a public subscription write", asyn
     return { episodes: [] } as T;
   });
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   const add = screen.getByRole("button", { name: "Add a Podcast" });
   expect(add.className).toContain("min-h-7");
   expect(add.className).toContain("pointer-coarse:min-h-11");
@@ -80,7 +83,7 @@ it("seeks current episode notes without reloading and starts other episode notes
   const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
   const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path === "shows" ? { shows: [] } : { episodes: [current, other] }) as T);
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   fireEvent.click(await screen.findByRole("button", { name: "Show Notes: Current Episode" }));
   fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Seek to 0:30" }));
   expect(sought).toEqual([30]);
@@ -107,7 +110,7 @@ it("offers device audio saving from viewer-owned offline downloads without an OA
   const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([{ episode: item, downloadedAt: "2026-10-05", bytes: 10 }]);
   const save = spyOn(device, "savePodcastAudioToDevice").mockResolvedValue("saved");
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => save.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   await waitFor(() => expect(screen.getByRole("button", { name: /Downloaded/ }).textContent).toContain("1"));
   fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
   await screen.findByRole("button", { name: "Save Audio" });
@@ -146,7 +149,7 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
     return { episodes: [item("recent", path.includes("showId") ? "Show Episode" : "Recent Episode")] } as T;
   });
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore(), () => write.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   await screen.findByText("Recent Episode");
   expect(screen.getByText("Recent Episode").closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe(show.title);
   expect(screen.queryByRole("group", { name: "Podcast Search Scope" })).toBeNull();
@@ -204,7 +207,7 @@ it("labels mixed episode cards with their podcast names across recent, downloads
     return { episodes: [recent, unknown, blank] } as T;
   });
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   await screen.findByText(recent.title);
   expect(screen.getByText(recent.title).closest("li")?.firstElementChild?.firstElementChild?.firstElementChild?.textContent).toBe("Primary Technology");
   for (const item of [unknown, blank]) {
@@ -240,7 +243,7 @@ it("clears private library terms before directory search and previews before exp
     return { episodes: [] } as T;
   });
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   fireEvent.click(screen.getByRole("button", { name: /Downloaded/ }));
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "private library terms" } });
   fireEvent.click(within(screen.getByRole("complementary", { name: "Podcast Library" })).getByRole("button", { name: "Search" }));
@@ -307,7 +310,7 @@ it("updates Played indicators while preserving episode positions and usable play
   const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
   const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => (path === "shows" ? { shows: [{ id: "show", title: "My Podcast", sourceKind: "rss" }] } : { episodes }) as T);
   restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   const finished = (await screen.findByRole("button", { name: "Show Notes: Finished Episode" })).closest("li")!;
   const fresh = screen.getByRole("button", { name: "Show Notes: Fresh Episode" }).closest("li")!;
   expect(finished.getAttribute("data-played")).toBe("true");
@@ -367,7 +370,7 @@ for (const outcome of ["success", "resolve failure", "write failure"] as const) 
       return { episodes: [] } as T;
     });
     restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
-    render(<PodcastLibrary />);
+    render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
     fireEvent.click(within(screen.getByRole("complementary", { name: "Podcast Library" })).getByRole("button", { name: "Search" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "science" } });
     const results = await screen.findByRole("region", { name: "Podcast Index Results" });
@@ -407,7 +410,7 @@ it("opens viewer-wide Clips without fetching episodes and returns to Search", as
     return { episodes: [] } as T;
   });
   restores.push(() => authMock.mockRestore(), () => playerMock.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
-  render(<PodcastLibrary />);
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
   await screen.findByText("Subscribe to a Podcast to See New Episodes");
   paths.length = 0;
   fireEvent.click(screen.getByRole("button", { name: "Clips" }));
@@ -421,4 +424,30 @@ it("opens viewer-wide Clips without fetching episodes and returns to Search", as
   fireEvent.click(screen.getByRole("button", { name: "Search" }));
   await screen.findByLabelText("Search Podcasts");
   expect(screen.queryByRole("region", { name: "Your Podcast Clips" })).toBeNull();
+});
+
+
+it("keeps a long podcast library bounded while the last subscription remains selectable", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const shows: client.PodcastShow[] = Array.from({ length: 40 }, (_, index) => ({ id: `show-${index}`, title: `Subscribed Show ${index}`, sourceKind: "rss" }));
+  const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
+  const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state: { ...client.initialPodcastState(), subscriptions: shows.map(show => show.id) }, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, seek() {}, toggle() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async () => {} });
+  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+  const paths: string[] = [];
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string): Promise<T> => { paths.push(path); return (path === "shows" ? { shows } : { episodes: [] }) as T; });
+  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => request.mockRestore());
+  render(<SidebarProvider><PodcastLibrary /></SidebarProvider>);
+  const sidebar = screen.getByRole("complementary", { name: "Podcast Library" });
+  const last = await within(sidebar).findByRole("button", { name: "Subscribed Show 39" });
+  const grid = sidebar.parentElement!.parentElement!;
+  expect(grid.classList.contains("lg:grid-rows-[minmax(0,1fr)]")).toBe(true);
+  expect(grid.classList.contains("lg:h-full")).toBe(true);
+  expect(sidebar.classList.contains("lg:min-h-0")).toBe(true);
+  expect(sidebar.classList.contains("lg:overflow-y-auto")).toBe(true);
+  expect(sidebar.parentElement!.className).not.toContain("100dvh");
+  const header = screen.getByRole("heading", { name: "Podcasts" }).closest("header")!;
+  expect(header.nextElementSibling!.classList.contains("lg:overflow-y-auto")).toBe(true);
+  expect(header.classList.contains("floating-glass")).toBe(true);
+  fireEvent.click(last);
+  await waitFor(() => expect(paths.some(path => path.includes("showId=show-39"))).toBe(true));
 });

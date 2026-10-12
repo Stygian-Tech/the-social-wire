@@ -29,7 +29,7 @@ export function FinanceTickerMarquee({ feed, hidden }: { feed?: FinanceFeedDefin
     const config = JSON.stringify({ symbols: symbols.map(symbol => symbol.proName).join(","), theme });
     // The provider owns its attribution row; reserve space beside it on narrow tickers.
     return (
-        <section data-topic-topbar aria-label="Market Ticker" className={`@container sticky top-2 z-20 m-2 shrink-0 overflow-hidden ${floatingGlassClasses} [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]`}>
+        <section data-topic-topbar aria-label="Market Ticker" className={`@container sticky top-4 z-20 m-4 shrink-0 overflow-hidden ${floatingGlassClasses} [&_iframe]:bg-background dark:[&_iframe]:bg-[#080808]`}>
             {staticDisplay ? (
                 <nav aria-label="Ticker Stocks" className="flex gap-4 overflow-x-auto px-4 py-3 text-sm">
                     {symbols.map(symbol => <TickerLink key={symbol.instrumentID} symbol={symbol} />)}
