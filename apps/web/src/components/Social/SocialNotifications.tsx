@@ -1,14 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useState } from "react";
 import { useBrandAccounts } from "@/hooks/useBrandAccounts";
 import { includeBrandNotifications, setIncludeBrandNotifications } from "@/lib/brandAccounts/brandNotificationPreferences";
 import { BrandNotificationSections } from "./BrandNotificationSections";
-import { moderateNotification, moderateProfile } from "@atproto/api";
+import { moderateNotification } from "@atproto/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
-import { Avatar } from "@/components/shared/Avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
@@ -20,10 +18,8 @@ import { InteractiveSocialPost } from "./InteractiveSocialPost";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
-import { socialHttpsUrl } from "./socialUrls";
-import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
-
-const reasons: Record<string, string> = { like: "Liked Your Post", repost: "Reposted Your Post", follow: "Followed You", mention: "Mentioned You", reply: "Replied to Your Post", quote: "Quoted Your Post", "starterpack-joined": "Joined Your Starter Pack", verified: "Verified Your Account", unverified: "Removed Your Verification", "like-via-repost": "Liked a Post You Reposted", "repost-via-repost": "Reposted a Post You Reposted", "subscribed-post": "Posted an Update", "contact-match": "Joined Bluesky" };
+import { groupSocialNotifications } from "@/lib/socialNotificationGrouping";
+import { SocialNotificationGroupHeader } from "./SocialNotificationGroupHeader";
 
 export function SocialNotifications() {
   const { session } = useAuth();
@@ -55,9 +51,10 @@ function SocialNotificationsViewer() {
     const key = notificationIdentity(notification);
     const decision = moderateNotification(notification, moderation).ui("contentList");
     const post = posts.get(notificationPostUri(notification) ?? "");
-    if (seen.has(key) || decision.filter || decision.blur || (post && moderateSocialPost(post, moderation).ui("contentList").filter)) return false;
+    if (seen.has(key) || decision.filter || decision.blur || decision.noOverride || (post && moderateSocialPost(post, moderation).ui("contentList").filter)) return false;
     seen.add(key); return true;
   }) : [];
+  const groups = groupSocialNotifications(rows);
   async function refresh() {
     const settings = await catalog.refetch();
     if (!settings.isError && session) await Promise.all([
@@ -83,21 +80,12 @@ function SocialNotificationsViewer() {
           <h2 className="text-lg font-semibold">Notifications Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>
           {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={() => { void refresh(); }}>Retry</Button>}
         </section> : !moderation || notifications.isPending ? <SocialTimelineSkeleton /> : <>
-          {rows.map(notification => {
+          {groups.map(group => {
+            const notification = group.latest;
             const uri = notificationPostUri(notification);
             const item = notificationFeedItem(notification, posts);
-            const name = notification.author.displayName || notification.author.handle;
-            const avatarHidden = moderateProfile(notification.author, moderation).ui("avatar").blur;
-            return <section key={notificationIdentity(notification)} aria-label={`${name}: ${reasons[notification.reason] ?? "Sent a Notification"}`} className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
-              <div className="flex items-start gap-3">
-                <Avatar src={avatarHidden ? undefined : socialHttpsUrl(notification.author.avatar)} alt="" size={36} />
-                <div className="min-w-0 flex-1">
-                  <Link href={socialProfilePageHref(notification.author.did, "/social/notifications")} className="break-words font-semibold hover:underline">{name}</Link>
-                  <p className="text-sm">{reasons[notification.reason] ?? "Sent a Notification"}</p>
-                  <time dateTime={notification.indexedAt} className="text-xs text-muted-foreground">{new Date(notification.indexedAt).toLocaleString()}</time>
-                </div>
-                {!notification.isRead ? <span className="text-xs font-semibold text-primary">Unread</span> : null}
-              </div>
+            return <section key={group.key} aria-label={`Notification: ${notification.reason}`} className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
+              <SocialNotificationGroupHeader group={group} moderation={moderation} />
               {item ? <InteractiveSocialPost item={item} moderation={moderation} showReplyParentActions /> : uri ? <SocialPostLink uri={uri} moderation={moderation} /> : null}
             </section>;
           })}
