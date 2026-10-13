@@ -58,6 +58,7 @@ describe("authenticated discovery clients", () => {
     const page = await getSocialNotificationsPage({ session, moderation, cursor: "cursor", signal });
     expect(page.notifications.length).toBe(31);
     expect(page.cursor).toBe("next");
+    expect(page.unavailablePostUris).toEqual(items.map(item => item.uri));
     expect(calls.notifications).toHaveBeenCalledWith({ cursor: "cursor", limit: 30 }, { signal });
     expect(calls.posts.mock.calls.map(call => call[0].uris.length)).toEqual([25, 5]);
     expect(calls.posts.mock.calls[0][1]).toEqual({ signal });

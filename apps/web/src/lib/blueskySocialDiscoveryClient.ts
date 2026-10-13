@@ -1,11 +1,12 @@
 import { AppBskyFeedPost, type AppBskyActorDefs, type AppBskyFeedDefs, type AppBskyNotificationListNotifications, type ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createAuthenticatedAppViewAgent, socialErrorMessage } from "./blueskySocialClient";
+import { socialReplyMetadata } from "./socialReplyMetadata";
 
 export type SocialExploreKind = "posts" | "people";
 export type SocialExplorePage = { posts: AppBskyFeedDefs.PostView[]; actors: AppBskyActorDefs.ProfileView[]; cursor?: string };
 export type SocialNotification = AppBskyNotificationListNotifications.Notification;
-export type SocialNotificationPage = { notifications: SocialNotification[]; posts: AppBskyFeedDefs.PostView[]; cursor?: string; seenAt?: string };
+export type SocialNotificationPage = { notifications: SocialNotification[]; posts: AppBskyFeedDefs.PostView[]; unavailablePostUris?: string[]; cursor?: string; seenAt?: string };
 
 function agentFor(session: OAuthSession, moderation: ModerationOpts) {
   if (moderation.userDid !== session.did) throw new Error("Your account changed. Please reload this page.");
@@ -51,18 +52,14 @@ export function notificationReplyParentUri(notification: SocialNotification): st
   return uri && /^at:\/\/did:[^/]+\/app\.bsky\.feed\.post\/[^/?#]+$/.test(uri) ? uri : undefined;
 }
 
-export function notificationFeedItem(notification: SocialNotification, posts: ReadonlyMap<string, AppBskyFeedDefs.PostView>): AppBskyFeedDefs.FeedViewPost | undefined {
+export function notificationFeedItem(notification: SocialNotification, posts: ReadonlyMap<string, AppBskyFeedDefs.PostView>, unavailablePosts: ReadonlySet<string> = new Set()): AppBskyFeedDefs.FeedViewPost | undefined {
   const uri = notificationPostUri(notification);
   const post = uri ? posts.get(uri) : undefined;
   if (!post) return undefined;
   const parentUri = notificationReplyParentUri(notification);
   const record = AppBskyFeedPost.validateRecord(notification.record);
   if (!parentUri || parentUri === post.uri || !record.success || !record.value.reply) return { post };
-  const parent = posts.get(parentUri);
-  return { post, reply: {
-    parent: parent ? { ...parent, $type: "app.bsky.feed.defs#postView" } : { $type: "app.bsky.feed.defs#notFoundPost", uri: parentUri },
-    root: { $type: "app.bsky.feed.defs#notFoundPost", uri: record.value.reply.root.uri },
-  } };
+  return { post, reply: socialReplyMetadata({ post: { ...post, record: record.value } }, posts, unavailablePosts) };
 }
 
 export async function getSocialNotificationsPage(args: { session: OAuthSession; moderation: ModerationOpts; cursor?: string; signal?: AbortSignal }): Promise<SocialNotificationPage> {
@@ -72,14 +69,17 @@ export async function getSocialNotificationsPage(args: { session: OAuthSession; 
   args.signal?.throwIfAborted();
   const uris = [...new Set(result.data.notifications.flatMap(notification => [notificationPostUri(notification), notificationReplyParentUri(notification)]).filter((uri): uri is string => !!uri))];
   const posts: AppBskyFeedDefs.PostView[] = [];
+  const unavailablePostUris: string[] = [];
   for (let index = 0; index < uris.length; index += 25) {
     const requested = uris.slice(index, index + 25);
     const page = await agent.app.bsky.feed.getPosts({ uris: requested }, options);
     args.signal?.throwIfAborted();
     // Ignore unexpected hydration results; a missing reply stays unavailable.
     posts.push(...page.data.posts.filter(post => requested.includes(post.uri)));
+    const returned = new Set(page.data.posts.map(post => post.uri));
+    unavailablePostUris.push(...requested.filter(uri => !returned.has(uri)));
   }
-  return { ...result.data, posts };
+  return { ...result.data, posts, unavailablePostUris };
 }
 
 export async function getSocialNotificationUnread(session: OAuthSession, signal?: AbortSignal): Promise<number> {
