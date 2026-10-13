@@ -39,7 +39,9 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 	if err != nil {
 		return SportsPage{}, err
 	}
+	started = time.Now()
 	catalogRevision, err := sportscore.ServingCatalogRevision(catalog)
+	ObserveFeedPhase(ctx, "catalog-revision", time.Since(started))
 	if err != nil {
 		return SportsPage{}, err
 	}
@@ -80,47 +82,57 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 			return SportsPage{}, ErrUnavailable
 		}
 		started = time.Now()
-		definition, ok := sportsDefinition(feed, catalog)
-		if !ok {
-			return SportsPage{}, ErrInvalidCursor
-		}
-		byID := map[string]sportscore.Entity{}
-		for _, e := range catalog {
-			if _, exists := byID[e.ID]; !exists {
-				byID[e.ID] = e
-			}
-		}
-		usIDs := map[string]bool{}
-		for _, id := range []string{"nfl", "nba", "wnba", "mlb", "nhl", "mls", "nwsl", "ncaa-football", "ncaa-mens-basketball", "ncaa-womens-basketball", "ncaa-baseball", "ncaa-softball", "ncaa-hockey", "nascar", "indycar"} {
-			usIDs[sportscore.ReviewedID("competition:"+id)] = true
-		}
-		matching := []sportscore.RankCandidate{}
-		for _, c := range initial.Candidates {
-			if !definition.Matches(c.Analysis) {
-				continue
-			}
-			competitions := append([]string{}, c.Analysis.CompetitionIDs...)
-			for _, a := range c.Analysis.Associations {
-				competitions = append(competitions, byID[a.EntityID].CompetitionIDs...)
-			}
-			us := false
-			for _, id := range competitions {
-				us = us || usIDs[id]
-			}
-			regional := feed == "sports" && len(competitions) > 0 && ((regionName == "outside-us" && !us) || (regionName != "outside-us" && us))
-			if regional {
-				c.BaseScore *= 1.05
-			}
-			matching = append(matching, c)
-		}
-		ranked := sportscore.RankSelections(matching, prefs, catalog, feed == "sports")
-		ObserveFeedPhase(ctx, "analysis", time.Since(started))
-		proposal := corpuscore.SportsGeneration{GenerationID: newID(), GeneratedAt: initial.GeneratedAt, ExpiresAt: minTime(initial.ExpiresAt, now.Add(48*time.Hour)), Language: lang, Candidates: ranked, Source: initial.Source}
-		started = time.Now()
-		snapshot, err = s.persist(ctx, proposal, initial, snapshotScope, revision, now)
-		ObserveFeedPhase(ctx, "snapshot-persistence", time.Since(started))
+		reused, err := s.reusable(ctx, initial.GenerationID, snapshotScope, lang, revision, now)
+		ObserveFeedPhase(ctx, "snapshot-lookup", time.Since(started))
 		if err != nil {
 			return SportsPage{}, err
+		}
+		if reused != nil {
+			snapshot = *reused
+		} else {
+			started = time.Now()
+			definition, ok := sportsDefinition(feed, catalog)
+			if !ok {
+				return SportsPage{}, ErrInvalidCursor
+			}
+			byID := map[string]sportscore.Entity{}
+			for _, e := range catalog {
+				if _, exists := byID[e.ID]; !exists {
+					byID[e.ID] = e
+				}
+			}
+			usIDs := map[string]bool{}
+			for _, id := range []string{"nfl", "nba", "wnba", "mlb", "nhl", "mls", "nwsl", "ncaa-football", "ncaa-mens-basketball", "ncaa-womens-basketball", "ncaa-baseball", "ncaa-softball", "ncaa-hockey", "nascar", "indycar"} {
+				usIDs[sportscore.ReviewedID("competition:"+id)] = true
+			}
+			matching := []sportscore.RankCandidate{}
+			for _, c := range initial.Candidates {
+				if !definition.Matches(c.Analysis) {
+					continue
+				}
+				competitions := append([]string{}, c.Analysis.CompetitionIDs...)
+				for _, a := range c.Analysis.Associations {
+					competitions = append(competitions, byID[a.EntityID].CompetitionIDs...)
+				}
+				us := false
+				for _, id := range competitions {
+					us = us || usIDs[id]
+				}
+				regional := feed == "sports" && len(competitions) > 0 && ((regionName == "outside-us" && !us) || (regionName != "outside-us" && us))
+				if regional {
+					c.BaseScore *= 1.05
+				}
+				matching = append(matching, c)
+			}
+			ranked := sportscore.RankSelections(matching, prefs, catalog, feed == "sports")
+			ObserveFeedPhase(ctx, "analysis", time.Since(started))
+			proposal := corpuscore.SportsGeneration{GenerationID: newID(), GeneratedAt: initial.GeneratedAt, ExpiresAt: minTime(initial.ExpiresAt, now.Add(48*time.Hour)), Language: lang, Candidates: ranked, Source: initial.Source}
+			started = time.Now()
+			snapshot, err = s.persist(ctx, proposal, initial, snapshotScope, revision, now)
+			ObserveFeedPhase(ctx, "snapshot-persistence", time.Since(started))
+			if err != nil {
+				return SportsPage{}, err
+			}
 		}
 	}
 	if ordinal > len(snapshot.Candidates) {

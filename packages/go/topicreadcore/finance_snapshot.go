@@ -29,6 +29,31 @@ func (s *FinanceStore) retained(ctx context.Context, id, scope, language, revisi
 	}
 	return &value, nil
 }
+
+// reusable finds the snapshot selected by the existing persistence uniqueness
+// contract. Current item eligibility and viewer moderation still run per page.
+func (s *FinanceStore) reusable(ctx context.Context, generation, scope, language, revision string, now time.Time) (*corpuscore.FinanceGeneration, error) {
+	if !validUUID(generation) {
+		return nil, nil
+	}
+	value := corpuscore.FinanceGeneration{Language: language}
+	var raw []byte
+	var source string
+	err := s.DB.QueryRowContext(ctx, `SELECT snapshot_id::text,generated_at,expires_at,payload::text,serving_source FROM finance_personalized_snapshots WHERE source_generation_id=$1::uuid AND viewer_scope=$2 AND language=$3 AND preference_revision=$4 AND expires_at>$5`, generation, scope, language, revision, now).Scan(&value.GenerationID, &value.GeneratedAt, &value.ExpiresAt, &raw, &source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	value.Source = &source
+	if err = corpuscore.DecodeContract(raw, &value.Candidates); err != nil {
+		return nil, err
+	}
+	// Finance revalidates resolver versions per current item, just as retained.
+	return &value, nil
+}
+
 func (s *FinanceStore) persist(ctx context.Context, proposal, source corpuscore.FinanceGeneration, scope, revision string, now time.Time) (corpuscore.FinanceGeneration, error) {
 	if !validUUID(proposal.GenerationID) || !validUUID(source.GenerationID) {
 		return corpuscore.FinanceGeneration{}, ErrUnavailable
