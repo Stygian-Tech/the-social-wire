@@ -23,6 +23,7 @@ import { SidebarListPublicationsSection } from "./SidebarListPublicationsSection
 import { SidebarPublicationsSection } from "./SidebarPublicationsSection";
 import { useSocialUnreadCounts } from "@/hooks/useSocialUnreadCounts";
 import { useAuth } from "@/hooks/useAuth";
+import { SocialProfileLink } from "@/components/Social/SocialProfileLink";
 import {
   useSidebarBootstrap,
   useSidebarProjection,
@@ -771,9 +772,9 @@ export function AppSidebar({
           ) : (
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Your Profile"
+                tooltip={session ? undefined : "Your Profile"}
                 isActive={pathname.startsWith("/me")}
-                render={<a href="/me#profile" onClick={() => setOpenMobile(false)} />}
+                render={session ? <SocialProfileLink actor={session.did} href="/me#profile" onClick={() => setOpenMobile(false)} /> : <a href="/me#profile" onClick={() => setOpenMobile(false)} />}
                 className="h-auto min-h-0 items-start gap-2 overflow-visible py-1.5 pl-1 whitespace-normal"
               >
                 <Avatar

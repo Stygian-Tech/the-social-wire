@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { SocialExplorePersonCard } from "./SocialExplorePersonCard";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 
-export function SocialMentionProfileCard({ actor }: { actor: string }) {
+export function SocialProfilePreviewCard({ actor, returnTo = "/social" }: { actor: string; returnTo?: string }) {
   const { did } = useSocialWorkspaceSession();
   const catalog = useBlueskySocialCatalog();
   const moderation = !catalog.isError && catalog.data?.moderation.userDid === did ? catalog.data.moderation : undefined;
@@ -26,5 +26,5 @@ export function SocialMentionProfileCard({ actor }: { actor: string }) {
   const identity = decision.ui("displayName");
   const hideIdentity = identity.filter || identity.blur || identity.noOverride;
   const avatar = decision.ui("avatar");
-  return <SocialExplorePersonCard actor={{ ...profile.data, $type: "app.bsky.actor.defs#profileView", ...(hideIdentity ? { displayName: "Account", handle: "", description: undefined } : {}), ...(avatar.filter || avatar.blur || avatar.noOverride ? { avatar: undefined } : {}) }} moderation={moderation} returnTo="/social" descriptionBelow />;
+  return <SocialExplorePersonCard actor={{ ...profile.data, $type: "app.bsky.actor.defs#profileView", ...(hideIdentity ? { displayName: "Account", handle: "", description: undefined } : {}), ...(avatar.filter || avatar.blur || avatar.noOverride ? { avatar: undefined } : {}) }} moderation={moderation} returnTo={returnTo} descriptionBelow />;
 }

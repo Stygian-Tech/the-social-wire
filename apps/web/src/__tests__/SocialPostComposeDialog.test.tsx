@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
@@ -65,4 +65,19 @@ it("keeps the formatted draft and skips refresh when posting fails", async () =>
   expect((field as HTMLTextAreaElement).value).toBe("**Keep Me**");
   expect(screen.getByRole("region", { name: "Post Preview" }).querySelector("strong")?.textContent).toBe("Keep Me");
   expect(reload).not.toHaveBeenCalled();
+});
+
+it.each(["reply", "quote"] as const)("submits a %s with the keyboard shortcut and blocks duplicate pending submissions", async mode => {
+  let finish!: (value: { uri: string; cid: string }) => void;
+  const publish = spyOn(compose, "createBlueskyPost").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const reload = spyOn(refresh, "refreshSocialPostQueries").mockReturnValue(() => {});
+  restores.push(() => publish.mockRestore(), () => reload.mockRestore());
+  const { field } = await open(mode);
+  fireEvent.change(field, { target: { value: "Keyboard Reply Or Quote" } });
+  fireEvent.keyDown(field, { key: "Enter", ctrlKey: true });
+  fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+  await waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+  expect(publish.mock.calls[0][0][mode === "reply" ? "replyTo" : "quoteTo"]).toBe(post);
+  await act(async () => finish({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { moderateProfile, type ModerationOpts } from "@atproto/api";
 import { Avatar } from "@/components/shared/Avatar";
 import type { SocialNotificationGroup } from "@/lib/socialNotificationGrouping";
-import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
+import { SocialProfileLink } from "./SocialProfileLink";
 import { socialHttpsUrl } from "./socialUrls";
 import { SocialActionGlyph } from "./SocialActionGlyph";
 
@@ -19,7 +18,7 @@ export function SocialNotificationGroupHeader({ group, moderation }: { group: So
   const avatar = (index: number) => {
     const author = group.authors[index]!;
     const decision = moderateProfile(author, moderation).ui("avatar");
-    return <Avatar key={author.did} src={decision.filter || decision.blur || decision.noOverride ? undefined : socialHttpsUrl(author.avatar)} alt="" size={32} className="shrink-0 ring-2 ring-card" />;
+    return <SocialProfileLink key={author.did} actor={author.did} returnTo="/social/notifications" aria-label={`Open Profile: ${names[index]}`} className="shrink-0 rounded-full"><Avatar src={decision.filter || decision.blur || decision.noOverride ? undefined : socialHttpsUrl(author.avatar)} alt="" size={32} className="shrink-0 ring-2 ring-card" /></SocialProfileLink>;
   };
   return <div className="flex flex-col gap-2">
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -35,9 +34,9 @@ export function SocialNotificationGroupHeader({ group, moderation }: { group: So
         {group.authors.length > 1 ? <details className="group">
           <summary aria-label={`Show People: ${summary}`} className="cursor-pointer break-words font-semibold">{summary}</summary>
           <ul aria-label="People" className="mt-2 space-y-2">
-            {group.authors.map((author, index) => <li key={author.did} className="flex items-center gap-2">{avatar(index)}<Link href={socialProfilePageHref(author.did, "/social/notifications")} className="min-w-0 break-words text-sm hover:underline">{names[index]}</Link></li>)}
+            {group.authors.map((author, index) => <li key={author.did} className="flex items-center gap-2">{avatar(index)}<SocialProfileLink actor={author.did} returnTo="/social/notifications" className="min-w-0 break-words text-sm hover:underline">{names[index]}</SocialProfileLink></li>)}
           </ul>
-        </details> : <Link href={socialProfilePageHref(group.latest.author.did, "/social/notifications")} className="break-words font-semibold hover:underline">{summary}</Link>}
+        </details> : <SocialProfileLink actor={group.latest.author.did} returnTo="/social/notifications" className="break-words font-semibold hover:underline">{summary}</SocialProfileLink>}
       </div>
       {!group.isRead ? <span className="shrink-0 text-xs font-semibold text-primary">Unread</span> : null}
     </div>

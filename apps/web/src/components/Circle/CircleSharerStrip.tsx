@@ -2,6 +2,7 @@ import { Avatar } from "@/components/shared/Avatar";
 import type { CircleSharer } from "@/lib/circleFeedClient";
 import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
+import { SocialProfileLink } from "@/components/Social/SocialProfileLink";
 
 const MAX_VISIBLE_SHARERS = 5;
 
@@ -45,10 +46,11 @@ export function CircleSharerStrip({
         const name =
           sharer.identity.displayName?.trim() || sharer.identity.handle;
         return (
-          <a
+          <SocialProfileLink
             key={`${sharer.identity.did}:${sharer.sourceUri}`}
-            href={publicCircleShareURL(sharer)}
-            {...outboundLinkProps}
+            actor={sharer.identity.did}
+            returnTo="/read"
+            {...(sharer.sourceUri.startsWith("at://") ? { href: publicCircleShareURL(sharer), ...outboundLinkProps } : {})}
             data-source-uri={sharer.sourceUri}
             aria-label={`Open ${name}'s public share context${sharer.relationship === "one_hop" ? ", one hop away" : ""}`}
             title={name}
@@ -70,7 +72,7 @@ export function CircleSharerStrip({
                 +1
               </span>
             ) : null}
-          </a>
+          </SocialProfileLink>
         );
       })}
       {overflow > 0 ? (
