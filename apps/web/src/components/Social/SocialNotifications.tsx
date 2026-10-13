@@ -47,12 +47,13 @@ function SocialNotificationsViewer() {
   const error = catalog.isError ? socialDiscoveryErrorMessage(catalog.error, "Notifications") : notifications.isError ? socialDiscoveryErrorMessage(notifications.error, "Notifications") : undefined;
   const pages = notifications.data?.pages ?? [];
   const posts = new Map(pages.flatMap(page => page.posts).map(post => [post.uri, post]));
+  const unavailablePosts = new Set(pages.flatMap(page => page.unavailablePostUris ?? []));
   const seen = new Set<string>();
   const rows = moderation ? pages.flatMap(page => page.notifications).filter(notification => {
     const key = notificationIdentity(notification);
     const decision = moderateNotification(notification, moderation).ui("contentList");
     const post = posts.get(notificationPostUri(notification) ?? "");
-    const interaction = notificationFeedItem(notification, posts);
+    const interaction = notificationFeedItem(notification, posts, unavailablePosts);
     if (interaction && isSocialInteractionHidden(interaction, moderation)) return false;
     if (seen.has(key) || decision.filter || decision.blur || decision.noOverride || (post && moderateSocialPost(post, moderation).ui("contentList").filter)) return false;
     seen.add(key); return true;
@@ -86,7 +87,7 @@ function SocialNotificationsViewer() {
           {groups.map(group => {
             const notification = group.latest;
             const uri = notificationPostUri(notification);
-            const item = notificationFeedItem(notification, posts);
+            const item = notificationFeedItem(notification, posts, unavailablePosts);
             return <section key={group.key} aria-label={`Notification: ${notification.reason}`} className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
               <SocialNotificationGroupHeader group={group} moderation={moderation} />
               {item ? <InteractiveSocialPost item={item} moderation={moderation} showReplyParentActions /> : uri ? <SocialPostLink uri={uri} moderation={moderation} /> : null}

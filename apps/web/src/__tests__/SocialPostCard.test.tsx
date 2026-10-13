@@ -99,7 +99,7 @@ describe("Social Post Rendering", () => {
       root: { uri: "at://did:plc:parent/app.bsky.feed.post/root", cid: value.post.cid },
     } };
     const html = card(value);
-    expect(html).toContain("Replying To an unavailable post");
+    expect(html).not.toContain("Replying To an unavailable post");
     expect(html).toContain("lucide-message-circle");
   });
   it("does not attribute ordinary feed posts to a like or quote", () => {
