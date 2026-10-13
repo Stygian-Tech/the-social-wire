@@ -17,8 +17,7 @@ import { SocialRichText } from "./SocialRichText";
 import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
 import { socialExternalGif } from "./socialExternalGif";
 import { socialGalleryImages } from "./socialGalleryImages";
-import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
-import Link from "next/link";
+import { SocialProfileLink } from "./SocialProfileLink";
 import { SocialCashtags } from "./SocialCashtags";
 import { SocialYouTubeEmbed } from "./SocialYouTubeEmbed";
 import { socialYouTubePlayerUrl } from "./socialYouTubePlayerUrl";
@@ -167,12 +166,12 @@ export function SocialPostEmbed({
       profileList.noOverride ? (
         <p className="text-sm text-muted-foreground">Account</p>
       ) : (
-        <Link
-          href={socialProfilePageHref(quote.author.did)}
+        <SocialProfileLink
+          actor={quote.author.did}
           className="text-sm font-medium hover:underline"
         >
           {quote.author.displayName || quote.author.handle}
-        </Link>
+        </SocialProfileLink>
       )}
       <SocialRichText record={record.value} />
       {!media.blur && !media.filter && !media.noOverride ? <SocialCashtags record={record.value} /> : null}

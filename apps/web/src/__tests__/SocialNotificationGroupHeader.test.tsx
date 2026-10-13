@@ -36,7 +36,7 @@ it("discloses each unique person with their internal profile link", () => {
   expect(summary.parentElement?.hasAttribute("open")).toBe(false);
   fireEvent.click(summary);
   expect(summary.parentElement?.hasAttribute("open")).toBe(true);
-  expect(screen.getAllByRole("link")).toHaveLength(3);
+  expect(screen.getAllByRole("link")).toHaveLength(8);
   for (const author of [bob, carol, dan]) {
     expect(screen.getByRole("link", { name: author.displayName }).getAttribute("href")).toBe(socialProfilePageHref(author.did, "/social/notifications"));
   }
