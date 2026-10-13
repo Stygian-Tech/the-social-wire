@@ -59,7 +59,7 @@ export function EntryListVirtualPane({
   const attachLoaderObserver = useCallback(
     (loader: HTMLDivElement) => {
       disconnectLoaderObserver();
-      if (!hasNextPage || isFetchingNextPage) return;
+      if (!hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
 
       const root = parentRef.current;
       if (!root) return;
@@ -75,7 +75,7 @@ export function EntryListVirtualPane({
       observer.observe(loader);
       observerRef.current = observer;
     },
-    [disconnectLoaderObserver, hasNextPage, isFetchingNextPage]
+    [disconnectLoaderObserver, hasNextPage, isFetchingNextPage, isFetchNextPageError]
   );
 
   const loaderRef = useCallback(
@@ -91,7 +91,7 @@ export function EntryListVirtualPane({
   );
 
   useEffect(() => {
-    if (!hasNextPage || isFetchingNextPage) {
+    if (!hasNextPage || isFetchingNextPage || isFetchNextPageError) {
       disconnectLoaderObserver();
       return;
     }
@@ -102,6 +102,7 @@ export function EntryListVirtualPane({
     disconnectLoaderObserver,
     hasNextPage,
     isFetchingNextPage,
+    isFetchNextPageError,
     visibleEntries.length,
   ]);
 
@@ -133,7 +134,7 @@ export function EntryListVirtualPane({
 
   useEffect(() => {
     const root = parentRef.current;
-    if (!root || !hasNextPage || isFetchingNextPage) return;
+    if (!root || !hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
 
     const maybeFetch = () => {
       if (isFetchingNextPageRef.current || !hasNextPageRef.current) return;
@@ -159,7 +160,7 @@ export function EntryListVirtualPane({
     maybeFetch();
     root.addEventListener("scroll", maybeFetch, { passive: true });
     return () => root.removeEventListener("scroll", maybeFetch);
-  }, [hasNextPage, isFetchingNextPage, visibleEntries.length]);
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, visibleEntries.length]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's internal store is not React-memoizable
   const virtualizer = useVirtualizer({

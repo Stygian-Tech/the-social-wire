@@ -15,6 +15,7 @@ import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
 import { useAuth } from "@/hooks/useAuth";
 import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
+import { cn } from "@/lib/utils";
 
 const ignoreTheWireReadState = () => undefined;
 const theWireEntryIsUnread = () => false;
@@ -212,7 +213,14 @@ export default function ReadPubPage({
             </div>
           </div>
         ) : null}
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div
+          className={cn(
+            "min-h-0 flex-1 overflow-hidden",
+            (aggregateFeed?.kind === "subscribed" ||
+              aggregateFeed?.kind === "following") &&
+              "mx-auto w-full max-w-3xl",
+          )}
+        >
           {circleFeed ? (
             <CircleNewsExperience onSelect={handleSelectEntry} />
           ) : wireNewsEditionEnabled ? (

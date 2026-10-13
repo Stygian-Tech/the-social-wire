@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { SidebarSocialSection } from "@/components/AppSidebar/SidebarSocialSection";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import * as catalogHooks from "@/hooks/useBlueskySocialCatalog";
+import { SOCIAL_HOME_REFRESH_EVENT } from "@/lib/socialHomeRefresh";
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
@@ -18,6 +19,22 @@ async function renderSection(overrides: Partial<React.ComponentProps<typeof Side
   return { onHome };
 }
 describe("SidebarSocialSection", () => {
+  it("requests a refresh only when Home is double-clicked while selected", async () => {
+    const refresh = mock(() => {});
+    window.addEventListener(SOCIAL_HOME_REFRESH_EVENT, refresh);
+    try {
+      await renderSection({ active: true });
+      const home = screen.getByRole("button", { name: "Social Home" });
+      fireEvent.click(home);
+      expect(refresh).not.toHaveBeenCalled();
+      fireEvent.doubleClick(home);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      cleanup();
+      await renderSection({ active: false });
+      fireEvent.doubleClick(screen.getByRole("button", { name: "Social Home" }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+    } finally { window.removeEventListener(SOCIAL_HOME_REFRESH_EVENT, refresh); }
+  });
   it("shows enabled destinations without expansion controls or settings", async () => {
     const onNavigate = mock((href: string) => { void href; });
     const { onHome } = await renderSection({ active: true, activeSection: "bookmarks", onNavigate });

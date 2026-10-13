@@ -87,6 +87,7 @@ export function EntryList({
   const {
     data,
     isLoading,
+    isFetching: publicationQueryIsFetching,
     isError,
     error,
     refetch,
@@ -109,6 +110,11 @@ export function EntryList({
     : aggregateFeed
       ? aggregateQuery.data
       : data;
+  const activeIsFetching = wireFeed
+    ? wireQuery.isFetching
+    : aggregateFeed
+      ? aggregateQuery.isFetching
+      : publicationQueryIsFetching;
   const activeLoading = wireFeed
     ? wireQuery.isLoading || wireQuery.catalog.isLoading
     : aggregateFeed
@@ -264,6 +270,26 @@ export function EntryList({
     virtualPaneKey,
   ]);
 
+  // An empty page can still carry a continuation cursor. Scan independently of
+  // virtual row measurements, which may retain an old feed's scroll offset.
+  useEffect(() => {
+    if (
+      visibleEntries.length === 0 &&
+      activeHasNextPage &&
+      !activeIsFetching &&
+      !activeIsError
+    ) {
+      void fetchNextPageOnce();
+    }
+  }, [
+    visibleEntries.length,
+    activeData?.pages.length,
+    activeHasNextPage,
+    activeIsFetching,
+    activeIsError,
+    fetchNextPageOnce,
+  ]);
+
   if (
     (activeLoading || (!aggregateFeed && !wireFeed && scopePending)) &&
     allEntries.length === 0
@@ -277,9 +303,9 @@ export function EntryList({
     );
   }
 
-  if (activeIsError && allEntries.length === 0) {
+  if (activeIsError && visibleEntries.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+      <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
         <p>
           {wireFeed && wireQuery.viewerModerationError
             ? "Your moderation settings could not be applied to The Wire. Retry to load The Wire safely."
@@ -291,6 +317,7 @@ export function EntryList({
         </p>
         <button
           type="button"
+          disabled={activeIsFetching}
           className="text-primary underline-offset-4 hover:underline"
           onClick={() => void activeRefetch()}
         >
@@ -300,11 +327,19 @@ export function EntryList({
     );
   }
 
+  if (visibleEntries.length === 0 && (activeHasNextPage || activeIsFetching)) {
+    return (
+      <div role="status" className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
+        {effectiveFilter === "unread" ? "Checking for unread stories…" : "Loading stories…"}
+      </div>
+    );
+  }
+
   if (allEntries.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
         {effectiveFilter === "unread"
-          ? "No unread entries for this publication."
+          ? "No unread stories. You're all caught up."
           : wireFeed
             ? "No stories are available on The Wire right now."
             : "No entries found for this publication."}
@@ -322,7 +357,7 @@ export function EntryList({
   ) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-        No unread entries for this publication.
+        No unread stories. You&apos;re all caught up.
       </div>
     );
   }

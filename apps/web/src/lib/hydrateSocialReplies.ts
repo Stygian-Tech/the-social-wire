@@ -27,6 +27,6 @@ export async function hydrateSocialReplies(agent: Agent, items: readonly AppBsky
   }
   return items.map(item => {
     const reply = socialReplyMetadata(item, posts);
-    return !item.reply && reply ? { ...item, reply } : item;
+    return reply && reply !== item.reply ? { ...item, reply } : item;
   });
 }
