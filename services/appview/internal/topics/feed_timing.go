@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/topicreadcore"
 )
@@ -51,7 +52,7 @@ func (w *feedTimingWriter) Write(body []byte) (int, error) {
 
 func isFeedTimingPhase(phase string) bool {
 	switch phase {
-	case "moderation", "source", "source-transport", "source-decode", "catalog", "catalog-query-open", "catalog-scan", "catalog-decode", "catalog-revision", "selections", "snapshot-lookup", "snapshot-load", "snapshot-persistence", "rehydration", "analysis", "db-acquisition", "db-query":
+	case "serialization", "moderation", "source", "source-transport", "source-decode", "catalog", "catalog-query-open", "catalog-scan", "catalog-decode", "catalog-revision", "selections", "snapshot-lookup", "snapshot-load", "snapshot-persistence", "rehydration", "analysis", "db-acquisition", "db-query":
 		return true
 	}
 	return false
@@ -86,6 +87,7 @@ func (r Routes) observeFeed(feed string, next http.HandlerFunc) http.HandlerFunc
 				r.Telemetry.Enqueue(telemetrycore.MetricSample{Name: "feed.phase.latency_ms", Value: float64(elapsed) / float64(time.Millisecond), Dimensions: phaseDims, At: r.now()})
 			}
 		})
+		ctx = corpuscore.WithSourceRequestID(ctx, req.Header.Get("X-Request-ID"))
 		next(writer, req.WithContext(ctx))
 		writer.mu.Lock()
 		writer.closed = true
