@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
-import { flattenSocialPages, getBlueskySocialCatalog, getBlueskySocialPage, nextSocialCursor, SOCIAL_FOLLOWING_FEED, socialFeedFromSearchParams, socialFeedHref, socialFeedsFromPreferences, safeSocialFeedAvatarUrl } from "@/lib/blueskySocialClient";
+import { flattenSocialPages, getBlueskySocialCatalog, getBlueskySocialPage, hydrateBlueskySocialPage, nextSocialCursor, SOCIAL_FOLLOWING_FEED, socialFeedFromSearchParams, socialFeedHref, socialFeedsFromPreferences, safeSocialFeedAvatarUrl } from "@/lib/blueskySocialClient";
 
 const feedUri = "at://did:plc:feeds/app.bsky.feed.generator/news";
 const listUri = "at://did:plc:lists/app.bsky.graph.list/friends";
@@ -25,6 +25,26 @@ function labelerView(did: string) {
 }
 
 describe("Social feed contracts", () => {
+  it("returns feed rows before fetching reply context, then hydrates them separately", async () => {
+    const cid = "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+    const parent = { uri: "at://did:plc:parent/app.bsky.feed.post/one", cid,
+      author: { did: "did:plc:parent", handle: "parent.test" },
+      record: { $type: "app.bsky.feed.post", text: "Parent", createdAt: "2026-10-12T00:00:00Z" }, indexedAt: "2026-10-12T00:00:00Z" };
+    const reply = { post: { ...parent, uri: "at://did:plc:reply/app.bsky.feed.post/one", record: { ...parent.record, text: "Reply", reply: { parent: { uri: parent.uri, cid }, root: { uri: parent.uri, cid } } } } };
+    const methods: string[] = [];
+    const session = fakeSession(method => {
+      methods.push(method);
+      if (method === "app.bsky.feed.getTimeline") return { feed: [reply] };
+      if (method === "app.bsky.feed.getPosts") return { posts: [parent] };
+      throw new Error(`Unexpected ${method}`);
+    });
+    const page = await getBlueskySocialPage({ session, feed: SOCIAL_FOLLOWING_FEED, moderation, deferReplyHydration: true });
+    expect(page.feed[0]?.reply).toBeUndefined();
+    expect(methods).toEqual(["app.bsky.feed.getTimeline"]);
+    const hydrated = await hydrateBlueskySocialPage(session, page, new AbortController().signal, moderation);
+    expect(methods).toEqual(["app.bsky.feed.getTimeline", "app.bsky.feed.getPosts"]);
+    expect(hydrated.feed[0]?.reply?.parent).toMatchObject({ uri: parent.uri, author: parent.author });
+  });
   it("accepts only HTTPS avatar URLs without credentials", () => {
     expect(safeSocialFeedAvatarUrl("https://images.example/feed.png")).toBe("https://images.example/feed.png");
     for (const value of [undefined, "http://images.example/feed.png", "javascript:alert(1)", "data:image/png;base64,abc", "/image.png", "https://user:password@images.example/feed.png"]) {
