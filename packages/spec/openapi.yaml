@@ -2502,6 +2502,16 @@ paths:
         - { name: region, in: query, schema: { type: string, enum: [outside-us] } }
         - { name: refreshSelections, in: query, schema: { type: boolean, default: false } }
       responses:
+        "428":
+          description: Viewer cache unavailable; prepare upstream DPoP proofs and retry once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: {type: string, enum: [UpstreamProofRequired]}
+                  message: {type: string}
         "200":
           description: Successful Finance response.
           content:
@@ -2599,6 +2609,16 @@ paths:
         - { name: region, in: query, schema: { type: string, enum: [outside-us] } }
         - { name: refreshSelections, in: query, schema: { type: boolean, default: false } }
       responses:
+        "428":
+          description: Viewer cache unavailable; prepare upstream DPoP proofs and retry once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: {type: string, enum: [UpstreamProofRequired]}
+                  message: {type: string}
         "200":
           description: Successful Sports response.
           content:
@@ -2740,6 +2760,16 @@ paths:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 30 } }
         - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
       responses:
+        "428":
+          description: Viewer cache unavailable; prepare upstream DPoP proofs and retry once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: {type: string, enum: [UpstreamProofRequired]}
+                  message: {type: string}
         "200":
           description: Ranked, stale-generation, or simplified-fallback The Wire page.
           headers:
@@ -2768,6 +2798,16 @@ paths:
         - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
         - { name: region, in: query, schema: { type: string, enum: [outside-us] }, description: Coarse browser-locale relevance hint; omit for US or ambiguous locales. }
       responses:
+        "428":
+          description: Viewer cache unavailable; prepare upstream DPoP proofs and retry once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: {type: string, enum: [UpstreamProofRequired]}
+                  message: {type: string}
         "200":
           description: Deterministic editorial modules for one immutable Wire generation.
           headers:
@@ -2792,6 +2832,16 @@ paths:
       parameters:
         - { name: itemId, in: query, required: true, schema: { type: string, maxLength: 128 } }
       responses:
+        "428":
+          description: Viewer cache unavailable; prepare upstream DPoP proofs and retry once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: {type: string, enum: [UpstreamProofRequired]}
+                  message: {type: string}
         "200":
           description: Canonical item detail from The Wire.
           content:
@@ -2841,6 +2891,16 @@ paths:
       parameters:
         - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
       responses:
+        "428":
+          description: Viewer cache unavailable; prepare upstream DPoP proofs and retry once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: {type: string, enum: [UpstreamProofRequired]}
+                  message: {type: string}
         "200":
           description: Personalized editorial modules composed from direct and one-hop circle activity.
           headers:

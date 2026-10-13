@@ -1,0 +1,125 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.corpus.getSportsGeneration",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Internal HMAC-authenticated bounded Sports rank source. Current serving eligibility is rechecked on every request. Generation conditionals require exact ID and current lean revision. Catalog metadata and full/active fingerprints identify the exact canonical Postgres serving snapshot, verified locally by the consuming AppView. Catalog content is never transported. Response cap 8 MiB; viewer credentials are forbidden.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "language"
+          ],
+          "properties": {
+            "language": {
+              "type": "string",
+              "maxLength": 35,
+              "minLength": 1
+            },
+            "knownGenerationId": {
+              "type": "string",
+              "maxLength": 36
+            },
+            "knownGenerationRevision": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "generationId",
+            "generationRevision",
+            "generatedAt",
+            "expiresAt",
+            "language",
+            "resolverVersion",
+            "catalogRevision",
+            "catalogVersion",
+            "catalogGeneratedAt",
+            "generationUnchanged",
+            "servingCatalogRevision"
+          ],
+          "properties": {
+            "generationId": {
+              "type": "string",
+              "maxLength": 36
+            },
+            "generationRevision": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "generatedAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "expiresAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 35
+            },
+            "resolverVersion": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "catalogRevision": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "catalogVersion": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "catalogGeneratedAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "generationUnchanged": {
+              "type": "boolean"
+            },
+            "candidates": {
+              "type": "array",
+              "maxLength": 5000,
+              "items": {
+                "type": "ref",
+                "ref": "app.thesocialwire.defs#jsonObject"
+              },
+              "description": "Strictly service-validated SportsSourceCandidate objects: required itemId/canonicalUrl/title/domain/presentationFingerprint/analysis/baseScore/majorGlobal; analysis requires current resolver, eligibility, materiality, associations, sportIDs and competitionIDs. Rank scores and association confidence retain their existing finite float JSON representation. Candidates bounded to 5,000 and full response to 8 MiB."
+            },
+            "servingCatalogRevision": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "Canonical existing AppView fingerprint of active entities only; full catalogRevision additionally fences all transported entities."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "ModerationUnavailable"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        },
+        {
+          "name": "InternalServerError"
+        }
+      ]
+    }
+  }
+}

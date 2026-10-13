@@ -1,6 +1,7 @@
 package topics
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
@@ -32,17 +33,17 @@ func (r Routes) Register(mux *http.ServeMux) {
 	}
 	if r.Circle != nil {
 		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getCircleCatalog", r.circleCatalog)
-		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getCircleEdition", r.circleEdition)
+		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getCircleEdition", r.observeFeed("circle", r.circleEdition))
 		mux.HandleFunc("POST /xrpc/app.thesocialwire.discovery.setCircleItemHidden", r.circleHidden)
 	}
 	if r.Wire == nil {
 		return
 	}
 	if r.WireVisible {
-		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getWire", r.feed)
-		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getWireEdition", r.edition)
+		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getWire", r.observeFeed("wire", r.feed))
+		mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getWireEdition", r.observeFeed("wire", r.edition))
 	}
-	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getWireItem", r.item)
+	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getWireItem", r.observeFeed("wire", r.item))
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFeedCatalog", r.catalog)
 }
 func (r Routes) now() time.Time {
@@ -63,10 +64,19 @@ func (r Routes) moderation(req *http.Request, now time.Time) (string, error) {
 	if r.Moderation == nil {
 		return "", topicreadcore.ErrModerationUnavailable
 	}
+	started := time.Now()
 	_, err := r.Moderation.Require(req.Context(), a, req.Header.Get("X-Wire-Moderation-DPoP"), now)
+	topicreadcore.ObserveFeedPhase(req.Context(), "moderation", time.Since(started))
 	return viewer, err
 }
 func fail(w http.ResponseWriter, err error) {
+	if errors.Is(err, topicreadcore.ErrUpstreamProofRequired) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.WriteHeader(http.StatusPreconditionRequired)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "UpstreamProofRequired", "message": "Prepare the route's upstream DPoP proof pool and retry once."})
+		return
+	}
 	status := 503
 	if errors.Is(err, topicreadcore.ErrInvalidCursor) {
 		status = 400
@@ -78,7 +88,9 @@ func fail(w http.ResponseWriter, err error) {
 	w.WriteHeader(status)
 }
 func response(w http.ResponseWriter, req *http.Request, value any, etag string, viewer bool, generation, source string) error {
+	started := time.Now()
 	body, err := corpuscore.MarshalHTTP(value)
+	topicreadcore.ObserveFeedPhase(req.Context(), "serialization", time.Since(started))
 	if err != nil {
 		return err
 	}

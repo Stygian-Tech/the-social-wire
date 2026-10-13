@@ -115,6 +115,7 @@ final class SocialWireAppModel {
     private(set) var likeRecordURIByEntryID: [String: String] = [:]
     private(set) var repostRecordURIByEntryID: [String: String] = [:]
     private var articleSocialStateLoadingKeys = Set<String>()
+    private var articleSocialStateContextID = UUID()
     var wireCatalog: WireFeedCatalog?
     var wireFeedNotice: String?
     var wireFeedLoadFailed = false
@@ -157,6 +158,10 @@ final class SocialWireAppModel {
     private let bootstrapCoordinator = BootstrapStreamCoordinator()
     private var bootstrapSawSidebarSection = false
     private var bootstrapCompletedAt: Date?
+    private var wireRequestEpoch = 0
+    private var circleRequestEpoch = 0
+    private var activeWireRequest: String?
+    private var activeCircleRequest: String?
     private var pendingRestoredFeedSelection: FeedSelection?
     private(set) var sidebarTreeViewModel = SidebarTreeViewModel(
         folders: [],
@@ -182,21 +187,32 @@ final class SocialWireAppModel {
         let publicationPrefs: [String: RepoRecord<PublicationPrefsRecord>]
     }
 
-    init() {
-        authService = ATProtoOAuthService()
+    init(
+        authService: ATProtoOAuthService = ATProtoOAuthService(),
+        gatewayTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
+        gatewayURLSession: URLSession = .shared,
+        xrpcTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
+    ) {
+        self.authService = authService
         resolver = ATProtoResolver()
-        xrpc = XRPCClient(auth: authService, resolver: resolver)
+        if let xrpcTransport {
+            xrpc = XRPCClient(auth: authService, resolver: resolver, transport: xrpcTransport)
+        } else {
+            xrpc = XRPCClient(auth: authService, resolver: resolver)
+        }
         pds = PDSRecordService(xrpc: xrpc)
         sembleRecords = SembleRecordService(xrpc: xrpc)
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
-        gateway = SocialWireGatewayClient(auth: authService)
+        gateway = SocialWireGatewayClient(auth: authService, urlSession: gatewayURLSession, transport: gatewayTransport)
         podcasts = PodcastLibraryModel(gateway: gateway, xrpc: xrpc)
         sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
         standardReaderLists = StandardReaderListsModel(gateway: gateway, xrpc: xrpc)
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         authService.setSessionChangeHandler { [weak self] session in
+            self?.articleSocialStateContextID = UUID()
+            self?.articleSocialStateLoadingKeys = []
             self?.isSignedIn = session != nil
             self?.sportsTopic.bind(viewer: session?.did)
             self?.standardReaderLists.bind(viewer: session?.did)
@@ -848,6 +864,8 @@ final class SocialWireAppModel {
         financeContinuationSuspended = false
         financeSearchResults = []
         financeInstrumentMetadata = [:]
+        cancelWireRequest(epoch: wireRequestEpoch)
+        cancelCircleRequest(epoch: circleRequestEpoch)
         wireEdition = nil
         circleCatalog = nil
         circleEdition = nil
@@ -1010,6 +1028,10 @@ final class SocialWireAppModel {
     }
 
     private func applyReaderListSource(_ source: ReaderListSource, persist: Bool) {
+        if readerListSource != source {
+            cancelWireRequest(epoch: wireRequestEpoch)
+            cancelCircleRequest(epoch: circleRequestEpoch)
+        }
         readerListSource = source
         feedSelection = .topLevel(source)
         selectedSavedSourceKey = nil
@@ -1026,9 +1048,7 @@ final class SocialWireAppModel {
             selectedPublication = nil
             selectedSavedLink = nil
             entries = []
-            if persist {
-                Task { await loadWireFeed() }
-            }
+            // NewsShellView's destination task owns and cancels the initial load.
         case .readLater, .archive:
             selectedSidebar = .saved
             selectedPublication = nil
@@ -1144,9 +1164,26 @@ final class SocialWireAppModel {
         return supported.first ?? preferred
     }
 
+    private func cancelWireRequest(epoch: Int) {
+        guard wireRequestEpoch == epoch else { return }
+        wireRequestEpoch += 1
+        activeWireRequest = nil
+        isLoadingEntries = false
+        isLoadingMoreEntries = false
+    }
+
+    private func cancelCircleRequest(epoch: Int) {
+        guard circleRequestEpoch == epoch else { return }
+        circleRequestEpoch += 1
+        activeCircleRequest = nil
+        isLoadingCircle = false
+    }
+
     func refreshWireCatalog() async {
+        let viewer = viewerDID
         do {
             let catalog = try await gateway.fetchFeedCatalog()
+            guard !Task.isCancelled, viewerDID == viewer else { return }
             wireCatalog = catalog
             guard catalog.isAvailable else {
                 if readerListSource == .wire {
@@ -1155,10 +1192,8 @@ final class SocialWireAppModel {
                 }
                 return
             }
-            if readerListSource == .wire, entries.isEmpty {
-                await loadWireFeed()
-            }
         } catch {
+            guard !Task.isCancelled, viewerDID == viewer else { return }
             // Keep an already-confirmed catalog during a transient refresh failure. On a cold
             // launch, fail closed so an operator-disabled feed never appears from client defaults.
             if wireCatalog == nil, readerListSource == .wire {
@@ -1171,6 +1206,13 @@ final class SocialWireAppModel {
     func loadWireFeed(cursor: String? = nil, restoringCache: Bool = true) async {
         guard wireCatalog?.isAvailable == true, let viewerDID else { return }
         let language = preferredWireLanguage
+        let source = readerListSource
+        let requestKey = "loadWireFeed:\(viewerDID):\(language):\(cursor ?? "first"):\(source)"
+        guard activeWireRequest != requestKey else { return }
+        wireRequestEpoch += 1
+        let epoch = wireRequestEpoch
+        activeWireRequest = requestKey
+        defer { if epoch == wireRequestEpoch { activeWireRequest = nil } }
         var restoredCache = false
 
         if cursor == nil, restoringCache,
@@ -1191,16 +1233,19 @@ final class SocialWireAppModel {
             isLoadingMoreEntries = true
         }
         defer {
-            if cursor == nil { isLoadingEntries = false }
-            else { isLoadingMoreEntries = false }
+            if epoch == wireRequestEpoch {
+                if cursor == nil { isLoadingEntries = false }
+                else { isLoadingMoreEntries = false }
+            }
         }
 
         do {
-            let page = try await gateway.fetchWire(
-                language: language,
-                cursor: cursor
-            )
-            guard readerListSource == .wire else { return }
+            let page = try await withTaskCancellationHandler {
+                try await gateway.fetchWire(language: language, cursor: cursor)
+            } onCancel: {
+                Task { @MainActor [weak self] in self?.cancelWireRequest(epoch: epoch) }
+            }
+            guard !Task.isCancelled, epoch == wireRequestEpoch, self.viewerDID == viewerDID, preferredWireLanguage == language, readerListSource == source else { return }
             guard applyWirePage(page, replacing: cursor == nil) else { return }
             if cursor == nil {
                 try? readerCacheCoordinator?.upsertWireFeedPage(
@@ -1210,7 +1255,7 @@ final class SocialWireAppModel {
             }
             await prefetchThumbnailImages(for: page.items.map { $0.toEntryListItem() })
         } catch {
-            guard readerListSource == .wire, self.viewerDID == viewerDID else { return }
+            guard !Task.isCancelled, epoch == wireRequestEpoch, self.viewerDID == viewerDID, preferredWireLanguage == language, readerListSource == source else { return }
             if (error as? SocialWireError)?.shouldRestartFeed(cursor: cursor) == true {
                 entriesNextCursor = nil
                 entriesPaginationTriggeredForEntryId = nil
@@ -1269,7 +1314,15 @@ final class SocialWireAppModel {
 
     func loadWireEdition(cursor: String? = nil, restoringCache: Bool = true) async {
         guard wireCatalog?.isAvailable == true, let viewerDID else { return }
+        if let cursor, entriesNextCursor != cursor { return }
         let language = preferredWireLanguage
+        let source = readerListSource
+        let requestKey = "loadWireEdition:\(viewerDID):\(language):\(cursor ?? "first"):\(source)"
+        guard activeWireRequest != requestKey else { return }
+        wireRequestEpoch += 1
+        let epoch = wireRequestEpoch
+        activeWireRequest = requestKey
+        defer { if epoch == wireRequestEpoch { activeWireRequest = nil } }
         var restoredCache = false
 
         if cursor == nil, restoringCache,
@@ -1294,15 +1347,20 @@ final class SocialWireAppModel {
             isLoadingMoreEntries = true
         }
         defer {
-            isLoadingEntries = false
-            isLoadingMoreEntries = false
+            if epoch == wireRequestEpoch {
+                isLoadingEntries = false
+                isLoadingMoreEntries = false
+            }
         }
 
         do {
-            let page = try await gateway.fetchWireEdition(
-                language: language,
-                cursor: cursor
-            )
+            let page = try await withTaskCancellationHandler {
+                try await gateway.fetchWireEdition(language: language, cursor: cursor)
+            } onCancel: {
+                Task { @MainActor [weak self] in self?.cancelWireRequest(epoch: epoch) }
+            }
+            guard !Task.isCancelled, epoch == wireRequestEpoch, self.viewerDID == viewerDID, preferredWireLanguage == language, readerListSource == source else { return }
+            if cursor != nil, wireGenerationId != page.generationId { return }
             let mapped = page.stories.map { $0.toEntryListItem() }
             entries = cursor == nil ? mapped : mergeEntryPages(existing: entries, newPage: mapped)
             wireEdition = page
@@ -1318,7 +1376,7 @@ final class SocialWireAppModel {
                 )
             }
         } catch {
-            guard self.viewerDID == viewerDID else { return }
+            guard !Task.isCancelled, epoch == wireRequestEpoch, self.viewerDID == viewerDID, preferredWireLanguage == language, readerListSource == source else { return }
             if (error as? SocialWireError)?.shouldRestartFeed(cursor: cursor) == true {
                 entriesNextCursor = nil
                 entriesPaginationTriggeredForEntryId = nil
@@ -1343,20 +1401,32 @@ final class SocialWireAppModel {
             circleCatalog = nil
             return
         }
+        let viewer = viewerDID
         do {
-            circleCatalog = try await gateway.fetchCircleCatalog()
+            let catalog = try await gateway.fetchCircleCatalog()
+            guard !Task.isCancelled, viewerDID == viewer else { return }
+            circleCatalog = catalog
             circleErrorMessage = nil
             if circleCatalog?.isAvailable != true {
                 circleEdition = nil
             }
         } catch {
+            guard !Task.isCancelled, viewerDID == viewer else { return }
             circleErrorMessage = error.localizedDescription
         }
     }
 
     func loadCircleEdition(cursor: String? = nil, restoringCache: Bool = true) async {
         guard circleCatalog?.isAvailable == true, let viewerDID else { return }
+        if let cursor, circleEdition?.moreCursor != cursor { return }
         let language = preferredCircleLanguage
+        let source = readerListSource
+        let requestKey = "loadCircleEdition:\(viewerDID):\(language):\(cursor ?? "first"):\(source)"
+        guard activeCircleRequest != requestKey else { return }
+        circleRequestEpoch += 1
+        let epoch = circleRequestEpoch
+        activeCircleRequest = requestKey
+        defer { if epoch == circleRequestEpoch { activeCircleRequest = nil } }
         var restoredCache = false
 
         if cursor == nil, restoringCache,
@@ -1371,12 +1441,15 @@ final class SocialWireAppModel {
 
         isLoadingCircle = !restoredCache
         circleErrorMessage = nil
-        defer { isLoadingCircle = false }
+        defer { if epoch == circleRequestEpoch { isLoadingCircle = false } }
         do {
-            let page = try await gateway.fetchCircleEdition(
-                language: language,
-                cursor: cursor
-            )
+            let page = try await withTaskCancellationHandler {
+                try await gateway.fetchCircleEdition(language: language, cursor: cursor)
+            } onCancel: {
+                Task { @MainActor [weak self] in self?.cancelCircleRequest(epoch: epoch) }
+            }
+            guard !Task.isCancelled, epoch == circleRequestEpoch, self.viewerDID == viewerDID, preferredCircleLanguage == language, readerListSource == source else { return }
+            if cursor != nil, circleEdition?.generationId != page.generationId { return }
             if cursor == nil || circleEdition == nil {
                 circleEdition = page
             } else if let current = circleEdition {
@@ -1403,7 +1476,7 @@ final class SocialWireAppModel {
                 )
             }
         } catch {
-            guard self.viewerDID == viewerDID else { return }
+            guard !Task.isCancelled, epoch == circleRequestEpoch, self.viewerDID == viewerDID, preferredCircleLanguage == language, readerListSource == source else { return }
             if (error as? SocialWireError)?.shouldRestartFeed(cursor: cursor) == true {
                 circleEdition = nil
                 await loadCircleEdition(restoringCache: false)
@@ -1961,9 +2034,10 @@ final class SocialWireAppModel {
                 await self.readStateSync.flush()
             }
         }
-        await refreshWireCatalog()
+        async let catalog: Void = refreshWireCatalog()
         await refreshSidebarProjection()
         await refreshActiveReaderContentIfNeeded()
+        await catalog
     }
 
     /// Bootstrap stream + sidebar snapshot only (pull-to-refresh on Publications pane).
@@ -4262,15 +4336,26 @@ final class SocialWireAppModel {
 
     func loadArticleSocialState(for entry: EntryDetail) async {
         let loadingKeys = articleSocialLoadingKeys(for: entry)
-        guard !loadingKeys.isEmpty,
+        let contextID = articleSocialStateContextID
+        let viewer = viewerDID
+        guard !Task.isCancelled, viewer != nil, !loadingKeys.isEmpty,
               loadingKeys.allSatisfy({ !articleSocialStateLoadingKeys.contains($0) })
         else { return }
         articleSocialStateLoadingKeys.formUnion(loadingKeys)
-        defer { articleSocialStateLoadingKeys.subtract(loadingKeys) }
+        defer {
+            // An obsolete account task must not release a replacement request's keys.
+            if articleSocialStateContextID == contextID {
+                articleSocialStateLoadingKeys.subtract(loadingKeys)
+            }
+        }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && articleSocialStateContextID == contextID && viewerDID == viewer
+        }
 
         if let canonicalURL = normalizedWireFeedbackURL(for: entry) {
             do {
                 let records = try await pds.listWireArticleFeedback()
+                guard isCurrent() else { return }
                 let matching = records.first { record in
                     WireArticleFeedbackContract.normalizeCanonicalURL(record.value.canonicalUrl) == canonicalURL
                 }
@@ -4280,6 +4365,7 @@ final class SocialWireAppModel {
                     wireFeedbackByCanonicalURL.removeValue(forKey: canonicalURL)
                 }
             } catch {
+                guard isCurrent(), !Self.isArticleSocialCancellation(error) else { return }
                 errorMessage = "Couldn't load your Wire rating. \(error.localizedDescription)"
             }
         }
@@ -4287,12 +4373,14 @@ final class SocialWireAppModel {
         if let documentURI = entry.standardSiteDocumentURI {
             do {
                 let records = try await pds.listStandardSiteRecommendations()
+                guard isCurrent() else { return }
                 if records.contains(where: { $0.value.document == documentURI }) {
                     recommendedStandardSiteDocumentURIs.insert(documentURI)
                 } else {
                     recommendedStandardSiteDocumentURIs.remove(documentURI)
                 }
             } catch {
+                guard isCurrent(), !Self.isArticleSocialCancellation(error) else { return }
                 errorMessage = "Couldn't load your recommendation. \(error.localizedDescription)"
             }
         }
@@ -4300,6 +4388,7 @@ final class SocialWireAppModel {
         if let postURI = entry.bskyPostUri {
             do {
                 let viewer = try await publicationsService.viewerState(for: postURI)
+                guard isCurrent() else { return }
                 if let like = viewer?.like {
                     likeRecordURIByEntryID[entry.entryId] = like
                 } else {
@@ -4311,6 +4400,7 @@ final class SocialWireAppModel {
                     repostRecordURIByEntryID.removeValue(forKey: entry.entryId)
                 }
             } catch {
+                guard isCurrent(), !Self.isArticleSocialCancellation(error) else { return }
                 errorMessage = "Couldn't load your article reactions. \(error.localizedDescription)"
             }
         }
@@ -4353,6 +4443,12 @@ final class SocialWireAppModel {
         } catch {
             errorMessage = "Couldn't update your recommendation. \(error.localizedDescription)"
         }
+    }
+
+    private static func isArticleSocialCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let error = error as NSError
+        return error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
     }
 
     private func normalizedWireFeedbackURL(for entry: EntryDetail) -> String? {

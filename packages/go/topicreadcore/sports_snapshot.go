@@ -2,36 +2,44 @@ package topicreadcore
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
+	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
 	"log/slog"
 	"time"
 )
 
+func (s *SportsStore) snapshotCache() *decodedSnapshotCache[sportscore.RankCandidate] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.snapshots == nil {
+		s.snapshots = &decodedSnapshotCache[sportscore.RankCandidate]{}
+	}
+	return s.snapshots
+}
+
 func (s *SportsStore) retained(ctx context.Context, id, scope, language, revision string, now time.Time) (*corpuscore.SportsGeneration, error) {
+	return s.loadDecodedSnapshot(ctx, id, false, scope, language, revision, now)
+}
+
+// Reuse is guarded by the same current database row and scopes as continuation.
+func (s *SportsStore) reusable(ctx context.Context, generation, scope, language, revision string, now time.Time) (*corpuscore.SportsGeneration, error) {
+	return s.loadDecodedSnapshot(ctx, generation, true, scope, language, revision, now)
+}
+
+func (s *SportsStore) loadDecodedSnapshot(ctx context.Context, id string, reusable bool, scope, language, revision string, now time.Time) (*corpuscore.SportsGeneration, error) {
 	if !validUUID(id) {
 		return nil, nil
 	}
-	value := corpuscore.SportsGeneration{GenerationID: id, Language: language}
-	var raw []byte
-	var source string
-	err := s.DB.QueryRowContext(ctx, `SELECT generated_at,expires_at,payload::text,serving_source FROM sports_personalized_snapshots WHERE snapshot_id=$1::uuid AND viewer_scope=$2 AND language=$3 AND preference_revision=$4 AND expires_at>$5`, id, scope, language, revision, now).Scan(&value.GeneratedAt, &value.ExpiresAt, &raw, &source)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	metadata, candidates, err := s.snapshotCache().load(ctx, s.DB, "sports_personalized_snapshots", id, reusable, scope, language, revision, now)
+	if err != nil || metadata == nil {
 		return nil, err
 	}
-	value.Source = &source
-	if err = corpuscore.DecodeContract(raw, &value.Candidates); err != nil {
-		return nil, err
-	}
-	if !sportsCurrent(value.Candidates) {
+	if !sportsCurrent(candidates) {
 		return nil, nil
 	}
-	return &value, nil
+	return &corpuscore.SportsGeneration{GenerationID: metadata.ID, GeneratedAt: metadata.GeneratedAt, ExpiresAt: metadata.ExpiresAt, Language: language, Candidates: candidates, Source: &metadata.Source}, nil
 }
+
 func (s *SportsStore) persist(ctx context.Context, proposal, source corpuscore.SportsGeneration, scope, revision string, now time.Time) (corpuscore.SportsGeneration, error) {
 	if !validUUID(proposal.GenerationID) || !validUUID(source.GenerationID) {
 		return corpuscore.SportsGeneration{}, ErrUnavailable
@@ -46,12 +54,18 @@ func (s *SportsStore) persist(ctx context.Context, proposal, source corpuscore.S
 	}
 	if s.Remote != nil || provenance == "simplified_fallback" {
 		s.purgeIfDue(ctx, now)
-		raw, err := corpuscore.MarshalHTTP(source.Candidates)
-		if err != nil {
+		var exists bool
+		if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sports_generations WHERE generation_id=$1::uuid)`, source.GenerationID).Scan(&exists); err != nil {
 			return corpuscore.SportsGeneration{}, err
 		}
-		if _, err = s.DB.ExecContext(ctx, `INSERT INTO sports_generations(generation_id,source_generation_id,language,algorithm_version,generated_at,expires_at,payload,serving_source)VALUES($1::uuid,$1::uuid,$2,'sports-v1',$3,$4,$5::jsonb,$6) ON CONFLICT(generation_id)DO NOTHING`, source.GenerationID, proposal.Language, proposal.GeneratedAt, proposal.ExpiresAt, raw, provenance); err != nil {
-			return corpuscore.SportsGeneration{}, err
+		if !exists {
+			raw, err := corpuscore.MarshalHTTP(source.Candidates)
+			if err != nil {
+				return corpuscore.SportsGeneration{}, err
+			}
+			if _, err = s.DB.ExecContext(ctx, `INSERT INTO sports_generations(generation_id,source_generation_id,language,algorithm_version,generated_at,expires_at,payload,serving_source)VALUES($1::uuid,$1::uuid,$2,'sports-v1',$3,$4,$5::jsonb,$6) ON CONFLICT(generation_id)DO NOTHING`, source.GenerationID, proposal.Language, proposal.GeneratedAt, proposal.ExpiresAt, raw, provenance); err != nil {
+				return corpuscore.SportsGeneration{}, err
+			}
 		}
 	}
 	value := corpuscore.SportsGeneration{Language: proposal.Language}
@@ -62,7 +76,7 @@ func (s *SportsStore) persist(ctx context.Context, proposal, source corpuscore.S
 		return value, err
 	}
 	value.Source = &actualSource
-	err = corpuscore.DecodeContract(raw, &value.Candidates)
+	err = decodeSportsSnapshot(raw, &value.Candidates)
 	if err == nil && !sportsCurrent(value.Candidates) {
 		return value, ErrCursorExpired
 	}

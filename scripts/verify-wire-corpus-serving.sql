@@ -29,7 +29,7 @@ BEGIN
     -- columns elsewhere still fail this boundary check.
     AND NOT (column_name = 'payload' AND table_name IN (
       'finance_generations', 'sports_generations', 'sports_events',
-      'sports_standings', 'sports_schedule_status'
+      'sports_standings', 'sports_schedule_status', 'finance_source_instruments'
     ))
     AND NOT (
       table_name = 'circle_signal_facts'
@@ -102,6 +102,11 @@ SELECT event_id, payload FROM wire_serving.sports_events LIMIT 1;
 SELECT competition_id, season, payload FROM wire_serving.sports_standings LIMIT 1;
 SELECT competition_id, payload FROM wire_serving.sports_schedule_status LIMIT 1;
 SELECT version, entities FROM wire_serving.sports_catalog LIMIT 1;
+SELECT generation_id, cache_revision FROM wire_serving.sports_source_heads LIMIT 1;
+SELECT generation_id, ordinal, item_id, candidate FROM wire_serving.sports_source_candidates LIMIT 1;
+SELECT generation_id, cache_revision FROM wire_serving.finance_source_heads LIMIT 1;
+SELECT generation_id, ordinal, item_id, candidate FROM wire_serving.finance_source_candidates LIMIT 1;
+SELECT generation_id, instrument_id, cache_revision, payload FROM wire_serving.finance_source_instruments LIMIT 1;
 
 DO $$
 DECLARE

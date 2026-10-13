@@ -1,5 +1,8 @@
 "use client";
 
+import { useFeedDecorationsReady } from "@/hooks/useFeedDecorationsReady";
+import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
+
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useSportsFeed } from "@/hooks/useSportsFeed";
@@ -24,12 +27,19 @@ import { useSportsDisplayLocale } from "@/hooks/useSportsDisplayLocale";
 export default function SportsExperience({ feedID = "sports", onFeedChange }: { feedID?: string; onFeedChange?: (id: string) => void }) {
   const locale = useSportsDisplayLocale();
   const sports = useSportsFeed(feedID);
+  const timingScope = `sports:${feedID}:${sports.viewerDID ?? "public"}`;
+  useFeedFirstContentTiming(timingScope, sports.items.length > 0, !sports.feed.isFetchedAfterMount);
+  const afterStoryPaint = useFeedDecorationsReady(timingScope, sports.items.length > 0);
+  const [interactedScope, setInteractedScope] = useState<string | null>(null);
+  const decorationsReady = afterStoryPaint || interactedScope === timingScope;
   const { catalogEntities, entitiesByID, definitions } = useMemo(() => {
     const catalogEntities = sports.catalog.data?.entities ?? [];
-    const entitiesByID = new Map(catalogEntities.map(entity => [entity.id, entity]));
-    const definitions = (sports.catalog.data?.feeds ?? []).filter(feed => feed.entityIDs.every(id => entitiesByID.get(id)?.active !== false)).map(feed => ({ ...feed, searchAliases: feed.entityIDs.flatMap(id => entitiesByID.get(id)?.aliases ?? []) }));
-    return { catalogEntities, entitiesByID, definitions };
-  }, [sports.catalog.data]);
+    const selected = sports.catalog.data?.feeds.find(feed => feed.id === feedID);
+    const relevantEntities = decorationsReady ? catalogEntities : selected?.entityIDs.length ? catalogEntities.filter(entity => selected.entityIDs.includes(entity.id)) : [];
+    const entitiesByID = new Map(relevantEntities.map(entity => [entity.id, entity]));
+    const definitions = (decorationsReady ? sports.catalog.data?.feeds ?? [] : selected ? [selected] : []).filter(feed => feed.entityIDs.every(id => entitiesByID.get(id)?.active !== false)).map(feed => ({ ...feed, searchAliases: feed.entityIDs.flatMap(id => entitiesByID.get(id)?.aliases ?? []) }));
+    return { catalogEntities: decorationsReady ? catalogEntities : relevantEntities, entitiesByID, definitions };
+  }, [sports.catalog.data, decorationsReady, feedID]);
   const [entitySearch, setCompanySearch] = useState("");
   const selectedFeed = definitions.find(feed => feed.id === feedID);
   const followEntity = selectedFeed?.kind !== "global" && selectedFeed?.entityIDs.length === 1
@@ -71,10 +81,10 @@ export default function SportsExperience({ feedID = "sports", onFeedChange }: { 
 
   return (
     <div key={feedID} ref={scroll} data-sports-scroll className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto xl:[&>[data-topic-topbar]]:mr-[calc(17rem+2rem)]">
-      {!followEntity && (sports.catalog.data?.eventsEnabled || (feedID === "sports" && sports.catalog.isPending && !sports.catalog.data)) ? <SportsEventsStrip feedID={feedID} hidden={performanceHidden} entities={catalogEntities} selections={sports.selections} viewerDID={sports.viewerDID ?? "public"} selectionsLoading={sports.selectionsLoading || !!sports.selectionsError} catalogLoading={!sports.catalog.data} /> : null}
+      {!followEntity && (sports.catalog.data?.eventsEnabled || (feedID === "sports" && sports.catalog.isPending && !sports.catalog.data)) ? <SportsEventsStrip decorationsReady={decorationsReady} feedID={feedID} hidden={performanceHidden} entities={catalogEntities} selections={sports.selections} viewerDID={sports.viewerDID ?? "public"} selectionsLoading={sports.selectionsLoading || !!sports.selectionsError} catalogLoading={!sports.catalog.data} /> : null}
       <div className="grid min-w-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="@container/sports min-w-0">
-      <header aria-label="Sports Feed Controls" className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/sports:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
+      <header onPointerDownCapture={() => setInteractedScope(timingScope)} onFocusCapture={() => setInteractedScope(timingScope)} aria-label="Sports Feed Controls" className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/sports:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
         <h2 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/sports:max-w-56">{selectedFeed ? displaySportsFeedTitle(selectedFeed, locale) : "Sports"}</h2>
         <div className="col-start-1 row-start-2 flex min-w-0 items-center text-sm @min-[24rem]/sports:col-start-2 @min-[24rem]/sports:row-start-1">
           <SportsFeedPicker entities={catalogEntities} definitions={definitions} feedID={feedID} entitySearch={entitySearch} onFeedChange={onFeedChange} />
@@ -124,9 +134,9 @@ export default function SportsExperience({ feedID = "sports", onFeedChange }: { 
       </div>
       {!sports.isLoading && !sports.items.length && !sports.error ? <p>{feedID === "sports" ? "No sports stories are available right now." : "No matching stories are available right now. Try Refresh later or choose another feed."}</p> : null}
       {sports.feed.hasNextPage && !sports.suspended ? <Button className="mt-4" variant="outline" disabled={sports.feed.isFetchingNextPage} onClick={() => void sports.feed.fetchNextPage()}>Load More</Button> : null}
-      <SportsCustomize key={customize ? "open" : "closed"} open={customize} onOpenChange={setCustomize} selections={sports.selections} save={saveSelection} saving={sports.saving} signedIn={sports.signedIn} viewerDID={sports.viewerDID} />
+      {customize ? <SportsCustomize key={sports.viewerDID ?? "public"} open={customize} onOpenChange={setCustomize} selections={sports.selections} save={saveSelection} saving={sports.saving} signedIn={sports.signedIn} viewerDID={sports.viewerDID} /> : null}
       </div>
-      <SportsFollowingSidebar entities={catalogEntities} definitions={definitions} selections={sports.selections} loading={sports.catalog.isPending || sports.selectionsLoading} error={!!sports.selectionsError} catalogError={!!sports.catalog.error} feedID={feedID} onFeedChange={onFeedChange} />
+      <SportsFollowingSidebar entities={catalogEntities} definitions={definitions} selections={sports.selections} loading={!decorationsReady || sports.catalog.isPending || sports.selectionsLoading} error={!!sports.selectionsError} catalogError={!!sports.catalog.error} feedID={feedID} onFeedChange={onFeedChange} />
       </div>
     </div>
   );

@@ -8,14 +8,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 )
 
 type PostgreSQLStore struct {
-	DB    *sql.DB
-	Cache *PayloadCache
+	DB                        *sql.DB
+	Cache                     *PayloadCache
+	financeSourceMu           sync.Mutex
+	financeValidated          *financeValidatedGeneration
+	sportsCatalogMu           sync.Mutex
+	sportsSourceCatalogCache  *sportsCatalogCache
+	sportsValidatedGeneration *sportsValidatedGeneration
 }
 
 var _ Store = (*PostgreSQLStore)(nil)
@@ -96,11 +102,11 @@ func (r *record) OptionalTime(i int) *time.Time {
 	return &value
 }
 func (s *PostgreSQLStore) query(ctx context.Context, statement string, args ...any) ([]*record, error) {
-	rows, err := s.DB.QueryContext(ctx, statement, args...)
+	rows, closeRows, err := QueryRows(ctx, s.DB, statement, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows()
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, err

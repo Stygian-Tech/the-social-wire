@@ -11,26 +11,6 @@ import (
 	"time"
 )
 
-func (s *FinanceStore) Catalog(ctx context.Context) ([]financecore.Instrument, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT payload::text FROM finance_instruments ORDER BY instrument_id LIMIT 50000`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := []financecore.Instrument{}
-	for rows.Next() {
-		var raw []byte
-		if err = rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		var i financecore.Instrument
-		if err = corpuscore.DecodeContract(raw, &i); err != nil {
-			return nil, err
-		}
-		result = append(result, financecore.ApplyReviewedMetadata(i))
-	}
-	return s.Config.Policy.Filter(result), rows.Err()
-}
 func (s *FinanceStore) Availability(ctx context.Context, now time.Time) (FinanceAvailability, error) {
 	available := false
 	if s.Config.Rights && s.Config.Mode == "visible" {
@@ -76,6 +56,24 @@ func (s *FinanceStore) source(ctx context.Context, language string, now time.Tim
 			return source, err
 		}
 		return source, nil
+	}
+	if local := localSourceStore(s.Wire, s.DB); local != nil {
+		response, err := local.FinanceSource(ctx, corpuscore.FinanceSourceRequest{Language: language}, now)
+		if err == nil {
+			if response.Generation == nil {
+				return corpuscore.FinanceGeneration{}, ErrUnavailable
+			}
+			source := *response.Generation
+			source.Source, err = localSourceProvenance(ctx, s.DB, false, source.GenerationID)
+			return source, err
+		}
+		if ctx.Err() != nil {
+			return corpuscore.FinanceGeneration{}, ctx.Err()
+		}
+		if !errors.Is(err, corpuscore.ErrUnavailable) {
+			return corpuscore.FinanceGeneration{}, corpusError(err)
+		}
+		// A missing active source keeps the original retained/fallback selection.
 	}
 	var source corpuscore.FinanceGeneration
 	var raw []byte

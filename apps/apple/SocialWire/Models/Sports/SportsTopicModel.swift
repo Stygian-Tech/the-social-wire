@@ -58,10 +58,10 @@ final class SportsTopicModel {
         let epoch = catalogEpoch, currentViewer = viewer
         do {
             let value = try await gateway.fetchSportsCatalog()
-            guard epoch == catalogEpoch, viewer == currentViewer else { return }
+            guard !Task.isCancelled, epoch == catalogEpoch, viewer == currentViewer else { return }
             catalog = value
         } catch {
-            guard epoch == catalogEpoch, viewer == currentViewer else { return }
+            guard !Task.isCancelled, epoch == catalogEpoch, viewer == currentViewer else { return }
             self.error = error.localizedDescription
         }
     }
@@ -70,8 +70,7 @@ final class SportsTopicModel {
         guard id != selectedFeedID, catalog?.feeds.contains(where: { $0.id == id }) == true else { return }
         requestEpoch += 1; eventEpoch += 1
         selectedFeedID = id; items = []; page = nil; events = nil; eventsError = nil; error = nil; continuationSuspended = false
-        await load(language: language)
-        await loadEvents()
+        await refresh(language: language)
     }
 
     func reconcileSelections() async throws {
@@ -94,18 +93,32 @@ final class SportsTopicModel {
         selectionsReconciled = true
     }
 
-    func load(language: String, cursor: String? = nil) async {
+    func refresh(language: String) async {
+        let currentViewer = viewer, revision = selectionEpoch, feed = selectedFeedID
+        do {
+            try await reconcileSelections()
+            guard !Task.isCancelled, viewer == currentViewer, revision == selectionEpoch, selectedFeedID == feed else { return }
+            async let stories: Void = load(language: language, reconcilingSelections: false)
+            async let schedules: Void = loadEvents()
+            _ = await (stories, schedules)
+        } catch {
+            guard !Task.isCancelled, viewer == currentViewer, revision == selectionEpoch, selectedFeedID == feed else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    func load(language: String, cursor: String? = nil, reconcilingSelections: Bool = true) async {
         if let cursor, continuationSuspended || page?.cursor != cursor { return }
         requestEpoch += 1
         let epoch = requestEpoch, currentViewer = viewer, feed = selectedFeedID, revision = selectionEpoch
         isLoading = true; error = nil
         defer { if epoch == requestEpoch { isLoading = false } }
         do {
-            if cursor == nil { try await reconcileSelections() }
-            guard epoch == requestEpoch, revision == selectionEpoch, viewer == currentViewer, feed == selectedFeedID else { return }
+            if cursor == nil, reconcilingSelections { try await reconcileSelections() }
+            guard !Task.isCancelled, epoch == requestEpoch, revision == selectionEpoch, viewer == currentViewer, feed == selectedFeedID else { return }
             let preferences = fingerprint
             let value = try await gateway.fetchSports(language: language, feed: feed, cursor: cursor)
-            guard epoch == requestEpoch, revision == selectionEpoch, viewer == currentViewer,
+            guard !Task.isCancelled, epoch == requestEpoch, revision == selectionEpoch, viewer == currentViewer,
                   preferences == fingerprint, feed == selectedFeedID, value.feedId == feed, value.language == language else { return }
             if cursor != nil, page?.generationId != value.generationId { return }
             if cursor == nil { items = value.items; continuationSuspended = false }
@@ -115,7 +128,7 @@ final class SportsTopicModel {
             }
             page = value
         } catch {
-            guard epoch == requestEpoch, revision == selectionEpoch, viewer == currentViewer, feed == selectedFeedID else { return }
+            guard !Task.isCancelled, epoch == requestEpoch, revision == selectionEpoch, viewer == currentViewer, feed == selectedFeedID else { return }
             if cursor != nil, case SocialWireError.cursorExpired = error { await load(language: language) }
             else { self.error = error.localizedDescription }
         }
@@ -157,7 +170,7 @@ final class SportsTopicModel {
             let value = try await gateway.fetchSportsEvents(feed: feed, teamIDs: teamIDs,
                 preferredIDs: preferredIDs, timeZone: zone)
             guard zone == TimeZone.current.identifier else { return }
-            guard epoch == eventEpoch, feed == selectedFeedID, viewer == currentViewer, preference == fingerprint else { return }
+            guard !Task.isCancelled, epoch == eventEpoch, feed == selectedFeedID, viewer == currentViewer, preference == fingerprint else { return }
             if !value.matchesOrderingContext(preferredIDs: preferredIDs, timeZone: zone) {
                 events = nil; eventsError = "Personalized Schedules Are Temporarily Unavailable"
                 return
@@ -168,7 +181,7 @@ final class SportsTopicModel {
             }
             events = value; eventsError = nil
         } catch {
-            guard epoch == eventEpoch, feed == selectedFeedID, viewer == currentViewer, preference == fingerprint else { return }
+            guard !Task.isCancelled, epoch == eventEpoch, feed == selectedFeedID, viewer == currentViewer, preference == fingerprint else { return }
             eventsError = "Event Data Is Temporarily Unavailable"
         }
     }

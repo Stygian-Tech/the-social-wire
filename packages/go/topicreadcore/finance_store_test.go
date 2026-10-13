@@ -14,19 +14,34 @@ import (
 
 type financeWireFixture struct {
 	corpuscore.Store
-	items map[string]wirecore.FeedItem
+	items      map[string]wirecore.FeedItem
+	batchCalls int
+	itemCalls  int
 }
 
 func (f *financeWireFixture) Item(_ context.Context, id string, _ time.Time) (*corpuscore.Item, error) {
+	f.itemCalls++
 	item, ok := f.items[id]
 	if !ok {
 		return nil, nil
 	}
 	return &corpuscore.Item{Item: item}, nil
 }
+func (f *financeWireFixture) Items(_ context.Context, ids []string, _ time.Time) ([]corpuscore.Item, error) {
+	f.batchCalls++
+	result := []corpuscore.Item{}
+	// Deliberately return reverse order to verify pages keep snapshot order.
+	for index := len(ids) - 1; index >= 0; index-- {
+		if item, ok := f.items[ids[index]]; ok {
+			result = append(result, corpuscore.Item{Item: item})
+		}
+	}
+	return result, nil
+}
 func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	db := selectionDB(t)
-	ctx := context.Background()
+	dbPhases := map[string]int{}
+	ctx := WithFeedPhaseObserver(context.Background(), func(phase string, _ time.Duration) { dbPhases[phase]++ })
 	now := time.Now().UTC().Truncate(time.Second)
 	generation := "77777777-1111-1111-1111-111111111111"
 	instrument := financecore.ReviewedInstruments()[0]
@@ -71,6 +86,9 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Cursor == nil {
 		t.Fatal(page, err)
 	}
+	if fixture.batchCalls != 1 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 || dbPhases["catalog-metadata"] != 1 || dbPhases["catalog-cache-miss"] != 1 {
+		t.Fatal("first-page batch budget", fixture.batchCalls, fixture.itemCalls)
+	}
 	decoded, err := store.Cursor.Decode(*page.Cursor, "en", page.PreferenceRevision, mustHash(t, store.Hasher, "anonymous-finance"), "finance", now)
 	if err != nil || decoded.NextOrdinal != 1 || decoded.ExpiresAt != topicExpiry(now.Add(time.Hour)) {
 		t.Fatal(decoded, err)
@@ -82,6 +100,50 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	next, err := store.Page(ctx, *page.Cursor, 1, "en", "", false, now, "finance", false)
 	if err != nil || len(next.Items) != 1 || next.Items[0].Story.ItemID != "c" || next.Cursor != nil {
 		t.Fatal(next, err)
+	}
+	// Continuation revalidates catalog metadata and reuses the decoded payload.
+	// The edited first candidate is rejected; the bounded refill hydrates its successor.
+	if fixture.batchCalls != 3 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 || dbPhases["catalog-metadata"] != 2 || dbPhases["catalog-cache-hit"] != 1 {
+		t.Fatal("continuation batch budget", fixture.batchCalls, fixture.itemCalls)
+	}
+	var beforeVersion, afterVersion string
+	if err = db.QueryRow(`SELECT xmin::text FROM finance_personalized_snapshots WHERE snapshot_id=$1::uuid`, page.GenerationID).Scan(&beforeVersion); err != nil {
+		t.Fatal(err)
+	}
+	// Re-ranking this changed source would favor its third candidate, but the
+	// existing conflict contract retains this tuple's original snapshot order.
+	if _, err = db.Exec(`UPDATE finance_generations SET payload=jsonb_set(payload,'{2,baseScore}','100'::jsonb) WHERE generation_id=$1::uuid`, generation); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := store.Page(ctx, "", 1, "en", "", false, now, "finance", false)
+	if err != nil || repeated.GenerationID != page.GenerationID || len(repeated.Items) != 1 || repeated.Items[0].Story.ItemID != page.Items[0].Story.ItemID || dbPhases["snapshot-persistence"] != 1 || dbPhases["snapshot-lookup"] != 2 || dbPhases["analysis"] != 5 || fixture.batchCalls != 4 {
+		t.Fatal("warm snapshot reuse", repeated, err, dbPhases, fixture.batchCalls)
+	}
+	if err = db.QueryRow(`SELECT xmin::text FROM finance_personalized_snapshots WHERE snapshot_id=$1::uuid`, page.GenerationID).Scan(&afterVersion); err != nil || beforeVersion != afterVersion {
+		t.Fatal("reused snapshot was rewritten", beforeVersion, afterVersion, err)
+	}
+	// Finance retains its existing per-item resolver upgrade semantics on reuse.
+	if _, err = db.Exec(`UPDATE finance_personalized_snapshots SET payload=jsonb_set(payload,'{0,analysis,resolverVersion}',to_jsonb('obsolete'::text)) WHERE snapshot_id=$1::uuid`, page.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := store.Page(ctx, "", 1, "en", "", false, now, "finance", false)
+	if err != nil || upgraded.GenerationID != page.GenerationID || len(upgraded.Items) != 1 || len(upgraded.Items[0].Instruments) == 0 || upgraded.Items[0].Instruments[0].ResolverVersion != financecore.ResolverVersion || dbPhases["snapshot-persistence"] != 1 {
+		t.Fatal("per-item resolver revalidation", upgraded, err)
+	}
+	lookupScope := mustHash(t, store.Hasher, "anonymous-finance")
+	for _, test := range []struct {
+		scope, language, revision string
+		at                        time.Time
+	}{
+		{"wrong-viewer", "en", page.PreferenceRevision, now},
+		{lookupScope, "fr", page.PreferenceRevision, now},
+		{lookupScope, "en", "changed-preferences", now},
+		{lookupScope, "en", page.PreferenceRevision, now.Add(2 * time.Hour)},
+	} {
+		value, err := store.reusable(ctx, generation, test.scope, test.language, test.revision, test.at)
+		if value != nil || err != nil {
+			t.Fatal("lookup escaped scope or expiration", value, err, test)
+		}
 	}
 	if _, err = store.Page(ctx, *page.Cursor, 1, "en", "different-viewer", false, now, "finance", false); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatal("cross viewer cursor accepted", err)

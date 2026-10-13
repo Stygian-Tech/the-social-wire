@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import { useAuth } from "@/hooks/useAuth";
 import { hasWireModerationScopes } from "@/hooks/useWireFeed";
 import { useExpiredFeedCursorRecovery } from "@/hooks/useExpiredFeedCursorRecovery";
@@ -20,7 +21,10 @@ export function useFinanceFeed(feedID = "finance", hideCrypto = false) {
     const selections = useQuery({ queryKey: selectionKey, queryFn: () => listFinanceSelections(oauth!, session!.did), enabled: !!oauth && !!session, staleTime: 60000 });
     const moderation = useQuery({ queryKey: ["financeModeration", session?.did ?? "public", oauthSessionReloadSeq], queryFn: async () => hasWireModerationScopes((await oauth!.getTokenInfo("auto")).scope), enabled: !!oauth && !!session, staleTime: Infinity });
     const preferenceFingerprint = useCallback((items: FinanceSelection[]) => financePreferenceFingerprint(items) + (hideCrypto ? "|hideCrypto" : ""), [hideCrypto]);
-    const fingerprint = preferenceFingerprint(selections.data ?? []);
+    // Initial controls are optional; their arrival must not restart server-authoritative news.
+    const preferenceContext = `${viewer}:${oauthSessionReloadSeq}`;
+    const [preferenceRevision, setPreferenceRevision] = useState(() => ({ context: preferenceContext, value: financePreferenceFingerprint(selections.data ?? []), verified: selections.isSuccess, refreshSelections: false }));
+    const fingerprint = (preferenceRevision.context === preferenceContext ? preferenceRevision.value : financePreferenceFingerprint([])) + (hideCrypto ? "|hideCrypto" : "");
     const mode = session ? moderation.data === true ? "viewer" : "blocked" : "baseline";
     const key = useMemo(() => ["financeEntries", feedID, viewer, language, region, mode, fingerprint, oauthSessionReloadSeq], [feedID, viewer, language, region, mode, fingerprint, oauthSessionReloadSeq]);
     const context = JSON.stringify(key);
@@ -33,8 +37,26 @@ export function useFinanceFeed(feedID = "finance", hideCrypto = false) {
         context: string;
         items: FinancePage["items"];
     } | null>(null);
-    const enabled = !isLoading && (!session || (!!oauth && moderation.data === true && selections.isSuccess));
-    const feed = useInfiniteQuery({ queryKey: key, queryFn: ({ pageParam, signal }) => getFinance({ feed: feedID, hideCrypto, cursor: pageParam, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal }), initialPageParam: undefined as string | undefined, getNextPageParam: page => page.cursor, enabled: enabled && optimisticItems?.context !== context, staleTime: 60000, gcTime: 60 * 60000, maxPages: 20, refetchOnWindowFocus: false, refetchOnMount: false, retry: (count, error) => !isExpiredFeedCursor(error) && count < 1 });
+    const enabled = !isLoading && (!session || (!!oauth && moderation.data === true));
+    const feed = useInfiniteQuery({ queryKey: key, queryFn: ({ pageParam, signal }) => pageParam ? getFinance({ feed: feedID, hideCrypto, cursor: pageParam, refreshSelections: !pageParam && preferenceRevision.context === preferenceContext && preferenceRevision.refreshSelections, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal }) : coalesceFeedFirstPage(client, oauth, key, () => getFinance({ feed: feedID, hideCrypto, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, signal, refreshSelections: preferenceRevision.context === preferenceContext && preferenceRevision.refreshSelections })), initialPageParam: undefined as string | undefined, getNextPageParam: page => page.cursor, enabled: enabled && optimisticItems?.context !== context, staleTime: 60000, gcTime: 60 * 60000, maxPages: 20, refetchOnWindowFocus: false, refetchOnMount: false, retry: (count, error) => !isExpiredFeedCursor(error) && count < 1 });
+    const controlsFingerprint = financePreferenceFingerprint(selections.data ?? []);
+    useEffect(() => {
+        if (!selections.isSuccess || optimisticItems?.context === context) return;
+        const verified = preferenceRevision.context === preferenceContext && preferenceRevision.verified;
+        const currentFingerprint = preferenceRevision.context === preferenceContext ? preferenceRevision.value : financePreferenceFingerprint([]);
+        if (verified && controlsFingerprint === currentFingerprint) return;
+        if (!verified && !feed.data?.pages.length) return;
+        const nextFingerprint = controlsFingerprint + (hideCrypto ? "|hideCrypto" : "");
+        const nextKey = ["financeEntries", feedID, viewer, language, region, mode, nextFingerprint, oauthSessionReloadSeq];
+        // A cold server response is already authoritative. Attach its generation to
+        // the first control snapshot without issuing a second news request.
+        const canReuseColdPage = !verified && feed.isFetchedAfterMount;
+        if (canReuseColdPage && feed.data) client.setQueryData(nextKey, feed.data);
+        else if (controlsFingerprint !== currentFingerprint) client.removeQueries({ queryKey: nextKey, exact: true });
+        // Reconcile independently fetched PDS controls with the server generation.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setPreferenceRevision({ context: preferenceContext, value: controlsFingerprint, verified: true, refreshSelections: !canReuseColdPage && controlsFingerprint !== currentFingerprint });
+    }, [selections.isSuccess, controlsFingerprint, optimisticItems?.context, context, preferenceRevision, preferenceContext, feed.data, feed.isFetchedAfterMount, client, feedID, viewer, language, region, mode, oauthSessionReloadSeq, hideCrypto]);
     const refresh = useCallback(async () => {
         const captured = context;
         let targetKey = key;
@@ -42,13 +64,13 @@ export function useFinanceFeed(feedID = "finance", hideCrypto = false) {
         setRefreshState({context: captured, pending: true, error: null});
         try {
             if (oauth && viewer !== "public") {
-                const latest = await listFinanceSelections(oauth, viewer);
+                const latest = selections.data ?? [];
                 if (currentContext.current !== captured || getOAuthSession() !== oauth) return;
                 targetKey = ["financeEntries", feedID, viewer, language, region, mode, preferenceFingerprint(latest), oauthSessionReloadSeq];
                 targetContext = JSON.stringify(targetKey);
-                client.setQueryData(selectionKey, latest);
+                setPreferenceRevision({ context: preferenceContext, value: financePreferenceFingerprint(latest), verified: selections.isSuccess, refreshSelections: false });
             }
-            const page = await getFinance({ feed: feedID, hideCrypto, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, refreshSelections: !!oauth });
+            const page = await coalesceFeedFirstPage(client, oauth, targetKey, () => getFinance({ feed: feedID, hideCrypto, language, region: region === "us-or-unspecified" ? undefined : region, oauthSession: oauth ?? undefined, refreshSelections: !!oauth }));
             if ((currentContext.current !== captured && currentContext.current !== targetContext) || getOAuthSession() !== oauth)
                 return;
             await client.cancelQueries({ queryKey: targetKey, exact: true });
@@ -56,6 +78,9 @@ export function useFinanceFeed(feedID = "finance", hideCrypto = false) {
                 return;
             client.setQueryData<InfiniteData<FinancePage, string | undefined>>(targetKey, { pages: [page], pageParams: [undefined] });
             setOptimisticItems(null);
+            // Reconcile controls after fresh content is visible; another client
+            // may have changed PDS interests used by the server refresh.
+            void client.invalidateQueries({ queryKey: selectionKey, exact: true }).catch(() => undefined);
         }
         catch (error) {
             if (currentContext.current === captured || currentContext.current === targetContext)
@@ -65,14 +90,14 @@ export function useFinanceFeed(feedID = "finance", hideCrypto = false) {
             if (currentContext.current === captured || currentContext.current === targetContext)
                 setRefreshState(previous => previous.context === captured || previous.context === targetContext ? {...previous, pending: false} : previous);
         }
-    }, [context, feedID, hideCrypto, language, region, mode, viewer, oauthSessionReloadSeq, selectionKey, oauth, getOAuthSession, client, key, preferenceFingerprint]);
+    }, [context, feedID, hideCrypto, language, region, mode, viewer, oauthSessionReloadSeq, selectionKey, selections.data, selections.isSuccess, preferenceContext, oauth, getOAuthSession, client, key, preferenceFingerprint]);
     useExpiredFeedCursorRecovery(feed.error, refresh, enabled);
     const refreshedContext = useRef<string | null>(null);
     useEffect(() => {
-        if (!enabled || !feed.data?.pages.length || feed.isFetchedAfterMount || optimisticItems?.context === context || refreshedContext.current === context) return;
+        if (!enabled || !feed.data?.pages.length || feed.isFetchedAfterMount || Date.now() - (client.getQueryState(key)?.dataUpdatedAt ?? 0) < 60000 || optimisticItems?.context === context || refreshedContext.current === context) return;
         refreshedContext.current = context;
         void refresh();
-    }, [enabled, feed.data?.pages.length, feed.isFetchedAfterMount, optimisticItems?.context, context, refresh]);
+    }, [enabled, feed.data?.pages.length, feed.isFetchedAfterMount, optimisticItems?.context, context, refresh, client, key]);
     const mutation = useMutation({ mutationFn: async ({ selection, remove }: {
             selection: FinanceSelection;
             remove: boolean;
@@ -86,11 +111,13 @@ export function useFinanceFeed(feedID = "finance", hideCrypto = false) {
             const next = remove ? previous.filter(s => s.kind !== selection.kind || s.reference !== selection.reference) : [...previous.filter(s => s.kind !== selection.kind || s.reference !== selection.reference), selection];
             const items = optimisticItems?.context === context ? optimisticItems.items : feed.data?.pages.flatMap(p => p.items) ?? [];
             await client.cancelQueries({ queryKey: selectionKey, exact: true });
+            setPreferenceRevision({ context: preferenceContext, value: financePreferenceFingerprint(next), verified: true, refreshSelections: true });
             client.setQueryData(selectionKey, next);
             const nextKey = ["financeEntries", feedID, session?.did ?? "public", language, region, mode, preferenceFingerprint(next), oauthSessionReloadSeq];
             setOptimisticItems({ context: JSON.stringify(nextKey), items: feedID === "finance" ? reorderFinanceItems(items, next) : items });
             return { previous, captured };
         }, onError: (_error, _variables, rollback) => { if (rollback && getOAuthSession() === oauth) {
+            setPreferenceRevision({ context: preferenceContext, value: financePreferenceFingerprint(rollback.previous), verified: true, refreshSelections: false });
             client.setQueryData(selectionKey, rollback.previous);
             setOptimisticItems(null);
         } }, onSuccess: () => { } });

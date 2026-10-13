@@ -14,7 +14,7 @@
         }
       },
       "output": { "encoding": "application/json", "schema": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wirePage" } },
-      "errors": [
+      "errors": [{"name":"UpstreamProofRequired","description":"Authenticated viewer cache is unavailable; prepare the route upstream proof pool and retry once."},
         { "name": "InvalidRequest" },
         { "name": "CursorExpired" },
         { "name": "ModerationUnavailable" },

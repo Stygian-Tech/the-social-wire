@@ -7,11 +7,13 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -48,6 +50,10 @@ type RemoteStore struct {
 	Client               *http.Client
 	Now                  func() time.Time
 	MaximumResponseBytes int64
+	financeMu            sync.Mutex
+	financeCached        *FinanceSourceResponse
+	sportsMu             sync.Mutex
+	sportsCached         *SportsSourceResponse
 }
 
 func NewRemoteStore(config RemoteConfig, client *http.Client) *RemoteStore {
@@ -56,12 +62,18 @@ func NewRemoteStore(config RemoteConfig, client *http.Client) *RemoteStore {
 	}
 	copy := *client
 	copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &RemoteStore{config, &copy, time.Now, 8 << 20}
+	return &RemoteStore{Config: config, Client: &copy, Now: time.Now, MaximumResponseBytes: 8 << 20}
 }
 
 var _ Store = (*RemoteStore)(nil)
 
 func (s *RemoteStore) request(ctx context.Context, method, target string, body []byte, contract bool) ([]byte, int, error) {
+	family := sourceFamily(target)
+	failure := func(reason string, status, bytesRead int, limit int64) {
+		if family != "" {
+			slog.Warn("Corpus source request failed", "request_id", SourceRequestID(ctx), "family", family, "reason", reason, "status", status, "bytes", bytesRead, "limit_bytes", limit)
+		}
+	}
 	timeout := 6 * time.Second
 	if method == "POST" {
 		timeout = 8 * time.Second
@@ -70,6 +82,7 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 	defer cancel()
 	r, err := http.NewRequestWithContext(ctx, method, s.Config.BaseURL+target, bytes.NewReader(body))
 	if err != nil {
+		failure("request", 0, 0, 0)
 		return nil, 0, ErrUnavailable
 	}
 	var digest *string
@@ -80,9 +93,13 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 	}
 	headers, err := wirecore.SignCorpusRequest([]byte(s.Config.SharedSecret), s.Config.ServiceID, method, target, digest, s.Now(), "")
 	if err != nil {
+		failure("signing", 0, 0, 0)
 		return nil, 0, ErrUnavailable
 	}
 	r.Header.Set("Accept", "application/json")
+	if id := SourceRequestID(ctx); id != "" {
+		r.Header.Set("X-Request-ID", id)
+	}
 	r.Header.Set(wirecore.CorpusServiceHeader, headers.ServiceID)
 	r.Header.Set(wirecore.CorpusTimestampHeader, headers.Timestamp)
 	r.Header.Set(wirecore.CorpusNonceHeader, headers.Nonce)
@@ -90,8 +107,13 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 	if digest != nil {
 		r.Header.Set(wirecore.CorpusBodyDigestHeader, *digest)
 	}
+	if observer := sourceObserver(ctx, target); observer != nil {
+		started := time.Now()
+		defer func() { observer("source-transport", time.Since(started)) }()
+	}
 	response, err := s.Client.Do(r)
 	if err != nil {
+		failure("transport", 0, 0, 0)
 		return nil, 0, ErrUnavailable
 	}
 	defer response.Body.Close()
@@ -100,8 +122,16 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 		limit = 8 << 20
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
-	if err != nil || int64(len(data)) > limit {
+	if err != nil {
+		failure("body-read", response.StatusCode, len(data), limit)
 		return nil, response.StatusCode, ErrUnavailable
+	}
+	if int64(len(data)) > limit {
+		failure("response-limit", response.StatusCode, len(data), limit)
+		return nil, response.StatusCode, ErrUnavailable
+	}
+	if response.StatusCode != 200 {
+		failure("http-status", response.StatusCode, len(data), limit)
 	}
 	if response.StatusCode == 410 {
 		return nil, 410, RemoteStatusError{410}
@@ -123,11 +153,29 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 		}
 		version, err := strconv.Atoi(response.Header.Get("X-Wire-Corpus-Contract"))
 		if err != nil || version < minimum || version > 3 {
+			failure("contract-version", 200, len(data), limit)
 			return nil, 200, RemoteVersionError{}
+		}
+	}
+	if family != "" {
+		if observer := queryObserver(ctx); observer != nil {
+			phase := response.Header.Get("X-Wire-Corpus-Catalog-Cache")
+			if phase == "source-catalog-cache-hit" || phase == "source-catalog-cache-miss" {
+				observer(phase, 0)
+			}
 		}
 	}
 	return data, 200, nil
 }
+
+// Only source-generation responses participate in these request phase timings.
+func sourceObserver(ctx context.Context, target string) func(string, time.Duration) {
+	if sourceFamily(target) == "" {
+		return nil
+	}
+	return queryObserver(ctx)
+}
+
 func remoteDecode[T any](ctx context.Context, s *RemoteStore, method, target string, body []byte) (T, error) {
 	var result T
 	data, status, err := s.request(ctx, method, target, body, true)
@@ -137,7 +185,14 @@ func remoteDecode[T any](ctx context.Context, s *RemoteStore, method, target str
 	if status != 200 {
 		return result, RemoteStatusError{status}
 	}
+	if observer := sourceObserver(ctx, target); observer != nil {
+		started := time.Now()
+		defer func() { observer("source-decode", time.Since(started)) }()
+	}
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) || decodeContract(data, &result) != nil {
+		if family := sourceFamily(target); family != "" {
+			slog.Warn("Corpus source request failed", "request_id", SourceRequestID(ctx), "family", family, "reason", "decode", "status", status, "bytes", len(data))
+		}
 		return result, ErrContractMismatch
 	}
 	return result, nil
@@ -222,8 +277,12 @@ func (s *RemoteStore) CircleCandidates(ctx context.Context, q CandidateRequest, 
 	}
 	return remoteDecode[CandidateResponse](ctx, s, "POST", remoteTarget("circle-candidates", nil), body)
 }
-func (s *RemoteStore) Finance(ctx context.Context, language string, _ time.Time) (FinanceGeneration, error) {
-	return remoteDecode[FinanceGeneration](ctx, s, "GET", remoteTarget("finance", languageQuery(language)), nil)
+func (s *RemoteStore) Finance(ctx context.Context, language string, now time.Time) (FinanceGeneration, error) {
+	response, err := s.FinanceSource(ctx, FinanceSourceRequest{Language: language}, now)
+	if err != nil {
+		return FinanceGeneration{}, err
+	}
+	return *response.Generation, nil
 }
 func (s *RemoteStore) Sports(ctx context.Context, language string, _ time.Time) (SportsGeneration, error) {
 	value, err := remoteDecode[SportsGeneration](ctx, s, "GET", remoteTarget("sports", languageQuery(language)), nil)

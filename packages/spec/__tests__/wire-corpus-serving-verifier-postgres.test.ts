@@ -39,4 +39,13 @@ describe.skipIf(!databaseURL)("Corpus serving boundary PostgreSQL", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("wire_serving exposes forbidden internal columns");
   });
+
+  test("still rejects score columns on the reviewed Finance instrument source", () => {
+    const result = verify(`BEGIN; CREATE OR REPLACE VIEW wire_serving.finance_source_instruments WITH (security_barrier = TRUE) AS
+      SELECT generation.generation_id, instrument.instrument_id, instrument.cache_revision, instrument.payload, 1 AS score
+      FROM wire_serving.finance_generations AS generation CROSS JOIN LATERAL
+        (SELECT instrument_id, 'test'::text AS cache_revision, payload FROM public.finance_instruments) AS instrument;\n`);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("wire_serving exposes forbidden internal columns");
+  });
 });

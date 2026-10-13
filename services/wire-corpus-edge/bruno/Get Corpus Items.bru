@@ -1,0 +1,30 @@
+meta {
+  name: Get Corpus Items
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.corpus.getItems
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Wire-Corpus-Service: {{corpusServiceId}}
+  X-Wire-Corpus-Timestamp: {{corpusTimestamp}}
+  X-Wire-Corpus-Nonce: {{corpusNonce}}
+  X-Wire-Corpus-Signature: {{corpusSignature}}
+  X-Wire-Corpus-Body-SHA256: {{corpusBodyDigest}}
+}
+
+body:json {
+  {"itemIds":["{{itemId}}"]}
+}
+
+docs {
+  Internal service-only route. Supply an HMAC signature over the exact method,
+  URL target and SHA-256 body digest, with a fresh timestamp and nonce. Viewer
+  Authorization/Cookie/DPoP headers are rejected. Maximum 100 unique item IDs.
+}

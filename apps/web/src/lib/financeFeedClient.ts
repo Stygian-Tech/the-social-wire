@@ -1,6 +1,7 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { discoveryGatewayFetch, type WireItem, type WirePage } from "@/lib/wireFeedClient";
+import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
 import { feedResponseError } from "@/lib/feedResponseError";
 export type FinanceInstrument = {
     id: string;
@@ -91,6 +92,7 @@ export type FinanceCatalog = {
 };
 export const financeTopicIsVisible = (showFinance: boolean, catalog?: Pick<FinanceCatalog, "enabled">) => showFinance && catalog?.enabled === true;
 export function getFinanceCatalog(signal?: AbortSignal): Promise<FinanceCatalog> {
+    if (isDummyReaderDataEnabled()) return Promise.resolve({ enabled: false, available: false, widgetsEnabled: false, feeds: [] });
     return query("getFinanceCatalog", new URLSearchParams(), undefined, signal);
 }
 export function searchFinanceInstruments(q: string, signal?: AbortSignal): Promise<{

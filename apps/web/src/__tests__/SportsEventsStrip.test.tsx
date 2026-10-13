@@ -306,3 +306,23 @@ it("opens compact previews after rest, keeps click focus visible, and reopens af
  expect(screen.getByRole("tooltip").textContent).toContain("Home Team vs Away Team");
  expect(host.scrollTop).toBe(100);
 });
+
+it("reserves the schedule shell but postpones cached fixture cards and restores them without replacing the header", async () => {
+ const fetch=spyOn(Sports,"getSportsEvents").mockResolvedValue({events:[],degraded:false});restores.push(()=>fetch.mockRestore());
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});restores.push(()=>client.clear());
+ const timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;
+ client.setQueryData(["sportsEvents","sports","public","all","all",[],timezone],{events:[{id:"cached-game",competitionID:"league",entityIDs:[],title:"Cached Fixture",startsAt:"2026-10-04T15:00:00Z",status:"Scheduled",updatedAt:"2026-10-04T12:00:00Z"}],degraded:false});
+ const view=render(<QueryClientProvider client={client}><SportsEventsStrip feedID="sports" hidden={true} decorationsReady={false}/></QueryClientProvider>);
+ const section=screen.getByRole("region",{name:"Sports Events"});
+ const header=screen.getByRole("heading",{name:"Schedules and Results"});
+ expect(screen.queryByText("Cached Fixture")).toBeNull();
+ expect(section.querySelector<HTMLElement>("[data-schedule-body]")?.style.minHeight).toBe("var(--sports-body-min-height,176px)");
+ expect(screen.getByRole("combobox",{name:"Schedule Scope"})).toBeTruthy();
+ expect(screen.getByRole("button",{name:"Collapse Schedules"})).toBeTruthy();
+ expect(fetch).not.toHaveBeenCalled();
+ view.rerender(<QueryClientProvider client={client}><SportsEventsStrip feedID="sports" hidden={true} decorationsReady={true}/></QueryClientProvider>);
+ await waitFor(()=>expect(screen.getByText("Cached Fixture")).toBeTruthy());
+ expect(screen.getByRole("region",{name:"Sports Events"})).toBe(section);
+ expect(screen.getByRole("heading",{name:"Schedules and Results"})).toBe(header);
+ expect(fetch).not.toHaveBeenCalled();
+});

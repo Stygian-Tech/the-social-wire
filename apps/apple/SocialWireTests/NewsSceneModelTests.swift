@@ -5,6 +5,56 @@ import Testing
 @Suite("News shell routing")
 @MainActor
 struct NewsSceneModelTests {
+    private func wireFixture(replies: [OAuthTestTransport.Reply], delay: Duration = .zero) async throws -> (SocialWireAppModel, OAuthTestTransport) {
+        let store = OAuthTestSessionStore()
+        let auth = ATProtoOAuthService(keychain: store)
+        let session = AuthSession(did: "did:plc:test", pdsURL: URL(string: "https://pds.example.test")!,
+            tokenEndpoint: URL(string: "https://issuer.example/token")!, accessToken: "access",
+            refreshToken: "refresh", tokenType: "DPoP", scope: ATProtoOAuthService.scopes, expiresAt: .distantFuture)
+        let record: [String: Any] = [
+            "session": try JSONSerialization.jsonObject(with: JSONEncoder().encode(session)),
+            "dpopPrivateKey": Data(repeating: 1, count: 32).base64EncodedString(),
+            "clientID": ATProtoOAuthConfig.clientID,
+        ]
+        store.set(try JSONSerialization.data(withJSONObject: record).base64EncodedString(), for: "oauth.session.v2")
+        await auth.restoreSession()
+        let transport = OAuthTestTransport(replies, delay: delay)
+        let model = SocialWireAppModel(authService: auth, gatewayTransport: { try await transport.send($0) })
+        model.wireCatalog = WireFeedCatalog(enabled: true, available: true, title: "The Wire", subtitle: "", supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil)
+        return (model, transport)
+    }
+
+    @Test("Selecting Wire schedules no detached feed load before the destination task")
+    func wireSelectionDoesNotSpawnRequest() async throws {
+        let (model, transport) = try await wireFixture(replies: [])
+        defer { model.authService.signOut() }
+        model.selectReaderListSource(.wire)
+        try await Task.sleep(for: .milliseconds(10))
+        #expect(model.readerListSource == .wire)
+        #expect(!model.isLoadingEntries)
+        #expect(await transport.recordedRequests().isEmpty)
+    }
+
+    @Test("Cancelled Wire destination permits a new load while its old response is pending")
+    func cancelledWireLoadDoesNotSuppressReplacement() async throws {
+        let edition = WireEditionPage(editionVersion: "1", generationId: "new-generation",
+            generatedAt: "2026-10-12T12:00:00Z", language: "en", source: .ranked, degraded: false,
+            stories: [], topStoryIds: [], publicationSpotlights: [], storyRails: [], people: [], trendingStoryIds: [], moreCursor: nil)
+        let reply = OAuthTestTransport.Reply(status: 200, body: String(decoding: try JSONEncoder().encode(edition), as: UTF8.self))
+        let (model, transport) = try await wireFixture(replies: [reply, reply], delay: .milliseconds(30))
+        defer { model.authService.signOut() }
+        model.selectReaderListSource(.wire)
+        let obsolete = Task { await model.loadWireEdition() }
+        while await transport.recordedRequests().isEmpty { await Task.yield() }
+        obsolete.cancel()
+        while model.isLoadingEntries { await Task.yield() }
+        await model.loadWireEdition()
+        await obsolete.value
+        #expect(await transport.recordedRequests().count == 2)
+        #expect(model.wireEdition?.generationId == "new-generation")
+        #expect(!model.isLoadingEntries)
+    }
+
     @Test("Tabs keep their editorial order while gated destinations are omitted")
     func availableTabOrder() {
         #expect(NewsTab.available(wire: true, circle: true, finance: true, sports: true, podcasts: true) == NewsTab.allCases)

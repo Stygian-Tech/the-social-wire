@@ -8,14 +8,15 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func (r Routes) registerFinance(mux *http.ServeMux) {
-	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinance", r.finance)
+	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinance", r.observeFeed("finance", r.finance))
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinanceCatalog", r.financeCatalog)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.searchFinanceInstruments", r.financeSearch)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getFinanceSectors", func(w http.ResponseWriter, req *http.Request) {
-		financeResponse(w, struct {
+		financeResponse(w, req, struct {
 			Sectors []topicreadcore.FinanceSector `json:"sectors"`
 		}{topicreadcore.FinanceSectors()})
 	})
@@ -97,7 +98,7 @@ func (r Routes) finance(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("X-Wire-Generation", page.GenerationID)
 	w.Header().Set("X-Wire-Source", page.Source)
-	financeResponse(w, page)
+	financeResponse(w, req, page)
 }
 func (r Routes) financeCatalog(w http.ResponseWriter, req *http.Request) {
 	catalog, err := r.FinanceStore.Availability(req.Context(), r.now())
@@ -105,7 +106,7 @@ func (r Routes) financeCatalog(w http.ResponseWriter, req *http.Request) {
 		fail(w, err)
 		return
 	}
-	financeResponse(w, catalog)
+	financeResponse(w, req, catalog)
 }
 func (r Routes) financeSearch(w http.ResponseWriter, req *http.Request) {
 	query, exists := req.URL.Query()["q"]
@@ -118,7 +119,7 @@ func (r Routes) financeSearch(w http.ResponseWriter, req *http.Request) {
 		fail(w, err)
 		return
 	}
-	financeResponse(w, struct {
+	financeResponse(w, req, struct {
 		Instruments any `json:"instruments"`
 	}{items})
 }
@@ -144,13 +145,15 @@ func (r Routes) financeComposition(w http.ResponseWriter, req *http.Request) {
 	if r.Telemetry != nil {
 		r.Telemetry.Enqueue(telemetrycore.MetricSample{Name: "finance.composition." + *input.Event, Value: 1, Dimensions: map[string]string{"suggestion_count": strconv.Itoa(*input.SuggestionCount)}, At: r.now()})
 	}
-	financeResponse(w, struct {
+	financeResponse(w, req, struct {
 		Accepted bool `json:"accepted"`
 	}{true})
 }
 
-func financeResponse(w http.ResponseWriter, value any) {
+func financeResponse(w http.ResponseWriter, req *http.Request, value any) {
+	started := time.Now()
 	body, err := corpuscore.MarshalHTTP(value)
+	topicreadcore.ObserveFeedPhase(req.Context(), "serialization", time.Since(started))
 	if err != nil {
 		fail(w, err)
 		return

@@ -2,7 +2,6 @@ package topicreadcore
 
 import (
 	"context"
-	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
@@ -56,7 +55,7 @@ func TestCircleEditionCanonicalDatabaseHidesAndAttribution(t *testing.T) {
 	cursor, _ := wirecore.NewCircleCursorCodec([]byte("01234567890123456789012345678901"))
 	service := CircleService{Corpus: circleCorpusFixture{page: corpuscore.CandidateResponse{GenerationID: "generation", GeneratedAt: now, Language: "en", Stories: stories}}, State: state, Hasher: hasher, Cursor: cursor, Moderation: moderation, Profiles: circleProfilesFixture{}}
 	auth := gatewaycore.AuthContext{DID: viewer}
-	if _, err = service.Edition(ctx, auth, "", "en", "", now); !errors.Is(err, ErrModerationUnavailable) {
+	if _, err = service.Edition(ctx, auth, "", "en", "", now); err != nil {
 		t.Fatal(err)
 	}
 	edition, err := service.Edition(ctx, auth, "0,1,2,3,4,5", "en", "", now)

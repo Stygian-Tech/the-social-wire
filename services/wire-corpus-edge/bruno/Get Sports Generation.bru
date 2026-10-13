@@ -1,0 +1,30 @@
+meta {
+  name: Get Sports Generation
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.corpus.getSportsGeneration
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Wire-Corpus-Service: {{corpusServiceId}}
+  X-Wire-Corpus-Timestamp: {{corpusTimestamp}}
+  X-Wire-Corpus-Nonce: {{corpusNonce}}
+  X-Wire-Corpus-Signature: {{corpusSignature}}
+  X-Wire-Corpus-Body-SHA256: {{corpusBodyDigest}}
+}
+
+body:json {
+  {"language":"en"}
+}
+
+docs {
+  Internal service-only route. Supply an HMAC signature over the exact method,
+  URL target and SHA-256 body digest, with a fresh timestamp and nonce. Viewer
+  Authorization/Cookie/DPoP headers are rejected. Response cap: 8 MiB; at most 5,000 lean candidates with exact canonical catalog metadata. For repeat requests send knownGenerationId, knownGenerationRevision from the previous response. Candidates are omitted only for an exact unchanged generation revision. Catalog contents are read from matching canonical Postgres by AppView.
+}

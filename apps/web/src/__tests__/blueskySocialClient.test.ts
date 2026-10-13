@@ -117,6 +117,17 @@ describe("Social feed contracts", () => {
     await expect(getBlueskySocialPage({ session, feed: SOCIAL_FOLLOWING_FEED, moderation: { ...moderation, userDid: "did:plc:bob" } })).rejects.toThrow("account changed");
   });
 
+  it("returns timeline content without requesting optional reply context on the critical path", async () => {
+    const cid = "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+    const methods: string[] = [];
+    const post = { uri: "at://did:plc:author/app.bsky.feed.post/reply", cid, author: { did: "did:plc:author", handle: "author.test" }, indexedAt: "2026-10-09T00:00:00Z", record: { $type: "app.bsky.feed.post", text: "A reply", createdAt: "2026-10-09T00:00:00Z", reply: { root: { uri: "at://did:plc:parent/app.bsky.feed.post/root", cid }, parent: { uri: "at://did:plc:parent/app.bsky.feed.post/root", cid } } } };
+    const session = fakeSession(method => { methods.push(method); if (method === "app.bsky.feed.getTimeline") return { feed: [{ post }], cursor: "next" }; throw new Error("Optional context must be deferred"); });
+    const page = await getBlueskySocialPage({ session, feed: SOCIAL_FOLLOWING_FEED, moderation, deferReplyHydration: true });
+    expect(page.feed[0]?.post.uri).toBe(post.uri);
+    expect(page.cursor).toBe("next");
+    expect(methods).toEqual(["app.bsky.feed.getTimeline"]);
+  });
+
   it("loads real preferences and definitions before exposing a catalog", async () => {
     const methods: string[] = [];
     const session = fakeSession((method, _url, headers) => {
@@ -150,6 +161,24 @@ describe("Social feed contracts", () => {
     expect(catalog.feeds).toEqual([]);
     expect(catalog.moderation.userDid).toBe(session.did);
     expect(methods).toEqual(["app.bsky.actor.getPreferences", "app.bsky.labeler.getServices"]);
+  });
+
+  it("exposes verified moderation before optional saved-feed metadata completes", async () => {
+    let finish!: (data: unknown) => void;
+    const metadata = new Promise<unknown>(resolve => { finish = resolve; });
+    let ready: Awaited<ReturnType<typeof getBlueskySocialCatalog>> | undefined;
+    const session = fakeSession(method => {
+      if (method === "app.bsky.actor.getPreferences") return { preferences: [{ $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: [{ id: "f", type: "feed", value: feedUri, pinned: true }] }] };
+      if (method === "app.bsky.labeler.getServices") return { views: [labelerView(baseLabeler)] };
+      if (method === "app.bsky.feed.getFeedGenerators") return metadata;
+      throw new Error(`Unexpected ${method}`);
+    });
+    const pending = getBlueskySocialCatalog(session, undefined, { onReady: catalog => { ready = catalog; } });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(ready?.moderation.userDid).toBe(session.did);
+    expect(ready?.feeds[1]?.name).toBe("Saved Feed");
+    finish({ feeds: [] });
+    await pending;
   });
 
   it("fails closed when a subscribed moderation service is missing", async () => {

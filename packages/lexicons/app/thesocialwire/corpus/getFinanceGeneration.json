@@ -1,0 +1,95 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.corpus.getFinanceGeneration",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Internal HMAC-authenticated conditional Finance generation. Every request checks fresh baseline and current eligible serving payload plus instrument metadata. Full existing presentation is returned only when changed. Response cap 8 MiB; viewer credentials forbidden.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "language"
+          ],
+          "properties": {
+            "language": {
+              "type": "string",
+              "maxLength": 35,
+              "minLength": 1
+            },
+            "knownGenerationId": {
+              "type": "string",
+              "maxLength": 36
+            },
+            "knownGenerationRevision": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "generationId",
+            "generationRevision",
+            "generatedAt",
+            "expiresAt",
+            "language",
+            "generationUnchanged"
+          ],
+          "properties": {
+            "generationId": {
+              "type": "string",
+              "maxLength": 36
+            },
+            "generationRevision": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "generatedAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "expiresAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 35
+            },
+            "generationUnchanged": {
+              "type": "boolean"
+            },
+            "generation": {
+              "type": "ref",
+              "ref": "app.thesocialwire.defs#jsonObject",
+              "description": "Full existing FinanceGeneration JSON object, strictly validated by corpuscore: matching metadata, required candidates/instruments and their existing rank/presentation contracts. Float scores/evidence retain the existing internal JSON representation. At most 5,000 candidates and 50,000 instruments; full response limited to 8 MiB."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "ModerationUnavailable"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        },
+        {
+          "name": "InternalServerError"
+        }
+      ]
+    }
+  }
+}

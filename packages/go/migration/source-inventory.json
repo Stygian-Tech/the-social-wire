@@ -11082,6 +11082,10 @@
       "target": "packages/go/lexicons",
       "files": [
         {
+          "path": "packages/lexicons/__tests__/corpusLexicons.test.ts",
+          "sha256": "abb4d0d2b83ee5ce678772f38924d867d4c7a5aae00e41e81cd3febe02ea5992"
+        },
+        {
           "path": "packages/lexicons/__tests__/financeLexicons.test.ts",
           "sha256": "0feabd81714e9588fde04ccc548aa0ce9b2ca54a03f632d976410182b673ce7e"
         },
@@ -11194,6 +11198,18 @@
           "sha256": "da9716162cf6f4b6e4f8358b6e653d6db07a637698a4e71ebbcedae159ab8964"
         },
         {
+          "path": "packages/lexicons/app/thesocialwire/corpus/getFinanceGeneration.json",
+          "sha256": "49ac8e998ba0021d6fedd3dd080d5e3ab672cbbbdd8a952cdb3e0e84784c0fa5"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/corpus/getItems.json",
+          "sha256": "f2b31b4e91e253bf3642238394939165efc543e2654d76c620a28965ed64a488"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/corpus/getSportsGeneration.json",
+          "sha256": "71063931652bfbccf2f892d81294e0b45dd14c60bcfbef063bbb862f541d67d6"
+        },
+        {
           "path": "packages/lexicons/app/thesocialwire/defs.json",
           "sha256": "b037b5e25cdb57e05460916b2853baf976d1b3963869784cea3e2546cbdbceed"
         },
@@ -11207,7 +11223,7 @@
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getCircleEdition.json",
-          "sha256": "a9632c08db4532f66e29059adc127eb829b357a07a37a299d737847c13312cca"
+          "sha256": "485c80dfa3b8807ddb9c92b8dfe6f4fa1b68bbbe7c8f2f6b11d71bb3e42401fd"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getFeedCatalog.json",
@@ -11215,7 +11231,7 @@
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getFinance.json",
-          "sha256": "cf4caac84ed547d2aa1a22582c9681a84bfb47bb3df8d5121c350ae8b6115b40"
+          "sha256": "7154be2096b4cc912faeaf88fd969fb2dd53d64600da08b5aa64f0c97587a03c"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getFinanceCatalog.json",
@@ -11227,7 +11243,7 @@
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getSports.json",
-          "sha256": "d5211f93b8df77a30a4c8a202fa293a90aa957fc9d099ea2106526b2d774f553"
+          "sha256": "b9d4a43e713077351027b4136f6330e128c984999903f54f97731714a6af895c"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getSportsCatalog.json",
@@ -11239,15 +11255,15 @@
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getWire.json",
-          "sha256": "2b65c505f20691bdaf954cf7267ae5a53aa3ba56e92a8300ced2438dea86faeb"
+          "sha256": "d36f6f986a6c0ad4132a09c6f57d31d1c225966dcc31832ff252c8aa71146c3b"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getWireEdition.json",
-          "sha256": "e1f009bb5de5b3d347cca9b0f23dac3d5362c19f3ea49b51b24636ad556dc4a3"
+          "sha256": "52c7efa3cdcd172186ec10646e923ced869e2585ab929bb16a66ffff2410c969"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/getWireItem.json",
-          "sha256": "024a7fec2f0f2c196144db9f4be9288ebeadeb9f3051cd31d1f03bd655795fdf"
+          "sha256": "fc84708388315a14b5498e512ba44a584f23173a9f7e712780f7d3f374d5d4ea"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/discovery/recordFinanceComposition.json",
@@ -11669,7 +11685,7 @@
         },
         {
           "path": "packages/spec/__tests__/appview-unread-feed-performance.test.ts",
-          "sha256": "53a688517d2bb17ee48647810e7dfcf7541d7f6a08886cdbfd3cea66221d2afe"
+          "sha256": "4b31965d96bc5a8ca641250d89f71a49df3624135e0b05959b095084818aaa97"
         },
         {
           "path": "packages/spec/__tests__/ci-bun-installation.test.ts",
@@ -11729,15 +11745,15 @@
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-drain-indexes.test.ts",
-          "sha256": "fa650930ed143ffc770d9ce62c59b286ef21e582f6c86238cb5167dd95f37ed5"
+          "sha256": "18ccb26ff10fd0a62dac421caae17e4c57e448764fe8a200d307726c1bb2ec89"
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-durability-migration.test.ts",
-          "sha256": "6fe1e485ba08d7ff8c02cc9fa8158055b873d7612932c6f6e101c76d4032e1d1"
+          "sha256": "ee99b6cf131c438990750da961a61431b5d731f1a778bf0ea9a972a6112d80c6"
         },
         {
           "path": "packages/spec/__tests__/jetstream-v2-scope-policy.test.ts",
-          "sha256": "5df29905d7bc559fb279799b27ed606552714db29061628bde4d9007dae4e797"
+          "sha256": "990aa6a84578426c8ec4d49484dbee5a65ff6b20bcb862f35b31b35fd50dd359"
         },
         {
           "path": "packages/spec/__tests__/migration-duplicate-bodies.test.ts",
@@ -11753,7 +11769,7 @@
         },
         {
           "path": "packages/spec/__tests__/operations-postgres-query-contract.test.ts",
-          "sha256": "0b32ecaf38cc17e5b6d04a22fd416d04dd5f058618fce5c0b396e816bdf18ea1"
+          "sha256": "658638b710fbe4e8b238f72f1fc6757acf62ecb1651c3ff6aafa80300d08b75e"
         },
         {
           "path": "packages/spec/__tests__/operations-retention-migration-postgres.test.ts",
@@ -11793,7 +11809,7 @@
         },
         {
           "path": "packages/spec/__tests__/subscribed-feed-performance-migration.test.ts",
-          "sha256": "2583eea9b4ca7b3f250aa787ab4b753a29afd51fb8fcfb40943447a3b60170e1"
+          "sha256": "1e59c71b16c92e6a2a92e0627a47658b1f061835456431ebd3b7f0b75ec20d85"
         },
         {
           "path": "packages/spec/__tests__/subscription-entitlements.test.ts",
@@ -11821,7 +11837,7 @@
         },
         {
           "path": "packages/spec/__tests__/wire-corpus-serving-verifier-postgres.test.ts",
-          "sha256": "0eaae2fec1fbb6467ca6aa321068efcf8726da59bcdba6972344fb682b1f0e1f"
+          "sha256": "a4706a86ab9cbf1440ed1d74219456bb763ff402e4f9b61d8d5e9e205605e7fa"
         },
         {
           "path": "packages/spec/__tests__/wire-edition-contract.test.ts",
@@ -11869,7 +11885,7 @@
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "b46845763f4093dbb4486ae0544bb9b620b93d1a14c21f2bcf55fdf7fd12e9c5"
+          "sha256": "63c5fb2a1f360fb9a45befe91c02c55420af2d7002a0a81663a48442656bdddf"
         },
         {
           "path": "packages/spec/package.json",

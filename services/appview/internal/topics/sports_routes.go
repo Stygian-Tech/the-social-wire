@@ -13,7 +13,7 @@ import (
 )
 
 func (r Routes) registerSports(mux *http.ServeMux) {
-	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSports", r.sportsFeed)
+	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSports", r.observeFeed("sports", r.sportsFeed))
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSportsCatalog", r.sportsCatalog)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.searchSportsEntities", r.sportsSearch)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSportsEvents", r.sportsEvents)
@@ -62,7 +62,7 @@ func (r Routes) sportsFeed(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("X-Wire-Generation", page.GenerationID)
 	w.Header().Set("X-Wire-Source", page.Source)
-	financeResponse(w, page)
+	financeResponse(w, req, page)
 }
 func (r Routes) sportsCatalog(w http.ResponseWriter, req *http.Request) {
 	value, err := r.SportsStore.Availability(req.Context(), r.now())
@@ -70,7 +70,7 @@ func (r Routes) sportsCatalog(w http.ResponseWriter, req *http.Request) {
 		fail(w, err)
 		return
 	}
-	financeResponse(w, value)
+	financeResponse(w, req, value)
 }
 func sportsSearchQuery(raw string) (string, error) {
 	for _, component := range strings.Split(raw, "&") {
@@ -104,7 +104,7 @@ func (r Routes) sportsSearch(w http.ResponseWriter, req *http.Request) {
 		fail(w, err)
 		return
 	}
-	financeResponse(w, struct {
+	financeResponse(w, req, struct {
 		Entities any `json:"entities"`
 	}{items})
 }
@@ -165,5 +165,5 @@ func (r Routes) sportsEvents(w http.ResponseWriter, req *http.Request) {
 		fail(w, err)
 		return
 	}
-	financeResponse(w, value)
+	financeResponse(w, req, value)
 }

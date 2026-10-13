@@ -73,6 +73,8 @@ import { SidebarListsSection } from "./SidebarListsSection";
 import { useStandardReaderList, useStandardReaderLists } from "@/hooks/useStandardReaderLists";
 import type { StandardReaderList } from "@/lib/standardReaderListsClient";
 import { AppSidebarBrandHeader } from "./AppSidebarBrandHeader";
+import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
+import { useDeferredFeedCatalogs } from "@/hooks/useDeferredFeedCatalogs";
 import { useFinanceCatalog } from "@/hooks/useFinanceCatalog";
 import { topicNavigationIsVisible } from "@/lib/topicNavigationVisibility";
 import { useSportsCatalog } from "@/hooks/useSportsCatalog";
@@ -83,6 +85,7 @@ import {
 } from "@/lib/readerFeedSelectionStorage";
 import { SIDEBAR_PUBLICATION_TAB_STORAGE_KEY } from "@/lib/sidebarPublicationTabStorage";
 import { readLaterSidebarButtonClassName } from "./readLaterSidebarButtonStyles";
+import { navigateReaderFeed } from "@/lib/readerFeedNavigation";
 
 interface AppSidebarProps {
   selectedPubId: string | null;
@@ -179,9 +182,12 @@ export function AppSidebar({
     { enabled: sidebarDependentDataEnabled && usingSemble },
   );
   const { preferences: feedPreferences } = useFeedDisplayPreferences();
-  const wireCatalog = useWireFeedCatalog();
-  const sportsCatalog = useSportsCatalog();
-  const financeCatalog = useFinanceCatalog();
+  const dummyCatalogs = isDummyReaderDataEnabled();
+  const deferredCatalogsReady = useDeferredFeedCatalogs(!dummyCatalogs) || dummyCatalogs;
+  const selectedEditorialFeed = pathname.startsWith("/read") ? searchParams.get("feed") : null;
+  const wireCatalog = useWireFeedCatalog({ enabled: deferredCatalogsReady || selectedEditorialFeed === "wire" });
+  const sportsCatalog = useSportsCatalog({ enabled: deferredCatalogsReady || selectedEditorialFeed === "sports" });
+  const financeCatalog = useFinanceCatalog({ enabled: deferredCatalogsReady || selectedEditorialFeed === "finance" });
   const wireNavigationEnabled =
     feedPreferences.showWire &&
     wireCatalog.data?.enabled === true &&
@@ -482,27 +488,27 @@ export function AppSidebar({
     }
     if (feed === "sports") {
       saveReaderFeedSelection(window.localStorage, "sports");
-      router.push("/read?feed=sports");
+      navigateReaderFeed(pathname, "sports", href => router.push(href));
       return;
     }
     if (feed === "finance") {
       saveReaderFeedSelection(window.localStorage, "finance");
-      router.push("/read?feed=finance");
+      navigateReaderFeed(pathname, "finance", href => router.push(href));
       return;
     }
     if (feed === "wire") {
       saveReaderFeedSelection(window.localStorage, "wire");
-      router.push("/read?feed=wire");
+      navigateReaderFeed(pathname, "wire", href => router.push(href));
       return;
     }
     if (feed === "circle") {
       saveReaderFeedSelection(window.localStorage, "circle");
-      router.push("/read?feed=circle");
+      navigateReaderFeed(pathname, "circle", href => router.push(href));
       return;
     }
     setPublicationTab(feed);
     saveReaderFeedSelection(window.localStorage, feed);
-    router.push(`/read?feed=${feed}`);
+    navigateReaderFeed(pathname, feed, href => router.push(href));
   };
 
   useEffect(() => {

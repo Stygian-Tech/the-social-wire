@@ -83,13 +83,17 @@ type FinanceGeneration struct {
 	Candidates   []financecore.RankCandidate `json:"candidates"`
 }
 type SportsGeneration struct {
-	GenerationID string                     `json:"generationId"`
-	GeneratedAt  time.Time                  `json:"generatedAt"`
-	ExpiresAt    time.Time                  `json:"expiresAt"`
-	Language     string                     `json:"language"`
-	Source       *string                    `json:"source,omitempty"`
-	Entities     []sportscore.Entity        `json:"entities"`
-	Candidates   []sportscore.RankCandidate `json:"candidates"`
+	ServingCatalogRevision string                     `json:"-"`
+	CatalogRevision        string                     `json:"-"`
+	CatalogVersion         string                     `json:"-"`
+	CatalogGeneratedAt     time.Time                  `json:"-"`
+	GenerationID           string                     `json:"generationId"`
+	GeneratedAt            time.Time                  `json:"generatedAt"`
+	ExpiresAt              time.Time                  `json:"expiresAt"`
+	Language               string                     `json:"language"`
+	Source                 *string                    `json:"source,omitempty"`
+	Entities               []sportscore.Entity        `json:"entities"`
+	Candidates             []sportscore.RankCandidate `json:"candidates"`
 }
 type ScheduleStatus struct {
 	CompetitionID string    `json:"competitionID"`

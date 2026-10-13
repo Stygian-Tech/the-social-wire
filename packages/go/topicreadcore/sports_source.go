@@ -2,19 +2,42 @@ package topicreadcore
 
 import (
 	"context"
+	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
+	"golang.org/x/sync/errgroup"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
 func (s *SportsStore) Catalog(ctx context.Context) ([]sportscore.Entity, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT payload::text FROM sports_entities ORDER BY entity_id LIMIT 50000`)
+	if value, ok, err := s.cachedCatalog(ctx); ok || err != nil {
+		return value, err
+	}
+	return s.loadCatalog(ctx)
+}
+func (s *SportsStore) loadCatalog(ctx context.Context) ([]sportscore.Entity, error) {
+	observer := feedPhaseObserver(ctx)
+	var queryStarted time.Time
+	if observer != nil {
+		queryStarted = time.Now()
+	}
+	rows, closeRows, err := corpuscore.QueryRows(ctx, s.DB, `SELECT payload::text FROM sports_entities ORDER BY entity_id LIMIT 50000`)
+	if observer != nil {
+		observer("catalog-query-open", time.Since(queryStarted))
+	}
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows()
+	var scanElapsed, decodeElapsed time.Duration
+	var scanStarted, decodeStarted time.Time
+	if observer != nil {
+		scanStarted = time.Now()
+		defer func() { observer("catalog-scan", scanElapsed); observer("catalog-decode", decodeElapsed) }()
+	}
 	out := []sportscore.Entity{}
 	count := 0
 	for rows.Next() {
@@ -22,14 +45,26 @@ func (s *SportsStore) Catalog(ctx context.Context) ([]sportscore.Entity, error) 
 		if err = rows.Scan(&raw); err != nil {
 			return nil, err
 		}
+		if observer != nil {
+			scanElapsed += time.Since(scanStarted)
+			decodeStarted = time.Now()
+		}
 		var e sportscore.Entity
-		if err = corpuscore.DecodeContract(raw, &e); err != nil {
+		err = corpuscore.DecodeContract(raw, &e)
+		if observer != nil {
+			decodeElapsed += time.Since(decodeStarted)
+			scanStarted = time.Now()
+		}
+		if err != nil {
 			return nil, err
 		}
 		count++
 		if e.Active {
 			out = append(out, e)
 		}
+	}
+	if observer != nil {
+		scanElapsed += time.Since(scanStarted)
 	}
 	if err = rows.Err(); err != nil {
 		return nil, err
@@ -85,8 +120,27 @@ func (s *SportsStore) Entities(ctx context.Context, q string) ([]sportscore.Enti
 }
 func (s *SportsStore) source(ctx context.Context, lang string, now time.Time) (corpuscore.SportsGeneration, error) {
 	if s.Remote != nil {
-		value, err := s.Remote.Sports(ctx, lang, now)
+		var value corpuscore.SportsGeneration
+		var err error
+		lean := false
+		if remote, ok := s.Remote.(corpuscore.SportsSourceStore); ok {
+			var response corpuscore.SportsSourceResponse
+			lean = true
+			response, err = s.loadLeanSource(ctx, remote, lang, now)
+			if err == nil {
+				value = corpuscore.SportsSourceGeneration(response)
+				err = s.requireSourceCatalog(ctx, value)
+				if err != nil {
+					return value, err
+				}
+			}
+		} else {
+			value, err = s.Remote.Sports(ctx, lang, now)
+		}
 		if err == nil && value.Language == lang && value.ExpiresAt.After(now) && len(value.Candidates) <= 5000 && sportsCurrent(value.Candidates) {
+			if lean {
+				return value, nil
+			}
 			if err = s.importCatalog(ctx, value, now); err == nil {
 				return value, nil
 			}
@@ -95,6 +149,26 @@ func (s *SportsStore) source(ctx context.Context, lang string, now time.Time) (c
 			return corpuscore.SportsGeneration{}, ctx.Err()
 		}
 		slog.Warn("Sports corpus unavailable; checking retained generation")
+	}
+	if s.Remote == nil {
+		if local := localSourceStore(s.Wire, s.DB); local != nil {
+			response, err := s.loadLeanSource(ctx, local, lang, now)
+			if err == nil {
+				value := corpuscore.SportsSourceGeneration(response)
+				if err = s.requireSourceCatalog(ctx, value); err != nil {
+					return value, err
+				}
+				value.Source, err = localSourceProvenance(ctx, s.DB, true, value.GenerationID)
+				return value, err
+			}
+			if ctx.Err() != nil {
+				return corpuscore.SportsGeneration{}, ctx.Err()
+			}
+			if !errors.Is(err, corpuscore.ErrUnavailable) {
+				return corpuscore.SportsGeneration{}, corpusError(err)
+			}
+			// A missing or obsolete active source retains the original recovery path.
+		}
 	}
 	// Bound retained identities before detoasting their presentation payloads.
 	rows, err := s.DB.QueryContext(ctx, `WITH selected AS MATERIALIZED (SELECT generation_id,is_active,generated_at FROM sports_generations WHERE language=$1 AND expires_at>$2 ORDER BY is_active DESC,generated_at DESC LIMIT 10) SELECT generation.generation_id::text,generation.generated_at,generation.expires_at,generation.payload::text,generation.serving_source FROM selected JOIN sports_generations generation USING(generation_id) ORDER BY selected.is_active DESC,selected.generated_at DESC`, lang, now)
@@ -177,4 +251,48 @@ func (s *SportsStore) fallback(ctx context.Context, lang string, now time.Time) 
 	}
 	provenance := "simplified_fallback"
 	return corpuscore.SportsGeneration{GenerationID: newID(), GeneratedAt: now, ExpiresAt: now.Add(48 * time.Hour), Language: lang, Candidates: candidates, Source: &provenance}, nil
+}
+
+// Only the initial lean-source request overlaps canonical local catalog loading.
+// Both jobs remain request-scoped and join before exact remote catalog proof is
+// checked, so failures cannot leave work or phase callbacks behind the response.
+func (s *SportsStore) loadLeanSource(ctx context.Context, remote corpuscore.SportsSourceStore, lang string, now time.Time) (corpuscore.SportsSourceResponse, error) {
+	s.catalogMu.Lock()
+	cold := s.catalogCache == nil
+	s.catalogMu.Unlock()
+	if !cold {
+		return remote.SportsSource(ctx, corpuscore.SportsSourceRequest{Language: lang}, now)
+	}
+	feedObserver, queryObserver := feedPhaseObserver(ctx), corpuscore.QueryObserver(ctx)
+	if feedObserver != nil || queryObserver != nil {
+		var observerMu sync.Mutex
+		wrap := func(observer func(string, time.Duration)) func(string, time.Duration) {
+			if observer == nil {
+				return nil
+			}
+			return func(phase string, elapsed time.Duration) {
+				observerMu.Lock()
+				defer observerMu.Unlock()
+				observer(phase, elapsed)
+			}
+		}
+		ctx = WithFeedPhaseObserver(ctx, wrap(feedObserver))
+		ctx = corpuscore.WithQueryObserver(ctx, wrap(queryObserver))
+	}
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	var response corpuscore.SportsSourceResponse
+	group.Go(func() error { _, err := s.Catalog(groupCtx); return err })
+	group.Go(func() error {
+		var err error
+		response, err = remote.SportsSource(groupCtx, corpuscore.SportsSourceRequest{Language: lang}, now)
+		return err
+	})
+	if err := group.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return response, ctx.Err()
+		}
+		return response, err
+	}
+	return response, nil
 }

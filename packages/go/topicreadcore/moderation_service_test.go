@@ -92,7 +92,10 @@ func TestModerationProofsFilteringAndStaleBoundary(t *testing.T) {
 		t.Fatal(s, http.calls)
 	}
 	http.fail = true
-	if _, e = m.Require(context.Background(), a, "", now.Add(6*time.Minute)); e != nil {
+	if _, e = m.Require(context.Background(), a, "", now.Add(6*time.Minute)); !errors.Is(e, ErrUpstreamProofRequired) {
+		t.Fatal(e)
+	}
+	if _, e = m.Require(context.Background(), a, "p0,p1,p2,p3,p4", now.Add(6*time.Minute)); e != nil {
 		t.Fatal(e)
 	}
 	if _, e = m.Require(context.Background(), a, "", now.Add(31*time.Minute)); !errors.Is(e, ErrModerationUnavailable) {

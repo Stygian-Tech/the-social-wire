@@ -1,6 +1,9 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useFeedDecorationsReady } from "@/hooks/useFeedDecorationsReady";
+import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
+
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useFinanceFeed } from "@/hooks/useFinanceFeed";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
@@ -20,7 +23,17 @@ import { OUTBOUND_WINDOW_FEATURES } from "@/lib/outboundLinks";
 export default function FinanceExperience({ feedID = "finance", onFeedChange }: { feedID?: string; onFeedChange?: (id: string) => void }) {
   const { preferences, setHideFinancePerformance, setHideFinanceCrypto } = useFeedDisplayPreferences();
   const finance = useFinanceFeed(feedID, preferences.hideFinanceCrypto);
-  const definitions = (finance.catalog?.data?.feeds ?? []).filter(feed => !preferences.hideFinanceCrypto || feed.assetKind !== "crypto");
+  const timingScope = `finance:${feedID}:${finance.viewerDID ?? "public"}`;
+  useFeedFirstContentTiming(timingScope, finance.items.length > 0, !finance.feed.isFetchedAfterMount);
+  const afterStoryPaint = useFeedDecorationsReady(timingScope, finance.items.length > 0);
+  const [interactedScope, setInteractedScope] = useState<string | null>(null);
+  const decorationsReady = afterStoryPaint || interactedScope === timingScope;
+  const definitions = useMemo(() => {
+    const feeds = finance.catalog?.data?.feeds ?? [];
+    const selected = decorationsReady ? undefined : feeds.find(feed => feed.id === feedID);
+    return (decorationsReady ? feeds : selected ? [selected] : []).filter(feed =>
+      !preferences.hideFinanceCrypto || feed.assetKind !== "crypto");
+  }, [finance.catalog?.data?.feeds, decorationsReady, feedID, preferences.hideFinanceCrypto]);
   const [companySearch, setCompanySearch] = useState("");
   const selectedFeed = definitions.find(feed => feed.id === feedID);
   const [customize, setCustomize] = useState(false);
@@ -62,7 +75,7 @@ export default function FinanceExperience({ feedID = "finance", onFeedChange }: 
       {selectedFeed || feedID === "finance" ? <FinanceTickerMarquee feed={selectedFeed} hidden={performanceHidden} /> : null}
       <div className="grid min-w-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="@container/finance min-w-0">
-      <header aria-label="Finance Feed Controls" className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/finance:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
+      <header onPointerDownCapture={() => setInteractedScope(timingScope)} onFocusCapture={() => setInteractedScope(timingScope)} aria-label="Finance Feed Controls" className="mb-4 grid grid-cols-2 items-center gap-2 @min-[24rem]/finance:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
         <h2 className="col-start-1 row-start-1 min-w-0 break-words text-xl font-semibold @min-[24rem]/finance:max-w-56">{selectedFeed?.title ?? "Finance"}</h2>
         <div className="col-start-1 row-start-2 flex min-w-0 items-center text-sm @min-[24rem]/finance:col-start-2 @min-[24rem]/finance:row-start-1">
           <FinanceFeedPicker definitions={definitions} feedID={feedID} companySearch={companySearch} onFeedChange={onFeedChange} />
@@ -105,9 +118,9 @@ export default function FinanceExperience({ feedID = "finance", onFeedChange }: 
       </div>
       {!finance.isLoading && !finance.items.length && !finance.error ? <p>{feedID === "finance" ? "No finance stories are available right now." : "No matching stories are available right now. Try Refresh later or choose another feed."}</p> : null}
       {finance.feed.hasNextPage && !finance.suspended ? <Button className="mt-4" variant="outline" disabled={finance.feed.isFetchingNextPage} onClick={() => void finance.feed.fetchNextPage()}>Load More</Button> : null}
-      <FinanceCustomize key={customize ? "open" : "closed"} open={customize} onOpenChange={setCustomize} selections={finance.selections} save={saveSelection} saving={finance.saving} signedIn={finance.signedIn} />
+      {customize ? <FinanceCustomize key={finance.viewerDID ?? "public"} open={customize} onOpenChange={setCustomize} selections={finance.selections} save={saveSelection} saving={finance.saving} signedIn={finance.signedIn} /> : null}
       </div>
-      <FinanceFollowingSidebar definitions={definitions} selections={finance.selections} loading={finance.catalog?.isPending || finance.selectionsLoading} error={!!finance.catalog?.error || !!finance.selectionsError} feedID={feedID} onFeedChange={onFeedChange} />
+      <FinanceFollowingSidebar definitions={definitions} selections={finance.selections} loading={!decorationsReady || finance.catalog?.isPending || finance.selectionsLoading} error={!!finance.catalog?.error || !!finance.selectionsError} feedID={feedID} onFeedChange={onFeedChange} />
       </div>
     </div>
   );

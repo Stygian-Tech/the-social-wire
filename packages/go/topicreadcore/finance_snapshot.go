@@ -2,33 +2,41 @@ package topicreadcore
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
+	"github.com/stygian-tech/the-social-wire/packages/go/financecore"
 	"log/slog"
 	"time"
 )
 
+func (s *FinanceStore) snapshotCache() *decodedSnapshotCache[financecore.RankCandidate] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.snapshots == nil {
+		s.snapshots = &decodedSnapshotCache[financecore.RankCandidate]{}
+	}
+	return s.snapshots
+}
+
 func (s *FinanceStore) retained(ctx context.Context, id, scope, language, revision string, now time.Time) (*corpuscore.FinanceGeneration, error) {
+	return s.loadDecodedSnapshot(ctx, id, false, scope, language, revision, now)
+}
+
+// Reuse is guarded by the same current database row and scopes as continuation.
+func (s *FinanceStore) reusable(ctx context.Context, generation, scope, language, revision string, now time.Time) (*corpuscore.FinanceGeneration, error) {
+	return s.loadDecodedSnapshot(ctx, generation, true, scope, language, revision, now)
+}
+
+func (s *FinanceStore) loadDecodedSnapshot(ctx context.Context, id string, reusable bool, scope, language, revision string, now time.Time) (*corpuscore.FinanceGeneration, error) {
 	if !validUUID(id) {
 		return nil, nil
 	}
-	value := corpuscore.FinanceGeneration{GenerationID: id, Language: language}
-	var raw []byte
-	var source string
-	err := s.DB.QueryRowContext(ctx, `SELECT generated_at,expires_at,payload::text,serving_source FROM finance_personalized_snapshots WHERE snapshot_id=$1::uuid AND viewer_scope=$2 AND language=$3 AND preference_revision=$4 AND expires_at>$5`, id, scope, language, revision, now).Scan(&value.GeneratedAt, &value.ExpiresAt, &raw, &source)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	metadata, candidates, err := s.snapshotCache().load(ctx, s.DB, "finance_personalized_snapshots", id, reusable, scope, language, revision, now)
+	if err != nil || metadata == nil {
 		return nil, err
 	}
-	value.Source = &source
-	if err = corpuscore.DecodeContract(raw, &value.Candidates); err != nil {
-		return nil, err
-	}
-	return &value, nil
+	return &corpuscore.FinanceGeneration{GenerationID: metadata.ID, GeneratedAt: metadata.GeneratedAt, ExpiresAt: metadata.ExpiresAt, Language: language, Candidates: candidates, Source: &metadata.Source}, nil
 }
+
 func (s *FinanceStore) persist(ctx context.Context, proposal, source corpuscore.FinanceGeneration, scope, revision string, now time.Time) (corpuscore.FinanceGeneration, error) {
 	if !validUUID(proposal.GenerationID) || !validUUID(source.GenerationID) {
 		return corpuscore.FinanceGeneration{}, ErrUnavailable

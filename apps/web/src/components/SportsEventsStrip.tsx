@@ -35,7 +35,7 @@ const subscribeScope = (callback: () => void) => {
   return () => { window.removeEventListener("storage", callback); window.removeEventListener("sports-schedule-scope", callback); };
 };
 
-export function SportsEventsStrip({ feedID, hidden, entities = [], selections = [], viewerDID = "public", selectionsLoading = false, catalogLoading = false }: { feedID: string; hidden: boolean; entities?: SportsEntity[]; selections?: SportsSelection[]; viewerDID?: string; selectionsLoading?: boolean; catalogLoading?: boolean }) {
+export function SportsEventsStrip({ feedID, hidden, entities = [], selections = [], viewerDID = "public", selectionsLoading = false, catalogLoading = false, decorationsReady = true }: { feedID: string; hidden: boolean; entities?: SportsEntity[]; selections?: SportsSelection[]; viewerDID?: string; selectionsLoading?: boolean; catalogLoading?: boolean; decorationsReady?: boolean }) {
   const locale = useSportsDisplayLocale();
   const showDiagnostics = isDevDebugUiEnabled();
   const { section: sectionRef, compact } = useCompactSportsSchedules();
@@ -54,10 +54,10 @@ export function SportsEventsStrip({ feedID, hidden, entities = [], selections = 
     const allPreferredIDs = [...new Set(follows.filter(selection => entitiesByID.get(selection.reference)?.active).map(selection => selection.reference))].sort();
     return { teamIDs, allPreferredIDs };
   }, [selections, entitiesByID]);
-  const waitingForInterests = selectionsLoading || catalogLoading;
+  const waitingForInterests = selectionsLoading || catalogLoading || !decorationsReady;
   const contextLabels = useMemo(() => {
     const labels = new Map<string, string>();
-    for (const entity of entities) {
+    for (const entity of decorationsReady ? entities : []) {
       const sport = entity.sportID ? entitiesByID.get(entity.sportID) : undefined;
       const name = displaySportsEntityName(entity, locale);
       // Long competition labels need normal word boundaries inside narrow cards.
@@ -66,7 +66,7 @@ export function SportsEventsStrip({ feedID, hidden, entities = [], selections = 
       labels.set(entity.id, [sport ? displaySportsEntityName(sport, locale) : undefined, competitionLabel].filter(Boolean).join(" · "));
     }
     return labels;
-  }, [entities, entitiesByID, locale]);
+  }, [entities, entitiesByID, locale, decorationsReady]);
   const contextLabel = (competitionID: string) => contextLabels.get(competitionID) ?? "";
   const preferredIDs = useMemo(() => {
     const followedTeams = new Set(teamIDs);
