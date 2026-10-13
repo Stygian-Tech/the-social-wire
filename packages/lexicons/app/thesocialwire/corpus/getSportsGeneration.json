@@ -1,0 +1,222 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.corpus.getSportsGeneration",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Internal HMAC-authenticated bounded Sports rank source. Current serving eligibility is rechecked on every request. Generation conditionals require exact ID and current lean revision. Catalog metadata and full/active fingerprints identify the exact canonical Postgres serving snapshot, verified locally by the consuming AppView. Catalog content is never transported. Response cap 8 MiB; viewer credentials are forbidden.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "language"
+          ],
+          "properties": {
+            "language": {
+              "type": "string",
+              "maxLength": 35,
+              "minLength": 1
+            },
+            "knownGenerationId": {
+              "type": "string",
+              "maxLength": 36
+            },
+            "knownGenerationRevision": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "generationId",
+            "generationRevision",
+            "generatedAt",
+            "expiresAt",
+            "language",
+            "resolverVersion",
+            "catalogRevision",
+            "catalogVersion",
+            "catalogGeneratedAt",
+            "generationUnchanged",
+            "servingCatalogRevision"
+          ],
+          "properties": {
+            "generationId": {
+              "type": "string",
+              "maxLength": 36
+            },
+            "generationRevision": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "generatedAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "expiresAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 35
+            },
+            "resolverVersion": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "catalogRevision": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "catalogVersion": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "catalogGeneratedAt": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "generationUnchanged": {
+              "type": "boolean"
+            },
+            "candidates": {
+              "type": "array",
+              "maxLength": 5000,
+              "items": {
+                "type": "ref",
+                "ref": "#candidate"
+              }
+            },
+            "servingCatalogRevision": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "Canonical existing AppView fingerprint of active entities only; full catalogRevision additionally fences all transported entities."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "ModerationUnavailable"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        },
+        {
+          "name": "InternalServerError"
+        }
+      ]
+    },
+    "candidate": {
+      "type": "object",
+      "required": [
+        "itemId",
+        "canonicalUrl",
+        "title",
+        "domain",
+        "presentationFingerprint",
+        "analysis",
+        "baseScore",
+        "majorGlobal"
+      ],
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "canonicalUrl": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "publishedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "presentationFingerprint": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "analysis": {
+          "type": "ref",
+          "ref": "#analysis"
+        },
+        "baseScore": {
+          "type": "unknown",
+          "description": "Finite nonnegative source score, validated by the service."
+        },
+        "majorGlobal": {
+          "type": "boolean"
+        }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "required": [
+        "resolverVersion",
+        "eligible",
+        "materiality",
+        "associations",
+        "sportIDs",
+        "competitionIDs"
+      ],
+      "properties": {
+        "resolverVersion": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "materiality": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "associations": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.discovery.defs#sportsAssociation"
+          }
+        },
+        "sportIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "competitionIDs": {
+          "type": "array",
+          "maxLength": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        }
+      }
+    }
+  }
+}

@@ -27,6 +27,8 @@ type SportsStore struct {
 	mu               sync.Mutex
 	importedRevision string
 	lastRetention    time.Time
+	catalogMu        sync.Mutex
+	catalogCache     *sportsPageCatalogCache
 }
 
 func NewSportsStore(db *sql.DB, wire *WireStore, selections *SelectionProjection, env map[string]string) (*SportsStore, error) {
