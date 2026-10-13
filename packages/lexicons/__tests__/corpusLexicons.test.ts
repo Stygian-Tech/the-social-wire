@@ -36,8 +36,7 @@ describe("internal Sports source lexicon", () => {
     expect(sportsSource.defs.main.output.schema.properties.candidates.maxLength).toBe(5000);
     expect(sportsSource.defs.main.output.schema.properties).not.toHaveProperty("catalog");
     expect(sportsSource.defs.main.output.schema.required).toContain("servingCatalogRevision");
-    expect(sportsSource.defs.candidate.properties).not.toHaveProperty("summary");
-    expect(sportsSource.defs.candidate.properties.presentationFingerprint.maxLength).toBe(64);
+    expect(sportsSource.defs.main.output.schema.properties.candidates.description).toContain("presentationFingerprint");
     expect(() => sportsLexicons.assertValidXrpcInput(sportsSource.id, { language: "en" })).not.toThrow();
     for (const input of [{}, { language: "" }, { language: "a".repeat(36) }, { language: "en", knownGenerationRevision: "a".repeat(65) }]) {
       expect(() => sportsLexicons.assertValidXrpcInput(sportsSource.id, input)).toThrow();
@@ -46,7 +45,31 @@ describe("internal Sports source lexicon", () => {
   it("requires exact generation revision and preserves explicit conditional markers", () => {
     const response = { generationId: "11111111-1111-1111-1111-111111111111", generationRevision: "a".repeat(64), generatedAt: "2026-10-12T00:00:00Z", expiresAt: "2026-10-13T00:00:00Z", language: "en", resolverVersion: "sports-resolver-v14", catalogRevision: "b".repeat(64), servingCatalogRevision: "b".repeat(64), catalogVersion: "version", catalogGeneratedAt: "2026-10-12T00:00:00.123456Z", generationUnchanged: true };
     expect(() => sportsLexicons.assertValidXrpcOutput(sportsSource.id, response)).not.toThrow();
+    const candidate = { itemId: "story", canonicalUrl: "https://example.com/story", title: "Sports", domain: "example.com", presentationFingerprint: "c".repeat(64), analysis: { resolverVersion: "sports-resolver-v14", eligible: true, materiality: "championship", associations: [{ entityID: "team", confidence: 0.95, prominence: 1, evidence: ["headline"], resolverVersion: "sports-resolver-v14" }], sportIDs: [], competitionIDs: [] }, baseScore: 1.25, majorGlobal: false };
+    expect(() => sportsLexicons.assertValidXrpcOutput(sportsSource.id, { ...response, generationUnchanged: false, candidates: [candidate] })).not.toThrow();
+    expect(() => sportsLexicons.assertValidXrpcOutput(sportsSource.id, { ...response, candidates: [1.25] })).toThrow();
     const { generationRevision, ...missingRevision } = response;
     expect(() => sportsLexicons.assertValidXrpcOutput(sportsSource.id, missingRevision)).toThrow();
+  });
+});
+
+const financeSource = JSON.parse(readFileSync(join(root, "app/thesocialwire/corpus/getFinanceGeneration.json"), "utf8"));
+const financeLexicons = new Lexicons([financeSource, defs, shared]);
+describe("internal conditional Finance source lexicon", () => {
+  it("requires current metadata and defines the unchanged full presentation contract", () => {
+    expect(financeSource.defs.main.type).toBe("procedure");
+    expect(financeSource.defs.main.output.schema.properties.generation.description).toContain("5,000");
+    expect(financeSource.defs.main.output.schema.properties.generation.ref.endsWith("app.thesocialwire.defs#jsonObject")).toBe(true);
+    expect(() => financeLexicons.assertValidXrpcInput(financeSource.id, { language: "en" })).not.toThrow();
+    for (const input of [{}, { language: "" }, { language: "en", knownGenerationRevision: "a".repeat(65) }]) {
+      expect(() => financeLexicons.assertValidXrpcInput(financeSource.id, input)).toThrow();
+    }
+    const metadata = { generationId: "22222222-1111-1111-1111-111111111111", generationRevision: "a".repeat(64), generatedAt: "2026-10-12T00:00:00Z", expiresAt: "2026-10-13T00:00:00Z", language: "en", generationUnchanged: true };
+    expect(() => financeLexicons.assertValidXrpcOutput(financeSource.id, metadata)).not.toThrow();
+    const { generationRevision, ...missingRevision } = metadata;
+    expect(() => financeLexicons.assertValidXrpcOutput(financeSource.id, missingRevision)).toThrow();
+    const generation = { generationId: metadata.generationId, generatedAt: metadata.generatedAt, expiresAt: metadata.expiresAt, language: "en", candidates: [{ item: { itemId: "story", title: "Finance", canonicalUrl: "https://example.com/story", source: { name: "Example", domain: "example.com" }, reasons: [], provenance: [] }, analysis: { resolverVersion: "finance-resolver-v3.4", eligible: true, materiality: "earnings", associations: [], sectorIDs: [] }, baseScore: 1, majorGlobal: false }], instruments: [] };
+    expect(() => financeLexicons.assertValidXrpcOutput(financeSource.id, { ...metadata, generationUnchanged: false, generation })).not.toThrow();
+    expect(() => financeLexicons.assertValidXrpcOutput(financeSource.id, { ...metadata, generation: "invalid" })).toThrow();
   });
 });

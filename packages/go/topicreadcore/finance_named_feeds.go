@@ -70,7 +70,7 @@ func FinanceDefinitions(instruments []financecore.Instrument) []FinanceDefinitio
 	definition := func(id, title, kind, description string) FinanceDefinition {
 		return FinanceDefinition{ID: id, Title: title, Kind: kind, InstrumentIDs: []string{}, SectorIDs: []string{}, Description: description}
 	}
-	feeds := []FinanceDefinition{definition("finance", "Finance", "all", "Global financial news, personalized to your interests.")}
+	feeds := []FinanceDefinition{globalFinanceDefinition()}
 	taxonomy := financeTaxonomy()
 	for _, sector := range taxonomy.Sectors {
 		f := definition("industry:"+sector.ID, sector.Name, "industry", "Financial reporting about "+sector.Name+".")
@@ -272,4 +272,21 @@ func financeExchangeLabel(i financecore.Instrument) string {
 		return *i.ExchangeName + " (" + *i.Exchange + ")"
 	}
 	return "Exchange: " + *i.Exchange
+}
+
+// The global page does not depend on instrument inventory. Keep its public and
+// page definitions identical without constructing all named feeds per request.
+func globalFinanceDefinition() FinanceDefinition {
+	return FinanceDefinition{ID: "finance", Title: "Finance", Kind: "all", InstrumentIDs: []string{}, SectorIDs: []string{}, Description: "Global financial news, personalized to your interests."}
+}
+func financeDefinition(feed string, catalog []financecore.Instrument) (FinanceDefinition, bool) {
+	if feed == "finance" {
+		return globalFinanceDefinition(), true
+	}
+	for _, definition := range FinanceDefinitions(catalog) {
+		if definition.ID == feed {
+			return definition, true
+		}
+	}
+	return FinanceDefinition{}, false
 }

@@ -11,6 +11,12 @@ type SelectionFilter struct {
 }
 
 func NewSelectionFilter(selections []Selection, catalog []Entity) *SelectionFilter {
+	return newSelectionFilter(nil, nil, catalog).WithSelections(selections)
+}
+
+// WithSelections shares immutable catalog indexes while allocating fresh preference
+// maps. A filter never retains or shares another viewer's follow/mute state.
+func (f *SelectionFilter) WithSelections(selections []Selection) *SelectionFilter {
 	follows, mutes := set(nil), set(nil)
 	for _, selection := range selections {
 		if selection.Action == "follow" {
@@ -20,7 +26,7 @@ func NewSelectionFilter(selections []Selection, catalog []Entity) *SelectionFilt
 			mutes[selection.Reference] = true
 		}
 	}
-	return newSelectionFilter(follows, mutes, catalog)
+	return &SelectionFilter{byID: f.byID, parents: f.parents, follows: follows, mutes: mutes}
 }
 
 func newSelectionFilter(follows, mutes map[string]bool, entities []Entity) *SelectionFilter {

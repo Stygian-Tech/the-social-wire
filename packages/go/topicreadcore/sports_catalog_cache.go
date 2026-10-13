@@ -11,7 +11,14 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
 )
 
+type sportsCatalogIndexes struct {
+	byID       map[string]sportscore.Entity
+	resolver   *sportscore.EntityIndex
+	selections *sportscore.SelectionFilter
+}
+
 type sportsPageCatalogCache struct {
+	indexes      *sportsCatalogIndexes
 	version      string
 	generated    time.Time
 	fullRevision string
@@ -68,13 +75,24 @@ func (s *SportsStore) servingCatalogRevision(entities []sportscore.Entity) (stri
 
 func (s *SportsStore) loadSnapshotCatalog(ctx context.Context, version string, generated time.Time) ([]sportscore.Entity, string, string, error) {
 	var raw []byte
+	started := time.Now()
 	if err := s.DB.QueryRowContext(ctx, `SELECT entities::text FROM wire_serving.sports_catalog WHERE version=$1 AND generated_at=$2 LIMIT 1`, version, generated).Scan(&raw); err != nil {
 		return nil, "", "", err
 	}
+	ObserveFeedPhase(ctx, "catalog-scan", time.Since(started))
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
 	var full []sportscore.Entity
+	started = time.Now()
 	if corpuscore.DecodeContract(raw, &full) != nil || len(full) == 0 || len(full) > corpuscore.MaximumSportsEntities {
 		return nil, "", "", ErrUnavailable
 	}
+	ObserveFeedPhase(ctx, "catalog-decode", time.Since(started))
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
+	started = time.Now()
 	fullRevision, err := sportscore.ServingCatalogRevision(full)
 	if err != nil {
 		return nil, "", "", err
@@ -92,6 +110,10 @@ func (s *SportsStore) loadSnapshotCatalog(ctx context.Context, version string, g
 		if err != nil {
 			return nil, "", "", err
 		}
+	}
+	ObserveFeedPhase(ctx, "catalog-revision", time.Since(started))
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
 	}
 	return active, fullRevision, revision, nil
 }
@@ -122,4 +144,42 @@ func (s *SportsStore) requireSourceCatalog(ctx context.Context, source corpuscor
 	s.catalogCache = &sportsPageCatalogCache{version: source.CatalogVersion, generated: source.CatalogGeneratedAt, fullRevision: fullRevision, revision: revision, entities: entities}
 	s.catalogMu.Unlock()
 	return nil
+}
+
+func newSportsCatalogIndexes(entities []sportscore.Entity) *sportsCatalogIndexes {
+	byID := make(map[string]sportscore.Entity, len(entities))
+	for _, entity := range entities {
+		if _, exists := byID[entity.ID]; !exists {
+			byID[entity.ID] = entity
+		}
+	}
+	return &sportsCatalogIndexes{byID: byID, resolver: sportscore.NewEntityIndex(entities), selections: sportscore.NewSelectionFilter(nil, entities)}
+}
+
+// Only the exact immutable slice validated by cachedCatalog owns shared indexes.
+// A concurrent catalog replacement leaves in-flight pages using their own version;
+// an uncached catalog is indexed afresh rather than trusted by a guessed key.
+func (s *SportsStore) pageCatalogIndexes(ctx context.Context, entities []sportscore.Entity) (*sportsCatalogIndexes, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.catalogMu.Lock()
+	cache := s.catalogCache
+	if cache != nil && len(entities) > 0 && len(entities) == len(cache.entities) && &entities[0] == &cache.entities[0] {
+		if cache.indexes == nil {
+			cache.indexes = newSportsCatalogIndexes(entities)
+		}
+		indexes := cache.indexes
+		s.catalogMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return indexes, nil
+	}
+	s.catalogMu.Unlock()
+	indexes := newSportsCatalogIndexes(entities)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return indexes, nil
 }

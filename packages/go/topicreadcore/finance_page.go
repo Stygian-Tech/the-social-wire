@@ -225,14 +225,6 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 	}
 	return FinancePage{FeedID: feed, GenerationID: snapshot.GenerationID, GeneratedAt: snapshot.GeneratedAt, ExpiresAt: snapshot.ExpiresAt, Language: language, PreferenceRevision: revision, Cursor: next, Source: source, WidgetsEnabled: s.Config.Widgets, Degraded: stale || fallback, Items: accepted}, nil
 }
-func financeDefinition(feed string, catalog []financecore.Instrument) (FinanceDefinition, bool) {
-	for _, definition := range FinanceDefinitions(catalog) {
-		if definition.ID == feed {
-			return definition, true
-		}
-	}
-	return FinanceDefinition{}, false
-}
 func equalStrings(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil

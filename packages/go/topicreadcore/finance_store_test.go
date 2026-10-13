@@ -86,7 +86,7 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Cursor == nil {
 		t.Fatal(page, err)
 	}
-	if fixture.batchCalls != 1 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 {
+	if fixture.batchCalls != 1 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 || dbPhases["catalog-metadata"] != 1 || dbPhases["catalog-cache-miss"] != 1 {
 		t.Fatal("first-page batch budget", fixture.batchCalls, fixture.itemCalls)
 	}
 	decoded, err := store.Cursor.Decode(*page.Cursor, "en", page.PreferenceRevision, mustHash(t, store.Hasher, "anonymous-finance"), "finance", now)
@@ -101,7 +101,8 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 	if err != nil || len(next.Items) != 1 || next.Items[0].Story.ItemID != "c" || next.Cursor != nil {
 		t.Fatal(next, err)
 	}
-	if fixture.batchCalls != 2 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 2 || dbPhases["db-query"] != 2 {
+	// Continuation revalidates catalog metadata and reuses the decoded payload.
+	if fixture.batchCalls != 2 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 || dbPhases["catalog-metadata"] != 2 || dbPhases["catalog-cache-hit"] != 1 {
 		t.Fatal("continuation batch budget", fixture.batchCalls, fixture.itemCalls)
 	}
 	var beforeVersion, afterVersion string
