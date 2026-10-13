@@ -14,7 +14,7 @@ import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { socialHttpsUrl } from "./socialUrls";
 
-export function SocialExplorePersonCard({ actor, moderation, returnTo }: { actor: AppBskyActorDefs.ProfileView; moderation: ModerationOpts; returnTo: string }) {
+export function SocialExplorePersonCard({ actor, moderation, returnTo, descriptionBelow = false }: { actor: AppBskyActorDefs.ProfileView; moderation: ModerationOpts; returnTo: string; descriptionBelow?: boolean }) {
   const { did, sequence, requireSession } = useSocialWorkspaceSession();
   const cache = useQueryClient();
   const currentDid = useRef(did);
@@ -47,7 +47,7 @@ export function SocialExplorePersonCard({ actor, moderation, returnTo }: { actor
     <div className="flex flex-wrap items-start gap-3">
       <Link href={socialProfilePageHref(actor.did, returnTo)} className="flex min-w-0 flex-1 items-start gap-3">
         <Avatar src={avatarHidden ? undefined : socialHttpsUrl(actor.avatar)} alt="" size={40} />
-        <div className="min-w-0 flex-1"><p className="break-words font-semibold">{actor.displayName || actor.handle}</p><p className="break-all text-sm text-muted-foreground">@{actor.handle}</p>{actor.description ? <p className="mt-2 whitespace-pre-wrap break-words text-sm">{actor.description}</p> : null}</div>
+        <div className="min-w-0 flex-1"><p className="break-words font-semibold">{actor.displayName || actor.handle}</p><p className="break-all text-sm text-muted-foreground">@{actor.handle}</p>{actor.description && !descriptionBelow ? <p className="mt-2 whitespace-pre-wrap break-words text-sm">{actor.description}</p> : null}</div>
       </Link>
       {allowed ? <Button variant="outline" className="shrink-0" aria-label={`${following.data ? "Following" : "Follow"} @${actor.handle}`} disabled={!!following.data || follow.isPending} onClick={() => {
         if (busy.current || following.data) return;
@@ -55,6 +55,7 @@ export function SocialExplorePersonCard({ actor, moderation, returnTo }: { actor
         follow.mutate(did);
       }}>{follow.isPending ? "Following…" : following.data ? "Following" : "Follow"}</Button> : null}
     </div>
+    {descriptionBelow && actor.description ? <p className="mt-3 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{actor.description}</p> : null}
     {error ? <p role="alert" className="mt-2 text-sm text-destructive">{error}</p> : null}
     {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : null}
   </article>;
