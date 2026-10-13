@@ -2,6 +2,7 @@ package topicreadcore
 
 import (
 	"context"
+	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
 	"golang.org/x/sync/errgroup"
@@ -148,6 +149,26 @@ func (s *SportsStore) source(ctx context.Context, lang string, now time.Time) (c
 			return corpuscore.SportsGeneration{}, ctx.Err()
 		}
 		slog.Warn("Sports corpus unavailable; checking retained generation")
+	}
+	if s.Remote == nil {
+		if local := localSourceStore(s.Wire, s.DB); local != nil {
+			response, err := s.loadLeanSource(ctx, local, lang, now)
+			if err == nil {
+				value := corpuscore.SportsSourceGeneration(response)
+				if err = s.requireSourceCatalog(ctx, value); err != nil {
+					return value, err
+				}
+				value.Source, err = localSourceProvenance(ctx, s.DB, true, value.GenerationID)
+				return value, err
+			}
+			if ctx.Err() != nil {
+				return corpuscore.SportsGeneration{}, ctx.Err()
+			}
+			if !errors.Is(err, corpuscore.ErrUnavailable) {
+				return corpuscore.SportsGeneration{}, corpusError(err)
+			}
+			// A missing or obsolete active source retains the original recovery path.
+		}
 	}
 	// Bound retained identities before detoasting their presentation payloads.
 	rows, err := s.DB.QueryContext(ctx, `WITH selected AS MATERIALIZED (SELECT generation_id,is_active,generated_at FROM sports_generations WHERE language=$1 AND expires_at>$2 ORDER BY is_active DESC,generated_at DESC LIMIT 10) SELECT generation.generation_id::text,generation.generated_at,generation.expires_at,generation.payload::text,generation.serving_source FROM selected JOIN sports_generations generation USING(generation_id) ORDER BY selected.is_active DESC,selected.generated_at DESC`, lang, now)

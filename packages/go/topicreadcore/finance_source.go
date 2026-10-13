@@ -57,6 +57,24 @@ func (s *FinanceStore) source(ctx context.Context, language string, now time.Tim
 		}
 		return source, nil
 	}
+	if local := localSourceStore(s.Wire, s.DB); local != nil {
+		response, err := local.FinanceSource(ctx, corpuscore.FinanceSourceRequest{Language: language}, now)
+		if err == nil {
+			if response.Generation == nil {
+				return corpuscore.FinanceGeneration{}, ErrUnavailable
+			}
+			source := *response.Generation
+			source.Source, err = localSourceProvenance(ctx, s.DB, false, source.GenerationID)
+			return source, err
+		}
+		if ctx.Err() != nil {
+			return corpuscore.FinanceGeneration{}, ctx.Err()
+		}
+		if !errors.Is(err, corpuscore.ErrUnavailable) {
+			return corpuscore.FinanceGeneration{}, corpusError(err)
+		}
+		// A missing active source keeps the original retained/fallback selection.
+	}
 	var source corpuscore.FinanceGeneration
 	var raw []byte
 	var provenance string

@@ -32,7 +32,9 @@ func (s *SportsStore) cachedCatalog(ctx context.Context) ([]sportscore.Entity, b
 	s.catalogMu.Unlock()
 	if cache == nil {
 		if _, remote := s.Remote.(corpuscore.SportsSourceStore); !remote {
-			return nil, false, nil
+			if s.Remote != nil || localSourceStore(s.Wire, s.DB) == nil {
+				return nil, false, nil
+			}
 		}
 	}
 	// Workers publish a fresh immutable catalog version/generated-at and entity
@@ -50,6 +52,15 @@ func (s *SportsStore) cachedCatalog(ctx context.Context) ([]sportscore.Entity, b
 	}
 	ObserveFeedPhase(ctx, "catalog-cache-miss", 0)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) && s.Remote == nil && localSourceStore(s.Wire, s.DB) != nil {
+			// Local retained/fallback generations historically use the entity
+			// projection when no canonical lease exists. Never reuse a vanished
+			// lease's immutable catalog or indexes in that recovery path.
+			s.catalogMu.Lock()
+			s.catalogCache = nil
+			s.catalogMu.Unlock()
+			return nil, false, nil
+		}
 		return nil, false, ErrUnavailable
 	}
 	entities, fullRevision, revision, err := s.loadSnapshotCatalog(ctx, version, generated)
