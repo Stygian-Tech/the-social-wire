@@ -63,7 +63,7 @@ func TestFeedTimingIgnoresCallbacksAfterRequestCompletion(t *testing.T) {
 
 func TestFeedTimingAcceptsFixedSourceAndCatalogPhasesOnly(t *testing.T) {
 	handler := Routes{}.observeFeed("sports", func(w http.ResponseWriter, req *http.Request) {
-		for _, phase := range []string{"source-transport", "source-decode", "catalog-scan", "catalog-decode", "catalog-revision", "catalog-index", "snapshot-lookup", "source-generation-cache-hit", "source-generation-cache-miss", "source-catalog-cache-hit", "source-catalog-cache-miss", "catalog-cache-hit", "catalog-cache-miss", "snapshot-query", "snapshot-cache-hit", "snapshot-cache-miss", "snapshot-decode"} {
+		for _, phase := range []string{"source-transport", "source-decode", "catalog-scan", "catalog-decode", "catalog-revision", "catalog-index", "catalog-metadata", "snapshot-lookup", "source-generation-cache-hit", "source-generation-cache-miss", "source-catalog-cache-hit", "source-catalog-cache-miss", "catalog-cache-hit", "catalog-cache-miss", "snapshot-query", "snapshot-cache-hit", "snapshot-cache-miss", "snapshot-decode"} {
 			topicreadcore.ObserveFeedPhase(req.Context(), phase, time.Millisecond)
 		}
 		topicreadcore.ObserveFeedPhase(req.Context(), "viewer-private-identifier", time.Second)
@@ -72,7 +72,7 @@ func TestFeedTimingAcceptsFixedSourceAndCatalogPhasesOnly(t *testing.T) {
 	writer := httptest.NewRecorder()
 	handler(writer, httptest.NewRequest("GET", "/xrpc/app.thesocialwire.discovery.getSports", nil))
 	timings := writer.Header().Get("Server-Timing")
-	for _, phase := range []string{"source-transport", "source-decode", "catalog-scan", "catalog-decode", "catalog-revision", "catalog-index", "snapshot-lookup", "source-generation-cache-hit", "source-generation-cache-miss", "source-catalog-cache-hit", "source-catalog-cache-miss", "catalog-cache-hit", "catalog-cache-miss", "snapshot-query", "snapshot-cache-hit", "snapshot-cache-miss", "snapshot-decode"} {
+	for _, phase := range []string{"source-transport", "source-decode", "catalog-scan", "catalog-decode", "catalog-revision", "catalog-index", "catalog-metadata", "snapshot-lookup", "source-generation-cache-hit", "source-generation-cache-miss", "source-catalog-cache-hit", "source-catalog-cache-miss", "catalog-cache-hit", "catalog-cache-miss", "snapshot-query", "snapshot-cache-hit", "snapshot-cache-miss", "snapshot-decode"} {
 		if !strings.Contains(timings, phase+";dur=1.000") {
 			t.Fatal(phase, timings)
 		}

@@ -11,52 +11,6 @@ import (
 	"time"
 )
 
-func (s *FinanceStore) Catalog(ctx context.Context) ([]financecore.Instrument, error) {
-	observer := feedPhaseObserver(ctx)
-	var queryStarted time.Time
-	if observer != nil {
-		queryStarted = time.Now()
-	}
-	rows, closeRows, err := corpuscore.QueryRows(ctx, s.DB, `SELECT payload::text FROM finance_instruments ORDER BY instrument_id LIMIT 50000`)
-	if observer != nil {
-		observer("catalog-query-open", time.Since(queryStarted))
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer closeRows()
-	var scanElapsed, decodeElapsed time.Duration
-	var scanStarted, decodeStarted time.Time
-	if observer != nil {
-		scanStarted = time.Now()
-		defer func() { observer("catalog-scan", scanElapsed); observer("catalog-decode", decodeElapsed) }()
-	}
-	result := []financecore.Instrument{}
-	for rows.Next() {
-		var raw []byte
-		if err = rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		if observer != nil {
-			scanElapsed += time.Since(scanStarted)
-			decodeStarted = time.Now()
-		}
-		var i financecore.Instrument
-		err = corpuscore.DecodeContract(raw, &i)
-		if observer != nil {
-			decodeElapsed += time.Since(decodeStarted)
-			scanStarted = time.Now()
-		}
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, financecore.ApplyReviewedMetadata(i))
-	}
-	if observer != nil {
-		scanElapsed += time.Since(scanStarted)
-	}
-	return s.Config.Policy.Filter(result), rows.Err()
-}
 func (s *FinanceStore) Availability(ctx context.Context, now time.Time) (FinanceAvailability, error) {
 	available := false
 	if s.Config.Rights && s.Config.Mode == "visible" {
