@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import * as Auth from "@/hooks/useAuth";
@@ -57,8 +57,10 @@ describe("Social Post Interactions", () => {
     parent: { uri: `${post.uri}parent`, cid }, root: { uri: `${post.uri}root`, cid },
   } } } });
   expect(screen.getByLabelText("Post Conversation")).toBeTruthy();
-  expect(screen.getByText("Original post unavailable.")).toBeTruthy();
-  expect(screen.getByText("Replying To an unavailable post")).toBeTruthy();
+  expect(screen.queryByText("Original post unavailable.")).toBeNull();
+  expect(screen.queryByText("Replying To an unavailable post")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Show Thread" }));
+  expect(push).toHaveBeenCalledWith(socialPostPageHref(`${post.uri}root`, "/social"));
  });
  it("renders parent and reply in one card and omits a later standalone parent", () => {
   const parent = { ...post, replyCount: 99, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Grouped Parent", createdAt: "2026-10-10T00:00:00Z" } };
@@ -77,6 +79,20 @@ describe("Social Post Interactions", () => {
   fireEvent.click(screen.getByText("Grouped Parent"));
   expect(push).toHaveBeenCalledWith(socialPostPageHref(parent.uri, "/social"));
  });
+ it("resolves a missing parent from loaded feed rows for both context displays", () => {
+  const parent = { ...post, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Available Parent", createdAt: "2026-10-10T00:00:00Z" } };
+  const root = { ...parent, uri: `${post.uri}root` };
+  const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }), oauthSessionReloadSeq: 0 } as unknown as ReturnType<typeof Auth.useAuth>);
+  restore.push(() => auth.mockRestore());
+  render(<QueryClientProvider client={new QueryClient()}><SocialFeedPosts items={[
+   { post, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: parent.uri, notFound: true }, root } },
+   { post: parent },
+  ]} moderation={moderation} /></QueryClientProvider>);
+  expect(screen.getAllByText("Available Parent")).toHaveLength(1);
+  expect(screen.getByLabelText("Post Conversation").textContent).toContain("Replying To @other.test");
+  expect(screen.queryByText("Original post unavailable.")).toBeNull();
+  expect(screen.queryByText("Replying To an unavailable post")).toBeNull();
+ });
  it("shows the reply parent and navigates internally without a post dialog", () => {
   const parent = { ...post, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Original Parent", createdAt: "2026-10-10T00:00:00Z" } };
   show({ post, reply: { parent, root: parent } });
@@ -84,13 +100,28 @@ describe("Social Post Interactions", () => {
   expect(push).toHaveBeenCalledWith(socialPostPageHref(parent.uri, "/social"));
   expect(screen.queryByRole("dialog") === null).toBe(true);
  });
- it("withholds muted reply parents and preserves unavailable context", () => {
+ it("shows parent actions by default and sends engagement to the parent", async () => {
+  const parent = { ...post, uri: `${post.uri}parent`, replyCount: 99, likeCount: 5, repostCount: 3,
+   record: { $type: "app.bsky.feed.post", text: "Actionable Parent", createdAt: "2026-10-10T00:00:00Z" } };
+  const like = spyOn(Client, "setBlueskyPostEngagement").mockResolvedValue("at://did:plc:viewer/app.bsky.feed.like/parent");
+  restore.push(() => like.mockRestore());
+  show({ post, reply: { parent, root: parent } });
+  const actions = within(screen.getByLabelText("Parent Post"));
+  expect(actions.getByRole("button", { name: "Reply (99)" })).toBeTruthy();
+  expect(actions.getByRole("button", { name: "Repost (3)" })).toBeTruthy();
+  expect(actions.getByRole("button", { name: "Bookmark Post" })).toBeTruthy();
+  expect(actions.getByRole("button", { name: "More Post Actions" })).toBeTruthy();
+  fireEvent.click(actions.getByRole("button", { name: "Like (5)" }));
+  await waitFor(() => expect(like).toHaveBeenCalledWith(expect.objectContaining({ uri: parent.uri, cid: parent.cid, kind: "like" })));
+  expect(push).not.toHaveBeenCalled();
+ });
+ it("hides interactions with muted reply parents and preserves genuinely unavailable context", () => {
   const parent = { ...post, uri: `${post.uri}parent`, author: { ...post.author, viewer: { muted: true } }, record: { $type: "app.bsky.feed.post", text: "Secret Parent", createdAt: "2026-10-10T00:00:00Z" } };
   const view = show({ post, reply: { parent, root: parent } });
   expect(screen.queryByText("Secret Parent")).toBeNull();
-  expect(screen.getByText("Original post withheld by your moderation settings.")).toBeTruthy();
-  expect(screen.getByText("Conversation")).toBeTruthy();
-  view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: parent.uri, notFound: true }, root: parent } }} moderation={moderation} /></QueryClientProvider>);
+  expect(screen.queryByLabelText("Post Conversation")).toBeNull();
+  expect(screen.queryByText("Conversation")).toBeNull();
+  view.rerender(<QueryClientProvider client={new QueryClient()}><InteractiveSocialPost item={{ post, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost", uri: parent.uri, notFound: true }, root: { ...parent, uri: `${parent.uri}root`, author: post.author } } }} moderation={moderation} /></QueryClientProvider>);
   expect(screen.getByText("Original post unavailable.")).toBeTruthy();
   expect(screen.getByText("Conversation")).toBeTruthy();
  });

@@ -78,19 +78,20 @@ it("keeps the reply and its actions when the immediate parent is missing", async
   posts = posts.filter(post => post.uri !== parentUri);
   render(<SocialNotifications />, { wrapper: Wrapper });
   expect(await screen.findByText(replyRecord.text)).toBeTruthy();
-  expect(screen.getByText("Original post unavailable.")).toBeTruthy();
+  expect(screen.queryByText("Original post unavailable.")).toBeNull();
+  expect(screen.getByRole("button", { name: "Show Thread" })).toBeTruthy();
   expect(screen.queryByText("Thread root")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Like The actual nested reply" }));
   expect(liked).toHaveBeenCalledWith(replyUri);
 });
-it("withholds moderated parent content/actions without hiding the safe reply", async () => {
+it("hides the entire reply notification when its parent is moderated", async () => {
   posts = posts.map(post => post.uri === parentUri ? { ...post, author: { ...post.author, viewer: { blocking: `at://${did}/app.bsky.graph.block/one` } } } : post);
   render(<SocialNotifications />, { wrapper: Wrapper });
-  expect(await screen.findByText(replyRecord.text)).toBeTruthy();
-  expect(screen.getByText("Original post withheld by your moderation settings.")).toBeTruthy();
+  expect(await screen.findByText("No notifications to show.")).toBeTruthy();
+  expect(screen.queryByText(replyRecord.text)).toBeNull();
   expect(screen.queryByText("Immediate parent")).toBeNull();
   expect(screen.queryByRole("button", { name: "Like Immediate parent" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Like The actual nested reply" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Like The actual nested reply" })).toBeNull();
 });
 
 it("groups likes across pages with unique people, one post and unread state from any member", async () => {

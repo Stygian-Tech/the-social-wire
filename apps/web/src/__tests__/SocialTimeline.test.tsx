@@ -10,6 +10,7 @@ import * as Client from "@/lib/blueskySocialClient";
 import SocialPage from "@/app/social/page";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { requestSocialHomeRefresh } from "@/lib/socialHomeRefresh";
 
 const did = "did:plc:viewer";
 const safety: ModerationOpts = { userDid: did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } };
@@ -61,6 +62,24 @@ function servePage(value: Client.BlueskySocialPage = { feed: [] }) {
 }
 
 describe("Social timeline page", () => {
+  it("returns to the top and reloads only the first page on Home refresh", async () => {
+    serveCatalog();
+    const posts = servePage({ feed: [item("one", "First page")], cursor: "older" });
+    posts.mockImplementation(async args => args.cursor
+      ? { feed: [item("two", "Older page")] }
+      : { feed: [item("one", "First page")], cursor: "older" });
+    await show();
+    await screen.findByText("First page");
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+    await screen.findByText("Older page");
+    const scroll = screen.getByText("First page").closest('[data-analytics-subject]')!.parentElement!.closest('.overflow-y-auto') as HTMLElement;
+    scroll.scrollTop = 800;
+    await act(async () => { requestSocialHomeRefresh(); });
+    await waitFor(() => expect(posts).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.queryByText("Older page")).toBeNull());
+    expect(scroll.scrollTop).toBe(0);
+    expect(posts.mock.calls.map(([args]) => args.cursor)).toEqual([undefined, "older", undefined]);
+  });
   it("rejects invalid and conflicting feed parameters without fetching posts", async () => {
     params = new URLSearchParams("feed=https://example.com/not-a-feed&list=at://did:plc:other/app.bsky.graph.list/team");
     serveCatalog().mockReturnValue(deferred<Client.BlueskySocialCatalog>().promise);

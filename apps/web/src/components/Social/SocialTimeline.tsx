@@ -2,7 +2,7 @@
 
 import { RefreshCw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { Button } from "@/components/ui/button";
@@ -17,13 +17,15 @@ import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
 import { SocialFeedsSheet } from "./SocialFeedsSheet";
 import { SocialComposeButton } from "./SocialComposeButton";
+import { SOCIAL_HOME_REFRESH_EVENT } from "@/lib/socialHomeRefresh";
+import { groupSocialFeedItems } from "@/lib/socialFeedGrouping";
 
 export function SocialTimeline() {
   const params = useSearchParams();
   let feed = SOCIAL_FOLLOWING_FEED;
   let routeError: string | undefined;
   try { feed = socialFeedFromSearchParams(params); } catch (error) { routeError = socialErrorMessage(error); }
-  const { session, signIn } = useAuth();
+  const { session, signIn, oauthSessionReloadSeq } = useAuth();
   const queryClient = useQueryClient();
   const [reauthorizing, setReauthorizing] = useState(false);
   const [reauthorizeError, setReauthorizeError] = useState(false);
@@ -31,7 +33,7 @@ export function SocialTimeline() {
   const moderation = !routeError && !catalog.isError ? catalog.data?.moderation : undefined;
   const timeline = useBlueskySocialTimeline(feed, moderation);
   const selected = catalog.data?.feeds.find(item => item.kind === feed.kind && item.uri === feed.uri) ?? feed;
-  const posts = moderation ? flattenSocialPages(timeline.data?.pages ?? []).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
+  const posts = moderation ? groupSocialFeedItems(flattenSocialPages(timeline.data?.pages ?? []), moderation).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
   const error = routeError || (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined);
   const loading = !error && (catalog.isPending || timeline.isPending);
   const scrollContainer = useSocialFeedScroll(session?.did, `${feed.kind}:${feed.uri ?? ""}`, !loading && !error && !!moderation);
@@ -44,12 +46,25 @@ export function SocialTimeline() {
     try { await signIn(session.did); } catch { setReauthorizing(false); setReauthorizeError(true); }
   }
 
-  async function refresh() {
-    const settings = await catalog.refetch();
+  const refetchCatalog = catalog.refetch;
+  const refresh = useCallback(async (restart = false) => {
+    const settings = await refetchCatalog();
     if (!settings.isError && session) {
-      await queryClient.invalidateQueries({ queryKey: ["blueskySocial", session.did, "timeline"] });
+      const queryKey = ["blueskySocial", session.did, "timeline"];
+      if (restart) await queryClient.resetQueries({ queryKey: [...queryKey, oauthSessionReloadSeq, feed.kind, feed.uri] });
+      else await queryClient.invalidateQueries({ queryKey });
     }
-  }
+  }, [refetchCatalog, session, queryClient, oauthSessionReloadSeq, feed.kind, feed.uri]);
+
+  useEffect(() => {
+    const returnHome = () => {
+      if (routeError) return;
+      if (scrollContainer.current) scrollContainer.current.scrollTop = 0;
+      void refresh(true);
+    };
+    window.addEventListener(SOCIAL_HOME_REFRESH_EVENT, returnHome);
+    return () => window.removeEventListener(SOCIAL_HOME_REFRESH_EVENT, returnHome);
+  }, [refresh, routeError, scrollContainer]);
 
   return <div className="relative flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title={selected.name} subtitle="Social">

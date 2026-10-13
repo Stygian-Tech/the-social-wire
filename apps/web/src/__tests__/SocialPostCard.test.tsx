@@ -90,9 +90,7 @@ describe("Social Post Rendering", () => {
     expect(unavailable).toContain("lucide-message-circle");
     expect(unavailable).toContain("Replying To an unavailable post");
     const withheld = card({ ...value, reply: { root: parent, parent: { ...parent, author: { ...author, viewer: { muted: true } } } } });
-    expect(withheld).toContain("lucide-message-circle");
-    expect(withheld).toContain("Replying To a withheld post");
-    expect(withheld).not.toContain('class="break-all hover:underline"');
+    expect(withheld).toBe("");
   });
   it("labels record-only replies when feed metadata is missing", () => {
     const value = item();
@@ -101,7 +99,7 @@ describe("Social Post Rendering", () => {
       root: { uri: "at://did:plc:parent/app.bsky.feed.post/root", cid: value.post.cid },
     } };
     const html = card(value);
-    expect(html).toContain("Replying To an unavailable post");
+    expect(html).not.toContain("Replying To an unavailable post");
     expect(html).toContain("lucide-message-circle");
   });
   it("does not attribute ordinary feed posts to a like or quote", () => {

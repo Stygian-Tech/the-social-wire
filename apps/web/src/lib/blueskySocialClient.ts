@@ -180,6 +180,7 @@ export async function getBlueskySocialPage(args: {
   moderation: ModerationOpts;
   cursor?: string;
   signal?: AbortSignal;
+  deferReplyHydration?: boolean;
 }): Promise<BlueskySocialPage> {
   if (args.moderation.userDid !== args.session.did) throw new Error("Your account changed. Please reload this feed.");
   if (args.feed.kind !== "following" && !validFeedUri(args.feed.uri, args.feed.kind)) throw new Error("This social feed link is invalid.");
@@ -192,7 +193,14 @@ export async function getBlueskySocialPage(args: {
     : args.feed.kind === "feed"
       ? await agent.app.bsky.feed.getFeed({ ...params, feed: args.feed.uri }, options)
       : await agent.app.bsky.feed.getListFeed({ ...params, list: args.feed.uri }, options);
-  return { ...response.data, feed: await hydrateSocialReplies(agent, response.data.feed, args.signal) };
+  return { ...response.data, feed: args.deferReplyHydration ? response.data.feed : await hydrateSocialReplies(agent, response.data.feed, args.signal) };
+}
+
+export async function hydrateBlueskySocialPage(session: OAuthSession, page: BlueskySocialPage, signal: AbortSignal, moderation: ModerationOpts): Promise<BlueskySocialPage> {
+  const agent = createAuthenticatedAppViewAgent(session);
+  if (moderation.userDid !== session.did) throw new Error("Your account changed. Please reload this feed.");
+  agent.configureLabelers(moderation.prefs.labelers.map(labeler => labeler.did));
+  return { ...page, feed: await hydrateSocialReplies(agent, page.feed, signal) };
 }
 
 /** Keep repost identity while deduplicating overlaps between paginated results. */

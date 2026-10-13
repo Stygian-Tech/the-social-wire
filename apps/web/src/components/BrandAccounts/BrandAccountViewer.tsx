@@ -39,7 +39,9 @@ export function BrandAccountViewer({ ownerDid, brandDid, notificationsOnly = fal
     const decision = moderateSocialPost(item.post, moderation).ui("contentList");
     if (decision.filter) return null;
     const grouped = !!item.reply && !decision.blur && !decision.noOverride;
-    return <div key={item.post.uri} className={`space-y-2 ${grouped ? "rounded-2xl border bg-card p-4" : ""}`}>{grouped && item.reply ? <SocialReplyContext reply={item.reply} postUri={item.post.uri} moderation={moderation} onOpenPost={post => setThreadUri(post.uri)} /> : null}<SocialPostCard embedded={grouped} item={item} moderation={moderation} onOpen={() => setThreadUri(item.post.uri)} onOpenPost={post => setThreadUri(post.uri)} actions={actions(item.post)} /></div>;
+    const root = item.reply?.root;
+    const threadUri = root && "uri" in root && typeof root.uri === "string" ? root.uri : item.post.uri;
+    return <div key={item.post.uri} className={`space-y-2 ${grouped ? "rounded-2xl border bg-card p-4" : ""}`}>{grouped && item.reply ? <SocialReplyContext reply={item.reply} postUri={item.post.uri} moderation={moderation} onOpenPost={post => setThreadUri(post.uri)} onShowThread={() => setThreadUri(threadUri)} /> : null}<SocialPostCard embedded={grouped} item={item} moderation={moderation} onOpen={() => setThreadUri(item.post.uri)} onOpenPost={post => setThreadUri(post.uri)} actions={actions(item.post)} /></div>;
   }
   const pages = brand.notifications.data?.pages ?? [];
   const posts = new Map(pages.flatMap(page => page.posts).map(post => [post.uri, post]));

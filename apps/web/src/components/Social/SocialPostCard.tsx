@@ -22,6 +22,7 @@ import { SocialPostTimestamp } from "./SocialPostTimestamp";
 import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
 import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
 import { socialReplyMetadata } from "@/lib/socialReplyMetadata";
+import { isSocialInteractionHidden } from "@/lib/socialInteractionModeration";
 
 export function SocialPostCard({
   item,
@@ -44,6 +45,7 @@ export function SocialPostCard({
 }) {
   const post = item.post;
   const reply = socialReplyMetadata(item);
+  if (isSocialInteractionHidden({ ...item, reply }, moderation)) return null;
   const record = AppBskyFeedPost.validateRecord(post.record);
   const decision = moderateSocialPost(post, moderation);
   const content = decision.ui("contentList");
