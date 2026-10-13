@@ -40,7 +40,7 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 		return SportsPage{}, err
 	}
 	started = time.Now()
-	catalogRevision, err := sportscore.ServingCatalogRevision(catalog)
+	catalogRevision, err := s.servingCatalogRevision(catalog)
 	ObserveFeedPhase(ctx, "catalog-revision", time.Since(started))
 	if err != nil {
 		return SportsPage{}, err
@@ -149,6 +149,7 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 		}
 	}
 	entityIndex := sportscore.NewEntityIndex(catalog)
+	selectionFilter := sportscore.NewSelectionFilter(prefs, catalog)
 	accepted := []SportsItem{}
 	for ordinal < len(snapshot.Candidates) && len(accepted) < limit {
 		end := min(ordinal+corpuscore.MaximumBatchItems, len(snapshot.Candidates))
@@ -176,7 +177,7 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 			if item == nil {
 				continue
 			}
-			unchanged := item.Title == c.Item.Title && equalStrings(item.Summary, c.Item.Summary) && item.Source.Domain == c.Item.Source.Domain && sportsCurrent([]sportscore.RankCandidate{c})
+			unchanged := c.PresentationMatches(*item) && sportsCurrent([]sportscore.RankCandidate{c})
 			analysis := c.Analysis
 			if !unchanged {
 				summary := ""
@@ -185,7 +186,7 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 				}
 				analysis = sportscore.AnalyzeIndex(item.Title, summary, entityIndex)
 			}
-			if !analysis.Eligible || !definition.Matches(analysis) || len(sportscore.RankSelections([]sportscore.RankCandidate{{Item: *item, Analysis: analysis, BaseScore: 1, MajorGlobal: c.MajorGlobal}}, prefs, catalog, false)) == 0 {
+			if !analysis.Eligible || !definition.Matches(analysis) || !selectionFilter.Allows(sportscore.RankCandidate{Item: *item, Analysis: analysis, BaseScore: 1, MajorGlobal: c.MajorGlobal}) {
 				continue
 			}
 			entities := []sportscore.Entity{}

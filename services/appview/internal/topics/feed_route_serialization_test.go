@@ -17,7 +17,8 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/topicreadcore"
 )
 
-// Supply only the three read queries needed for a retained, empty first page.
+// Supply the reads needed for a retained, empty first page, including the
+// authoritative snapshot stamp followed by its fenced payload read.
 // The registered HTTP route still runs moderation, source/catalog selection,
 // snapshot reuse, page rendering, and the actual Finance/Sports encoder.
 type feedSerializationConnector struct{ now time.Time }
@@ -47,7 +48,10 @@ func (c *feedSerializationConn) QueryContext(_ context.Context, query string, _ 
 	case strings.Contains(query, "FROM sports_entities"), strings.Contains(query, "FROM finance_instruments"):
 		return &feedSerializationRows{columns: []string{"payload"}}, nil
 	case strings.Contains(query, "FROM sports_personalized_snapshots"), strings.Contains(query, "FROM finance_personalized_snapshots"):
-		return &feedSerializationRows{columns: []string{"id", "generated_at", "expires_at", "payload", "source"}, values: []driver.Value{"22222222-2222-2222-2222-222222222222", c.now, c.now.Add(time.Hour), "[]", "ranked"}}, nil
+		if strings.Contains(query, "SELECT payload::text") {
+			return &feedSerializationRows{columns: []string{"payload"}, values: []driver.Value{"[]"}}, nil
+		}
+		return &feedSerializationRows{columns: []string{"id", "generated_at", "expires_at", "source", "stamp"}, values: []driver.Value{"22222222-2222-2222-2222-222222222222", c.now, c.now.Add(time.Hour), "ranked", "1:(0,1)"}}, nil
 	case strings.Contains(query, "WITH selected AS MATERIALIZED"):
 		return &feedSerializationRows{columns: []string{"id", "generated_at", "expires_at", "payload", "source"}, values: []driver.Value{"11111111-1111-1111-1111-111111111111", c.now, c.now.Add(time.Hour), "[]", "ranked"}}, nil
 	}

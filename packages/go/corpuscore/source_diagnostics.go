@@ -34,7 +34,7 @@ func sourceFamily(target string) string {
 	switch path {
 	case "/internal/wire/v1/finance":
 		return "finance"
-	case "/internal/wire/v1/sports":
+	case "/internal/wire/v1/sports", SportsSourcePath:
 		return "sports"
 	}
 	return ""

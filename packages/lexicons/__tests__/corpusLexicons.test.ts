@@ -27,3 +27,26 @@ describe("internal corpus batch lexicon", () => {
     expect(() => lexicons.assertValidXrpcOutput(schema.id, {})).toThrow();
   });
 });
+
+const sportsSource = JSON.parse(readFileSync(join(root, "app/thesocialwire/corpus/getSportsGeneration.json"), "utf8"));
+const sportsLexicons = new Lexicons([sportsSource, defs, shared]);
+describe("internal Sports source lexicon", () => {
+  it("defines bounded typed candidates and exact canonical catalog metadata", () => {
+    expect(sportsSource.defs.main.type).toBe("procedure");
+    expect(sportsSource.defs.main.output.schema.properties.candidates.maxLength).toBe(5000);
+    expect(sportsSource.defs.main.output.schema.properties).not.toHaveProperty("catalog");
+    expect(sportsSource.defs.main.output.schema.required).toContain("servingCatalogRevision");
+    expect(sportsSource.defs.candidate.properties).not.toHaveProperty("summary");
+    expect(sportsSource.defs.candidate.properties.presentationFingerprint.maxLength).toBe(64);
+    expect(() => sportsLexicons.assertValidXrpcInput(sportsSource.id, { language: "en" })).not.toThrow();
+    for (const input of [{}, { language: "" }, { language: "a".repeat(36) }, { language: "en", knownGenerationRevision: "a".repeat(65) }]) {
+      expect(() => sportsLexicons.assertValidXrpcInput(sportsSource.id, input)).toThrow();
+    }
+  });
+  it("requires exact generation revision and preserves explicit conditional markers", () => {
+    const response = { generationId: "11111111-1111-1111-1111-111111111111", generationRevision: "a".repeat(64), generatedAt: "2026-10-12T00:00:00Z", expiresAt: "2026-10-13T00:00:00Z", language: "en", resolverVersion: "sports-resolver-v14", catalogRevision: "b".repeat(64), servingCatalogRevision: "b".repeat(64), catalogVersion: "version", catalogGeneratedAt: "2026-10-12T00:00:00.123456Z", generationUnchanged: true };
+    expect(() => sportsLexicons.assertValidXrpcOutput(sportsSource.id, response)).not.toThrow();
+    const { generationRevision, ...missingRevision } = response;
+    expect(() => sportsLexicons.assertValidXrpcOutput(sportsSource.id, missingRevision)).toThrow();
+  });
+});
