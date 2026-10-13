@@ -80,12 +80,18 @@ func (s *SportsStore) loadSnapshotCatalog(ctx context.Context, version string, g
 		return nil, "", "", err
 	}
 	ObserveFeedPhase(ctx, "catalog-scan", time.Since(started))
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
 	var full []sportscore.Entity
 	started = time.Now()
 	if corpuscore.DecodeContract(raw, &full) != nil || len(full) == 0 || len(full) > corpuscore.MaximumSportsEntities {
 		return nil, "", "", ErrUnavailable
 	}
 	ObserveFeedPhase(ctx, "catalog-decode", time.Since(started))
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
 	started = time.Now()
 	fullRevision, err := sportscore.ServingCatalogRevision(full)
 	if err != nil {
@@ -106,6 +112,9 @@ func (s *SportsStore) loadSnapshotCatalog(ctx context.Context, version string, g
 		}
 	}
 	ObserveFeedPhase(ctx, "catalog-revision", time.Since(started))
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
 	return active, fullRevision, revision, nil
 }
 
