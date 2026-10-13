@@ -9,10 +9,12 @@ import { useSocialPostNavigation } from "@/hooks/useSocialPostNavigation";
 import { SocialReplyContext } from "./SocialReplyContext";
 import { moderateSocialPost } from "./socialModeration";
 import { socialReplyMetadata } from "@/lib/socialReplyMetadata";
+import { isSocialInteractionHidden } from "@/lib/socialInteractionModeration";
 
-export function InteractiveSocialPost({ item, moderation, showReplyParentActions = false }: { item: AppBskyFeedDefs.FeedViewPost; moderation: ModerationOpts; showReplyParentActions?: boolean }) {
+export function InteractiveSocialPost({ item, moderation, showReplyParentActions = true }: { item: AppBskyFeedDefs.FeedViewPost; moderation: ModerationOpts; showReplyParentActions?: boolean }) {
   const resolvedItem = { ...item, reply: socialReplyMetadata(item) };
   const navigation = useSocialPostNavigation();
+  if (isSocialInteractionHidden(resolvedItem, moderation)) return null;
   const content = moderateSocialPost(item.post, moderation).ui("contentList");
   const showContext = !content.filter && !content.blur && !content.noOverride && AppBskyFeedPost.validateRecord(item.post.record).success;
   const grouped = showContext && !!resolvedItem.reply && !(AppBskyFeedDefs.isPostView(resolvedItem.reply.parent) && resolvedItem.reply.parent.uri === item.post.uri);

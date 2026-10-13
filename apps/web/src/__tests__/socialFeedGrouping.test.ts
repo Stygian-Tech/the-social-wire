@@ -5,7 +5,7 @@ import { flattenSocialPages } from "@/lib/blueskySocialClient";
 
 const moderation: ModerationOpts = { userDid: "did:plc:viewer", prefs: { adultContentEnabled: false, labels: {}, labelers: [{ did: "did:plc:ar7c4by46qjdydhdevvrndac", labels: {} }], mutedWords: [], hiddenPosts: [] } };
 function post(id: string): AppBskyFeedDefs.PostView & { $type: "app.bsky.feed.defs#postView" } {
-  return { $type: "app.bsky.feed.defs#postView", uri: `at://did:plc:author/app.bsky.feed.post/${id}`, cid: "bafyreia", author: { did: "did:plc:author", handle: "author.test" }, record: { $type: "app.bsky.feed.post", text: id, createdAt: "2026-10-10T00:00:00Z" }, indexedAt: "2026-10-10T00:00:00Z" };
+  return { $type: "app.bsky.feed.defs#postView", uri: `at://did:plc:author/app.bsky.feed.post/${id}`, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", author: { did: "did:plc:author", handle: "author.test" }, record: { $type: "app.bsky.feed.post", text: id, createdAt: "2026-10-10T00:00:00Z" }, indexedAt: "2026-10-10T00:00:00Z" };
 }
 const parent = post("parent");
 const child = { post: post("reply"), reply: { parent, root: parent } };
@@ -27,11 +27,27 @@ describe("Social feed reply grouping", () => {
     const pinned = { post: parent, reason: { $type: "app.bsky.feed.defs#reasonPin" as const } };
     expect(groupSocialFeedItems([child, parentReply, secondReply, pinned], moderation)).toEqual([child, parentReply, secondReply, pinned]);
   });
-  for (const state of ["blocked", "muted", "hidden", "label", "invalid", "unavailable"] as const) it(`does not replace a standalone parent with ${state} context`, () => {
-    const unsafe = state === "unavailable" ? { $type: "app.bsky.feed.defs#notFoundPost" as const, uri: parent.uri, notFound: true } : { ...parent, author: { ...parent.author, viewer: { blocking: state === "blocked" ? "at://did:plc:viewer/app.bsky.graph.block/one" : undefined, muted: state === "muted" } }, record: state === "invalid" ? {} : parent.record, labels: state === "label" ? [{ src: "did:plc:ar7c4by46qjdydhdevvrndac", uri: parent.uri, val: "!hide", cts: parent.indexedAt }] : [] };
+  for (const state of ["blocked", "muted", "hidden", "label", "invalid"] as const) it(`does not replace a standalone parent with ${state} context`, () => {
+    const unsafe = { ...parent, author: { ...parent.author, viewer: { blocking: state === "blocked" ? "at://did:plc:viewer/app.bsky.graph.block/one" : undefined, muted: state === "muted" } }, record: state === "invalid" ? {} : parent.record, labels: state === "label" ? [{ src: "did:plc:ar7c4by46qjdydhdevvrndac", uri: parent.uri, val: "!hide", cts: parent.indexedAt }] : [] };
     const prefs = state === "hidden" ? { ...moderation, prefs: { ...moderation.prefs, hiddenPosts: [parent.uri] } } : moderation;
     const item = { ...child, reply: { parent: unsafe, root: parent } };
-    expect(groupSocialFeedItems([item, { post: parent }], prefs)).toHaveLength(2);
+    expect(groupSocialFeedItems([item, { post: parent }], prefs)).toHaveLength(state === "invalid" ? 2 : 1);
+  });
+  it("resolves unavailable context from a parent on a later loaded page", () => {
+    const missing = { ...child, reply: { parent: { $type: "app.bsky.feed.defs#notFoundPost" as const, uri: parent.uri, notFound: true }, root: parent } };
+    const grouped = groupSocialFeedItems(flattenSocialPages([{ feed: [missing] }, { feed: [{ post: parent }] }]), moderation);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.reply?.parent).toMatchObject({ uri: parent.uri, author: parent.author });
+    const absent = { ...missing, reply: { ...missing.reply, root: post("other-root") } };
+    expect(groupSocialFeedItems([absent], moderation)[0]?.reply?.parent).toEqual(missing.reply.parent);
+  });
+  it("resolves missing record-only context and uses the immediate parent in nested replies", () => {
+    const root = post("root");
+    const recordOnly = { post: { ...child.post, record: { ...child.post.record as object, reply: { parent: { uri: parent.uri, cid: parent.cid }, root: { uri: root.uri, cid: root.cid } } } } };
+    const grouped = groupSocialFeedItems([recordOnly, { post: root }, { post: parent }], moderation);
+    expect(grouped[0]?.reply?.parent).toMatchObject({ uri: parent.uri });
+    expect(grouped[0]?.reply?.root).toMatchObject({ uri: root.uri });
+    expect(grouped.map(item => item.post.uri)).toEqual([child.post.uri, root.uri]);
   });
   it("does not hide a parent when its reply is withheld or invalid", () => {
     const withheld = { ...child, post: { ...child.post, author: { ...child.post.author, viewer: { muted: true } } } };

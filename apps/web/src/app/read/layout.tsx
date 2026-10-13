@@ -106,7 +106,7 @@ function ReadContentInset({ children }: { children: React.ReactNode }) {
   return (
     <SidebarInset
       data-wire-route={editorialNewsRoute ? "true" : undefined}
-      className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses} ${editorialFeed && !searchParams.get("list") ? "" : "lg:mr-64"}`}
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses} ${editorialFeed && !searchParams.get("list") ? "" : "lg:mr-68"}`}
     >
       <ReadArticleFilterBar />
       <main
