@@ -36,9 +36,27 @@ func ValidFinanceSourceRequest(q FinanceSourceRequest) bool {
 	return ValidSportsSourceRequest(SportsSourceRequest(q))
 }
 
-// Current item eligibility and instrument metadata enter the same statement's
-// revision. Only a server-validated revision may suppress the database payload.
-const financeSourceProjection = `WITH current_source AS MATERIALIZED (SELECT generation_id,generated_at,expires_at,payload,instruments,encode(sha256(convert_to(jsonb_build_array(payload,instruments)::text,'UTF8')),'hex') AS revision FROM wire_serving.finance_generations WHERE language=$1 AND is_active=TRUE AND expires_at>$2 LIMIT 1) `
+// Warm identity frames current eligibility and the referenced instruments'
+// authoritative tuple versions without materializing either full JSON array.
+// Instruments follow raw generation references, including ineligible candidates,
+// exactly as the legacy serving view does.
+const financeSourceProjection = `WITH current_source AS MATERIALIZED (
+ SELECT generation.generation_id,generation.generated_at,generation.expires_at,
+ encode(sha256(convert_to(jsonb_build_array(
+ generation.generation_id::text,extract(epoch FROM generation.generated_at),
+ extract(epoch FROM generation.expires_at),generation.language,generation.cache_revision,
+ COALESCE((SELECT jsonb_agg(jsonb_build_array(candidate.ordinal,candidate.item_id) ORDER BY candidate.ordinal)
+ FROM wire_serving.finance_source_candidates candidate WHERE candidate.generation_id=generation.generation_id),'[]'::jsonb),
+ COALESCE((SELECT jsonb_agg(jsonb_build_array(instrument.instrument_id,instrument.cache_revision) ORDER BY instrument.instrument_id)
+ FROM wire_serving.finance_source_instruments instrument WHERE instrument.generation_id=generation.generation_id),'[]'::jsonb)
+ )::text,'UTF8')),'hex') AS revision
+ FROM wire_serving.finance_source_heads generation
+ WHERE generation.language=$1 AND generation.is_active=TRUE AND generation.expires_at>$2 LIMIT 1) `
+
+const financeSourceCandidatePayload = `COALESCE((SELECT jsonb_agg(candidate.candidate ORDER BY candidate.ordinal)
+ FROM wire_serving.finance_source_candidates candidate WHERE candidate.generation_id=current_source.generation_id),'[]'::jsonb)::text`
+const financeSourceInstrumentPayload = `COALESCE((SELECT jsonb_agg(instrument.payload ORDER BY instrument.instrument_id)
+ FROM wire_serving.finance_source_instruments instrument WHERE instrument.generation_id=current_source.generation_id),'[]'::jsonb)::text`
 
 func (s *PostgreSQLStore) FinanceSource(ctx context.Context, q FinanceSourceRequest, now time.Time) (FinanceSourceResponse, error) {
 	if !ValidFinanceSourceRequest(q) {
@@ -54,7 +72,7 @@ func (s *PostgreSQLStore) FinanceSource(ctx context.Context, q FinanceSourceRequ
 	if cached != nil {
 		knownID, knownRevision = cached.id, cached.revision
 	}
-	rows, err := s.query(ctx, financeSourceProjection+`SELECT generation_id,generated_at,expires_at,revision,CASE WHEN generation_id::text=$3 AND revision=$4 THEN NULL ELSE payload::text END,CASE WHEN generation_id::text=$3 AND revision=$4 THEN NULL ELSE instruments::text END FROM current_source`, q.Language, now, knownID, knownRevision)
+	rows, err := s.query(ctx, financeSourceProjection+`SELECT generation_id,generated_at,expires_at,revision,CASE WHEN generation_id::text=$3 AND revision=$4 THEN NULL ELSE `+financeSourceCandidatePayload+` END,CASE WHEN generation_id::text=$3 AND revision=$4 THEN NULL ELSE `+financeSourceInstrumentPayload+` END FROM current_source`, q.Language, now, knownID, knownRevision)
 	if err != nil {
 		return FinanceSourceResponse{}, err
 	}

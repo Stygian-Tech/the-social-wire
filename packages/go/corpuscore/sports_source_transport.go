@@ -65,21 +65,36 @@ type sportsCatalogCache struct {
 	revision        string
 }
 
-// Derive identity from the current security-barrier view. The lean
-// JSON hash includes order, eligibility, evidence and presentation fingerprints.
-const sportsSourceProjection = `WITH lean AS MATERIALIZED (SELECT generation.generation_id,generation.generated_at,generation.expires_at,catalog.version,catalog.generated_at AS lean_catalog_generated,COALESCE((SELECT jsonb_agg(jsonb_build_object(
- 'itemId',candidate.value->'item'->>'itemId',
- 'canonicalUrl',candidate.value->'item'->>'canonicalUrl',
- 'title',candidate.value->'item'->>'title',
- 'publishedAt',candidate.value->'item'->'publishedAt',
- 'domain',candidate.value->'item'->'source'->>'domain',
+// The warm revision frames the current eligible ordered identities plus the
+// authoritative generation tuple version. Payload/evidence/resolver updates move
+// that tuple; current eligibility changes move the ordered key set. Neither a full
+// generation aggregate nor a lean presentation aggregate is needed on a hit.
+const sportsSourceProjection = `WITH current_source AS MATERIALIZED (
+ SELECT generation.generation_id,generation.generated_at,generation.expires_at,
+ catalog.version,catalog.generated_at AS lean_catalog_generated,
+ encode(sha256(convert_to(jsonb_build_array(
+ generation.generation_id::text,extract(epoch FROM generation.generated_at),
+ extract(epoch FROM generation.expires_at),generation.language,generation.cache_revision,
+ COALESCE((SELECT jsonb_agg(jsonb_build_array(candidate.ordinal,candidate.item_id) ORDER BY candidate.ordinal)
+ FROM wire_serving.sports_source_candidates candidate WHERE candidate.generation_id=generation.generation_id),'[]'::jsonb)
+ )::text,'UTF8')),'hex') AS revision
+ FROM wire_serving.sports_source_heads generation CROSS JOIN wire_serving.sports_catalog catalog
+ WHERE generation.language=$1 AND generation.is_active=TRUE AND generation.expires_at>$2 LIMIT 1) `
+
+// CASE invokes this projection only on a server validation-cache miss, using the
+// same statement snapshot as the metadata/eligibility revision.
+const sportsSourceCandidatePayload = `COALESCE((SELECT jsonb_agg(jsonb_build_object(
+ 'itemId',candidate.candidate->'item'->>'itemId',
+ 'canonicalUrl',candidate.candidate->'item'->>'canonicalUrl',
+ 'title',candidate.candidate->'item'->>'title',
+ 'publishedAt',candidate.candidate->'item'->'publishedAt',
+ 'domain',candidate.candidate->'item'->'source'->>'domain',
  'presentationFingerprint',encode(sha256(convert_to(
- octet_length(COALESCE(candidate.value->'item'->>'title',''))::text||':'||COALESCE(candidate.value->'item'->>'title','')||
- CASE WHEN candidate.value->'item'->>'summary' IS NULL THEN 'N' ELSE 'S'||octet_length(candidate.value->'item'->>'summary')::text||':'||(candidate.value->'item'->>'summary') END||
- octet_length(COALESCE(candidate.value->'item'->'source'->>'domain',''))::text||':'||COALESCE(candidate.value->'item'->'source'->>'domain',''),'UTF8')),'hex'),
- 'analysis',candidate.value->'analysis','baseScore',candidate.value->'baseScore','majorGlobal',candidate.value->'majorGlobal'
- ) ORDER BY candidate.ordinality) FROM jsonb_array_elements(generation.payload) WITH ORDINALITY candidate(value,ordinality)),'[]'::jsonb) AS candidates
- FROM wire_serving.sports_generations generation CROSS JOIN wire_serving.sports_catalog catalog WHERE generation.language=$1 AND generation.is_active=TRUE AND generation.expires_at>$2 LIMIT 1), current_source AS MATERIALIZED (SELECT *,encode(sha256(convert_to(candidates::text,'UTF8')),'hex') AS revision FROM lean) `
+ octet_length(COALESCE(candidate.candidate->'item'->>'title',''))::text||':'||COALESCE(candidate.candidate->'item'->>'title','')||
+ CASE WHEN candidate.candidate->'item'->>'summary' IS NULL THEN 'N' ELSE 'S'||octet_length(candidate.candidate->'item'->>'summary')::text||':'||(candidate.candidate->'item'->>'summary') END||
+ octet_length(COALESCE(candidate.candidate->'item'->'source'->>'domain',''))::text||':'||COALESCE(candidate.candidate->'item'->'source'->>'domain',''),'UTF8')),'hex'),
+ 'analysis',candidate.candidate->'analysis','baseScore',candidate.candidate->'baseScore','majorGlobal',candidate.candidate->'majorGlobal'
+ ) ORDER BY candidate.ordinal) FROM wire_serving.sports_source_candidates candidate WHERE candidate.generation_id=current_source.generation_id),'[]'::jsonb)::text`
 
 type sportsValidatedGeneration struct {
 	id, revision string
@@ -102,7 +117,7 @@ func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceReques
 	}
 	// Metadata, current eligibility/hash and payload suppression share one SQL
 	// snapshot. A caller-supplied hash alone never bypasses strict validation.
-	rows, err := s.query(ctx, sportsSourceProjection+`SELECT generation_id,generated_at,expires_at,version,lean_catalog_generated,revision,CASE WHEN generation_id::text=$3 AND revision=$4 THEN NULL ELSE candidates::text END FROM current_source`, q.Language, now, validatedID, validatedRevision)
+	rows, err := s.query(ctx, sportsSourceProjection+`SELECT generation_id,generated_at,expires_at,version,lean_catalog_generated,revision,CASE WHEN generation_id::text=$3 AND revision=$4 THEN NULL ELSE `+sportsSourceCandidatePayload+` END FROM current_source`, q.Language, now, validatedID, validatedRevision)
 	if err != nil {
 		return SportsSourceResponse{}, err
 	}
