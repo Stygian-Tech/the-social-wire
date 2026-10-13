@@ -78,7 +78,8 @@ it("keeps the reply and its actions when the immediate parent is missing", async
   posts = posts.filter(post => post.uri !== parentUri);
   render(<SocialNotifications />, { wrapper: Wrapper });
   expect(await screen.findByText(replyRecord.text)).toBeTruthy();
-  expect(screen.getByText("Original post unavailable.")).toBeTruthy();
+  expect(screen.queryByText("Original post unavailable.")).toBeNull();
+  expect(screen.getByRole("button", { name: "Show Thread" })).toBeTruthy();
   expect(screen.queryByText("Thread root")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Like The actual nested reply" }));
   expect(liked).toHaveBeenCalledWith(replyUri);
