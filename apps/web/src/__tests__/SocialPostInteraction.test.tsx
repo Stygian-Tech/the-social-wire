@@ -57,8 +57,10 @@ describe("Social Post Interactions", () => {
     parent: { uri: `${post.uri}parent`, cid }, root: { uri: `${post.uri}root`, cid },
   } } } });
   expect(screen.getByLabelText("Post Conversation")).toBeTruthy();
-  expect(screen.getByText("Original post unavailable.")).toBeTruthy();
-  expect(screen.getByText("Replying To an unavailable post")).toBeTruthy();
+  expect(screen.queryByText("Original post unavailable.")).toBeNull();
+  expect(screen.queryByText("Replying To an unavailable post")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Show Thread" }));
+  expect(push).toHaveBeenCalledWith(socialPostPageHref(`${post.uri}root`, "/social"));
  });
  it("renders parent and reply in one card and omits a later standalone parent", () => {
   const parent = { ...post, replyCount: 99, uri: `${post.uri}parent`, record: { $type: "app.bsky.feed.post", text: "Grouped Parent", createdAt: "2026-10-10T00:00:00Z" } };
