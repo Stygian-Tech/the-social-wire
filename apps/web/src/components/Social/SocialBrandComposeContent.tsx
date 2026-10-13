@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ComposeLinkPreview } from "@/lib/blueskyExternalEmbed";
 import { useRef, useState } from "react";
 import { useSkejScheduling } from "@/hooks/useSkejScheduling";
 import { scheduledInstant } from "@/components/ContentCalendar/calendarDates";
@@ -24,11 +25,11 @@ export function SocialBrandComposeContent({ ownerDid, actorDid, onPendingChange,
   const catalog = useQuery({ queryKey: [...key, "catalog"], enabled: !!connection.session, queryFn: async ({ signal }) => { connection.assertCurrentActor(); const data = await getBlueskySocialCatalog(connection.session!, signal, { includeFeeds: false }); connection.assertCurrentActor(); return data; }, retry: false });
   const moderation = !catalog.isError && catalog.data?.moderation.userDid === actorDid ? catalog.data.moderation : undefined;
   const profile = useQuery({ queryKey: [...key, "profile"], enabled: !!connection.session && !!moderation, queryFn: async ({ signal }) => { connection.assertCurrentActor(); const { data } = await createAuthenticatedAppViewAgent(connection.session!).app.bsky.actor.getProfile({ actor: actorDid }, { signal }); connection.assertCurrentActor(); if (data.did !== actorDid) throw new Error("Account Identity Does Not Match."); return data; }, retry: false });
-  async function publish(text: string) {
+  async function publish(text: string, linkPreview?: ComposeLinkPreview) {
     if (locked.current) throw new Error("Wait For the Current Post.");
     connection.assertCurrentActor();
     locked.current = true; setPending(true); onPendingChange(true);
-    try { if (mode === "schedule") { const instant = scheduledInstant(scheduledAt); if (!instant || !scheduler.readiness.data?.connected) throw new Error("Scheduling Is Not Ready."); await scheduler.schedule(text, instant); } else await publishBrandPost({ session: connection.session!, text, assertCurrentActor: connection.assertCurrentActor }); connection.assertCurrentActor(); void cache.invalidateQueries({ queryKey: ["brandAccounts", ownerDid, actorDid] }); onPublished(mode === "schedule"); }
+    try { if (mode === "schedule") { const instant = scheduledInstant(scheduledAt); if (!instant || !scheduler.readiness.data?.connected) throw new Error("Scheduling Is Not Ready."); await scheduler.schedule(text, instant, linkPreview); } else await publishBrandPost({ session: connection.session!, text, linkPreview, assertCurrentActor: connection.assertCurrentActor }); connection.assertCurrentActor(); void cache.invalidateQueries({ queryKey: ["brandAccounts", ownerDid, actorDid] }); onPublished(mode === "schedule"); }
     finally { locked.current = false; setPending(false); onPendingChange(false); }
   }
   if (connection.error || catalog.isError || profile.isError) return <div className="space-y-2"><p role="alert" className="text-sm text-destructive">The Selected Brand Account Could Not Be Loaded.</p><Button variant="outline" onClick={() => { connection.retry(); }}>Retry</Button></div>;
