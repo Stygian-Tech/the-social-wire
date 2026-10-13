@@ -11083,7 +11083,7 @@
       "files": [
         {
           "path": "packages/lexicons/__tests__/corpusLexicons.test.ts",
-          "sha256": "b03d5a76f61a873d1180ad30a4ddb3cd73d91ed708dfe3b684a89c2e994d80b2"
+          "sha256": "675428b3917c4257868b67b78b1e28a9bf37f4f2c2e97a7b6d83252358fc0ca5"
         },
         {
           "path": "packages/lexicons/__tests__/financeLexicons.test.ts",
@@ -11200,6 +11200,10 @@
         {
           "path": "packages/lexicons/app/thesocialwire/corpus/getItems.json",
           "sha256": "f2b31b4e91e253bf3642238394939165efc543e2654d76c620a28965ed64a488"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/corpus/getSportsGeneration.json",
+          "sha256": "fe378dbc3784f5eb246107148861923ea64d20763652c92b2ce6f7dde4a45dd7"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/defs.json",
