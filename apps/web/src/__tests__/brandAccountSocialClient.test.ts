@@ -33,3 +33,13 @@ describe("brand post publishing", () => {
     expect(calls).toBe(0);
   });
 });
+
+it("publishes the selected brand's external link preview alongside its facets", async () => {
+  const linkPreview = { uri: "https://example.com/story", title: "Brand Story", description: "Summary" };
+  const session = sessionFor((_path, body) => {
+    expect(body.repo).toBe(did);
+    expect(body.record).toMatchObject({ embed: { $type: "app.bsky.embed.external", external: linkPreview }, facets: [{ features: [{ uri: linkPreview.uri }] }] });
+    return { uri: `at://${did}/app.bsky.feed.post/new`, cid };
+  });
+  await publishBrandPost({ session, text: linkPreview.uri, linkPreview, assertCurrentActor: () => {} });
+});

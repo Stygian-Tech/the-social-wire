@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComposeLinkPreview } from "@/lib/blueskyExternalEmbed";
 import { useProEntitlements } from "@/hooks/useProEntitlements";
 import { requirePro } from "@/lib/proEntitlements";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -50,7 +51,7 @@ export function useSkejScheduling(ownerDid: string, actorDid: string, options: {
   const schedules = useQuery({ queryKey: [...key, "schedules"], enabled: enabled && options.includeSchedules !== false && readiness.data?.connected === true, retry: false, staleTime: 15_000,
     queryFn: async ({ signal }) => listSkejSchedules(await requireActor(), signal) });
   const mutation = useMutation({
-    mutationFn: async (action: { kind: "create"; text: string; scheduledAt: string } | { kind: "cancel"; item: SkejScheduleSummary } | { kind: "reschedule"; item: SkejScheduleSummary; scheduledAt: string }) => {
+    mutationFn: async (action: { kind: "create"; text: string; scheduledAt: string; linkPreview?: ComposeLinkPreview } | { kind: "cancel"; item: SkejScheduleSummary } | { kind: "reschedule"; item: SkejScheduleSummary; scheduledAt: string }) => {
       if (writing.current) throw new Error("A Scheduling Request Is Already in Progress.");
       writing.current = true;
       try {
@@ -58,7 +59,7 @@ export function useSkejScheduling(ownerDid: string, actorDid: string, options: {
         const connected = await getSkejSchedulingReadiness(actor);
         actor.assertCurrentActor();
         if (!connected.connected) throw new Error("Connect This Account to Skej to Enable Scheduling.");
-        if (action.kind === "create") return await createSkejSchedule(actor, action.text, action.scheduledAt);
+        if (action.kind === "create") return await createSkejSchedule(actor, action.text, action.scheduledAt, action.linkPreview);
         if (action.kind === "cancel") return await cancelSkejSchedule(actor, action.item);
         return await rescheduleSkejPost(actor, action.item, action.scheduledAt);
       } finally { writing.current = false; }
@@ -69,7 +70,7 @@ export function useSkejScheduling(ownerDid: string, actorDid: string, options: {
   connect.searchParams.set("handle", actorDid);
   connect.searchParams.set("returnTo", "/scheduling/connected");
   return { readiness, schedules, connectUrl: connect.href, pending: mutation.isPending,
-    schedule: (text: string, scheduledAt: string) => mutation.mutateAsync({ kind: "create", text, scheduledAt }),
+    schedule: (text: string, scheduledAt: string, linkPreview?: ComposeLinkPreview) => mutation.mutateAsync({ kind: "create", text, scheduledAt, linkPreview }),
     cancel: async (item: SkejScheduleSummary) => { await mutation.mutateAsync({ kind: "cancel", item }); },
     reschedule: async (item: SkejScheduleSummary, scheduledAt: string) => { await mutation.mutateAsync({ kind: "reschedule", item, scheduledAt }); },
   };

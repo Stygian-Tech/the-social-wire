@@ -2,9 +2,10 @@ import { AppBskyFeedPost, AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichTex
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
+import { composeExternalEmbed, type ComposeLinkPreview } from "@/lib/blueskyExternalEmbed";
 import { postTextLength } from "@/lib/blueskyComposeClient";
 
-export async function publishBrandPost(args: { session: OAuthSession; text: string; parent?: AppBskyFeedDefs.PostView; assertCurrentActor: () => void }) {
+export async function publishBrandPost(args: { session: OAuthSession; text: string; linkPreview?: ComposeLinkPreview; parent?: AppBskyFeedDefs.PostView; assertCurrentActor: () => void }) {
   const length = postTextLength(args.text);
   if (!args.text.trim() || length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts Must Contain 1–300 Characters and At Most 3,000 UTF-8 Bytes.");
   let reply;
@@ -20,7 +21,9 @@ export async function publishBrandPost(args: { session: OAuthSession; text: stri
   await rich.detectFacets(createAuthenticatedAppViewAgent(args.session));
   const facets = rich.facets?.map(facet => ({ ...facet, features: facet.features.filter(feature => !AppBskyRichtextFacet.isMention(feature) || feature.did.startsWith("did:")) })).filter(facet => facet.features.length);
   args.assertCurrentActor();
-  const result = await createOAuthAgent(args.session).post({ text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}) });
+  const embed = await composeExternalEmbed(args.session, args.text, args.linkPreview, args.assertCurrentActor);
+  args.assertCurrentActor();
+  const result = await createOAuthAgent(args.session).post({ text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) });
   args.assertCurrentActor();
   return result;
 }

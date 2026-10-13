@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComposeLinkPreview } from "@/lib/blueskyExternalEmbed";
 import { useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppBskyFeedDefs } from "@atproto/api";
@@ -24,14 +25,14 @@ export function useBrandAccountSocial(ownerDid: string, brandDid: string, thread
   const notifications = useInfiniteQuery({ queryKey: [...key, "notifications"], enabled: !!moderation && !!connection.session, initialPageParam: undefined as string | undefined, queryFn: ({ pageParam, signal }) => read(session => getSocialNotificationsPage({ session, moderation: moderation!, cursor: pageParam, signal })), getNextPageParam: (page, _pages, _last, params) => nextDiscoveryCursor(page, params), retry: false });
   const unread = useQuery({ queryKey: [...key, "unread"], enabled: !!moderation && !!connection.session, queryFn: ({ signal }) => read(session => getSocialNotificationUnread(session, signal)), retry: false });
   const thread = useQuery({ queryKey: [...key, "thread", threadUri], enabled: !!threadUri && !!moderation && !!connection.session, queryFn: ({ signal }) => read(session => getBlueskyPostThread({ session, uri: threadUri!, moderation: moderation!, signal })), retry: false });
-  const mutation = useMutation({ mutationFn: async (action: { kind: "post"; text: string; parent?: AppBskyFeedDefs.PostView } | { kind: "seen" } | { kind: SocialEngagementKind; post: AppBskyFeedDefs.PostView }) => {
+  const mutation = useMutation({ mutationFn: async (action: { kind: "post"; text: string; linkPreview?: ComposeLinkPreview; parent?: AppBskyFeedDefs.PostView } | { kind: "seen" } | { kind: SocialEngagementKind; post: AppBskyFeedDefs.PostView }) => {
     if (locked.current) throw new Error("Wait For the Current Brand Action.");
     connection.assertCurrentActor();
     if (!moderation) throw new Error("Brand Account Moderation Is Unavailable.");
     locked.current = true;
     try {
     const session = connection.session!;
-    if (action.kind === "post") await publishBrandPost({ session, text: action.text, parent: action.parent, assertCurrentActor: connection.assertCurrentActor });
+    if (action.kind === "post") await publishBrandPost({ session, text: action.text, linkPreview: action.linkPreview, parent: action.parent, assertCurrentActor: connection.assertCurrentActor });
     else if (action.kind === "seen") await markSocialNotificationsSeen(session, new Date().toISOString());
     else {
       const current = interactions[action.post.uri] ?? action.post.viewer;
