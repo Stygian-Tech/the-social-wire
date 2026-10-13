@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { AppBskyFeedDefs } from "@atproto/api";
 import { createBlueskyPost, postTextLength } from "@/lib/blueskyComposeClient";
+import { AppBskyFeedPost } from "@atproto/api";
 
 const did = "did:plc:alice";
 const result = { uri: `at://${did}/app.bsky.feed.post/one`, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku" };
@@ -25,6 +26,39 @@ function sessionFor(respond: (request: Request) => unknown | Promise<unknown>): 
 }
 
 describe("Bluesky post creation", () => {
+  const linkPreview = { uri: "https://example.com/story", title: "A Story", description: "A summary" };
+  it("serializes a valid external embed alongside URL facets on a direct PDS post", async () => {
+    const session = sessionFor(request => {
+      const record = request.body!.record;
+      expect(AppBskyFeedPost.validateRecord(record).success).toBe(true);
+      expect(record).toMatchObject({ embed: { $type: "app.bsky.embed.external", external: linkPreview }, facets: [{ features: [{ uri: linkPreview.uri }] }] });
+      return result;
+    });
+    await createBlueskyPost({ session, text: linkPreview.uri, linkPreview });
+  });
+  it("retains quote references with an external card in recordWithMedia", async () => {
+    const session = sessionFor(request => {
+      const record = request.body!.record;
+      expect(AppBskyFeedPost.validateRecord(record).success).toBe(true);
+      expect(record).toMatchObject({ embed: { $type: "app.bsky.embed.recordWithMedia", record: { $type: "app.bsky.embed.record", record: { uri: replyTo.uri, cid: replyTo.cid } }, media: { $type: "app.bsky.embed.external", external: linkPreview } } });
+      return result;
+    });
+    await createBlueskyPost({ session, text: linkPreview.uri, linkPreview, quoteTo: replyTo });
+  });
+  it("preserves reply ancestry while attaching an external card", async () => {
+    const session = sessionFor(request => {
+      expect(request.body!.record).toMatchObject({ reply: { parent: { uri: replyTo.uri } }, embed: { $type: "app.bsky.embed.external", external: linkPreview } });
+      return result;
+    });
+    await createBlueskyPost({ session, text: linkPreview.uri, linkPreview, replyTo });
+  });
+  it("omits removed and obsolete previews without blocking text-only posting", async () => {
+    let writes = 0;
+    const session = sessionFor(request => { writes++; expect(request.body!.record).not.toHaveProperty("embed"); return result; });
+    await createBlueskyPost({ session, text: linkPreview.uri });
+    await createBlueskyPost({ session, text: "https://example.com/replacement", linkPreview });
+    expect(writes).toBe(2);
+  });
   it("counts graphemes and UTF-8 bytes independently", () => {
     expect(postTextLength("👩‍👩‍👧‍👦é")).toEqual({ graphemes: 2, bytes: 28 });
   });

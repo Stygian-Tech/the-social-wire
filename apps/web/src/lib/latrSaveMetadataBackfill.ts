@@ -145,7 +145,8 @@ function parseOgPreviewResponse(
 /** Read-only OG preview from the Latr gateway (no PDS write). */
 export async function fetchLatrOgPreview(
   oauthSession: OAuthSession,
-  url: string
+  url: string,
+  signal?: AbortSignal
 ): Promise<LatrSaveMetadata | null> {
   if (
     !latrGatewayMutationsEnabled() ||
@@ -161,7 +162,7 @@ export async function fetchLatrOgPreview(
       latrGatewayFetch(
         oauthSession,
         `/v1/latr/og-preview?${params}`,
-        { method: "GET" }
+        { method: "GET", signal }
       )
     );
     const data = (await res.json()) as Record<string, unknown>;
