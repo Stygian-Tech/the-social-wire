@@ -52,7 +52,7 @@ func (w *feedTimingWriter) Write(body []byte) (int, error) {
 
 func isFeedTimingPhase(phase string) bool {
 	switch phase {
-	case "moderation", "source", "source-transport", "source-decode", "catalog", "catalog-query-open", "catalog-scan", "catalog-decode", "catalog-revision", "selections", "snapshot-lookup", "snapshot-load", "snapshot-persistence", "rehydration", "analysis", "db-acquisition", "db-query":
+	case "serialization", "moderation", "source", "source-transport", "source-decode", "catalog", "catalog-query-open", "catalog-scan", "catalog-decode", "catalog-revision", "selections", "snapshot-lookup", "snapshot-load", "snapshot-persistence", "rehydration", "analysis", "db-acquisition", "db-query":
 		return true
 	}
 	return false
