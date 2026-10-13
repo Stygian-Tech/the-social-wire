@@ -1,9 +1,11 @@
 import { AppBskyRichtextFacet, RichText, type AppBskyFeedPost } from "@atproto/api";
 import type { ReactNode } from "react";
-import { socialHttpsUrl, socialProfileUrl } from "./socialUrls";
+import { socialHttpsUrl } from "./socialUrls";
+import { isSocialProfileActor } from "@/lib/socialProfileNavigation";
+import { SocialMentionLink } from "./SocialMentionLink";
 import { socialMarkdownBlocks, socialMarkdownInline, type MarkdownRange, type SocialMarkdownInline } from "./socialMarkdown";
 
-type FacetRange = MarkdownRange & { href?: string };
+type FacetRange = MarkdownRange & { href?: string; actor?: string };
 const linkClassName = "text-primary underline-offset-4 hover:underline";
 
 export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
@@ -15,10 +17,11 @@ export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
     if (segment.facet) {
       const feature = segment.facet.features.find(value => AppBskyRichtextFacet.isLink(value) || AppBskyRichtextFacet.isMention(value) || AppBskyRichtextFacet.isTag(value));
       let href: string | undefined;
+      let actor: string | undefined;
       if (AppBskyRichtextFacet.isLink(feature)) href = socialHttpsUrl(feature.uri);
-      else if (AppBskyRichtextFacet.isMention(feature) && /^did:[a-z]+:[^\s/]+$/.test(feature.did)) href = socialProfileUrl(feature.did);
+      else if (AppBskyRichtextFacet.isMention(feature) && isSocialProfileActor(feature.did)) actor = feature.did;
       else if (AppBskyRichtextFacet.isTag(feature)) href = `https://bsky.app/search?q=${encodeURIComponent(`#${feature.tag}`)}`;
-      facets.push({ start: offset, end: offset + segment.text.length, href });
+      facets.push({ start: offset, end: offset + segment.text.length, href, actor });
     }
     offset += segment.text.length;
   }
@@ -26,11 +29,14 @@ export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
   const textWithFacets = (node: Extract<SocialMarkdownInline, { kind: "text" | "code" }>): ReactNode => {
     const children: ReactNode[] = [];
     let cursor = node.start;
-    for (const facet of facets.filter(range => range.href && range.end > node.start && range.start < node.end)) {
+    for (const facet of facets.filter(range => (range.href || range.actor) && range.end > node.start && range.start < node.end)) {
       const start = Math.max(cursor, facet.start);
       const end = Math.min(node.end, facet.end);
       if (start > cursor) children.push(node.text.slice(cursor - node.start, start - node.start));
-      if (end > start) children.push(anchor(facet.href!, node.text.slice(start - node.start, end - node.start), start));
+      if (end > start) {
+        const text = node.text.slice(start - node.start, end - node.start);
+        children.push(facet.actor ? <SocialMentionLink key={start} actor={facet.actor} className={linkClassName}>{text}</SocialMentionLink> : anchor(facet.href!, text, start));
+      }
       cursor = Math.max(cursor, end);
     }
     if (cursor < node.end) children.push(node.text.slice(cursor - node.start));

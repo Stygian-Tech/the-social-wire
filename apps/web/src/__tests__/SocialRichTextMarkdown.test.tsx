@@ -33,7 +33,8 @@ describe("Social Markdown", () => {
     const text = "🌎 日本語 **visit** *alice* #news\nNext line";
     const element = documentFor(html(text, [facet(text, "visit", { $type: "app.bsky.richtext.facet#link", uri: "https://example.com/article" }), facet(text, "alice", { $type: "app.bsky.richtext.facet#mention", did: "did:plc:alice" }), facet(text, "#news", { $type: "app.bsky.richtext.facet#tag", tag: "news" })]));
     expect(element.querySelector("strong a")?.textContent).toBe("visit");
-    expect(element.querySelector("em a")?.getAttribute("href")).toBe("https://bsky.app/profile/did%3Aplc%3Aalice");
+    expect(element.querySelector("em a")?.getAttribute("href")).toBe("/social/profile?actor=did%3Aplc%3Aalice&returnTo=%2Fsocial");
+    expect(element.querySelector("em a")?.getAttribute("target")).toBeNull();
     expect(element.querySelectorAll("a")[2].getAttribute("href")).toBe("https://bsky.app/search?q=%23news");
     expect(element.textContent).toContain("🌎 日本語 visit alice #news\nNext line");
     expect(element.querySelector("p")?.className).toContain("whitespace-pre-wrap");
