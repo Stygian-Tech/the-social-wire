@@ -82,15 +82,15 @@ final class NewsShellSmokeUITests: XCTestCase {
         let chooseFinance = app.buttons["Choose Feed"]
         XCTAssertTrue(chooseFinance.waitForExistence(timeout: 5))
         chooseFinance.tap()
-        XCTAssertTrue(app.navigationBars["Finance Feeds"].waitForExistence(timeout: 3))
-        app.buttons["Done"].firstMatch.tap()
+        guard dismissPicker("Finance Feeds", in: app) else { return }
 
         selectDestination("Sports", in: app)
+        XCTAssertTrue(app.staticTexts["Fixture Football Story"].waitForExistence(timeout: 5))
         let sportsPicker = app.buttons["sports-feed-picker"]
         XCTAssertTrue(sportsPicker.waitForExistence(timeout: 5))
         sportsPicker.tap()
-        XCTAssertTrue(app.navigationBars["Sports Feeds"].waitForExistence(timeout: 3))
-        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Football"].waitForExistence(timeout: 5))
+        guard dismissPicker("Sports Feeds", in: app) else { return }
 
         selectDestination("Subscribed", in: app)
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
@@ -183,7 +183,18 @@ final class NewsShellSmokeUITests: XCTestCase {
         default: nil
         }
         if let root, app.tabBars.buttons[root].exists {
-            app.tabBars.buttons[root].tap()
+            let rootButton = app.tabBars.buttons[root]
+            guard waitUntilHittable(rootButton) else {
+                XCTFail("Unreachable root destination: \(root)")
+                return
+            }
+            rootButton.tap()
+            let selected = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "isSelected == true"), object: rootButton)
+            guard XCTWaiter.wait(for: [selected], timeout: 5) == .completed else {
+                XCTFail("Root destination did not become selected: \(root)")
+                return
+            }
         }
         func destination() -> XCUIElement {
             let sidebarID: String? = switch label {
@@ -228,14 +239,46 @@ final class NewsShellSmokeUITests: XCTestCase {
             let more = app.tabBars.buttons["More"]
             if more.exists && more.isHittable { more.tap() }
         }
-        if !destination().exists {
+        if root == "Topics", !destination().exists {
             let topics = app.buttons["Topics"].firstMatch
             if topics.exists && topics.isHittable { topics.tap() }
         }
         let target = destination()
-        XCTAssertTrue(target.waitForExistence(timeout: 3), "Missing destination: \(label)")
-        XCTAssertTrue(target.isHittable, "Unreachable destination: \(label)")
+        guard target.waitForExistence(timeout: 3) else {
+            XCTFail("Missing destination: \(label)")
+            return
+        }
+        guard waitUntilHittable(target) else {
+            XCTFail("Unreachable destination: \(label)")
+            return
+        }
         target.tap()
+    }
+
+    private func dismissPicker(_ title: String, in app: XCUIApplication) -> Bool {
+        let navigationBar = app.navigationBars[title]
+        guard navigationBar.waitForExistence(timeout: 5) else {
+            XCTFail("Missing picker: \(title)")
+            return false
+        }
+        // A searchable sheet can also expose keyboard actions; dismiss its own toolbar.
+        let done = navigationBar.buttons["Done"]
+        guard waitUntilHittable(done) else {
+            XCTFail("Unreachable picker dismissal: \(title)")
+            return false
+        }
+        done.tap()
+        guard navigationBar.waitForNonExistence(timeout: 5) else {
+            XCTFail("Picker did not dismiss: \(title)")
+            return false
+        }
+        return true
+    }
+
+    private func waitUntilHittable(_ element: XCUIElement) -> Bool {
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND isHittable == true"), object: element)
+        return XCTWaiter.wait(for: [hittable], timeout: 5) == .completed
     }
 
     func testWireCardsFitNarrowCanvas() {
@@ -382,12 +425,12 @@ final class NewsShellSmokeUITests: XCTestCase {
     }
 
     private func ageButton(days: Int, in app: XCUIApplication) -> XCUIElement {
-        let identified = app.buttons["mark-read-age-\(days)"]
-        if identified.exists {
-            return identified
-        }
-        return app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", days == 7 ? "1 Week" : days == 1 ? "1 Day" : "\(days) Days")
+        // Keep both representations in one live query while the menu appears.
+        // Choosing a fallback before presentation can strand the wait on a stale query.
+        app.buttons.matching(
+            NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@",
+                        "mark-read-age-\(days)",
+                        days == 7 ? "1 Week" : days == 1 ? "1 Day" : "\(days) Days")
         ).firstMatch
     }
 

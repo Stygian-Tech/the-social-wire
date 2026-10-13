@@ -36,6 +36,7 @@ export function SocialTimeline() {
   const posts = moderation ? groupSocialFeedItems(flattenSocialPages(timeline.data?.pages ?? []), moderation).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
   useFeedFirstContentTiming(`social:${session?.did}:${feed.kind}:${feed.uri ?? ""}`, !!moderation && posts.length > 0 && !catalog.isError && !timeline.isError, !timeline.isFetchedAfterMount);
   const error = routeError || (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined);
+  const refreshError = timeline.refreshError ? socialErrorMessage(timeline.refreshError) : undefined;
   const loading = !error && (catalog.isPending || timeline.isPending);
   const scrollContainer = useSocialFeedScroll(session?.did, `${feed.kind}:${feed.uri ?? ""}`, !loading && !error && !!moderation);
 
@@ -69,11 +70,17 @@ export function SocialTimeline() {
   return <div className="relative flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title={selected.name} subtitle="Social">
       <SocialFeedsSheet />
-      <Button variant="ghost" size="icon" aria-label="Refresh Social Feed" disabled={!!routeError || catalog.isFetching || timeline.isFetching} onClick={() => { void refresh(); }}>
+      <Button variant="ghost" size="icon" aria-label="Refresh Social Feed" disabled={!!routeError || catalog.isFetching || timeline.isFetching || timeline.isRefreshing} onClick={() => { void refresh(); }}>
         <RefreshCw data-icon="inline-start" />
       </Button>
     </FeedHeader>
     <div ref={scrollContainer} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24" key={`${session?.did}:${feed.kind}:${feed.uri}`}>
+      {refreshError && !error ? <section role="alert" className="mx-auto flex max-w-2xl flex-col items-start gap-3 p-6">
+        <h2 className="text-lg font-semibold">Social Refresh Unavailable</h2><p className="text-sm text-muted-foreground">{refreshError}</p>
+        {refreshError === SCOPE_RECOVERY_MESSAGE ? <Button disabled={reauthorizing} onClick={() => { void reauthorize(); }}>{reauthorizing ? "Opening Login…" : "Log In Again"}</Button>
+          : <Button variant="outline" disabled={timeline.isRefreshing || catalog.isFetching} onClick={() => { void refresh(); }}>Retry</Button>}
+        {reauthorizeError ? <p className="text-sm text-destructive">Login could not be opened. Please try again.</p> : null}
+      </section> : null}
       {error ? <section role="alert" className="mx-auto flex max-w-2xl flex-col items-start gap-3 p-6">
         <h2 className="text-lg font-semibold">Social Feed Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>
         {error === SCOPE_RECOVERY_MESSAGE ? <Button disabled={reauthorizing} onClick={() => { void reauthorize(); }}>{reauthorizing ? "Opening Login…" : "Log In Again"}</Button>
@@ -85,7 +92,7 @@ export function SocialTimeline() {
           <h2 className="text-lg font-semibold">No Posts to Show</h2>
           <p className="text-sm text-muted-foreground">{timeline.data?.pages.some(page => page.feed.length) ? "Posts on this page are hidden by your moderation settings." : "New posts will appear here when this feed updates."}</p>
         </section> : null}
-        {timeline.hasNextPage ? <Button variant="outline" disabled={timeline.isFetchingNextPage} onClick={() => { void timeline.fetchNextPage(); }}>{timeline.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}
+        {timeline.hasNextPage ? <Button variant="outline" disabled={timeline.isFetchingNextPage || timeline.isRefreshing} onClick={() => { void timeline.fetchNextPage(); }}>{timeline.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}
       </div> : null}
     </div>
     <SocialComposeButton key={session?.did} />
