@@ -1,10 +1,34 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { attachFloatingGlassControlsOverlay, attachFloatingGlassScrollOverlay } from "@/components/shared/floatingGlassScrollOverlay";
 
 const originalObserver = globalThis.ResizeObserver;
 afterEach(() => {
+  mock.restore();
   globalThis.ResizeObserver = originalObserver;
   document.body.replaceChildren();
+});
+
+test("initial geometry is read before overlay writes and unchanged resize avoids invalidation", () => {
+  let resized = () => {};
+  globalThis.ResizeObserver = class {
+    constructor(callback: () => void) { resized = callback; }
+    observe = () => {};
+    disconnect = () => {};
+    unobserve = () => {};
+  } as unknown as typeof ResizeObserver;
+  const { parent, surface, pane } = fixture("top");
+  surface.getBoundingClientRect = () => {
+    expect(pane.hasAttribute("data-floating-glass-scroll-top")).toBe(false);
+    expect(pane.style.getPropertyValue("--floating-glass-top-content-padding")).toBe("");
+    return { height: 64 } as DOMRect;
+  };
+  const writes = spyOn(parent.style, "setProperty");
+  const detach = attachFloatingGlassScrollOverlay(surface, "top");
+  expect(writes).toHaveBeenCalledTimes(1);
+  surface.getBoundingClientRect = () => ({ height: 64 }) as DOMRect;
+  resized();
+  expect(writes).toHaveBeenCalledTimes(1);
+  detach?.();
 });
 
 function fixture(edge: "top" | "bottom") {
