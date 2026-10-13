@@ -2,7 +2,6 @@ package corpuscore
 
 import (
 	"context"
-	"github.com/stygian-tech/the-social-wire/packages/go/financecore"
 	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
 	"io"
 	"net/http"
@@ -17,7 +16,8 @@ func TestRemoteSourceSeparatesTransportAndDecode(t *testing.T) {
 		t.Run(domain, func(t *testing.T) {
 			var data []byte
 			if domain == "finance" {
-				data, _ = MarshalHTTP(FinanceGeneration{GenerationID: "source", GeneratedAt: now, ExpiresAt: now.Add(time.Hour), Language: "en", Candidates: []financecore.RankCandidate{}, Instruments: []financecore.Instrument{}})
+				fixture := financeSourceFixture()
+				data, _ = MarshalHTTP(fixture)
 			} else {
 				data, _ = MarshalHTTP(SportsGeneration{GenerationID: "source", GeneratedAt: now, ExpiresAt: now.Add(time.Hour), Language: "en", Candidates: []sportscore.RankCandidate{}, Entities: []sportscore.Entity{}})
 			}
@@ -37,7 +37,14 @@ func TestRemoteSourceSeparatesTransportAndDecode(t *testing.T) {
 			} else {
 				_, err = remote.Sports(ctx, "en", now)
 			}
-			if err != nil || len(phases) != 2 || phases["source-transport"] != 1 || phases["source-decode"] != 1 {
+			expectedPhases := 2
+			if domain == "finance" {
+				expectedPhases = 3
+				if phases["source-generation-cache-miss"] != 1 {
+					t.Fatal(phases)
+				}
+			}
+			if err != nil || len(phases) != expectedPhases || phases["source-transport"] != 1 || phases["source-decode"] != 1 {
 				t.Fatal(err, phases)
 			}
 		})
