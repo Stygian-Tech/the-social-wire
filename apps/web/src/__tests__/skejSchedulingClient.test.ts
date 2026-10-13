@@ -96,3 +96,11 @@ test("published posts and invalid dates are rejected before minting or fetching"
   await expect(createSkejSchedule(f.actor, "Post", "not a date")).rejects.toThrow("One Minute");
   expect(f.mints).toHaveLength(0); expect(f.requests).toHaveLength(0);
 });
+
+test("stores external previews in the scheduled publication payload", async () => {
+  const f = fixture();
+  const linkPreview = { uri: "https://example.com/story", title: "Scheduled Story", description: "Summary" };
+  await createSkejSchedule(f.actor, linkPreview.uri, future, linkPreview);
+  const record = f.requests[0].payload!.record as SkejScheduleRecord;
+  expect(record.posts[0]).toMatchObject({ text: linkPreview.uri, embed: { $type: "app.bsky.embed.external", external: linkPreview } });
+});

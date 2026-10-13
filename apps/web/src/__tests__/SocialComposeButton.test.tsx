@@ -14,6 +14,7 @@ import * as social from "@/lib/blueskySocialClient";
 import * as publishing from "@/lib/brandAccounts/brandAccountSocialClient";
 import * as discovery from "@/lib/blueskySocialDiscoveryClient";
 import * as compose from "@/lib/blueskyComposeClient";
+import * as ogPreview from "@/lib/latrSaveMetadataBackfill";
 import { SocialComposeButton } from "@/components/Social/SocialComposeButton";
 
 const restores: (() => void)[] = [];
@@ -152,7 +153,7 @@ it("publishes and resolves mentions as the selected brand without replacing pers
   fireEvent.change(screen.getByLabelText("Publish At"), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "Schedule Post" }));
   await screen.findByText("Post Scheduled");
-  expect(schedule).toHaveBeenCalledWith("Brand Scheduled", new Date(value).toISOString());
+  expect(schedule).toHaveBeenCalledWith("Brand Scheduled", new Date(value).toISOString(), undefined);
   expect(scheduling.useSkejScheduling).toHaveBeenCalledWith(oauth.did, brand.did, { includeSchedules: false });
   expect(post).toHaveBeenCalledTimes(1);
 });
@@ -193,7 +194,7 @@ it("queues personal posts in Skej rather than publishing immediately", async () 
   fireEvent.change(screen.getByLabelText("Publish At"), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "Schedule Post" }));
   await screen.findByText("Post Scheduled");
-  expect(schedule).toHaveBeenCalledWith("Scheduled Content", new Date(value).toISOString());
+  expect(schedule).toHaveBeenCalledWith("Scheduled Content", new Date(value).toISOString(), undefined);
   expect(publish).not.toHaveBeenCalled();
 });
 
@@ -248,4 +249,72 @@ it("keeps personal posting usable without brand or scheduling controls when Tool
   await screen.findByRole("status");
   expect(publish).toHaveBeenCalledTimes(1);
   expect(publish.mock.calls[0][0].session).toBe(oauth);
+});
+
+it("previews pasted links without posting and preserves explicit removal through submission", async () => {
+  const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockResolvedValue({ title: "Article Title", excerpt: "Article Summary" });
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" });
+  restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
+  const field = await open();
+  fireEvent.change(field, { target: { value: "Read https://example.com/story" } });
+  await screen.findByText("Article Title");
+  expect(screen.getAllByRole("region", { name: "Link Preview" })).toHaveLength(1);
+  expect(screen.getByText("Article Summary")).toBeTruthy();
+  expect(publish).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Remove Link Preview" }));
+  fireEvent.change(field, { target: { value: "Please read https://example.com/story" } });
+  expect(screen.queryByRole("region", { name: "Link Preview" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  expect(publish.mock.calls[0][0].linkPreview).toBeUndefined();
+});
+
+it("ignores stale metadata and publishes only the replacement link card", async () => {
+  let finishOld!: (value: { title: string }) => void;
+  const old = new Promise<{ title: string }>(resolve => { finishOld = resolve; });
+  const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockImplementation(async (_session, url) => url.endsWith("/old") ? old : { title: "Replacement", excerpt: "New Summary" });
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" });
+  restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
+  const field = await open();
+  fireEvent.change(field, { target: { value: "https://example.com/old" } });
+  await waitFor(() => expect(metadata).toHaveBeenCalled());
+  fireEvent.change(field, { target: { value: "https://example.com/new" } });
+  await screen.findByText("Replacement");
+  await act(async () => finishOld({ title: "Stale Article" }));
+  expect(screen.queryByText("Stale Article")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  expect(publish.mock.calls[0][0].linkPreview).toMatchObject({ uri: "https://example.com/new", title: "Replacement", description: "New Summary" });
+});
+
+it("keeps text-only posting available when metadata fails", async () => {
+  const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockResolvedValue(null);
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" });
+  restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
+  const field = await open();
+  fireEvent.change(field, { target: { value: "https://example.com/unavailable" } });
+  await screen.findByText("Link Preview Unavailable. You Can Still Post the Link.");
+  expect(publish).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][0].linkPreview).toBeUndefined();
+});
+
+it("waits for the pasted link's metadata when Post is clicked before the preview finishes", async () => {
+  let finish!: (value: { title: string; excerpt: string }) => void;
+  const deferred = new Promise<{ title: string; excerpt: string }>(resolve => { finish = resolve; });
+  const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockReturnValue(deferred);
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" });
+  restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
+  const field = await open();
+  fireEvent.change(field, { target: { value: "https://example.com/quick" } });
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await waitFor(() => expect(metadata).toHaveBeenCalledTimes(1));
+  expect(publish).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Publishing…" }).hasAttribute("disabled")).toBe(true);
+  await act(async () => finish({ title: "Quick Story", excerpt: "Summary" }));
+  await screen.findByText("Post Published");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][0].linkPreview).toMatchObject({ uri: "https://example.com/quick", title: "Quick Story" });
 });

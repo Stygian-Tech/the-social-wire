@@ -2,6 +2,7 @@ import { AppBskyFeedPost, AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichTex
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
+import { composeExternalEmbed, type ComposeLinkPreview } from "@/lib/blueskyExternalEmbed";
 
 export function postTextLength(text: string): { graphemes: number; bytes: number } {
   return { graphemes: new RichText({ text }).graphemeLength, bytes: new TextEncoder().encode(text).length };
@@ -11,6 +12,7 @@ export function postTextLength(text: string): { graphemes: number; bytes: number
 export async function createBlueskyPost(args: {
   session: OAuthSession;
   text: string;
+  linkPreview?: ComposeLinkPreview;
   replyTo?: AppBskyFeedDefs.PostView;
   quoteTo?: AppBskyFeedDefs.PostView;
   assertCurrentAccount?: () => void;
@@ -20,7 +22,7 @@ export async function createBlueskyPost(args: {
   if (length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts must contain at most 300 characters and 3,000 UTF-8 bytes.");
   if (args.replyTo && args.quoteTo) throw new Error("Choose either a reply or a quote post.");
   const reply = args.replyTo ? replyReferences(args.replyTo) : undefined;
-  const embed = args.quoteTo ? quoteEmbed(args.quoteTo) : undefined;
+  const quote = args.quoteTo ? quoteEmbed(args.quoteTo) : undefined;
   args.assertCurrentAccount?.();
   const richText = new RichText({ text: args.text });
   await richText.detectFacets(createAuthenticatedAppViewAgent(args.session));
@@ -29,6 +31,9 @@ export async function createBlueskyPost(args: {
     ...facet,
     features: facet.features.filter(feature => !AppBskyRichtextFacet.isMention(feature) || feature.did.startsWith("did:")),
   })).filter(facet => facet.features.length);
+  args.assertCurrentAccount?.();
+  const external = await composeExternalEmbed(args.session, args.text, args.linkPreview, args.assertCurrentAccount);
+  const embed = quote && external ? { $type: "app.bsky.embed.recordWithMedia" as const, record: quote, media: external } : quote ?? external;
   args.assertCurrentAccount?.();
   return createOAuthAgent(args.session).post({ text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) });
 }
