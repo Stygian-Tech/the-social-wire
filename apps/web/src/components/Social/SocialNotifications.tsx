@@ -21,6 +21,7 @@ import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
 import { groupSocialNotifications } from "@/lib/socialNotificationGrouping";
 import { SocialNotificationGroupHeader } from "./SocialNotificationGroupHeader";
+import { isSocialInteractionHidden } from "@/lib/socialInteractionModeration";
 
 export function SocialNotifications() {
   const { session } = useAuth();
@@ -52,6 +53,8 @@ function SocialNotificationsViewer() {
     const key = notificationIdentity(notification);
     const decision = moderateNotification(notification, moderation).ui("contentList");
     const post = posts.get(notificationPostUri(notification) ?? "");
+    const interaction = notificationFeedItem(notification, posts);
+    if (interaction && isSocialInteractionHidden(interaction, moderation)) return false;
     if (seen.has(key) || decision.filter || decision.blur || decision.noOverride || (post && moderateSocialPost(post, moderation).ui("contentList").filter)) return false;
     seen.add(key); return true;
   }) : [];
