@@ -50,6 +50,8 @@ type RemoteStore struct {
 	Client               *http.Client
 	Now                  func() time.Time
 	MaximumResponseBytes int64
+	financeMu            sync.Mutex
+	financeCached        *FinanceSourceResponse
 	sportsMu             sync.Mutex
 	sportsCached         *SportsSourceResponse
 }
@@ -275,8 +277,12 @@ func (s *RemoteStore) CircleCandidates(ctx context.Context, q CandidateRequest, 
 	}
 	return remoteDecode[CandidateResponse](ctx, s, "POST", remoteTarget("circle-candidates", nil), body)
 }
-func (s *RemoteStore) Finance(ctx context.Context, language string, _ time.Time) (FinanceGeneration, error) {
-	return remoteDecode[FinanceGeneration](ctx, s, "GET", remoteTarget("finance", languageQuery(language)), nil)
+func (s *RemoteStore) Finance(ctx context.Context, language string, now time.Time) (FinanceGeneration, error) {
+	response, err := s.FinanceSource(ctx, FinanceSourceRequest{Language: language}, now)
+	if err != nil {
+		return FinanceGeneration{}, err
+	}
+	return *response.Generation, nil
 }
 func (s *RemoteStore) Sports(ctx context.Context, language string, _ time.Time) (SportsGeneration, error) {
 	value, err := remoteDecode[SportsGeneration](ctx, s, "GET", remoteTarget("sports", languageQuery(language)), nil)

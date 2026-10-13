@@ -135,6 +135,9 @@ func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceReques
 			return out, ErrContractMismatch
 		}
 		for _, c := range candidates {
+			if !validSportsSourceCandidate(c) {
+				return out, ErrContractMismatch
+			}
 			if c.Analysis.ResolverVersion != sportscore.ResolverVersion {
 				return out, ErrUnavailable
 			}
@@ -288,7 +291,7 @@ func (s *RemoteStore) SportsSource(ctx context.Context, q SportsSourceRequest, n
 		}
 
 		for _, c := range *out.Candidates {
-			if c.ItemID == "" || !sportsSourceRevision.MatchString(c.PresentationFingerprint) || c.Analysis.ResolverVersion != out.ResolverVersion {
+			if !validSportsSourceCandidate(c) || c.Analysis.ResolverVersion != out.ResolverVersion {
 				return out, ErrContractMismatch
 			}
 			for _, a := range c.Analysis.Associations {
@@ -302,7 +305,8 @@ func (s *RemoteStore) SportsSource(ctx context.Context, q SportsSourceRequest, n
 			return out, err
 		}
 		s.sportsMu.Lock()
-		s.sportsCached = &out
+		stored := out
+		s.sportsCached = &stored
 		s.sportsMu.Unlock()
 		if observer := queryObserver(ctx); observer != nil {
 			generationPhase := "source-generation-cache-miss"
@@ -311,6 +315,8 @@ func (s *RemoteStore) SportsSource(ctx context.Context, q SportsSourceRequest, n
 			}
 			observer(generationPhase, 0)
 		}
+		owned := cloneSportsSourceCandidates(*out.Candidates)
+		out.Candidates = &owned
 		return out, nil
 	}
 	return SportsSourceResponse{}, ErrContractMismatch

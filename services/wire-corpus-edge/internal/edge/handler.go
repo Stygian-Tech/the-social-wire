@@ -55,6 +55,14 @@ func (c *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"service": "wire-corpus-edge", "status": status}, false)
 		return
 	}
+	if path == corpuscore.FinanceSourcePath {
+		if !c.authenticate(r, now) {
+			respondBatchStatus(w, 401)
+			return
+		}
+		c.financeSource(w, r, now)
+		return
+	}
 	if path == corpuscore.SportsSourcePath {
 		if !c.authenticate(r, now) {
 			respondBatchStatus(w, 401)

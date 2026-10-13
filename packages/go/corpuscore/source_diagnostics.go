@@ -32,7 +32,7 @@ func SourceRequestID(ctx context.Context) string {
 func sourceFamily(target string) string {
 	path, _, _ := strings.Cut(target, "?")
 	switch path {
-	case "/internal/wire/v1/finance":
+	case "/internal/wire/v1/finance", FinanceSourcePath:
 		return "finance"
 	case "/internal/wire/v1/sports", SportsSourcePath:
 		return "sports"

@@ -45,6 +45,8 @@ func (*feedSerializationConn) Begin() (driver.Tx, error) {
 }
 func (c *feedSerializationConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
+	case strings.Contains(query, "SELECT count(*)::integer") && strings.Contains(query, "FROM finance_instruments"):
+		return &feedSerializationRows{columns: []string{"count", "stamp"}, values: []driver.Value{int64(0), strings.Repeat("a", 64)}}, nil
 	case strings.Contains(query, "FROM sports_entities"), strings.Contains(query, "FROM finance_instruments"):
 		return &feedSerializationRows{columns: []string{"payload"}}, nil
 	case strings.Contains(query, "FROM sports_personalized_snapshots"), strings.Contains(query, "FROM finance_personalized_snapshots"):
