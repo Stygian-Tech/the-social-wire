@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Deterministic shell used only by UI automation so navigation chrome can be tested without live OAuth.
 struct NewsShellUITestHarness: View {
-    @State private var fixtureModel = SocialWireAppModel()
+    @State private var fixtureModel = SocialWireAppModel(gatewayURLSession: NewsShellUITestTransport.session())
     @State private var isShellConfigured = false
     @State private var lastFeedAction = "Ready"
     @State private var readAgeRevision = 0
