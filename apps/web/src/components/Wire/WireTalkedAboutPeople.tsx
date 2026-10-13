@@ -1,12 +1,7 @@
 import { Avatar } from "@/components/shared/Avatar";
-import { outboundLinkProps } from "@/lib/outboundLinks";
+import { SocialProfileLink } from "@/components/Social/SocialProfileLink";
 import type { WireTalkedAboutPerson } from "@/lib/wireEditionClient";
 import { WireHorizontalRail } from "./WireHorizontalRail";
-
-function profileUrl(person: WireTalkedAboutPerson): string {
-  const profile = person.handle.trim().replace(/^@/, "") || person.did;
-  return `https://bsky.app/profile/${encodeURIComponent(profile)}`;
-}
 
 export function WireTalkedAboutPeople({
   people,
@@ -21,10 +16,10 @@ export function WireTalkedAboutPeople({
       title="People in the Story"
     >
       {people.map((person) => (
-        <a
+        <SocialProfileLink
           key={person.did}
-          href={profileUrl(person)}
-          {...outboundLinkProps}
+          actor={person.did || person.handle.trim().replace(/^@/, "")}
+          returnTo="/read"
           className="flex w-[min(72vw,18rem)] shrink-0 snap-start gap-3 rounded-2xl border border-border/70 bg-card/88 p-4 text-left shadow-sm transition-[border-color,background-color,box-shadow] hover:border-[var(--purple-border)] hover:bg-muted/35 hover:[box-shadow:var(--purple-glow-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-72 dark:border-border/55 dark:bg-card/82"
         >
           <Avatar
@@ -46,7 +41,7 @@ export function WireTalkedAboutPeople({
               </span>
             ) : null}
           </span>
-        </a>
+        </SocialProfileLink>
       ))}
     </WireHorizontalRail>
   );

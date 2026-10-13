@@ -72,9 +72,10 @@ describe("Social Post Rendering", () => {
     const html = card(value);
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>");
-    expect(html).toContain("Reposted by Other");
+    const element = document.createElement("div"); element.innerHTML = html;
+    expect(element.textContent).toContain("Reposted by Other");
     expect(html).toContain("lucide-repeat-2");
-    expect(html.indexOf("Reposted by Other")).toBeLessThan(html.indexOf("Open Profile: Other"));
+    expect(html.indexOf("Reposted ")).toBeLessThan(html.indexOf("Open Profile: Other"));
     expect(html).toContain(
       "https://bsky.app/profile/did%3Aplc%3Aother/post/3abc",
     );

@@ -2,7 +2,6 @@
 
 /* eslint-disable @next/next/no-img-element -- Remote PDS media preserve publisher formats. */
 import type { ReactNode } from "react";
-import Link from "next/link";
 import {
   AppBskyEmbedRecord,
   AppBskyEmbedRecordWithMedia,
@@ -20,7 +19,7 @@ import { SocialPostLabels } from "./SocialPostLabels";
 import { SocialCashtags } from "./SocialCashtags";
 import { SocialPostTimestamp } from "./SocialPostTimestamp";
 import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
-import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
+import { SocialProfileLink } from "./SocialProfileLink";
 import { socialReplyMetadata } from "@/lib/socialReplyMetadata";
 import { isSocialInteractionHidden } from "@/lib/socialInteractionModeration";
 
@@ -109,7 +108,7 @@ export function SocialPostCard({
           reposterIdentity?.filter ||
           reposterIdentity?.noOverride
             ? "by an account"
-            : `by ${repost.displayName || repost.handle}`}
+            : <>by <SocialProfileLink actor={repost.did} className="hover:underline">{repost.displayName || repost.handle}</SocialProfileLink></>}
           </span></p>
       ) : null}
       {reply ? (
@@ -122,7 +121,7 @@ export function SocialPostCard({
         </p>
       ) : null}
       <div className="flex items-center gap-3">
-        <Link href={socialProfilePageHref(post.author.did)} aria-label={`Open Profile: ${name}`} className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-ring">{image ? (
+        <SocialProfileLink actor={post.author.did} aria-label={`Open Profile: ${name}`} className="inline-flex shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-ring">{image ? (
           <img
             src={image}
             alt=""
@@ -137,18 +136,18 @@ export function SocialPostCard({
             className="size-10 shrink-0 rounded-full bg-muted"
             aria-hidden="true"
           />
-        )}</Link>
+        )}</SocialProfileLink>
         <div className="min-w-0 flex-1">
-          <Link
-            href={socialProfilePageHref(post.author.did)}
+          <SocialProfileLink
+            actor={post.author.did}
             className="block truncate text-sm font-semibold hover:underline"
           >
             {name}
-          </Link>
+          </SocialProfileLink>
           {!identity.blur && !identity.filter && !identity.noOverride ? (
-            <p className="truncate text-xs text-muted-foreground">
+            <SocialProfileLink actor={post.author.did} className="block truncate text-xs text-muted-foreground hover:underline">
               @{post.author.handle}
-            </p>
+            </SocialProfileLink>
           ) : null}
         </div>
         {!detailedTimestamp ? <SocialPostTimestamp timestamp={timestamp} /> : null}

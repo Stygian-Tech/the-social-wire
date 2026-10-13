@@ -33,7 +33,8 @@ describe("Social Markdown", () => {
     const text = "🌎 日本語 **visit** *alice* #news\nNext line";
     const element = documentFor(html(text, [facet(text, "visit", { $type: "app.bsky.richtext.facet#link", uri: "https://example.com/article" }), facet(text, "alice", { $type: "app.bsky.richtext.facet#mention", did: "did:plc:alice" }), facet(text, "#news", { $type: "app.bsky.richtext.facet#tag", tag: "news" })]));
     expect(element.querySelector("strong a")?.textContent).toBe("visit");
-    expect(element.querySelector("em a")?.getAttribute("href")).toBe("https://bsky.app/profile/did%3Aplc%3Aalice");
+    expect(element.querySelector("em a")?.getAttribute("href")).toBe("/social/profile?actor=did%3Aplc%3Aalice&returnTo=%2Fsocial");
+    expect(element.querySelector("em a")?.getAttribute("target")).toBeNull();
     expect(element.querySelectorAll("a")[2].getAttribute("href")).toBe("https://bsky.app/search?q=%23news");
     expect(element.textContent).toContain("🌎 日本語 visit alice #news\nNext line");
     expect(element.querySelector("p")?.className).toContain("whitespace-pre-wrap");
@@ -44,6 +45,13 @@ describe("Social Markdown", () => {
     expect(element.querySelectorAll("strong em")[1].textContent).toBe("italic");
     expect(element.querySelector("em strong")?.textContent).toBe("bold");
     expect(element.textContent).toBe("both bold italic italic bold bold italic");
+  });
+  it("opens profile links from Markdown and native link facets in the profile viewer", () => {
+    const text = "[Alice](https://bsky.app/profile/alice.test) and Bob";
+    const element = documentFor(html(text, [facet(text, "Bob", { $type: "app.bsky.richtext.facet#link", uri: "https://bsky.app/profile/did%3Aplc%3Abob" })]));
+    const links = [...element.querySelectorAll("a")];
+    expect(links.map(link => link.getAttribute("href"))).toEqual(["/social/profile?actor=alice.test&returnTo=%2Fsocial", "/social/profile?actor=did%3Aplc%3Abob&returnTo=%2Fsocial"]);
+    expect(links.every(link => !link.hasAttribute("target"))).toBe(true);
   });
   it("keeps facet offsets in heading, list and quote blocks", () => {
     const text = "## 🌎 heading\n\n- list\n\n> quote";
