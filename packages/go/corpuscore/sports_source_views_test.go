@@ -13,11 +13,13 @@ import (
 
 func applySportsSourceViews(t *testing.T, db *sql.DB) {
 	t.Helper()
-	raw, err := os.ReadFile("../../../database/migrations/20261012010000_sports_lean_source_views.sql")
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"20261012010000_sports_lean_source_views.sql", "20261013010000_bound_topic_source_item_lookups.sql"} {
+		raw, err := os.ReadFile("../../../database/migrations/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		execFixture(t, db, string(raw))
 	}
-	execFixture(t, db, string(raw))
 }
 
 func TestPostgresSportsSourceViewsParityAndCurrentGates(t *testing.T) {
@@ -151,14 +153,14 @@ func TestPostgresSportsSourceWarmPlanSkipsCandidateJSONAggregation(t *testing.T)
 	applySportsSourceViews(t, db)
 	now := time.Now().UTC()
 	id := "d7110000-2222-2222-2222-222222222222"
-	key := "sports-source-view-plan"
+	key := "sports-source-view-plan-"
 	t.Cleanup(func() {
 		db.Exec(`DELETE FROM sports_generations WHERE generation_id=$1::uuid`, id)
 		db.Exec(`DELETE FROM sports_catalog_snapshots WHERE snapshot_id=$1::uuid`, id)
-		db.Exec(`DELETE FROM wire_items WHERE canonical_key=$1`, key)
+		db.Exec(`DELETE FROM wire_items WHERE canonical_key LIKE $1`, key+"%")
 	})
-	execFixture(t, db, `INSERT INTO wire_items(canonical_key,canonical_url,source_domain,source_name,title,first_seen_at,last_seen_at,expires_at,language_code)VALUES($1,'https://example.test/'||$1,'example.test','Fixture','Fixture',$2,$2,$3,'xx')`, key, now, now.Add(time.Hour))
-	execFixture(t, db, `INSERT INTO sports_generations(generation_id,source_generation_id,language,algorithm_version,generated_at,expires_at,payload,is_active)SELECT $1::uuid,$1::uuid,'xx','plan-fixture',$2,$3,jsonb_agg(jsonb_build_object('item',jsonb_build_object('itemId',$4::text,'canonicalUrl','https://example.test/plan','title','Fixture','summary',repeat('x',4096),'source',jsonb_build_object('domain','example.test')),'analysis',jsonb_build_object('resolverVersion','fixture'),'baseScore',1,'majorGlobal',false)),TRUE FROM generate_series(1,5000)`, id, now, now.Add(time.Hour), key)
+	execFixture(t, db, `INSERT INTO wire_items(canonical_key,canonical_url,source_domain,source_name,title,first_seen_at,last_seen_at,expires_at,language_code)SELECT $1::text||i::text,'https://example.test/'||$1::text||i::text,'example.test','Fixture','Fixture',$2,$2,$3,'xx' FROM generate_series(1,5000)i`, key, now, now.Add(time.Hour))
+	execFixture(t, db, `INSERT INTO sports_generations(generation_id,source_generation_id,language,algorithm_version,generated_at,expires_at,payload,is_active)SELECT $1::uuid,$1::uuid,'xx','plan-fixture',$2,$3,jsonb_agg(jsonb_build_object('item',jsonb_build_object('itemId',$4::text||i::text,'canonicalUrl','https://example.test/plan','title','Fixture','summary',repeat('x',4096),'source',jsonb_build_object('domain','example.test')),'analysis',jsonb_build_object('resolverVersion','fixture'),'baseScore',1,'majorGlobal',false)),TRUE FROM generate_series(1,5000)i`, id, now, now.Add(time.Hour), key)
 	// An existing canonical catalog is enough for this query-plan fixture. If the
 	// test database has none, add one isolated empty catalog for the CROSS JOIN.
 	var catalogs int
@@ -182,8 +184,18 @@ func TestPostgresSportsSourceWarmPlanSkipsCandidateJSONAggregation(t *testing.T)
 		t.Fatal(err)
 	}
 	fullAggregates, ordinalAggregates := 0, 0
+	itemIndexLoops := 0.0
 	var walk func(map[string]any)
 	walk = func(node map[string]any) {
+		if node["Relation Name"] == "wire_items" {
+			if node["Node Type"] == "Seq Scan" && node["Actual Loops"].(float64) > 0 {
+				t.Fatal("source eligibility scanned broad wire_items corpus")
+			}
+			if node["Node Type"] == "Index Scan" || node["Node Type"] == "Index Only Scan" {
+				itemIndexLoops += node["Actual Loops"].(float64)
+			}
+		}
+
 		output, _ := json.Marshal(node["Output"])
 		if node["Node Type"] == "Aggregate" && strings.Contains(string(output), "jsonb_agg") {
 			if strings.Contains(string(output), "'itemId'") {
@@ -202,6 +214,9 @@ func TestPostgresSportsSourceWarmPlanSkipsCandidateJSONAggregation(t *testing.T)
 		}
 	}
 	walk(plans[0]["Plan"].(map[string]any))
+	if itemIndexLoops != 5000 {
+		t.Fatal("expected one parameterized item index lookup per distinct candidate", itemIndexLoops)
+	}
 	if fullAggregates == 0 || ordinalAggregates == 0 {
 		t.Fatal("representative plan did not contain both guarded candidate and current ordinal aggregates", fullAggregates, ordinalAggregates)
 	}

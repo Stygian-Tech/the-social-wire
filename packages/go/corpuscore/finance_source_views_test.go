@@ -144,14 +144,14 @@ func TestPostgresFinanceSourceWarmPlanSkipsBothFullPayloadArrays(t *testing.T) {
 	applySportsSourceViews(t, db)
 	now := time.Now().UTC()
 	id := "d7110000-4444-4444-4444-444444444444"
-	key := "finance-source-view-plan"
+	key := "finance-source-view-plan-"
 	prefix := "finance-view-plan-"
 	t.Cleanup(func() {
 		db.Exec(`DELETE FROM finance_generations WHERE generation_id=$1::uuid`, id)
 		db.Exec(`DELETE FROM finance_instruments WHERE provider_key LIKE $1`, prefix+"%")
-		db.Exec(`DELETE FROM wire_items WHERE canonical_key=$1`, key)
+		db.Exec(`DELETE FROM wire_items WHERE canonical_key LIKE $1`, key+"%")
 	})
-	execFixture(t, db, `INSERT INTO wire_items(canonical_key,canonical_url,source_domain,source_name,title,first_seen_at,last_seen_at,expires_at,language_code)VALUES($1,'https://example.test/'||$1,'example.test','Fixture','Fixture',$2,$2,$3,'xx')`, key, now, now.Add(time.Hour))
+	execFixture(t, db, `INSERT INTO wire_items(canonical_key,canonical_url,source_domain,source_name,title,first_seen_at,last_seen_at,expires_at,language_code)SELECT $1::text||i::text,'https://example.test/'||$1::text||i::text,'example.test','Fixture','Fixture',$2,$2,$3,'xx' FROM generate_series(1,5000)i`, key, now, now.Add(time.Hour))
 	execFixture(t, db, `INSERT INTO finance_instruments(instrument_id,provider_key,payload,updated_at)SELECT $1::text||lpad(i::text,5,'0'),$1::text||lpad(i::text,5,'0'),jsonb_build_object('id',$1::text||lpad(i::text,5,'0'),'name','Fixture','symbol','FIX','kind','stock','providerID',$1::text||lpad(i::text,5,'0'),'aliases','[]'::jsonb,'sectorIDs','[]'::jsonb,'isActive',true),$2 FROM generate_series(1,5000)i`, prefix, now)
 	base := financeSourceFixture().Generation.Candidates[0]
 	summary := strings.Repeat("x", 512)
@@ -160,6 +160,7 @@ func TestPostgresFinanceSourceWarmPlanSkipsBothFullPayloadArrays(t *testing.T) {
 	candidates := make([]financecore.RankCandidate, 5000)
 	for i := range candidates {
 		value := base
+		value.Item.ItemID = fmt.Sprintf("%s%d", key, i+1)
 		value.Analysis.Associations = []financecore.Association{{InstrumentID: fmt.Sprintf("%s%05d", prefix, i+1), Confidence: 1, ResolverVersion: financecore.ResolverVersion, Evidence: []string{"fixture"}}}
 		candidates[i] = value
 	}
@@ -190,8 +191,18 @@ func TestPostgresFinanceSourceWarmPlanSkipsBothFullPayloadArrays(t *testing.T) {
 		t.Fatal(err)
 	}
 	fullAggregates := 0
+	itemIndexLoops := 0.0
 	var walk func(map[string]any)
 	walk = func(node map[string]any) {
+		if node["Relation Name"] == "wire_items" {
+			if node["Node Type"] == "Seq Scan" && node["Actual Loops"].(float64) > 0 {
+				t.Fatal("source eligibility scanned broad wire_items corpus")
+			}
+			if node["Node Type"] == "Index Scan" || node["Node Type"] == "Index Only Scan" {
+				itemIndexLoops += node["Actual Loops"].(float64)
+			}
+		}
+
 		if elapsed, ok := node["Actual Total Time"].(float64); ok && elapsed > 50 {
 			t.Logf("plan node=%v relation=%v alias=%v loops=%v rows=%v total_ms=%v", node["Node Type"], node["Relation Name"], node["Alias"], node["Actual Loops"], node["Actual Rows"], elapsed)
 		}
@@ -208,6 +219,9 @@ func TestPostgresFinanceSourceWarmPlanSkipsBothFullPayloadArrays(t *testing.T) {
 		}
 	}
 	walk(plans[0]["Plan"].(map[string]any))
+	if itemIndexLoops != 5000 {
+		t.Fatal("source eligibility did not use parameterized item indexes")
+	}
 	if fullAggregates != 2 {
 		t.Fatal("expected guarded full candidate/instrument aggregates", fullAggregates)
 	}
