@@ -1,0 +1,33 @@
+meta {
+  name: Get Finance Generation
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.corpus.getFinanceGeneration
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Wire-Corpus-Service: {{corpusServiceId}}
+  X-Wire-Corpus-Timestamp: {{corpusTimestamp}}
+  X-Wire-Corpus-Nonce: {{corpusNonce}}
+  X-Wire-Corpus-Signature: {{corpusSignature}}
+  X-Wire-Corpus-Body-SHA256: {{corpusBodyDigest}}
+}
+
+body:json {
+  {"language":"en"}
+}
+
+docs {
+  Internal service-only conditional full Finance generation. Sign exact POST
+  target and SHA-256 JSON body digest with a fresh timestamp/nonce. Viewer
+  Authorization/Cookie/DPoP headers are rejected. Response cap: 8 MiB.
+  Repeat requests send knownGenerationId and knownGenerationRevision. Generation
+  is omitted only for an exact unchanged current serving revision; current item
+  eligibility and instrument metadata are checked for every request.
+}

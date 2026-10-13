@@ -11083,7 +11083,7 @@
       "files": [
         {
           "path": "packages/lexicons/__tests__/corpusLexicons.test.ts",
-          "sha256": "675428b3917c4257868b67b78b1e28a9bf37f4f2c2e97a7b6d83252358fc0ca5"
+          "sha256": "abb4d0d2b83ee5ce678772f38924d867d4c7a5aae00e41e81cd3febe02ea5992"
         },
         {
           "path": "packages/lexicons/__tests__/financeLexicons.test.ts",
@@ -11198,12 +11198,16 @@
           "sha256": "da9716162cf6f4b6e4f8358b6e653d6db07a637698a4e71ebbcedae159ab8964"
         },
         {
+          "path": "packages/lexicons/app/thesocialwire/corpus/getFinanceGeneration.json",
+          "sha256": "49ac8e998ba0021d6fedd3dd080d5e3ab672cbbbdd8a952cdb3e0e84784c0fa5"
+        },
+        {
           "path": "packages/lexicons/app/thesocialwire/corpus/getItems.json",
           "sha256": "f2b31b4e91e253bf3642238394939165efc543e2654d76c620a28965ed64a488"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/corpus/getSportsGeneration.json",
-          "sha256": "fe378dbc3784f5eb246107148861923ea64d20763652c92b2ce6f7dde4a45dd7"
+          "sha256": "71063931652bfbccf2f892d81294e0b45dd14c60bcfbef063bbb862f541d67d6"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/defs.json",
@@ -11833,7 +11837,7 @@
         },
         {
           "path": "packages/spec/__tests__/wire-corpus-serving-verifier-postgres.test.ts",
-          "sha256": "0eaae2fec1fbb6467ca6aa321068efcf8726da59bcdba6972344fb682b1f0e1f"
+          "sha256": "a4706a86ab9cbf1440ed1d74219456bb763ff402e4f9b61d8d5e9e205605e7fa"
         },
         {
           "path": "packages/spec/__tests__/wire-edition-contract.test.ts",
