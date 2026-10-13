@@ -20,6 +20,8 @@ import { socialGalleryImages } from "./socialGalleryImages";
 import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
 import Link from "next/link";
 import { SocialCashtags } from "./SocialCashtags";
+import { SocialYouTubeEmbed } from "./SocialYouTubeEmbed";
+import { socialYouTubePlayerUrl } from "./socialYouTubePlayerUrl";
 
 type Embed = AppBskyFeedDefs.PostView["embed"] | AppBskyEmbedRecord.View;
 
@@ -50,6 +52,8 @@ export function SocialPostEmbed({
     if (!href) return null;
     const gif = socialExternalGif(embed.external);
     if (gif) return <SocialImageGallery images={[gif]} />;
+    const youtube = socialYouTubePlayerUrl(href);
+    if (youtube) return <SocialYouTubeEmbed external={embed.external} href={href} src={youtube} />;
     const thumb = socialHttpsUrl(embed.external.thumb);
     return (
       <a
