@@ -76,6 +76,24 @@ it("opens from the floating button and publishes only on explicit submission", a
   expect(screen.queryByText("Post Published")).toBeNull();
 });
 
+it.each(["metaKey", "ctrlKey"] as const)("publishes with the %s Enter composer shortcut while respecting invalid drafts and plain Enter", async modifier => {
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: `at://${oauth.did}/app.bsky.feed.post/new`, cid: "cid" });
+  restores.push(() => publish.mockRestore());
+  const field = await open();
+  fireEvent.keyDown(field, { key: "Enter", [modifier]: true });
+  expect(publish).not.toHaveBeenCalled();
+  fireEvent.change(field, { target: { value: "Keyboard Published Post" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  fireEvent.keyDown(field, { key: "Enter", [modifier]: true, isComposing: true });
+  fireEvent.keyDown(field, { key: "Enter", [modifier]: true, repeat: true });
+  expect(publish).not.toHaveBeenCalled();
+  fireEvent.keyDown(field, { key: "Enter", [modifier]: true });
+  await screen.findByText("Post Published");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][0].text).toBe("Keyboard Published Post");
+  expect(publish.mock.calls[0][0].session).toBe(oauth);
+});
+
 it("enforces grapheme limits and resets cancelled content when reopened", async () => {
   const field = await open();
   fireEvent.change(field, { target: { value: "👨‍👩‍👧‍👦".repeat(300) } });

@@ -8,7 +8,8 @@ import * as Workspace from "@/hooks/useSocialWorkspace";
 import * as Catalog from "@/hooks/useBlueskySocialCatalog";
 import * as Profile from "@/hooks/useBlueskyProfile";
 import * as Atproto from "@/lib/atprotoClient";
-import { SocialMentionLink } from "@/components/Social/SocialMentionLink";
+import { SocialProfileLink } from "@/components/Social/SocialProfileLink";
+import { socialProfileActorFromUrl } from "@/lib/socialProfileNavigation";
 
 const did = "did:plc:viewer";
 const actor = "did:plc:other";
@@ -37,7 +38,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); cache.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
 function show() {
-  return render(<QueryClientProvider client={cache}><SocialMentionLink actor={actor}>@other.test</SocialMentionLink></QueryClientProvider>);
+  return render(<QueryClientProvider client={cache}><SocialProfileLink actor={actor}>@other.test</SocialProfileLink></QueryClientProvider>);
 }
 
 it("loads a profile only on hover and follows from the card without nesting the button in a link", async () => {
@@ -64,4 +65,10 @@ it("opens on keyboard focus and withholds blocked profiles", async () => {
   expect(await screen.findByText("Profile withheld by your moderation settings.")).toBeTruthy();
   expect(screen.queryByText("A profile biography")).toBeNull();
   expect(screen.queryByRole("button", { name: /Follow/ })).toBeNull();
+});
+
+it("recognizes only valid Bluesky profile URLs for native previews", () => {
+  expect(socialProfileActorFromUrl("https://bsky.app/profile/alice.test")).toBe("alice.test");
+  expect(socialProfileActorFromUrl("https://bsky.app/profile/did%3Aplc%3Aalice/")).toBe("did:plc:alice");
+  for (const url of ["https://bsky.app/profile/alice.test/post/one", "https://bsky.app.evil.test/profile/alice.test", "https://user:pass@bsky.app/profile/alice.test", "http://bsky.app/profile/alice.test", "https://bsky.app/profile/%2Funsafe", "https://bsky.app/profile/%ZZ"]) expect(socialProfileActorFromUrl(url)).toBeUndefined();
 });

@@ -1,8 +1,8 @@
 import { AppBskyRichtextFacet, RichText, type AppBskyFeedPost } from "@atproto/api";
 import type { ReactNode } from "react";
 import { socialHttpsUrl } from "./socialUrls";
-import { isSocialProfileActor } from "@/lib/socialProfileNavigation";
-import { SocialMentionLink } from "./SocialMentionLink";
+import { isSocialProfileActor, socialProfileActorFromUrl } from "@/lib/socialProfileNavigation";
+import { SocialProfileLink } from "./SocialProfileLink";
 import { socialMarkdownBlocks, socialMarkdownInline, type MarkdownRange, type SocialMarkdownInline } from "./socialMarkdown";
 
 type FacetRange = MarkdownRange & { href?: string; actor?: string };
@@ -25,7 +25,10 @@ export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
     }
     offset += segment.text.length;
   }
-  const anchor = (href: string, children: ReactNode, key: number) => <a key={key} href={href} target="_blank" rel="noopener noreferrer" className={linkClassName}>{children}</a>;
+  const anchor = (href: string, children: ReactNode, key: number) => {
+    const actor = socialProfileActorFromUrl(href);
+    return actor ? <SocialProfileLink key={key} actor={actor} className={linkClassName}>{children}</SocialProfileLink> : <a key={key} href={href} target="_blank" rel="noopener noreferrer" className={linkClassName}>{children}</a>;
+  };
   const textWithFacets = (node: Extract<SocialMarkdownInline, { kind: "text" | "code" }>): ReactNode => {
     const children: ReactNode[] = [];
     let cursor = node.start;
@@ -35,7 +38,7 @@ export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
       if (start > cursor) children.push(node.text.slice(cursor - node.start, start - node.start));
       if (end > start) {
         const text = node.text.slice(start - node.start, end - node.start);
-        children.push(facet.actor ? <SocialMentionLink key={start} actor={facet.actor} className={linkClassName}>{text}</SocialMentionLink> : anchor(facet.href!, text, start));
+        children.push(facet.actor ? <SocialProfileLink key={start} actor={facet.actor} className={linkClassName}>{text}</SocialProfileLink> : anchor(facet.href!, text, start));
       }
       cursor = Math.max(cursor, end);
     }
