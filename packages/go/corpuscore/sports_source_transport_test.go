@@ -97,6 +97,37 @@ func TestSportsSourceMissingCacheRetriesOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestSportsSourceExpiredCacheAndCancelledRequest(t *testing.T) {
+	fixture := sportsSourceFixture(t)
+	expired := fixture
+	expired.ExpiresAt = time.Now().Add(-time.Second)
+	requests := 0
+	remote := NewRemoteStore(RemoteConfig{"https://corpus.example", "appview", strings.Repeat("s", 32)}, &http.Client{Transport: batchRoundTripper(func(r *http.Request) (*http.Response, error) {
+		requests++
+		var q SportsSourceRequest
+		if json.NewDecoder(r.Body).Decode(&q) != nil {
+			t.Fatal("input")
+		}
+		if q.KnownGenerationID != "" || q.KnownGenerationRevision != "" {
+			t.Fatal("expired immutable cache was offered", q)
+		}
+		body, _ := MarshalHTTP(fixture)
+		return &http.Response{StatusCode: 200, Header: http.Header{"X-Wire-Corpus-Contract": {"3"}}, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+	})})
+	remote.sportsCached = &expired
+	if out, err := remote.SportsSource(context.Background(), SportsSourceRequest{Language: "en"}, time.Now()); err != nil || out.GenerationUnchanged {
+		t.Fatal(out, err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := remote.SportsSource(cancelled, SportsSourceRequest{Language: "en"}, time.Now()); err == nil {
+		t.Fatal("cancelled request reused source cache")
+	}
+	if requests != 1 {
+		t.Fatal("cancelled request reached transport", requests)
+	}
+}
+
 func TestPostgresSportsSourceCurrentEligibilityAndResolver(t *testing.T) {
 	db := corpusDB(t)
 	now := time.Now().UTC().Truncate(time.Second)

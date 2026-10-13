@@ -181,6 +181,9 @@ func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceReques
 // its exact generation/catalog identities and current expiry. One retry without
 // conditionals handles cache eviction or a concurrent request replacing cache.
 func (s *RemoteStore) SportsSource(ctx context.Context, q SportsSourceRequest, now time.Time) (SportsSourceResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return SportsSourceResponse{}, err
+	}
 	s.sportsMu.Lock()
 	cached := s.sportsCached
 	s.sportsMu.Unlock()
