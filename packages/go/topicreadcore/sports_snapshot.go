@@ -32,6 +32,33 @@ func (s *SportsStore) retained(ctx context.Context, id, scope, language, revisio
 	}
 	return &value, nil
 }
+
+// reusable finds the snapshot selected by the existing persistence uniqueness
+// contract. Current item eligibility and viewer moderation still run per page.
+func (s *SportsStore) reusable(ctx context.Context, generation, scope, language, revision string, now time.Time) (*corpuscore.SportsGeneration, error) {
+	if !validUUID(generation) {
+		return nil, nil
+	}
+	value := corpuscore.SportsGeneration{Language: language}
+	var raw []byte
+	var source string
+	err := s.DB.QueryRowContext(ctx, `SELECT snapshot_id::text,generated_at,expires_at,payload::text,serving_source FROM sports_personalized_snapshots WHERE source_generation_id=$1::uuid AND viewer_scope=$2 AND language=$3 AND preference_revision=$4 AND expires_at>$5`, generation, scope, language, revision, now).Scan(&value.GenerationID, &value.GeneratedAt, &value.ExpiresAt, &raw, &source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	value.Source = &source
+	if err = corpuscore.DecodeContract(raw, &value.Candidates); err != nil {
+		return nil, err
+	}
+	if !sportsCurrent(value.Candidates) {
+		return nil, nil
+	}
+	return &value, nil
+}
+
 func (s *SportsStore) persist(ctx context.Context, proposal, source corpuscore.SportsGeneration, scope, revision string, now time.Time) (corpuscore.SportsGeneration, error) {
 	if !validUUID(proposal.GenerationID) || !validUUID(source.GenerationID) {
 		return corpuscore.SportsGeneration{}, ErrUnavailable

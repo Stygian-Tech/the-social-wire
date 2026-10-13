@@ -51,10 +51,31 @@ func TestFeedTimingIgnoresCallbacksAfterRequestCompletion(t *testing.T) {
 	handler(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 	var group sync.WaitGroup
 	for range 100 {
-		group.Go(func() { topicreadcore.ObserveFeedPhase(ctx, "late-phase", time.Millisecond) })
+		group.Go(func() { topicreadcore.ObserveFeedPhase(ctx, "analysis", time.Millisecond) })
 	}
 	group.Wait()
 	if len(writer.phases) != 0 {
 		t.Fatal("completed request must not retain detached timings", writer.phases)
+	}
+}
+
+func TestFeedTimingAcceptsFixedSourceAndCatalogPhasesOnly(t *testing.T) {
+	handler := Routes{}.observeFeed("sports", func(w http.ResponseWriter, req *http.Request) {
+		for _, phase := range []string{"source-transport", "source-decode", "catalog-scan", "catalog-decode", "catalog-revision", "snapshot-lookup"} {
+			topicreadcore.ObserveFeedPhase(req.Context(), phase, time.Millisecond)
+		}
+		topicreadcore.ObserveFeedPhase(req.Context(), "viewer-private-identifier", time.Second)
+		w.WriteHeader(200)
+	})
+	writer := httptest.NewRecorder()
+	handler(writer, httptest.NewRequest("GET", "/xrpc/app.thesocialwire.discovery.getSports", nil))
+	timings := writer.Header().Get("Server-Timing")
+	for _, phase := range []string{"source-transport", "source-decode", "catalog-scan", "catalog-decode", "catalog-revision", "snapshot-lookup"} {
+		if !strings.Contains(timings, phase+";dur=1.000") {
+			t.Fatal(phase, timings)
+		}
+	}
+	if strings.Contains(timings, "viewer-private") {
+		t.Fatal(timings)
 	}
 }

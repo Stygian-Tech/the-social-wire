@@ -90,6 +90,10 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 	if digest != nil {
 		r.Header.Set(wirecore.CorpusBodyDigestHeader, *digest)
 	}
+	if observer := sourceObserver(ctx, target); observer != nil {
+		started := time.Now()
+		defer func() { observer("source-transport", time.Since(started)) }()
+	}
 	response, err := s.Client.Do(r)
 	if err != nil {
 		return nil, 0, ErrUnavailable
@@ -128,6 +132,16 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 	}
 	return data, 200, nil
 }
+
+// Only source-generation responses participate in these request phase timings.
+func sourceObserver(ctx context.Context, target string) func(string, time.Duration) {
+	path, _, _ := strings.Cut(target, "?")
+	if path != "/internal/wire/v1/finance" && path != "/internal/wire/v1/sports" {
+		return nil
+	}
+	return queryObserver(ctx)
+}
+
 func remoteDecode[T any](ctx context.Context, s *RemoteStore, method, target string, body []byte) (T, error) {
 	var result T
 	data, status, err := s.request(ctx, method, target, body, true)
@@ -136,6 +150,10 @@ func remoteDecode[T any](ctx context.Context, s *RemoteStore, method, target str
 	}
 	if status != 200 {
 		return result, RemoteStatusError{status}
+	}
+	if observer := sourceObserver(ctx, target); observer != nil {
+		started := time.Now()
+		defer func() { observer("source-decode", time.Since(started)) }()
 	}
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) || decodeContract(data, &result) != nil {
 		return result, ErrContractMismatch
