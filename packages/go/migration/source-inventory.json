@@ -11837,7 +11837,7 @@
         },
         {
           "path": "packages/spec/__tests__/wire-corpus-serving-verifier-postgres.test.ts",
-          "sha256": "0eaae2fec1fbb6467ca6aa321068efcf8726da59bcdba6972344fb682b1f0e1f"
+          "sha256": "a4706a86ab9cbf1440ed1d74219456bb763ff402e4f9b61d8d5e9e205605e7fa"
         },
         {
           "path": "packages/spec/__tests__/wire-edition-contract.test.ts",
