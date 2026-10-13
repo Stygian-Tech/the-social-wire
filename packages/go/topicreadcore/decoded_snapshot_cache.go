@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
+	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
 )
 
 const decodedSnapshotMaximumEntries = 8
@@ -125,7 +126,12 @@ func (cache *decodedSnapshotCache[Candidate]) load(ctx context.Context, db *sql.
 	}
 	candidates := []Candidate{}
 	started = time.Now()
-	err = corpuscore.DecodeContract(raw, &candidates)
+	sportsCandidates, sports := any(&candidates).(*[]sportscore.RankCandidate)
+	if table == "sports_personalized_snapshots" && sports {
+		err = decodeSportsSnapshot(raw, sportsCandidates)
+	} else {
+		err = corpuscore.DecodeContract(raw, &candidates)
+	}
 	ObserveFeedPhase(ctx, "snapshot-decode", time.Since(started))
 	if err != nil {
 		return nil, nil, err

@@ -97,6 +97,22 @@ func TestSportsSourceMissingCacheRetriesOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestLeanSportsGenerationRoundTripsPersistedItemContract(t *testing.T) {
+	fixture := sportsSourceFixture(t)
+	generation := SportsSourceGeneration(fixture)
+	encoded, err := MarshalHTTP(generation.Candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored []sportscore.RankCandidate
+	if err := DecodeContract(encoded, &restored); err != nil {
+		t.Fatal("lean source must remain a valid persisted rank candidate", err)
+	}
+	if len(restored) != 1 || restored[0].Item.Reasons == nil || restored[0].Item.Provenance == nil || restored[0].PresentationFingerprint != (*fixture.Candidates)[0].PresentationFingerprint {
+		t.Fatal(restored)
+	}
+}
+
 func TestSportsSourceExpiredCacheAndCancelledRequest(t *testing.T) {
 	fixture := sportsSourceFixture(t)
 	expired := fixture

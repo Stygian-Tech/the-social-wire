@@ -70,7 +70,7 @@ func (s *SportsStore) persist(ctx context.Context, proposal, source corpuscore.S
 		return value, err
 	}
 	value.Source = &actualSource
-	err = corpuscore.DecodeContract(raw, &value.Candidates)
+	err = decodeSportsSnapshot(raw, &value.Candidates)
 	if err == nil && !sportsCurrent(value.Candidates) {
 		return value, ErrCursorExpired
 	}
