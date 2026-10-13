@@ -224,6 +224,26 @@ func TestPostgresSportsSourceCurrentEligibilityAndResolver(t *testing.T) {
 	if _, err := store.SportsSource(cancelCtx, q, now); !errors.Is(err, context.Canceled) {
 		t.Fatal("cancelled warm candidate cache returned success", err)
 	}
+	// Duplicate identities and their ordinal order are part of the producer
+	// contract. A same-ID generation update must invalidate even when its eligible
+	// identity set is unchanged.
+	duplicate := candidate
+	duplicate.Item.Title = "Second duplicate"
+	duplicate.BaseScore = 1.25
+	duplicatePayload, _ := json.Marshal([]sportscore.RankCandidate{candidate, duplicate})
+	execFixture(t, db, `UPDATE sports_generations SET payload=$2::jsonb WHERE generation_id=$1::uuid`, id, string(duplicatePayload))
+	duplicates, err := store.SportsSource(ctx, q, now)
+	if err != nil || duplicates.GenerationUnchanged || len(*duplicates.Candidates) != 2 || (*duplicates.Candidates)[0].Title != candidate.Item.Title || (*duplicates.Candidates)[1].Title != "Second duplicate" {
+		t.Fatal("same-ID tuple mutation lost duplicate/order evidence", duplicates, err)
+	}
+	duplicatePayload, _ = json.Marshal([]sportscore.RankCandidate{duplicate, candidate})
+	execFixture(t, db, `UPDATE sports_generations SET payload=$2::jsonb WHERE generation_id=$1::uuid`, id, string(duplicatePayload))
+	reordered, err := store.SportsSource(ctx, SportsSourceRequest{Language: "en", KnownGenerationID: id, KnownGenerationRevision: duplicates.GenerationRevision}, now)
+	if err != nil || reordered.GenerationUnchanged || reordered.GenerationRevision == duplicates.GenerationRevision || (*reordered.Candidates)[0].Title != "Second duplicate" || (*reordered.Candidates)[1].Title != candidate.Item.Title {
+		t.Fatal("same-ID payload reorder reused validation cache", reordered, err)
+	}
+	payload, _ = json.Marshal([]sportscore.RankCandidate{candidate})
+	execFixture(t, db, `UPDATE sports_generations SET payload=$2::jsonb WHERE generation_id=$1::uuid`, id, string(payload))
 	execFixture(t, db, `UPDATE wire_items SET expires_at=$2 WHERE canonical_key=$1`, key, now.Add(-time.Second))
 	removed, err := store.SportsSource(ctx, q, now)
 	if err != nil || removed.GenerationUnchanged || len(*removed.Candidates) != 0 || removed.GenerationRevision == first.GenerationRevision {

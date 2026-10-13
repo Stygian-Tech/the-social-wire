@@ -151,8 +151,17 @@ func TestPostgresFinanceSourceCurrentEligibilityAndInstrumentRevision(t *testing
 	}
 	execFixture(t, db, `UPDATE wire_items SET expires_at=$2 WHERE canonical_key=$1`, key, now.Add(-time.Second))
 	removed, err := store.FinanceSource(ctx, q, now)
-	if err != nil || removed.GenerationUnchanged || len(removed.Generation.Candidates) != 0 {
+	if err != nil || removed.GenerationUnchanged || len(removed.Generation.Candidates) != 0 || len(removed.Generation.Instruments) != 1 {
 		t.Fatal("current eligibility", removed, err)
+	}
+	// Referenced instruments remain authoritative even when every related article
+	// is currently ineligible; such metadata changes still invalidate conditionals.
+	instrument.Name = "Changed While Ineligible"
+	raw, _ = json.Marshal(instrument)
+	execFixture(t, db, `UPDATE finance_instruments SET payload=$2::jsonb WHERE instrument_id=$1`, instrument.ID, string(raw))
+	mutedSource, err := store.FinanceSource(ctx, FinanceSourceRequest{Language: "en", KnownGenerationID: id, KnownGenerationRevision: removed.GenerationRevision}, now)
+	if err != nil || mutedSource.GenerationUnchanged || len(mutedSource.Generation.Candidates) != 0 || len(mutedSource.Generation.Instruments) != 1 || mutedSource.Generation.Instruments[0].Name != "Changed While Ineligible" {
+		t.Fatal("ineligible source lost referenced instrument revision", mutedSource, err)
 	}
 	execFixture(t, db, `UPDATE wire_items SET expires_at=$2 WHERE canonical_key=$1`, key, now.Add(time.Hour))
 	execFixture(t, db, `UPDATE finance_generations SET payload=payload #- '{0,item,title}' WHERE generation_id=$1::uuid`, id)
