@@ -115,6 +115,7 @@ final class SocialWireAppModel {
     private(set) var likeRecordURIByEntryID: [String: String] = [:]
     private(set) var repostRecordURIByEntryID: [String: String] = [:]
     private var articleSocialStateLoadingKeys = Set<String>()
+    private var articleSocialStateContextID = UUID()
     var wireCatalog: WireFeedCatalog?
     var wireFeedNotice: String?
     var wireFeedLoadFailed = false
@@ -188,11 +189,16 @@ final class SocialWireAppModel {
 
     init(
         authService: ATProtoOAuthService = ATProtoOAuthService(),
-        gatewayTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
+        gatewayTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
+        xrpcTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
     ) {
         self.authService = authService
         resolver = ATProtoResolver()
-        xrpc = XRPCClient(auth: authService, resolver: resolver)
+        if let xrpcTransport {
+            xrpc = XRPCClient(auth: authService, resolver: resolver, transport: xrpcTransport)
+        } else {
+            xrpc = XRPCClient(auth: authService, resolver: resolver)
+        }
         pds = PDSRecordService(xrpc: xrpc)
         sembleRecords = SembleRecordService(xrpc: xrpc)
         publicationsService = PublicationService(xrpc: xrpc)
@@ -204,6 +210,8 @@ final class SocialWireAppModel {
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         authService.setSessionChangeHandler { [weak self] session in
+            self?.articleSocialStateContextID = UUID()
+            self?.articleSocialStateLoadingKeys = []
             self?.isSignedIn = session != nil
             self?.sportsTopic.bind(viewer: session?.did)
             self?.standardReaderLists.bind(viewer: session?.did)
@@ -4327,15 +4335,26 @@ final class SocialWireAppModel {
 
     func loadArticleSocialState(for entry: EntryDetail) async {
         let loadingKeys = articleSocialLoadingKeys(for: entry)
-        guard !loadingKeys.isEmpty,
+        let contextID = articleSocialStateContextID
+        let viewer = viewerDID
+        guard !Task.isCancelled, viewer != nil, !loadingKeys.isEmpty,
               loadingKeys.allSatisfy({ !articleSocialStateLoadingKeys.contains($0) })
         else { return }
         articleSocialStateLoadingKeys.formUnion(loadingKeys)
-        defer { articleSocialStateLoadingKeys.subtract(loadingKeys) }
+        defer {
+            // An obsolete account task must not release a replacement request's keys.
+            if articleSocialStateContextID == contextID {
+                articleSocialStateLoadingKeys.subtract(loadingKeys)
+            }
+        }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && articleSocialStateContextID == contextID && viewerDID == viewer
+        }
 
         if let canonicalURL = normalizedWireFeedbackURL(for: entry) {
             do {
                 let records = try await pds.listWireArticleFeedback()
+                guard isCurrent() else { return }
                 let matching = records.first { record in
                     WireArticleFeedbackContract.normalizeCanonicalURL(record.value.canonicalUrl) == canonicalURL
                 }
@@ -4345,6 +4364,7 @@ final class SocialWireAppModel {
                     wireFeedbackByCanonicalURL.removeValue(forKey: canonicalURL)
                 }
             } catch {
+                guard isCurrent(), !Self.isArticleSocialCancellation(error) else { return }
                 errorMessage = "Couldn't load your Wire rating. \(error.localizedDescription)"
             }
         }
@@ -4352,12 +4372,14 @@ final class SocialWireAppModel {
         if let documentURI = entry.standardSiteDocumentURI {
             do {
                 let records = try await pds.listStandardSiteRecommendations()
+                guard isCurrent() else { return }
                 if records.contains(where: { $0.value.document == documentURI }) {
                     recommendedStandardSiteDocumentURIs.insert(documentURI)
                 } else {
                     recommendedStandardSiteDocumentURIs.remove(documentURI)
                 }
             } catch {
+                guard isCurrent(), !Self.isArticleSocialCancellation(error) else { return }
                 errorMessage = "Couldn't load your recommendation. \(error.localizedDescription)"
             }
         }
@@ -4365,6 +4387,7 @@ final class SocialWireAppModel {
         if let postURI = entry.bskyPostUri {
             do {
                 let viewer = try await publicationsService.viewerState(for: postURI)
+                guard isCurrent() else { return }
                 if let like = viewer?.like {
                     likeRecordURIByEntryID[entry.entryId] = like
                 } else {
@@ -4376,6 +4399,7 @@ final class SocialWireAppModel {
                     repostRecordURIByEntryID.removeValue(forKey: entry.entryId)
                 }
             } catch {
+                guard isCurrent(), !Self.isArticleSocialCancellation(error) else { return }
                 errorMessage = "Couldn't load your article reactions. \(error.localizedDescription)"
             }
         }
@@ -4418,6 +4442,12 @@ final class SocialWireAppModel {
         } catch {
             errorMessage = "Couldn't update your recommendation. \(error.localizedDescription)"
         }
+    }
+
+    private static func isArticleSocialCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let error = error as NSError
+        return error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
     }
 
     private func normalizedWireFeedbackURL(for entry: EntryDetail) -> String? {
