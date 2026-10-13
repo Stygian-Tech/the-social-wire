@@ -51,13 +51,23 @@ type CircleCatalog struct {
 }
 
 func (s *CircleService) Edition(ctx context.Context, auth gatewaycore.AuthContext, rawProofs, language, cursor string, now time.Time) (CircleEdition, error) {
+	if s.Moderation == nil || auth.DID == "" || auth.DID == gatewaycore.AnonymousDiscoveryDID {
+		return CircleEdition{}, ErrModerationUnavailable
+	}
 	proofs, err := ExtractProofs(rawProofs, 6)
+	if err != nil && strings.TrimSpace(rawProofs) != "" {
+		return CircleEdition{}, err
+	}
+	moderationProofs, followProof := "", ""
+	if err == nil {
+		moderationProofs, followProof = strings.Join(proofs[:5], ","), proofs[5]
+	}
+	snapshot, err := s.Moderation.Require(ctx, &auth, moderationProofs, now)
 	if err != nil {
 		return CircleEdition{}, err
 	}
-	snapshot, err := s.Moderation.RequireProofs(ctx, auth, proofs[:5], now)
-	if err != nil {
-		return CircleEdition{}, err
+	if snapshot == nil {
+		return CircleEdition{}, ErrModerationUnavailable
 	}
 	excluded := map[string]bool{}
 	for did := range snapshot.BlockedDIDs {
@@ -66,7 +76,7 @@ func (s *CircleService) Edition(ctx context.Context, auth gatewaycore.AuthContex
 	for did := range snapshot.MutedDIDs {
 		excluded[did] = true
 	}
-	reader := &CircleReader{Moderation: s.Moderation, Auth: auth, FollowProof: proofs[5]}
+	reader := &CircleReader{Moderation: s.Moderation, Auth: auth, FollowProof: followProof}
 	graphService := CircleGraphService{Viewer: reader, Public: s.Public, Activity: s.Activity, Cache: s.State}
 	graph, err := graphService.Snapshot(ctx, auth.DID, excluded, now)
 	if err != nil {

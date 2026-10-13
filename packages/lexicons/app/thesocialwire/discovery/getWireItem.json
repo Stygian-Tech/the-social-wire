@@ -22,7 +22,7 @@
           }
         }
       },
-      "errors": [{ "name": "InvalidRequest" }, { "name": "NotFound" }, { "name": "ModerationUnavailable" }]
+      "errors": [{"name":"UpstreamProofRequired","description":"Authenticated viewer cache is unavailable; prepare the route upstream proof pool and retry once."},{ "name": "InvalidRequest" }, { "name": "NotFound" }, { "name": "ModerationUnavailable" }]
     }
   }
 }

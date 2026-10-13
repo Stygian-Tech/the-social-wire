@@ -184,7 +184,13 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	defer reply.Body.Close()
 	for _, h := range []string{"Content-Type", "ETag", "Cache-Control", "DPoP-Nonce", "X-Request-ID", "traceparent", "Server-Timing", "X-AppView-Feed-Source", "X-AppView-Membership-Updated-At", "Content-Range", "Accept-Ranges", "X-Content-Type-Options", "Retry-After", "X-Wire-Generation", "X-Wire-Source", "Last-Modified", "Location", "X-Accel-Buffering"} {
 		if v := reply.Header.Get(h); v != "" {
-			w.Header().Set(h, v)
+			if h == "Server-Timing" {
+				for _, timing := range reply.Header.Values(h) {
+					w.Header().Add(h, timing)
+				}
+			} else {
+				w.Header().Set(h, v)
+			}
 		}
 	}
 	if media {

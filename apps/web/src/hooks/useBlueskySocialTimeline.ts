@@ -1,25 +1,67 @@
 "use client";
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { ModerationOpts } from "@atproto/api";
 import { useAuth } from "@/hooks/useAuth";
-import { getBlueskySocialPage, nextSocialCursor, type SocialFeed } from "@/lib/blueskySocialClient";
+import { getBlueskySocialPage, hydrateBlueskySocialPage, nextSocialCursor, type SocialFeed, type BlueskySocialPage } from "@/lib/blueskySocialClient";
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 
 export function useBlueskySocialTimeline(feed: SocialFeed, moderation: ModerationOpts | undefined) {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
-  return useInfiniteQuery({
-    queryKey: ["blueskySocial", session?.did ?? "", "timeline", oauthSessionReloadSeq, feed.kind, feed.uri, moderation?.prefs.labelers.map(labeler => labeler.did)],
+  const client = useQueryClient();
+  const key = ["blueskySocial", session?.did ?? "", "timeline", oauthSessionReloadSeq, feed.kind, feed.uri, moderation?.prefs.labelers.map(labeler => labeler.did)];
+  const query = useInfiniteQuery({
+    queryKey: key,
     enabled: !!session && moderation?.userDid === session.did,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => {
       const oauth = getOAuthSession();
       if (!oauth) throw new Error(SCOPE_RECOVERY_MESSAGE);
       if (oauth.did !== session?.did || !moderation) throw new Error("Your account changed. Please reload this feed.");
-      return getBlueskySocialPage({ session: oauth, feed, moderation, cursor: pageParam, signal });
+      return getBlueskySocialPage({ session: oauth, feed, moderation, cursor: pageParam, signal, deferReplyHydration: true });
     },
     getNextPageParam: (lastPage, _pages, _lastParam, pageParams) => nextSocialCursor(lastPage, pageParams),
     retry: false,
     staleTime: 30_000,
   });
+  const pages = query.data?.pages;
+  useEffect(() => {
+    const oauth = getOAuthSession();
+    if (!oauth || !moderation || moderation.userDid !== oauth.did || !pages?.length || pages.every(page => decoratedPages.has(page))) return;
+    const controller = new AbortController();
+    // Yield to the first content frame before optional upstream decoration.
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const hydratedPages: BlueskySocialPage[] = [];
+        for (const page of pages) {
+          controller.signal.throwIfAborted();
+          if (decoratedPages.has(page)) { hydratedPages.push(page); continue; }
+          const hydrated = await hydrateBlueskySocialPage(oauth, page, controller.signal, moderation);
+          decoratedPages.add(hydrated);
+          hydratedPages.push(hydrated);
+        }
+        return hydratedPages;
+      })().then(hydrated => {
+        if (controller.signal.aborted || getOAuthSession() !== oauth) return;
+        client.setQueryData<InfiniteData<BlueskySocialPage>>(key, current =>
+          current?.pages === pages ? { ...current, pages: hydrated } : current);
+      }).catch(() => { /* Keep moderated posts when optional reply context is unavailable. */ });
+    }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+    // The key follows the same pages; decoration must not restart on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pages, client, getOAuthSession, moderation]);
+  const refreshFirstPage = async (freshModeration = moderation) => {
+    const oauth = getOAuthSession();
+    if (!oauth || !freshModeration || freshModeration.userDid !== oauth.did) throw new Error(SCOPE_RECOVERY_MESSAGE);
+    const freshKey = ["blueskySocial", oauth.did, "timeline", oauthSessionReloadSeq, feed.kind, feed.uri, freshModeration.prefs.labelers.map(labeler => labeler.did)];
+    const page = await coalesceFeedFirstPage(client, oauth, freshKey, () => getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true }));
+    if (getOAuthSession() !== oauth) return;
+    client.setQueryData<InfiniteData<BlueskySocialPage>>(freshKey, { pages: [page], pageParams: [undefined] });
+  };
+  return { ...query, refreshFirstPage };
 }
+
+const decoratedPages = new WeakSet<BlueskySocialPage>();

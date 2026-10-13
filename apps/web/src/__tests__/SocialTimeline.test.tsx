@@ -35,7 +35,8 @@ beforeEach(() => {
   params = new URLSearchParams();
   signIn.mockClear();
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
-  const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did }) as unknown as OAuthSession, oauthSessionReloadSeq: 0, signIn } as unknown as ReturnType<typeof Auth.useAuth>);
+  const oauth = { did } as unknown as OAuthSession;
+  const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => oauth, oauthSessionReloadSeq: 0, signIn } as unknown as ReturnType<typeof Auth.useAuth>);
   const search = spyOn(Navigation, "useSearchParams").mockImplementation(() => params as ReturnType<typeof Navigation.useSearchParams>);
   const router = spyOn(Navigation, "useRouter").mockReturnValue({ push: mock(() => {}), replace: mock(() => {}) } as unknown as ReturnType<typeof Navigation.useRouter>);
   const path = spyOn(Navigation, "usePathname").mockReturnValue("/social");

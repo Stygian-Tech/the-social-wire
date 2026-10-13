@@ -13,7 +13,7 @@ import (
 )
 
 func (r Routes) registerSports(mux *http.ServeMux) {
-	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSports", r.sportsFeed)
+	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSports", r.observeFeed("sports", r.sportsFeed))
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSportsCatalog", r.sportsCatalog)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.searchSportsEntities", r.sportsSearch)
 	mux.HandleFunc("GET /xrpc/app.thesocialwire.discovery.getSportsEvents", r.sportsEvents)

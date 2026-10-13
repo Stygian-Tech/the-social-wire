@@ -1,5 +1,7 @@
 "use client";
 
+import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
+
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { useWireEdition } from "@/hooks/useWireEdition";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +19,7 @@ export function WireNewsExperience({
   });
   const pages = edition.data?.pages ?? [];
   const storyCount = pages.reduce((count, page) => count + page.stories.length, 0);
+  useFeedFirstContentTiming("wire", storyCount > 0 && !edition.isError, !edition.isFetchedAfterMount);
 
   if (
     shouldShowEditorialFeedLoading(

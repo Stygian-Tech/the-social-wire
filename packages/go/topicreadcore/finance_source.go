@@ -12,11 +12,11 @@ import (
 )
 
 func (s *FinanceStore) Catalog(ctx context.Context) ([]financecore.Instrument, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT payload::text FROM finance_instruments ORDER BY instrument_id LIMIT 50000`)
+	rows, closeRows, err := corpuscore.QueryRows(ctx, s.DB, `SELECT payload::text FROM finance_instruments ORDER BY instrument_id LIMIT 50000`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows()
 	result := []financecore.Instrument{}
 	for rows.Next() {
 		var raw []byte

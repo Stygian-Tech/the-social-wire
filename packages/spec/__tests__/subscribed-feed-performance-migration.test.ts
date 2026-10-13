@@ -16,11 +16,8 @@ const keysetIndexesMigration = readFileSync(
   ),
   "utf8"
 );
-const postgresStore = readFileSync(
-  resolve(
-    import.meta.dir,
-    "../../swift/ThinAppViewCore/Sources/ThinAppViewCore/PostgresThinAppViewStore.swift"
-  ),
+const feedQuery = readFileSync(
+  resolve(import.meta.dir, "../../go/appviewcore/feed_query.go"),
   "utf8"
 );
 
@@ -56,17 +53,27 @@ describe("Subscribed feed performance migration", () => {
       "ON content_items (author_did, publication_site, created_at DESC, uri DESC)"
     );
 
-    const aggregateQuery = postgresStore.slice(
-      postgresStore.indexOf("private func fetchAggregateContentBatch"),
-      postgresStore.indexOf("private func fetchSiteScopedContentBatch")
-    );
-    expect(aggregateQuery).toContain("ci.author_did = ANY");
-    expect(aggregateQuery).toContain("ci.publication_site = ANY");
-    expect(aggregateQuery).toContain("ci.created_at <");
-    expect(aggregateQuery).toContain("ci.uri <");
-    expect(aggregateQuery).toContain(
-      "ORDER BY ci.created_at DESC, ci.uri DESC"
-    );
-    expect(aggregateQuery).not.toContain("contentHtml");
+    const matchingStart = feedQuery.indexOf("matched_content AS (");
+    const matchingEnd = feedQuery.indexOf("%s\n, candidates AS (", matchingStart);
+    expect(matchingStart).toBeGreaterThanOrEqual(0);
+    expect(matchingEnd).toBeGreaterThan(matchingStart);
+    const matchingQuery = feedQuery.slice(matchingStart, matchingEnd);
+    expect(matchingQuery).toContain("ci.author_did = scope.author_did");
+    expect(matchingQuery).toContain("ci.publication_site = scope.scope_key");
+    expect(matchingQuery).toContain("scope.scope_key = ''");
+    expect(matchingQuery).toContain("ci.created_at < $8");
+    expect(matchingQuery).toContain("ci.created_at = $8 AND ci.uri < $9");
+    // Matching/deduplication carries a scalar article identity, never full bodies.
+    expect(matchingQuery).toContain("ci.render_json->>'articleUrl'");
+    expect(matchingQuery).not.toContain("render_json::text");
+    expect(matchingQuery).not.toMatch(/SELECT\s+ci\.\*/);
+
+    const pageStart = feedQuery.indexOf("), page AS (");
+    const pageLimit = feedQuery.indexOf("LIMIT $1", pageStart);
+    const hydration = feedQuery.indexOf("LEFT JOIN content_items rendered ON rendered.uri = page.uri");
+    expect(pageStart).toBeGreaterThan(matchingEnd);
+    expect(pageLimit).toBeGreaterThan(pageStart);
+    expect(hydration).toBeGreaterThan(pageLimit);
+    expect(feedQuery.slice(pageStart, pageLimit)).toContain("ORDER BY created_at DESC, uri DESC");
   });
 });

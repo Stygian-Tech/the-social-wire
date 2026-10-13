@@ -83,7 +83,7 @@ describe("The Wire client", () => {
     expect(requests.every(({ init }) => init?.credentials === "omit")).toBe(true);
   });
 
-  it("sends the dedicated moderation proof pool on authenticated The Wire requests", async () => {
+  it("uses the warm viewer cache without creating upstream proof pools", async () => {
     const proofPool = "preferences,blocks,mutes,list-mutes,list-blocks";
     let pdsNonce = 0;
     const pdsFetchHandler = mock(async () =>
@@ -98,12 +98,10 @@ describe("The Wire client", () => {
       );
       const headers = new Headers(init?.headers);
       if (url.includes("getWireItem")) {
-        expect(headers.get("X-Wire-Moderation-DPoP")?.split(",")).toHaveLength(
-          5,
-        );
+        expect(headers.has("X-Wire-Moderation-DPoP")).toBe(false);
         return Response.json({ item });
       }
-      expect(headers.get("X-Wire-Moderation-DPoP")).toBe(proofPool);
+      expect(headers.has("X-Wire-Moderation-DPoP")).toBe(false);
       return Response.json({
         generationId: "generation-viewer",
         generatedAt: "2026-08-20T12:00:00.000Z",
@@ -153,7 +151,7 @@ describe("The Wire client", () => {
 
     expect(page.generationId).toBe("generation-viewer");
     expect(detail?.item.itemId).toBe(item.itemId);
-    expect(pdsFetchHandler).toHaveBeenCalledTimes(5);
+    expect(pdsFetchHandler).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

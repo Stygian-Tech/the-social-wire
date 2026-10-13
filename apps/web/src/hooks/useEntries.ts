@@ -9,7 +9,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { normalizeAtRepoParam, parseAtUri } from "@/lib/atprotoClient";
+import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import {
   isStandardSiteEntryId,
   resolveEntryOpenUrlFromPds,
@@ -23,7 +23,6 @@ import {
 } from "@/lib/feedCacheMerge";
 import {
   getEntryFromAppView,
-  enrollAuthorsInAppView,
   isThinAppViewEnabled,
   listAggregateFeedFromAppView,
   shouldRetryAppViewRequest,
@@ -35,9 +34,11 @@ import {
   dummyEntryDetail,
   isDummyReaderDataEnabled,
 } from "@/lib/dummyReaderData";
-import { normalizedFeedUrlFromRssPublicationId } from "@/lib/rssFeedCore";
 import { recordClientPerformance } from "@/lib/clientPerformanceTelemetry";
 import { useAuth } from "./useAuth";
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
+import { refreshPublicationFeedFirstPage } from "@/lib/feedRefresh";
+import { useFeedFirstContentTiming } from "./useFeedFirstContentTiming";
 
 export type { EntryListItem, EntryDetail };
 
@@ -155,7 +156,7 @@ export function useEntries(
       }
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
-      return fetchEntriesInfinitePage({
+      const fetchPage = () => fetchEntriesInfinitePage({
         normalizedPublicationKey: normalizedKey,
         pageParam,
         signal,
@@ -164,6 +165,7 @@ export function useEntries(
         articleFilter,
         queryClient,
       });
+      return pageParam ? fetchPage() : coalesceFeedFirstPage(queryClient, oauth, entriesQueryKey, fetchPage);
     },
     initialPageParam: undefined as string | undefined,
     initialData:
@@ -201,6 +203,7 @@ export function useEntries(
     gcTime: 1000 * 60 * 60 * 24,
     retry: shouldRetryAppViewRequest,
   });
+  useFeedFirstContentTiming(paintKey, Boolean(query.data?.pages.some(page => page.entries.length)) && !query.isError, !query.isFetchedAfterMount);
   const { fetchNextPage } = query;
 
   useEffect(() => {
@@ -286,22 +289,11 @@ export function useEntries(
     const oauth = getOAuthSession();
     if (!oauth) return;
 
-    const mergePage = (freshPage: EntriesPage) => {
-      queryClient.setQueryData<InfiniteData<EntriesPage>>(
-        entriesQueryKey,
-        (current) => mergeFeedRefreshForFilter(current, freshPage, articleFilter)
-      );
-    };
     const refreshRestoredCache = async () => {
-      if (query.isFetchedAfterMount) return;
+      if (query.isFetchedAfterMount || Date.now() - (queryClient.getQueryState(entriesQueryKey)?.dataUpdatedAt ?? 0) < ENTRIES_QUERY_STALE_MS) return;
       const refreshStartedAt = performance.now();
       try {
-        const freshPage = await listAggregateFeedFromAppView({
-          feed: { kind: "publication", id: normalizedKey },
-          filter: articleFilter,
-          oauthSession: oauth,
-        });
-        mergePage(freshPage);
+        await refreshPublicationFeedFirstPage({ queryClient, publicationKey: normalizedKey, articleFilter, oauthSession: oauth, viewerDid });
         void recordClientPerformance(oauth, {
           event: "fresh_merge",
           durationMs: performance.now() - refreshStartedAt,
@@ -313,27 +305,9 @@ export function useEntries(
         /* stale cache remains visible */
       }
     };
-    const enrollAndMerge = async () => {
-      const feedUrl = normalizedFeedUrlFromRssPublicationId(normalizedKey);
-      const authorDid = parseAtUri(normalizedKey)?.did
-        ?? (normalizedKey.startsWith("did:") ? normalizedKey : undefined);
-      if (feedUrl) {
-        await enrollAuthorsInAppView(oauth, [], [feedUrl]);
-      } else if (authorDid) {
-        await enrollAuthorsInAppView(oauth, [authorDid]);
-      }
-      const freshPage = await listAggregateFeedFromAppView({
-        feed: { kind: "publication", id: normalizedKey },
-        filter: articleFilter,
-        oauthSession: oauth,
-      });
-      mergePage(freshPage);
-    };
-    void refreshRestoredCache()
-      .then(() => articleFilter === "all" ? enrollAndMerge() : undefined)
-      .catch(() => {
-        /* enrollment and its post-index merge are best effort */
-      });
+    // Ingestion belongs to bootstrap/server refresh. A mounted feed only refreshes
+    // restored data; freshly fetched or streamed pages do not need another read.
+    void refreshRestoredCache();
   }, [
     articleFilter,
     dummyReaderDataEnabled,
@@ -359,12 +333,10 @@ export function useEntries(
     ) {
       return;
     }
-    const run = () => void fetchNextPage();
-    if ("requestIdleCallback" in window) {
-      const handle = window.requestIdleCallback(run, { timeout: 2_000 });
-      return () => window.cancelIdleCallback(handle);
-    }
-    const handle = globalThis.setTimeout(run, 250);
+    // Let active first-page requests and images finish before bounded prefetch.
+    const handle = globalThis.setTimeout(() => {
+      if (document.visibilityState === "visible") void fetchNextPage();
+    }, 8_000);
     return () => globalThis.clearTimeout(handle);
   }, [
     articleFilter,
@@ -375,7 +347,11 @@ export function useEntries(
     query.isPlaceholderData,
   ]);
 
-  return { ...query, scopePending: false };
+  return { ...query, refetch: async () => {
+    const oauth = getOAuthSession();
+    if (!oauth || !normalizedKey) return false;
+    return refreshPublicationFeedFirstPage({ queryClient, publicationKey: normalizedKey, articleFilter, oauthSession: oauth, viewerDid, allowCacheMiss: true });
+  }, scopePending: false };
 }
 
 export function useAggregateFeedEntries(
@@ -413,13 +389,14 @@ export function useAggregateFeedEntries(
       }
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
-      const page = await listAggregateFeedFromAppView({
+      const fetchPage = () => listAggregateFeedFromAppView({
         feed,
         cursor: pageParam,
         filter: articleFilter,
         oauthSession: oauth,
         signal,
       });
+      const page = await (pageParam ? fetchPage() : coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, fetchPage));
       // A successful first page means the server has prepared list publication metadata.
       if (feed.kind === "list" && !pageParam && !signal.aborted && getOAuthSession() === oauth) {
         const resolvedListQuery = {
@@ -468,6 +445,7 @@ export function useAggregateFeedEntries(
     gcTime: 1000 * 60 * 60 * 24,
     retry: shouldRetryAppViewRequest,
   });
+  useFeedFirstContentTiming(paintKey, Boolean(query.data?.pages.some(page => page.entries.length)) && !query.isError, !query.isFetchedAfterMount);
   const { fetchNextPage } = query;
 
   useEffect(() => {
@@ -530,7 +508,8 @@ export function useAggregateFeedEntries(
       !viewerDid ||
       !query.data?.pages.length ||
       query.isPlaceholderData ||
-      query.isFetchedAfterMount
+      query.isFetchedAfterMount ||
+      Date.now() - queryClient.getQueryState(aggregateQueryKey)!.dataUpdatedAt < ENTRIES_QUERY_STALE_MS
     ) {
       return;
     }
@@ -540,11 +519,11 @@ export function useAggregateFeedEntries(
     const oauth = getOAuthSession();
     if (!oauth) return;
     const refreshStartedAt = performance.now();
-    void listAggregateFeedFromAppView({
+    void coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, () => listAggregateFeedFromAppView({
       feed,
       filter: articleFilter,
       oauthSession: oauth,
-    })
+    }))
       .then((freshPage) => {
         queryClient.setQueryData<InfiniteData<EntriesPage>>(
           aggregateQueryKey,
@@ -586,12 +565,10 @@ export function useAggregateFeedEntries(
     ) {
       return;
     }
-    const run = () => void fetchNextPage();
-    if ("requestIdleCallback" in window) {
-      const handle = window.requestIdleCallback(run, { timeout: 2_000 });
-      return () => window.cancelIdleCallback(handle);
-    }
-    const handle = globalThis.setTimeout(run, 250);
+    // Let active first-page requests and images finish before bounded prefetch.
+    const handle = globalThis.setTimeout(() => {
+      if (document.visibilityState === "visible") void fetchNextPage();
+    }, 8_000);
     return () => globalThis.clearTimeout(handle);
   }, [
     articleFilter,
@@ -602,7 +579,13 @@ export function useAggregateFeedEntries(
     query.isPlaceholderData,
   ]);
 
-  return query;
+  return { ...query, refetch: async () => {
+    const oauth = getOAuthSession();
+    if (!oauth || !feed) return;
+    const fresh = await coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, () => listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: oauth }));
+    if (getOAuthSession() !== oauth) return;
+    queryClient.setQueryData<InfiniteData<EntriesPage>>(aggregateQueryKey, current => mergeFeedRefreshForFilter(current, fresh, articleFilter));
+  } };
 }
 
 /**

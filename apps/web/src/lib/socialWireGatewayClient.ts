@@ -86,7 +86,8 @@ function enqueueForGatewayOrigin<T>(origin: string, task: () => Promise<T>): Pro
 export async function gatewayFetch(
   oauthSession: OAuthSession,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  prepareProofPool?: () => Promise<Readonly<Record<string, string>>>
 ): Promise<Response> {
   const run = async () => {
     const gatewayPath = path.startsWith("/") ? path : `/${path}`;
@@ -94,13 +95,14 @@ export async function gatewayFetch(
       init?.method ?? "GET",
       gatewayPath
     );
-    const ceremonyLimit = upstream ? 2 : 1;
+    const prepared = Boolean(upstream || prepareProofPool);
+    const ceremonyLimit = prepared ? 2 : 1;
 
     for (let ceremony = 0; ceremony < ceremonyLimit; ceremony += 1) {
       const upstreamHeaders: Record<string, string> = {};
       let attestationReceipt: string | undefined;
 
-      if (upstream) {
+      if (prepared) {
         // Obtain a portable, short-lived attestation receipt before advancing
         // the PDS nonce chain for the route-specific proof.
         const preflightProof = await createPdsSessionAttestationProof(oauthSession);
@@ -114,7 +116,11 @@ export async function gatewayFetch(
         if (!preflight.ok) return preflight;
         attestationReceipt = pdsSessionAttestationReceipt(preflight);
 
-        upstreamHeaders[LATR_UPSTREAM_DPOP_HEADER] =
+        if (prepareProofPool) {
+          Object.assign(upstreamHeaders, await prepareProofPool());
+          upstreamHeaders["X-ATProto-Upstream-DPoP-Prepared"] = "true";
+        }
+        if (upstream) upstreamHeaders[LATR_UPSTREAM_DPOP_HEADER] =
           await createUpstreamDpopProof(
             oauthSession,
             upstream.xrpcMethod,
@@ -134,7 +140,7 @@ export async function gatewayFetch(
         attestationReceipt
       );
       if (
-        upstream &&
+        prepared &&
         ceremony + 1 < ceremonyLimit &&
         shouldRefreshPdsSessionAttestation(response)
       ) {

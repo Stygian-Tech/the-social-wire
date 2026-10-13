@@ -1,3 +1,4 @@
+import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 import {
@@ -14,7 +15,7 @@ import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
-import { mergeFeedFirstPageRefresh } from "@/lib/feedCacheMerge";
+import { mergeFeedRefreshForFilter } from "@/lib/feedCacheMerge";
 
 export { mergeFeedFirstPageRefresh } from "@/lib/feedCacheMerge";
 
@@ -57,7 +58,7 @@ export async function refreshPublicationUnreadCount(args: {
   }
 }
 
-export async function refreshPublicationFeedFirstPage(args: {
+type FeedRefreshArgs = {
   queryClient: QueryClient;
   publicationKey: string;
   articleFilter?: ArticleListFilter;
@@ -68,7 +69,27 @@ export async function refreshPublicationFeedFirstPage(args: {
   signal?: AbortSignal;
   /** Bootstrap recovery may fetch an absent cache through the normal query. */
   allowCacheMiss?: boolean;
-}): Promise<boolean> {
+};
+
+const inFlightRefreshes = new WeakMap<QueryClient, WeakMap<object, Map<string, Promise<boolean>>>>();
+
+/** Focus, visibility and bootstrap callers share one refresh for a viewer/scope. */
+export function refreshPublicationFeedFirstPage(args: FeedRefreshArgs): Promise<boolean> {
+  let sessions = inFlightRefreshes.get(args.queryClient);
+  if (!sessions) { sessions = new WeakMap(); inFlightRefreshes.set(args.queryClient, sessions); }
+  let pending = sessions.get(args.oauthSession);
+  if (!pending) { pending = new Map(); sessions.set(args.oauthSession, pending); }
+  const key = JSON.stringify([args.viewerDid, normalizeAtRepoParam(args.publicationKey), args.articleFilter ?? "all", args.allowCacheMiss ?? false]);
+  const existing = pending.get(key);
+  if (existing) return existing;
+  const task = performPublicationFeedRefresh({ ...args, publicationKey: normalizeAtRepoParam(args.publicationKey) }).finally(() => {
+    if (pending.get(key) === task) pending.delete(key);
+  });
+  pending.set(key, task);
+  return task;
+}
+
+async function performPublicationFeedRefresh(args: FeedRefreshArgs): Promise<boolean> {
   const {
     queryClient,
     publicationKey,
@@ -109,7 +130,7 @@ export async function refreshPublicationFeedFirstPage(args: {
     return true;
   }
 
-  const freshPage = await fetchEntriesInfinitePage({
+  const freshPage = await coalesceFeedFirstPage(queryClient, oauthSession, queryKey, () => fetchEntriesInfinitePage({
     normalizedPublicationKey: publicationKey,
     pageParam: undefined,
     signal,
@@ -118,10 +139,10 @@ export async function refreshPublicationFeedFirstPage(args: {
     articleFilter,
     queryClient,
     skipEnroll,
-  });
+  }));
 
   queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, (current) =>
-    mergeFeedFirstPageRefresh(current, freshPage)
+    mergeFeedRefreshForFilter(current, freshPage, articleFilter)
   );
 
   if (viewerDid) {

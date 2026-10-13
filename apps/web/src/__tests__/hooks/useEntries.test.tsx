@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import React from "react";
 import { useEntries, useEntry, useAggregateFeedEntries } from "@/hooks/useEntries";
@@ -198,7 +198,7 @@ describe("useEntries", () => {
     expect(mockFetchHandler.mock.calls.map(([url]) => url)).toEqual([]);
   });
 
-  it("keeps cached rows visible while refreshing on remount", async () => {
+  it("keeps fresh cached rows visible without redundant refresh or enroll on remount", async () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -253,26 +253,8 @@ describe("useEntries", () => {
         "all",
       ])
     ).toBeDefined();
-    await waitFor(() =>
-      expect(
-        mockFetchHandler.mock.calls.some(([url]) =>
-          String(url).includes("/xrpc/app.thesocialwire.appview.getFeed")
-        )
-      ).toBe(true)
-    );
-    await waitFor(() =>
-      expect(
-        mockFetchHandler.mock.calls.some(([url]) =>
-          String(url).includes("/xrpc/app.thesocialwire.appview.enrollSources")
-        )
-      ).toBe(true)
-    );
-    const requestPaths = mockFetchHandler.mock.calls.map(([url]) => String(url));
-    expect(
-      requestPaths.findIndex((url) => url.includes("/xrpc/app.thesocialwire.appview.getFeed"))
-    ).toBeLessThan(
-      requestPaths.findIndex((url) => url.includes("/xrpc/app.thesocialwire.appview.enrollSources"))
-    );
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    expect(mockFetchHandler.mock.calls.filter(([url]) => /getFeed|enrollSources/.test(String(url)))).toHaveLength(0);
   });
 
   it("returns empty pages when publicationKey is null", async () => {

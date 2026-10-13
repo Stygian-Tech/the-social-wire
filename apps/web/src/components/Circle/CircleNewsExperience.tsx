@@ -1,5 +1,7 @@
 "use client";
 
+import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
+
 import { attachFloatingGlassControlsOverlay } from "@/components/shared/floatingGlassScrollOverlay";
 
 import { useMemo } from "react";
@@ -103,6 +105,7 @@ export function CircleNewsExperience({
   const edition = useCircleEdition({ enabled: true });
   const pages = edition.data?.pages ?? EMPTY_CIRCLE_PAGES;
   const storyCount = pages.reduce((count, page) => count + page.stories.length, 0);
+  useFeedFirstContentTiming("circle", storyCount > 0 && !edition.isError, !edition.isFetchedAfterMount);
   const layoutPages = useMemo(
     () => pages.map(circlePageForWireLayout),
     [pages],

@@ -4,6 +4,51 @@ import Testing
 
 @Suite("ATProto session DPoP")
 struct ATProtoSessionDPoPTests {
+    @Test("Cancelled nonce-sequence waiters never dispatch or strand later callers")
+    @MainActor
+    func cancelledNonceSequenceWaiter() async throws {
+        let service = DPoPService(), url = URL(string: "https://pds.example")!
+        let (gate, continuation) = AsyncStream<Void>.makeStream()
+        var events: [String] = []
+        let owner = Task {
+            try await service.withNonceSequence(for: url) {
+                events.append("owner")
+                for await _ in gate { break }
+                events.append("released")
+            }
+        }
+        while events.isEmpty { await Task.yield() }
+        let cancelled = Task {
+            try await service.withNonceSequence(for: url) { events.append("cancelled") }
+        }
+        await Task.yield()
+        cancelled.cancel()
+        await #expect(throws: CancellationError.self) { try await cancelled.value }
+        continuation.yield(()); continuation.finish()
+        try await owner.value
+        try await service.withNonceSequence(for: url) { events.append("next") }
+        #expect(events == ["owner", "released", "next"])
+    }
+
+    @Test("Independent PDS origins do not share a nonce-sequence lease")
+    @MainActor
+    func nonceSequencesAreOriginScoped() async throws {
+        let service = DPoPService()
+        let (gate, continuation) = AsyncStream<Void>.makeStream()
+        var ownerEntered = false
+        let owner = Task {
+            try await service.withNonceSequence(for: URL(string: "https://pds.example:8443")!) {
+                ownerEntered = true
+                for await _ in gate { break }
+            }
+        }
+        while !ownerEntered { await Task.yield() }
+        let other = try await service.withNonceSequence(for: URL(string: "https://pds.example:9443")!) { "independent" }
+        #expect(other == "independent")
+        continuation.yield(()); continuation.finish()
+        try await owner.value
+    }
+
     @Test("session proof targets getSession with token binding and the PDS nonce")
     func sessionProofTargetsGetSession() async throws {
         let service = DPoPService()
