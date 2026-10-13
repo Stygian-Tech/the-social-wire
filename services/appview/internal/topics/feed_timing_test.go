@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/topicreadcore"
 )
 
@@ -77,5 +78,18 @@ func TestFeedTimingAcceptsFixedSourceAndCatalogPhasesOnly(t *testing.T) {
 	}
 	if strings.Contains(timings, "viewer-private") {
 		t.Fatal(timings)
+	}
+}
+
+func TestFeedTimingPropagatesBoundedSourceCorrelation(t *testing.T) {
+	for _, id := range []string{"request-123", "did:plc:viewer", strings.Repeat("a", 129)} {
+		handler := Routes{}.observeFeed("sports", func(w http.ResponseWriter, req *http.Request) {
+			if got := corpuscore.SourceRequestID(req.Context()); got != corpuscore.ValidSourceRequestID(id) {
+				t.Fatal(got)
+			}
+		})
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("X-Request-ID", id)
+		handler(httptest.NewRecorder(), req)
 	}
 }
