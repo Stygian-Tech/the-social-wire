@@ -1,7 +1,7 @@
 import { AppBskyRichtextFacet, RichText, type ChatBskyConvoDefs } from "@atproto/api";
 import type { ReactNode } from "react";
-import Link from "next/link";
-import { socialProfilePageHref, isSocialProfileActor } from "@/lib/socialProfileNavigation";
+import { isSocialProfileActor } from "@/lib/socialProfileNavigation";
+import { SocialMentionLink } from "./SocialMentionLink";
 import { socialHttpsUrl } from "./socialUrls";
 
 export function SocialChatRichText({ message }: { message: Pick<ChatBskyConvoDefs.MessageView, "text" | "facets"> }) {
@@ -25,7 +25,7 @@ export function SocialChatRichText({ message }: { message: Pick<ChatBskyConvoDef
       const href = socialHttpsUrl(feature.uri);
       return href ? <a key={index} href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">{segment.text}</a> : <span key={index}>{segment.text}</span>;
     }
-    if (AppBskyRichtextFacet.isMention(feature) && isSocialProfileActor(feature.did)) return <Link key={index} href={socialProfilePageHref(feature.did)} className="text-primary underline hover:no-underline">{segment.text}</Link>;
+    if (AppBskyRichtextFacet.isMention(feature) && isSocialProfileActor(feature.did)) return <SocialMentionLink key={index} actor={feature.did} className="text-primary underline hover:no-underline">{segment.text}</SocialMentionLink>;
     return <span key={index}>{links(segment.text)}</span>;
   })}</p>;
 }
