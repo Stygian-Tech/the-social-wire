@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
+	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ type SportsStore struct {
 	Remote           corpuscore.Store
 	Cursor           *TopicCursorCodec
 	Hasher           *wirecore.ActorHasher
+	snapshots        *decodedSnapshotCache[sportscore.RankCandidate]
 	mu               sync.Mutex
 	importedRevision string
 	lastRetention    time.Time
