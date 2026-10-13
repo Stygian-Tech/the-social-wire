@@ -102,7 +102,8 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 		t.Fatal(next, err)
 	}
 	// Continuation revalidates catalog metadata and reuses the decoded payload.
-	if fixture.batchCalls != 2 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 || dbPhases["catalog-metadata"] != 2 || dbPhases["catalog-cache-hit"] != 1 {
+	// The edited first candidate is rejected; the bounded refill hydrates its successor.
+	if fixture.batchCalls != 3 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 1 || dbPhases["db-query"] != 1 || dbPhases["catalog-metadata"] != 2 || dbPhases["catalog-cache-hit"] != 1 {
 		t.Fatal("continuation batch budget", fixture.batchCalls, fixture.itemCalls)
 	}
 	var beforeVersion, afterVersion string
@@ -115,7 +116,7 @@ func TestFinancePostgresContinuationLiveEditsAndViewerBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	repeated, err := store.Page(ctx, "", 1, "en", "", false, now, "finance", false)
-	if err != nil || repeated.GenerationID != page.GenerationID || len(repeated.Items) != 1 || repeated.Items[0].Story.ItemID != page.Items[0].Story.ItemID || dbPhases["snapshot-persistence"] != 1 || dbPhases["snapshot-lookup"] != 2 || dbPhases["analysis"] != 4 || fixture.batchCalls != 3 {
+	if err != nil || repeated.GenerationID != page.GenerationID || len(repeated.Items) != 1 || repeated.Items[0].Story.ItemID != page.Items[0].Story.ItemID || dbPhases["snapshot-persistence"] != 1 || dbPhases["snapshot-lookup"] != 2 || dbPhases["analysis"] != 5 || fixture.batchCalls != 4 {
 		t.Fatal("warm snapshot reuse", repeated, err, dbPhases, fixture.batchCalls)
 	}
 	if err = db.QueryRow(`SELECT xmin::text FROM finance_personalized_snapshots WHERE snapshot_id=$1::uuid`, page.GenerationID).Scan(&afterVersion); err != nil || beforeVersion != afterVersion {

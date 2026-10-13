@@ -145,8 +145,12 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 		return SportsPage{}, ErrInvalidCursor
 	}
 	accepted := []SportsItem{}
+	// Hydrate only the requested first page; filtered pages refill in bounded
+	// full batches so rejection does not create one request per missing story.
+	batchSize := min(limit, corpuscore.MaximumBatchItems)
 	for ordinal < len(snapshot.Candidates) && len(accepted) < limit {
-		end := min(ordinal+corpuscore.MaximumBatchItems, len(snapshot.Candidates))
+		end := min(ordinal+batchSize, len(snapshot.Candidates))
+		batchSize = corpuscore.MaximumBatchItems
 		batch := snapshot.Candidates[ordinal:end]
 		ids := make([]string, 0, len(batch))
 		seen := map[string]bool{}

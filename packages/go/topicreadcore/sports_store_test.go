@@ -63,7 +63,8 @@ func TestSportsPostgresSnapshotLiveChangesAndResolverGate(t *testing.T) {
 	if err != nil || len(next.Items) != 1 || next.Items[0].Story.ItemID != "z" || next.Cursor != nil {
 		t.Fatal(next, err)
 	}
-	if fixture.batchCalls != 2 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 2 || dbPhases["db-query"] != 2 {
+	// The edited first candidate is rejected; the bounded refill hydrates its successor.
+	if fixture.batchCalls != 3 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 2 || dbPhases["db-query"] != 2 {
 		t.Fatal("continuation batch budget", fixture.batchCalls, fixture.itemCalls)
 	}
 	var beforeVersion, afterVersion string
@@ -76,7 +77,7 @@ func TestSportsPostgresSnapshotLiveChangesAndResolverGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	repeated, err := s.Page(ctx, "", 1, "en", "", false, now, "sports", nil)
-	if err != nil || repeated.GenerationID != page.GenerationID || len(repeated.Items) != 1 || repeated.Items[0].Story.ItemID != page.Items[0].Story.ItemID || dbPhases["snapshot-persistence"] != 1 || dbPhases["snapshot-lookup"] != 2 || dbPhases["analysis"] != 4 || fixture.batchCalls != 3 {
+	if err != nil || repeated.GenerationID != page.GenerationID || len(repeated.Items) != 1 || repeated.Items[0].Story.ItemID != page.Items[0].Story.ItemID || dbPhases["snapshot-persistence"] != 1 || dbPhases["snapshot-lookup"] != 2 || dbPhases["analysis"] != 5 || fixture.batchCalls != 4 {
 		t.Fatal("warm snapshot reuse", repeated, err, dbPhases, fixture.batchCalls)
 	}
 	if err = db.QueryRow(`SELECT xmin::text FROM sports_personalized_snapshots WHERE snapshot_id=$1::uuid`, page.GenerationID).Scan(&afterVersion); err != nil || beforeVersion != afterVersion {
