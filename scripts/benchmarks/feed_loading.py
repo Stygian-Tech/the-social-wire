@@ -98,6 +98,8 @@ def main():
         _, cursor = probe(args.origin, args.feed)
         if not cursor:
             parser.error("feed has no continuation; no pagination measurements were recorded")
+        # The seed uses the same anonymous limiter as measured requests.
+        time.sleep(args.interval)
     for index in range(args.samples):
         sample, _ = probe(args.origin, args.feed, cursor)
         samples.append(sample)
