@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -32,6 +33,9 @@ var uuidPattern = regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]
 var actorPattern = regexp.MustCompile(`^h1:[a-f0-9]{64}$`)
 
 func (c *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if id := corpuscore.ValidSourceRequestID(r.Header.Get("X-Request-ID")); id != "" {
+		w.Header().Set("X-Request-ID", id)
+	}
 	now := c.Now()
 	ctx := r.Context()
 	path := r.URL.Path
@@ -379,6 +383,16 @@ func writeJSON(w http.ResponseWriter, status int, value any, contract bool) {
 	if err != nil {
 		respondStatus(w, 500)
 		return
+	}
+	family, candidates, catalog := "", 0, 0
+	switch generation := value.(type) {
+	case corpuscore.FinanceGeneration:
+		family, candidates, catalog = "finance", len(generation.Candidates), len(generation.Instruments)
+	case corpuscore.SportsGeneration:
+		family, candidates, catalog = "sports", len(generation.Candidates), len(generation.Entities)
+	}
+	if family != "" {
+		slog.Info("Corpus source response serialized", "request_id", corpuscore.ValidSourceRequestID(w.Header().Get("X-Request-ID")), "family", family, "status", status, "bytes", len(body), "candidate_count", candidates, "catalog_count", catalog)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
