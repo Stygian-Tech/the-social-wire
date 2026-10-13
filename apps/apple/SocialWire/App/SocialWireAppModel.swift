@@ -190,6 +190,7 @@ final class SocialWireAppModel {
     init(
         authService: ATProtoOAuthService = ATProtoOAuthService(),
         gatewayTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
+        gatewayURLSession: URLSession = .shared,
         xrpcTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
     ) {
         self.authService = authService
@@ -203,7 +204,7 @@ final class SocialWireAppModel {
         sembleRecords = SembleRecordService(xrpc: xrpc)
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
-        gateway = SocialWireGatewayClient(auth: authService, transport: gatewayTransport)
+        gateway = SocialWireGatewayClient(auth: authService, urlSession: gatewayURLSession, transport: gatewayTransport)
         podcasts = PodcastLibraryModel(gateway: gateway, xrpc: xrpc)
         sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
         standardReaderLists = StandardReaderListsModel(gateway: gateway, xrpc: xrpc)

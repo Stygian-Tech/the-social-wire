@@ -85,9 +85,11 @@ final class NewsShellSmokeUITests: XCTestCase {
         guard dismissPicker("Finance Feeds", in: app) else { return }
 
         selectDestination("Sports", in: app)
+        XCTAssertTrue(app.staticTexts["Fixture Football Story"].waitForExistence(timeout: 5))
         let sportsPicker = app.buttons["sports-feed-picker"]
         XCTAssertTrue(sportsPicker.waitForExistence(timeout: 5))
         sportsPicker.tap()
+        XCTAssertTrue(app.buttons["Football"].waitForExistence(timeout: 5))
         guard dismissPicker("Sports Feeds", in: app) else { return }
 
         selectDestination("Subscribed", in: app)
@@ -423,12 +425,12 @@ final class NewsShellSmokeUITests: XCTestCase {
     }
 
     private func ageButton(days: Int, in app: XCUIApplication) -> XCUIElement {
-        let identified = app.buttons["mark-read-age-\(days)"]
-        if identified.exists {
-            return identified
-        }
-        return app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", days == 7 ? "1 Week" : days == 1 ? "1 Day" : "\(days) Days")
+        // Keep both representations in one live query while the menu appears.
+        // Choosing a fallback before presentation can strand the wait on a stale query.
+        app.buttons.matching(
+            NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@",
+                        "mark-read-age-\(days)",
+                        days == 7 ? "1 Week" : days == 1 ? "1 Day" : "\(days) Days")
         ).firstMatch
     }
 
