@@ -8,13 +8,13 @@ export type SocialExplorePage = { posts: AppBskyFeedDefs.PostView[]; actors: App
 export type SocialNotification = AppBskyNotificationListNotifications.Notification;
 export type SocialNotificationPage = { notifications: SocialNotification[]; posts: AppBskyFeedDefs.PostView[]; unavailablePostUris?: string[]; cursor?: string; seenAt?: string };
 
-/** Use the loaded unread boundary, allowing equivalent RFC 3339 formats. */
+/** AppView reads notifications strictly before seenAt; include the newest loaded millisecond. */
 export function notificationReadBoundary(notifications: readonly SocialNotification[]): string | undefined {
   let latest = -Infinity;
   for (const notification of notifications) {
     if (!notification.isRead) latest = Math.max(latest, Date.parse(notification.indexedAt));
   }
-  return Number.isFinite(latest) ? new Date(latest).toISOString() : undefined;
+  return Number.isFinite(latest) ? new Date(latest + 1).toISOString() : undefined;
 }
 
 function agentFor(session: OAuthSession, moderation: ModerationOpts) {

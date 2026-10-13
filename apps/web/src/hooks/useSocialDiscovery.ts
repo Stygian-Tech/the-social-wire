@@ -71,7 +71,7 @@ export function useMarkSocialNotificationsSeen() {
       return { did: oauth.did, seenAt };
     },
     onSuccess: async ({ did, seenAt }) => {
-      queryClient.setQueriesData<InfiniteData<SocialNotificationPage>>({ queryKey: ["blueskySocial", did, "notifications"] }, current => current ? { ...current, pages: current.pages.map(page => ({ ...page, notifications: page.notifications.map(notification => Date.parse(notification.indexedAt) <= Date.parse(seenAt) ? { ...notification, isRead: true } : notification) })) } : current);
+      queryClient.setQueriesData<InfiniteData<SocialNotificationPage>>({ queryKey: ["blueskySocial", did, "notifications"] }, current => current ? { ...current, pages: current.pages.map(page => ({ ...page, notifications: page.notifications.map(notification => Date.parse(notification.indexedAt) < Date.parse(seenAt) ? { ...notification, isRead: true } : notification) })) } : current);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["blueskySocial", did, "notificationUnread"] }),
         queryClient.invalidateQueries({ queryKey: ["blueskySocial", did, "notifications"] }),
