@@ -54,12 +54,18 @@ func (s *SportsStore) persist(ctx context.Context, proposal, source corpuscore.S
 	}
 	if s.Remote != nil || provenance == "simplified_fallback" {
 		s.purgeIfDue(ctx, now)
-		raw, err := corpuscore.MarshalHTTP(source.Candidates)
-		if err != nil {
+		var exists bool
+		if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sports_generations WHERE generation_id=$1::uuid)`, source.GenerationID).Scan(&exists); err != nil {
 			return corpuscore.SportsGeneration{}, err
 		}
-		if _, err = s.DB.ExecContext(ctx, `INSERT INTO sports_generations(generation_id,source_generation_id,language,algorithm_version,generated_at,expires_at,payload,serving_source)VALUES($1::uuid,$1::uuid,$2,'sports-v1',$3,$4,$5::jsonb,$6) ON CONFLICT(generation_id)DO NOTHING`, source.GenerationID, proposal.Language, proposal.GeneratedAt, proposal.ExpiresAt, raw, provenance); err != nil {
-			return corpuscore.SportsGeneration{}, err
+		if !exists {
+			raw, err := corpuscore.MarshalHTTP(source.Candidates)
+			if err != nil {
+				return corpuscore.SportsGeneration{}, err
+			}
+			if _, err = s.DB.ExecContext(ctx, `INSERT INTO sports_generations(generation_id,source_generation_id,language,algorithm_version,generated_at,expires_at,payload,serving_source)VALUES($1::uuid,$1::uuid,$2,'sports-v1',$3,$4,$5::jsonb,$6) ON CONFLICT(generation_id)DO NOTHING`, source.GenerationID, proposal.Language, proposal.GeneratedAt, proposal.ExpiresAt, raw, provenance); err != nil {
+				return corpuscore.SportsGeneration{}, err
+			}
 		}
 	}
 	value := corpuscore.SportsGeneration{Language: proposal.Language}

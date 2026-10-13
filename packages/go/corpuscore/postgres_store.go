@@ -15,10 +15,13 @@ import (
 )
 
 type PostgreSQLStore struct {
-	DB                       *sql.DB
-	Cache                    *PayloadCache
-	sportsCatalogMu          sync.Mutex
-	sportsSourceCatalogCache *sportsCatalogCache
+	DB                        *sql.DB
+	Cache                     *PayloadCache
+	financeSourceMu           sync.Mutex
+	financeValidated          *financeValidatedGeneration
+	sportsCatalogMu           sync.Mutex
+	sportsSourceCatalogCache  *sportsCatalogCache
+	sportsValidatedGeneration *sportsValidatedGeneration
 }
 
 var _ Store = (*PostgreSQLStore)(nil)
