@@ -261,7 +261,9 @@ func SportsSourceGeneration(out SportsSourceResponse) SportsGeneration {
 
 	if out.Candidates != nil {
 		for _, c := range *out.Candidates {
-			value.Candidates = append(value.Candidates, sportscore.RankCandidate{Item: wirecore.FeedItem{ItemID: c.ItemID, CanonicalURL: c.CanonicalURL, Title: c.Title, PublishedAt: c.PublishedAt, Source: wirecore.ItemSource{Domain: c.Domain}}, Analysis: c.Analysis, BaseScore: c.BaseScore, MajorGlobal: c.MajorGlobal, PresentationFingerprint: c.PresentationFingerprint})
+			// These presentation collections are deliberately absent from the lean
+			// source, but persisted FeedItem contracts require arrays rather than null.
+			value.Candidates = append(value.Candidates, sportscore.RankCandidate{Item: wirecore.FeedItem{ItemID: c.ItemID, CanonicalURL: c.CanonicalURL, Title: c.Title, PublishedAt: c.PublishedAt, Source: wirecore.ItemSource{Domain: c.Domain}, Reasons: []wirecore.ReasonCode{}, Provenance: []string{}}, Analysis: c.Analysis, BaseScore: c.BaseScore, MajorGlobal: c.MajorGlobal, PresentationFingerprint: c.PresentationFingerprint})
 		}
 	}
 	return value
