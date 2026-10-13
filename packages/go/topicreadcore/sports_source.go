@@ -4,8 +4,10 @@ import (
 	"context"
 	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
 	"github.com/stygian-tech/the-social-wire/packages/go/sportscore"
+	"golang.org/x/sync/errgroup"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -123,7 +125,7 @@ func (s *SportsStore) source(ctx context.Context, lang string, now time.Time) (c
 		if remote, ok := s.Remote.(corpuscore.SportsSourceStore); ok {
 			var response corpuscore.SportsSourceResponse
 			lean = true
-			response, err = remote.SportsSource(ctx, corpuscore.SportsSourceRequest{Language: lang}, now)
+			response, err = s.loadLeanSource(ctx, remote, lang, now)
 			if err == nil {
 				value = corpuscore.SportsSourceGeneration(response)
 				err = s.requireSourceCatalog(ctx, value)
@@ -228,4 +230,48 @@ func (s *SportsStore) fallback(ctx context.Context, lang string, now time.Time) 
 	}
 	provenance := "simplified_fallback"
 	return corpuscore.SportsGeneration{GenerationID: newID(), GeneratedAt: now, ExpiresAt: now.Add(48 * time.Hour), Language: lang, Candidates: candidates, Source: &provenance}, nil
+}
+
+// Only the initial lean-source request overlaps canonical local catalog loading.
+// Both jobs remain request-scoped and join before exact remote catalog proof is
+// checked, so failures cannot leave work or phase callbacks behind the response.
+func (s *SportsStore) loadLeanSource(ctx context.Context, remote corpuscore.SportsSourceStore, lang string, now time.Time) (corpuscore.SportsSourceResponse, error) {
+	s.catalogMu.Lock()
+	cold := s.catalogCache == nil
+	s.catalogMu.Unlock()
+	if !cold {
+		return remote.SportsSource(ctx, corpuscore.SportsSourceRequest{Language: lang}, now)
+	}
+	feedObserver, queryObserver := feedPhaseObserver(ctx), corpuscore.QueryObserver(ctx)
+	if feedObserver != nil || queryObserver != nil {
+		var observerMu sync.Mutex
+		wrap := func(observer func(string, time.Duration)) func(string, time.Duration) {
+			if observer == nil {
+				return nil
+			}
+			return func(phase string, elapsed time.Duration) {
+				observerMu.Lock()
+				defer observerMu.Unlock()
+				observer(phase, elapsed)
+			}
+		}
+		ctx = WithFeedPhaseObserver(ctx, wrap(feedObserver))
+		ctx = corpuscore.WithQueryObserver(ctx, wrap(queryObserver))
+	}
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	var response corpuscore.SportsSourceResponse
+	group.Go(func() error { _, err := s.Catalog(groupCtx); return err })
+	group.Go(func() error {
+		var err error
+		response, err = remote.SportsSource(groupCtx, corpuscore.SportsSourceRequest{Language: lang}, now)
+		return err
+	})
+	if err := group.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return response, ctx.Err()
+		}
+		return response, err
+	}
+	return response, nil
 }

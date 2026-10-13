@@ -26,6 +26,9 @@ func SportsSelectable(e sportscore.Entity) bool {
 	}
 	return false
 }
+func globalSportsDefinition() SportsDefinition {
+	return SportsDefinition{ID: "sports", Title: "Sports", Kind: "global", EntityIDs: []string{}, Description: "Global sports news, personalized to your interests."}
+}
 func SportsDefinitions(catalog []sportscore.Entity) []SportsDefinition {
 	active := []sportscore.Entity{}
 	for _, e := range catalog {
@@ -34,7 +37,7 @@ func SportsDefinitions(catalog []sportscore.Entity) []SportsDefinition {
 		}
 	}
 	sort.SliceStable(active, func(i, j int) bool { return active[i].Name < active[j].Name })
-	out := []SportsDefinition{{ID: "sports", Title: "Sports", Kind: "global", EntityIDs: []string{}, Description: "Global sports news, personalized to your interests."}}
+	out := []SportsDefinition{globalSportsDefinition()}
 	for _, e := range active {
 		d := SportsDefinition{ID: "entity:" + e.ID, Title: e.Name, Kind: e.Kind, EntityIDs: []string{e.ID}, Description: "Stories matching " + e.Name + "."}
 		if e.GroupPath != nil {
@@ -69,6 +72,9 @@ func (d SportsDefinition) Matches(a sportscore.ArticleAnalysis) bool {
 	return false
 }
 func sportsDefinition(feed string, catalog []sportscore.Entity) (SportsDefinition, bool) {
+	if feed == "sports" {
+		return globalSportsDefinition(), true
+	}
 	for _, d := range SportsDefinitions(catalog) {
 		if d.ID == feed {
 			return d, true
