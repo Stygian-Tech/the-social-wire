@@ -28,7 +28,7 @@ export const SocialPeopleTextField = forwardRef<HTMLTextAreaElement, FieldProps>
   onChange: (event: React.ChangeEvent<HTMLTextAreaElement & HTMLInputElement>) => { setCaret(event.target.selectionStart ?? 0); onValueChange(event.target.value); props.onChange?.(event); },
   onSelect: (event: React.SyntheticEvent<HTMLTextAreaElement & HTMLInputElement>) => { setCaret(event.currentTarget.selectionStart ?? 0); props.onSelect?.(event); },
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement & HTMLInputElement>) => {
-    if (visible && !event.nativeEvent.isComposing && event.keyCode !== 229 && suggestions.current?.keyDown(event.key)) { event.preventDefault(); return; }
+    if (visible && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing && event.keyCode !== 229 && suggestions.current?.keyDown(event.key)) { event.preventDefault(); return; }
     props.onKeyDown?.(event);
   } };
   return <div className={`relative min-w-0 ${recipient ? "w-full" : "flex-1"}`}>

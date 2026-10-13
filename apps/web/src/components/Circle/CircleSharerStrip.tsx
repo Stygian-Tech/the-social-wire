@@ -1,23 +1,9 @@
 import { Avatar } from "@/components/shared/Avatar";
 import type { CircleSharer } from "@/lib/circleFeedClient";
-import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
+import { SocialProfileLink } from "@/components/Social/SocialProfileLink";
 
 const MAX_VISIBLE_SHARERS = 5;
-
-export function publicCircleShareURL(sharer: CircleSharer): string {
-  const match = sharer.sourceUri.match(
-    /^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/([^/?#]+)$/,
-  );
-  if (match) {
-    return `https://bsky.app/profile/${encodeURIComponent(match[1]!)}/post/${encodeURIComponent(match[2]!)}`;
-  }
-  if (sharer.sourceUri.startsWith("at://")) {
-    return `https://pdsls.dev/${sharer.sourceUri}`;
-  }
-  const profile = sharer.identity.handle.trim() || sharer.identity.did;
-  return `https://bsky.app/profile/${encodeURIComponent(profile)}`;
-}
 
 export function CircleSharerStrip({
   sharers,
@@ -45,12 +31,12 @@ export function CircleSharerStrip({
         const name =
           sharer.identity.displayName?.trim() || sharer.identity.handle;
         return (
-          <a
+          <SocialProfileLink
             key={`${sharer.identity.did}:${sharer.sourceUri}`}
-            href={publicCircleShareURL(sharer)}
-            {...outboundLinkProps}
+            actor={sharer.identity.did}
+            returnTo="/read"
             data-source-uri={sharer.sourceUri}
-            aria-label={`Open ${name}'s public share context${sharer.relationship === "one_hop" ? ", one hop away" : ""}`}
+            aria-label={`Open Profile: ${name}${sharer.relationship === "one_hop" ? ", one hop away" : ""}`}
             title={name}
             className="relative -ml-2 inline-flex rounded-full first:ml-0 hover:z-10 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple-border)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={(event) => event.stopPropagation()}
@@ -70,7 +56,7 @@ export function CircleSharerStrip({
                 +1
               </span>
             ) : null}
-          </a>
+          </SocialProfileLink>
         );
       })}
       {overflow > 0 ? (

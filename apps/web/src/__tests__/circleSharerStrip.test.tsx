@@ -3,7 +3,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 
 import {
   CircleSharerStrip,
-  publicCircleShareURL,
 } from "@/components/Circle/CircleSharerStrip";
 import type { CircleSharer } from "@/lib/circleFeedClient";
 
@@ -33,24 +32,21 @@ describe("CircleSharerStrip", () => {
       expect(screen.queryByText(`Person ${index}`)).toBeNull();
       expect(
         screen.getByRole("link", {
-          name: new RegExp(`Open Person ${index}'s public share context`),
+          name: new RegExp(`Open Profile: Person ${index}`),
         }),
       ).toBeDefined();
     }
     expect(screen.getAllByText("+1")).toHaveLength(4);
     expect(links[0]?.getAttribute("href")).toBe(
-      "https://bsky.app/profile/did%3Aplc%3Aperson0/post/post0",
+      "/social/profile?actor=did%3Aplc%3Aperson0&returnTo=%2Fread",
     );
   });
 
-  it("opens the exact public record for non-Bluesky AT Protocol shares", () => {
-    expect(
-      publicCircleShareURL({
+  it("opens the user's profile for non-Bluesky AT Protocol shares", () => {
+    render(<CircleSharerStrip sharers={[{
         ...sharers[0]!,
         sourceUri: "at://did:plc:person0/at.margin.note/note0",
-      }),
-    ).toBe(
-      "https://pdsls.dev/at://did:plc:person0/at.margin.note/note0",
-    );
+      }]} />);
+    expect(screen.getByRole("link").getAttribute("href")).toBe("/social/profile?actor=did%3Aplc%3Aperson0&returnTo=%2Fread");
   });
 });

@@ -46,6 +46,13 @@ describe("Social Markdown", () => {
     expect(element.querySelector("em strong")?.textContent).toBe("bold");
     expect(element.textContent).toBe("both bold italic italic bold bold italic");
   });
+  it("opens profile links from Markdown and native link facets in the profile viewer", () => {
+    const text = "[Alice](https://bsky.app/profile/alice.test) and Bob";
+    const element = documentFor(html(text, [facet(text, "Bob", { $type: "app.bsky.richtext.facet#link", uri: "https://bsky.app/profile/did%3Aplc%3Abob" })]));
+    const links = [...element.querySelectorAll("a")];
+    expect(links.map(link => link.getAttribute("href"))).toEqual(["/social/profile?actor=alice.test&returnTo=%2Fsocial", "/social/profile?actor=did%3Aplc%3Abob&returnTo=%2Fsocial"]);
+    expect(links.every(link => !link.hasAttribute("target"))).toBe(true);
+  });
   it("keeps facet offsets in heading, list and quote blocks", () => {
     const text = "## 🌎 heading\n\n- list\n\n> quote";
     const element = documentFor(html(text, ["heading", "list", "quote"].map(label => facet(text, label, { $type: "app.bsky.richtext.facet#link", uri: `https://example.com/${label}` }))));

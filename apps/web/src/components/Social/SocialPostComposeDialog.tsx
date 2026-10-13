@@ -17,6 +17,7 @@ import { SocialComposePreview } from "./SocialComposePreview";
 import { SocialPeopleTextField } from "./SocialPeopleTextField";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
 import { SocialPostCard } from "./SocialPostCard";
+import { handlePostComposerShortcut } from "@/lib/postComposerShortcut";
 
 type ComposeProps = {
   post: AppBskyFeedDefs.PostView;
@@ -100,7 +101,7 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg" showCloseButton={!pending}>
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription>{quote ? "Quoting" : "Replying To"} {recipient}</DialogDescription>
-        <form className="flex min-w-0 flex-col gap-3" onSubmit={event => { event.preventDefault(); void publish(); }}>
+        <form className="flex min-w-0 flex-col gap-3" onKeyDown={handlePostComposerShortcut} onSubmit={event => { event.preventDefault(); void publish(); }}>
           {quote ? <div className="max-h-48 overflow-y-auto rounded-xl border p-3"><SocialPostCard item={{ post }} moderation={moderation} embedded /></div> : null}
           <label htmlFor={fieldId} className="sr-only">{quote ? "Quote Text" : "Reply Text"}</label>
           <SocialPeopleTextField id={fieldId} autoFocus value={text} disabled={pending} onValueChange={setText} rows={5} placeholder={quote ? "Add a Comment…" : "Write a Reply…"} className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />

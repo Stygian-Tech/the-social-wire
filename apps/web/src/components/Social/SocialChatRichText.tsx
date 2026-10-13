@@ -1,10 +1,14 @@
 import { AppBskyRichtextFacet, RichText, type ChatBskyConvoDefs } from "@atproto/api";
 import type { ReactNode } from "react";
-import { isSocialProfileActor } from "@/lib/socialProfileNavigation";
-import { SocialMentionLink } from "./SocialMentionLink";
+import { isSocialProfileActor, socialProfileActorFromUrl } from "@/lib/socialProfileNavigation";
+import { SocialProfileLink } from "./SocialProfileLink";
 import { socialHttpsUrl } from "./socialUrls";
 
 export function SocialChatRichText({ message }: { message: Pick<ChatBskyConvoDefs.MessageView, "text" | "facets"> }) {
+  function link(href: string, text: string, key: number) {
+    const actor = socialProfileActorFromUrl(href);
+    return actor ? <SocialProfileLink key={key} actor={actor} className="text-primary underline hover:no-underline">{text}</SocialProfileLink> : <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">{text}</a>;
+  }
   function links(text: string): ReactNode[] {
     const nodes: ReactNode[] = [];
     let end = 0;
@@ -13,7 +17,7 @@ export function SocialChatRichText({ message }: { message: Pick<ChatBskyConvoDef
       const value = match[0].replace(/[.,!?;:]+$/, "");
       nodes.push(text.slice(end, index));
       const href = socialHttpsUrl(value);
-      nodes.push(href ? <a key={index} href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">{value}</a> : value);
+      nodes.push(href ? link(href, value, index) : value);
       end = index + value.length;
     }
     nodes.push(text.slice(end));
@@ -23,9 +27,9 @@ export function SocialChatRichText({ message }: { message: Pick<ChatBskyConvoDef
     const feature = segment.facet?.features.find(value => AppBskyRichtextFacet.isLink(value) || AppBskyRichtextFacet.isMention(value));
     if (AppBskyRichtextFacet.isLink(feature)) {
       const href = socialHttpsUrl(feature.uri);
-      return href ? <a key={index} href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">{segment.text}</a> : <span key={index}>{segment.text}</span>;
+      return href ? link(href, segment.text, index) : <span key={index}>{segment.text}</span>;
     }
-    if (AppBskyRichtextFacet.isMention(feature) && isSocialProfileActor(feature.did)) return <SocialMentionLink key={index} actor={feature.did} className="text-primary underline hover:no-underline">{segment.text}</SocialMentionLink>;
+    if (AppBskyRichtextFacet.isMention(feature) && isSocialProfileActor(feature.did)) return <SocialProfileLink key={index} actor={feature.did} className="text-primary underline hover:no-underline">{segment.text}</SocialProfileLink>;
     return <span key={index}>{links(segment.text)}</span>;
   })}</p>;
 }

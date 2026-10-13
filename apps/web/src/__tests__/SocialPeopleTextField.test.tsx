@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
-import { useState } from "react";
+import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
+import { useState, type KeyboardEvent } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SocialPeopleTextField } from "@/components/Social/SocialPeopleTextField";
 import * as auth from "@/hooks/useAuth";
@@ -68,4 +68,19 @@ it("excludes blocked people and stale account moderation from selection", async 
   fireEvent.focus(next); fireEvent.change(next, { target: { value: "al", selectionStart: 2 } });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 250)); });
   expect(screen.queryByRole("option")).toBeNull(); expect(queries).toEqual([]);
+});
+
+it.each(["metaKey", "ctrlKey"] as const)("leaves modified Enter to the composer while mention suggestions are open (%s)", async modifier => {
+  const shortcut = mock((event: KeyboardEvent<HTMLTextAreaElement & HTMLInputElement>) => { void event; });
+  render(<SocialPeopleTextField aria-label="Draft" value="Hi @al" onValueChange={() => {}} onKeyDown={shortcut} />);
+  const input = screen.getByLabelText("Draft");
+  await act(async () => {
+    fireEvent.focus(input);
+    fireEvent.select(input, { target: { selectionStart: 6 } });
+  });
+  await screen.findByRole("option", { name: "Alice @alice.test" });
+  await act(async () => fireEvent.keyDown(input, { key: "Enter", [modifier]: true }));
+  expect(shortcut).toHaveBeenCalledTimes(1);
+  expect(shortcut.mock.calls[0][0].defaultPrevented).toBe(false);
+  expect((input as HTMLTextAreaElement).value).toBe("Hi @al");
 });

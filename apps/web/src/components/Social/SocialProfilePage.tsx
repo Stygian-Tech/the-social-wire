@@ -15,6 +15,7 @@ import { safeSocialPostReturnPath } from "@/lib/socialPostNavigation";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { SocialPermissionRecovery } from "./SocialPermissionRecovery";
+import { SocialFollowButton } from "./SocialFollowButton";
 
 export function SocialProfilePage() {
   const { session } = useAuth();
@@ -44,7 +45,7 @@ function ProfileViewer({ actor, returnTo }: { actor?: string | null; returnTo?: 
     <FeedHeader title="Profile" leading={<Button variant="ghost" size="icon" aria-label="Back" title="Back" onClick={() => router.replace(origin.startsWith("/social/profile") ? "/social" : origin)}><ArrowLeft aria-hidden="true" /></Button>} />
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
       {!isSocialProfileActor(actor) ? <p role="alert" className="p-6">This profile link is invalid.</p> : error ? <div role="alert" className="flex flex-col items-start gap-3 p-6"><p>{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={retry}>Retry</Button>}</div> : !moderation || profile.isPending ? <p role="status" className="p-6">Loading profile…</p> : withheld ? <p className="p-6">Profile withheld by your moderation settings.</p> : value ? <>
-        <ProfileHeader viewer={{ ...value, displayName: blocked(identity) ? "Account" : value.displayName, handle: blocked(identity) ? undefined : value.handle, description: blocked(identity) ? undefined : value.description, avatar: blocked(avatar) ? undefined : value.avatar, banner: blocked(media) ? undefined : value.banner }} onRetry={retry} />
+        <ProfileHeader viewer={{ ...value, displayName: blocked(identity) ? "Account" : value.displayName, handle: blocked(identity) ? undefined : value.handle, description: blocked(identity) ? undefined : value.description, avatar: blocked(avatar) ? undefined : value.avatar, banner: blocked(media) ? undefined : value.banner }} onRetry={retry} actions={value.did !== session?.did ? <SocialFollowButton actor={{ did: value.did, handle: blocked(identity) ? "" : value.handle, viewer: value.viewer }} moderation={moderation} variant="default" /> : undefined} />
         <ProfileContent actor={value.did} own={value.did === session?.did} />
       </> : <p className="p-6">This profile is unavailable.</p>}
     </div>
