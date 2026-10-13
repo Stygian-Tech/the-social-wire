@@ -3,6 +3,8 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppBskyFeedPost, moderateProfile, type ModerationOpts, type AppBskyFeedDefs } from "@atproto/api";
+import { useComposeLinkPreview } from "@/hooks/useComposeLinkPreview";
+import { SocialComposeLinkCard } from "./SocialComposeLinkCard";
 import { useAuth } from "@/hooks/useAuth";
 import { getStoredOAuthDid } from "@/lib/auth";
 import { createBlueskyPost, postTextLength } from "@/lib/blueskyComposeClient";
@@ -34,6 +36,7 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
   const fieldId = useId();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const link = useComposeLinkPreview(text, getOAuthSession(), open);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const [published, setPublished] = useState(false);
@@ -54,7 +57,7 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
 
   function changeOpen(value: boolean) {
     if (busy.current) return;
-    if (value) { setText(""); setError(undefined); setPublished(false); }
+    if (value) { link.reset(); setText(""); setError(undefined); setPublished(false); }
     setOpen(value);
   }
 
@@ -71,7 +74,9 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
         if (currentDid.current !== did || getStoredOAuthDid() !== did || getOAuthSession()?.did !== did || oauth.did !== did) throw new Error("Your account changed. Please reopen the composer.");
       };
       assertCurrentAccount();
-      await createBlueskyPost({ session: oauth, text, ...(quote ? { quoteTo: post } : { replyTo: post }), assertCurrentAccount });
+      const linkPreview = link.needsResolution ? await link.resolve() : link.preview;
+      assertCurrentAccount();
+      await createBlueskyPost({ session: oauth, text, linkPreview, ...(quote ? { quoteTo: post } : { replyTo: post }), assertCurrentAccount });
       if (currentDid.current !== did) return;
       setOpen(false);
       setText("");
@@ -90,7 +95,7 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
     <Dialog open={open} onOpenChange={changeOpen}>
       {trigger(() => {
         if (disabled || pending) return;
-        setText(""); setError(undefined); setPublished(false); setOpen(true);
+        link.reset(); setText(""); setError(undefined); setPublished(false); setOpen(true);
       }, !!disabled)}
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg" showCloseButton={!pending}>
         <DialogTitle>{title}</DialogTitle>
@@ -100,6 +105,7 @@ function SocialAccountPostComposeDialog({ post, moderation, mode, trigger }: Com
           <label htmlFor={fieldId} className="sr-only">{quote ? "Quote Text" : "Reply Text"}</label>
           <SocialPeopleTextField id={fieldId} autoFocus value={text} disabled={pending} onValueChange={setText} rows={5} placeholder={quote ? "Add a Comment…" : "Write a Reply…"} className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
           <SocialComposePreview text={text} />
+          <SocialComposeLinkCard {...link} disabled={pending} />
           <p aria-live="polite" className={`text-right text-sm ${graphemes > 300 ? "text-destructive" : "text-muted-foreground"}`}>{graphemes}/300</p>
           {bytes > 3000 ? <p className="text-sm text-destructive">{quote ? "Quote Text" : "Reply Text"} Exceeds the Size Limit</p> : null}
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}

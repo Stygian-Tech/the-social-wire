@@ -12,6 +12,8 @@ import { useBrandAccounts } from "@/hooks/useBrandAccounts";
 import { getStoredOAuthDid } from "@/lib/auth";
 import { SocialComposeAccountPicker } from "./SocialComposeAccountPicker";
 import { SocialBrandComposeContent } from "./SocialBrandComposeContent";
+import { useComposeLinkPreview } from "@/hooks/useComposeLinkPreview";
+import { SocialComposeLinkCard } from "./SocialComposeLinkCard";
 import { useAuth } from "@/hooks/useAuth";
 import { createBlueskyPost, postTextLength } from "@/lib/blueskyComposeClient";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
@@ -40,6 +42,7 @@ function SocialAccountComposeButton() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [scheduled, setScheduled] = useState(false);
   const [text, setText] = useState("");
+  const link = useComposeLinkPreview(text, getOAuthSession(), open);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const [posted, setPosted] = useState(false);
@@ -59,7 +62,7 @@ function SocialAccountComposeButton() {
 
   function changeOpen(value: boolean) {
     if (busy.current) return;
-    if (value) { setSelectedActor(session?.did); setMode("now"); setScheduledAt(""); setScheduled(false); setText(""); setError(undefined); setPosted(false); }
+    if (value) { link.reset(); setSelectedActor(session?.did); setMode("now"); setScheduledAt(""); setScheduled(false); setText(""); setError(undefined); setPosted(false); }
     setOpen(value);
   }
 
@@ -76,12 +79,14 @@ function SocialAccountComposeButton() {
         if (currentDid.current !== did || getStoredOAuthDid() !== did || getOAuthSession()?.did !== did || oauth.did !== did) throw new Error("Your account changed. Please reopen the composer.");
       };
       assertCurrentAccount();
+      const linkPreview = link.needsResolution ? await link.resolve() : link.preview;
+      assertCurrentAccount();
       if (isPro && mode === "schedule") {
         const instant = scheduledInstant(scheduledAt);
         if (!instant || !scheduler.readiness.data?.connected) throw new Error("Scheduling Is Not Ready.");
-        await scheduler.schedule(text, instant);
+        await scheduler.schedule(text, instant, linkPreview);
         assertCurrentAccount();
-      } else await createBlueskyPost({ session: oauth, text, assertCurrentAccount });
+      } else await createBlueskyPost({ session: oauth, text, linkPreview, assertCurrentAccount });
       if (currentDid.current !== did) return;
       setOpen(false);
       setText("");
@@ -109,6 +114,7 @@ function SocialAccountComposeButton() {
           <label htmlFor="social-compose-text" className="sr-only">Post Text</label>
           <SocialPeopleTextField id="social-compose-text" autoFocus value={text} disabled={pending} onValueChange={setText} rows={6} placeholder="What's Happening?" className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
           <SocialComposePreview text={text} />
+          <SocialComposeLinkCard {...link} disabled={pending} />
           <p aria-live="polite" className={`text-right text-sm ${length > 300 ? "text-destructive" : "text-muted-foreground"}`}>{length}/300</p>
           {bytes > 3000 ? <p className="text-sm text-destructive">Post Text Exceeds the Size Limit</p> : null}
           {isPro ? <ScheduleTimingControls mode={mode} value={scheduledAt} disabled={pending} onModeChange={setMode} onChange={setScheduledAt} /> : <p className="text-xs text-muted-foreground">Multi-account support and scheduling require Pro.</p>}
