@@ -10,6 +10,7 @@ import * as Profile from "@/hooks/useBlueskyProfile";
 import * as Atproto from "@/lib/atprotoClient";
 import { SocialProfileLink } from "@/components/Social/SocialProfileLink";
 import { socialProfileActorFromUrl } from "@/lib/socialProfileNavigation";
+import { handlePostComposerShortcut } from "@/lib/postComposerShortcut";
 
 const did = "did:plc:viewer";
 const actor = "did:plc:other";
@@ -71,4 +72,16 @@ it("recognizes only valid Bluesky profile URLs for native previews", () => {
   expect(socialProfileActorFromUrl("https://bsky.app/profile/alice.test")).toBe("alice.test");
   expect(socialProfileActorFromUrl("https://bsky.app/profile/did%3Aplc%3Aalice/")).toBe("did:plc:alice");
   for (const url of ["https://bsky.app/profile/alice.test/post/one", "https://bsky.app.evil.test/profile/alice.test", "https://user:pass@bsky.app/profile/alice.test", "http://bsky.app/profile/alice.test", "https://bsky.app/profile/%2Funsafe", "https://bsky.app/profile/%ZZ"]) expect(socialProfileActorFromUrl(url)).toBeUndefined();
+});
+
+it("keeps keyboard events in the preview from submitting the underlying composer", async () => {
+  const submit = mock((event: { preventDefault(): void }) => { event.preventDefault(); });
+  render(<QueryClientProvider client={cache}><form onKeyDown={handlePostComposerShortcut} onSubmit={submit}><SocialProfileLink actor={actor}>@other.test</SocialProfileLink><button type="submit">Post</button></form></QueryClientProvider>);
+  fireEvent.mouseEnter(screen.getByRole("link", { name: "@other.test" }));
+  const follow = await screen.findByRole("button", { name: "Follow @other.test" });
+  fireEvent.keyDown(follow, { key: "Enter", ctrlKey: true });
+  fireEvent.keyDown(follow, { key: "Enter", metaKey: true });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Post" }), { key: "Enter", ctrlKey: true });
+  expect(submit).toHaveBeenCalledTimes(1);
 });
