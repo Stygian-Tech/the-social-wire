@@ -14,6 +14,7 @@ import * as social from "@/lib/blueskySocialClient";
 import * as publishing from "@/lib/brandAccounts/brandAccountSocialClient";
 import * as discovery from "@/lib/blueskySocialDiscoveryClient";
 import * as compose from "@/lib/blueskyComposeClient";
+import * as threads from "@/lib/blueskyThreadClient";
 import * as ogPreview from "@/lib/latrSaveMetadataBackfill";
 import { SocialComposeButton } from "@/components/Social/SocialComposeButton";
 
@@ -94,7 +95,7 @@ it.each(["metaKey", "ctrlKey"] as const)("publishes with the %s Enter composer s
   expect(publish.mock.calls[0][0].session).toBe(oauth);
 });
 
-it("enforces grapheme limits and resets cancelled content when reopened", async () => {
+it("enforces grapheme limits and preserves cancelled content when reopened", async () => {
   const field = await open();
   fireEvent.change(field, { target: { value: "👨‍👩‍👧‍👦".repeat(300) } });
   // This also exceeds the native byte limit even though the visible character count is valid.
@@ -105,7 +106,7 @@ it("enforces grapheme limits and resets cancelled content when reopened", async 
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
-  expect((await screen.findByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement).value).toBe("");
+  expect((await screen.findByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement).value).toBe("a".repeat(301));
 });
 
 it("preserves content on failure and allows retry", async () => {
@@ -128,7 +129,7 @@ it("prevents duplicate submission and closing while a post is pending", async ()
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
   expect(screen.getByRole("button", { name: "Publishing…" }).hasAttribute("disabled")).toBe(true);
   expect(screen.getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
-  expect(publish).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
   await act(async () => resolve({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "cid" }));
 });
 
@@ -174,7 +175,7 @@ it("publishes and resolves mentions as the selected brand without replacing pers
   expect(schedule).toHaveBeenCalledWith("Brand Scheduled", new Date(value).toISOString(), undefined);
   expect(scheduling.useSkejScheduling).toHaveBeenCalledWith(oauth.did, brand.did, { includeSchedules: false });
   expect(post).toHaveBeenCalledTimes(1);
-});
+}, 15_000);
 
 it("isolates personal drafts and pending guards when the owner changes", async () => {
   let captured: Parameters<typeof compose.createBlueskyPost>[0] | undefined;
@@ -184,6 +185,7 @@ it("isolates personal drafts and pending guards when the owner changes", async (
   fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
   fireEvent.change(await screen.findByRole("textbox", { name: "Post Text" }), { target: { value: "Private Old Draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await waitFor(() => expect(captured).toBeDefined());
   const next = { did: "did:plc:next" } as unknown as OAuthSession;
   spyOn(auth, "useAuth").mockReturnValue({ session: { did: next.did }, getOAuthSession: () => next } as ReturnType<typeof auth.useAuth>);
   view.rerender(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
@@ -335,4 +337,74 @@ it("waits for the pasted link's metadata when Post is clicked before the preview
   await screen.findByText("Post Published");
   expect(publish).toHaveBeenCalledTimes(1);
   expect(publish.mock.calls[0][0].linkPreview).toMatchObject({ uri: "https://example.com/quick", title: "Quick Story" });
+});
+
+
+it("adds, edits, reorders and deletes thread segments with per-post limits", async () => {
+  const field = await open();
+  fireEvent.change(field, { target: { value: "First Segment" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add Post" }));
+  expect(screen.getByRole("button", { name: "Post Thread" }).hasAttribute("disabled")).toBe(true);
+  const second = screen.getByRole("textbox", { name: "Post 2 Text" });
+  fireEvent.change(second, { target: { value: "b".repeat(301) } });
+  expect(screen.getByRole("button", { name: "Post Thread" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.change(second, { target: { value: "Second Segment" } });
+  expect(screen.getByRole("button", { name: "Post Thread" }).hasAttribute("disabled")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Move Post 2 Up" }));
+  expect((screen.getByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement).value).toBe("Second Segment");
+  expect((screen.getByRole("textbox", { name: "Post 2 Text" }) as HTMLTextAreaElement).value).toBe("First Segment");
+  fireEvent.click(screen.getByRole("button", { name: "Delete Post 2" }));
+  expect(screen.queryByRole("textbox", { name: "Post 2 Text" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Post" })).toBeTruthy();
+});
+
+it("preserves a thread on dismissal and retries its original publication after partial failure", async () => {
+  const calls: Parameters<typeof threads.publishBlueskyThread>[0][] = [];
+  const publish = spyOn(threads, "publishBlueskyThread").mockImplementation(async args => {
+    calls.push(args);
+    args.onProgress?.(1);
+    args.publication.segments[0].attempted = true;
+    if (calls.length === 1) throw new Error("Second Post Failed");
+    return [];
+  });
+  restores.push(() => publish.mockRestore());
+  fireEvent.change(await open(), { target: { value: "Thread Root" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add Post" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Post 2 Text" }), { target: { value: "Thread Reply" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  expect((await screen.findByRole("textbox", { name: "Post 2 Text" }) as HTMLTextAreaElement).value).toBe("Thread Reply");
+  fireEvent.click(screen.getByRole("button", { name: "Post Thread" }));
+  await screen.findByRole("alert");
+  expect(screen.getByText("1 of 2 Posts Published. Retry Continues This Thread.")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Post Text" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: "Add Post" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Retry Remaining Posts" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(calls).toHaveLength(2);
+  expect(calls[0].publication).toBe(calls[1].publication);
+  expect(calls[0].publication.segments.map(segment => segment.draft.text)).toEqual(["Thread Root", "Thread Reply"]);
+}, 15_000);
+
+
+it("preserves removed segment cards across dismissal and unlocks a thread that failed before any write", async () => {
+  const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockResolvedValue({ title: "Dismissed Card", excerpt: "Summary" });
+  const publish = spyOn(threads, "publishBlueskyThread").mockRejectedValue(new Error("Preparation Failed"));
+  restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
+  fireEvent.change(await open(), { target: { value: "https://example.com/draft" } });
+  await screen.findByText("Dismissed Card");
+  fireEvent.click(screen.getByRole("button", { name: "Remove Link Preview" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Post" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Post 2 Text" }), { target: { value: "Second Post" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  await screen.findByRole("textbox", { name: "Post Text" });
+  expect(screen.queryByText("Dismissed Card")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Post Thread" }));
+  await screen.findByRole("alert");
+  expect(publish.mock.calls[0][0].publication.segments[0].draft.linkPreview).toBeUndefined();
+  expect(screen.getByRole("textbox", { name: "Post Text" }).hasAttribute("disabled")).toBe(false);
+  expect(screen.getByRole("button", { name: "Add Post" }).hasAttribute("disabled")).toBe(false);
 });

@@ -8,15 +8,23 @@ export function postTextLength(text: string): { graphemes: number; bytes: number
   return { graphemes: new RichText({ text }).graphemeLength, bytes: new TextEncoder().encode(text).length };
 }
 
-/** Called only by an explicit Post action; validation precedes all network requests. */
-export async function createBlueskyPost(args: {
+export type BlueskyPostInput = {
   session: OAuthSession;
   text: string;
   linkPreview?: ComposeLinkPreview;
   replyTo?: AppBskyFeedDefs.PostView;
   quoteTo?: AppBskyFeedDefs.PostView;
   assertCurrentAccount?: () => void;
-}): Promise<{ uri: string; cid: string }> {
+};
+
+/** Called only by an explicit Post action; validation precedes all network requests. */
+export async function createBlueskyPost(args: BlueskyPostInput): Promise<{ uri: string; cid: string }> {
+  const record = await prepareBlueskyPost(args);
+  args.assertCurrentAccount?.();
+  return createOAuthAgent(args.session).post(record);
+}
+
+export async function prepareBlueskyPost(args: BlueskyPostInput): Promise<AppBskyFeedPost.Record> {
   if (!args.text.trim()) throw new Error("Write something before posting.");
   const length = postTextLength(args.text);
   if (length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts must contain at most 300 characters and 3,000 UTF-8 bytes.");
@@ -35,7 +43,7 @@ export async function createBlueskyPost(args: {
   const external = await composeExternalEmbed(args.session, args.text, args.linkPreview, args.assertCurrentAccount);
   const embed = quote && external ? { $type: "app.bsky.embed.recordWithMedia" as const, record: quote, media: external } : quote ?? external;
   args.assertCurrentAccount?.();
-  return createOAuthAgent(args.session).post({ text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) });
+  return { $type: "app.bsky.feed.post", createdAt: new Date().toISOString(), text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) };
 }
 
 function quoteEmbed(post: AppBskyFeedDefs.PostView): AppBskyEmbedRecord.Main & { $type: "app.bsky.embed.record" } {
