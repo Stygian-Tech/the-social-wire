@@ -2,8 +2,6 @@ package corpuscore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"regexp"
 	"strings"
 	"time"
@@ -67,18 +65,9 @@ type sportsCatalogCache struct {
 	revision        string
 }
 
-func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceRequest, now time.Time) (SportsSourceResponse, error) {
-	if !ValidSportsSourceRequest(q) {
-		return SportsSourceResponse{}, ErrContractMismatch
-	}
-	if err := s.RequireFreshBaseline(ctx, now); err != nil {
-		return SportsSourceResponse{}, err
-	}
-	// Project the CURRENT security-barrier serving payload into rank inputs in SQL.
-	// Summary/presentation never crosses this DB hop; its exact equality fingerprint
-	// is computed inside PostgreSQL. All source evidence and eligibility changes
-	// enter the generation revision, even when the immutable generation ID stays.
-	rows, err := s.query(ctx, `SELECT generation.generation_id,generation.generated_at,generation.expires_at,catalog.version,catalog.generated_at,COALESCE((SELECT jsonb_agg(jsonb_build_object(
+// Derive identity from the current security-barrier view. The lean
+// JSON hash includes order, eligibility, evidence and presentation fingerprints.
+const sportsSourceProjection = `WITH lean AS MATERIALIZED (SELECT generation.generation_id,generation.generated_at,generation.expires_at,catalog.version,catalog.generated_at AS lean_catalog_generated,COALESCE((SELECT jsonb_agg(jsonb_build_object(
  'itemId',candidate.value->'item'->>'itemId',
  'canonicalUrl',candidate.value->'item'->>'canonicalUrl',
  'title',candidate.value->'item'->>'title',
@@ -89,8 +78,31 @@ func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceReques
  CASE WHEN candidate.value->'item'->>'summary' IS NULL THEN 'N' ELSE 'S'||octet_length(candidate.value->'item'->>'summary')::text||':'||(candidate.value->'item'->>'summary') END||
  octet_length(COALESCE(candidate.value->'item'->'source'->>'domain',''))::text||':'||COALESCE(candidate.value->'item'->'source'->>'domain',''),'UTF8')),'hex'),
  'analysis',candidate.value->'analysis','baseScore',candidate.value->'baseScore','majorGlobal',candidate.value->'majorGlobal'
- ) ORDER BY candidate.ordinality) FROM jsonb_array_elements(generation.payload) WITH ORDINALITY candidate(value,ordinality)),'[]'::jsonb)::text
- FROM wire_serving.sports_generations generation CROSS JOIN wire_serving.sports_catalog catalog WHERE generation.language=$1 AND generation.is_active=TRUE AND generation.expires_at>$2 LIMIT 1`, q.Language, now)
+ ) ORDER BY candidate.ordinality) FROM jsonb_array_elements(generation.payload) WITH ORDINALITY candidate(value,ordinality)),'[]'::jsonb) AS candidates
+ FROM wire_serving.sports_generations generation CROSS JOIN wire_serving.sports_catalog catalog WHERE generation.language=$1 AND generation.is_active=TRUE AND generation.expires_at>$2 LIMIT 1), current_source AS MATERIALIZED (SELECT *,encode(sha256(convert_to(candidates::text,'UTF8')),'hex') AS revision FROM lean) `
+
+type sportsValidatedGeneration struct {
+	id, revision string
+	candidates   []SportsSourceCandidate
+}
+
+func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceRequest, now time.Time) (SportsSourceResponse, error) {
+	if !ValidSportsSourceRequest(q) {
+		return SportsSourceResponse{}, ErrContractMismatch
+	}
+	if err := s.RequireFreshBaseline(ctx, now); err != nil {
+		return SportsSourceResponse{}, err
+	}
+	s.sportsCatalogMu.Lock()
+	validated := s.sportsValidatedGeneration
+	s.sportsCatalogMu.Unlock()
+	validatedID, validatedRevision := "", ""
+	if validated != nil {
+		validatedID, validatedRevision = validated.id, validated.revision
+	}
+	// Metadata, current eligibility/hash and payload suppression share one SQL
+	// snapshot. A caller-supplied hash alone never bypasses strict validation.
+	rows, err := s.query(ctx, sportsSourceProjection+`SELECT generation_id,generated_at,expires_at,version,lean_catalog_generated,revision,CASE WHEN generation_id::text=$3 AND revision=$4 THEN NULL ELSE candidates::text END FROM current_source`, q.Language, now, validatedID, validatedRevision)
 	if err != nil {
 		return SportsSourceResponse{}, err
 	}
@@ -99,26 +111,53 @@ func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceReques
 	}
 	r := rows[0]
 	out := SportsSourceResponse{GenerationID: strings.ToLower(r.String(0)), GeneratedAt: r.Time(1), ExpiresAt: r.Time(2), Language: q.Language, ResolverVersion: sportscore.ResolverVersion, CatalogVersion: r.String(3), CatalogGeneratedAt: r.Time(4).Format(time.RFC3339Nano)}
-	rawCandidates := r.String(5)
+	out.GenerationRevision = r.String(5)
+	if r.err != nil {
+		return out, r.err
+	}
+	out.GenerationUnchanged = q.KnownGenerationID == out.GenerationID && q.KnownGenerationRevision == out.GenerationRevision
+	rawCandidates := r.OptionalString(6)
 	if r.err != nil {
 		return out, r.err
 	}
 	var candidates []SportsSourceCandidate
-	if decodeContract([]byte(rawCandidates), &candidates) != nil || len(candidates) > MaximumSportsCandidates {
-		return out, ErrContractMismatch
-	}
-	for _, c := range candidates {
-		if c.Analysis.ResolverVersion != sportscore.ResolverVersion {
+	if rawCandidates == nil {
+		if validated == nil || validated.id != out.GenerationID || validated.revision != out.GenerationRevision {
+			return out, ErrContractMismatch
+		}
+		candidates = validated.candidates
+	} else {
+		// Retain at most one response-bounded, validated candidate generation.
+		if len(*rawCandidates) > 8<<20 {
 			return out, ErrUnavailable
 		}
-		for _, a := range c.Analysis.Associations {
-			if a.ResolverVersion != sportscore.ResolverVersion {
+		if decodeContract([]byte(*rawCandidates), &candidates) != nil || len(candidates) > MaximumSportsCandidates {
+			return out, ErrContractMismatch
+		}
+		for _, c := range candidates {
+			if c.Analysis.ResolverVersion != sportscore.ResolverVersion {
 				return out, ErrUnavailable
 			}
+			for _, a := range c.Analysis.Associations {
+				if a.ResolverVersion != sportscore.ResolverVersion {
+					return out, ErrUnavailable
+				}
+			}
 		}
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
+		s.sportsCatalogMu.Lock()
+		s.sportsValidatedGeneration = &sportsValidatedGeneration{id: out.GenerationID, revision: out.GenerationRevision, candidates: candidates}
+		s.sportsCatalogMu.Unlock()
 	}
-	sum := sha256.Sum256([]byte(rawCandidates))
-	out.GenerationRevision = hex.EncodeToString(sum[:])
+	if observer := queryObserver(ctx); observer != nil {
+		phase := "source-generation-cache-miss"
+		if rawCandidates == nil {
+			phase = "source-generation-cache-hit"
+		}
+		observer(phase, 0)
+	}
 
 	s.sportsCatalogMu.Lock()
 	cached := s.sportsSourceCatalogCache
@@ -169,12 +208,34 @@ func (s *PostgreSQLStore) SportsSource(ctx context.Context, q SportsSourceReques
 	out.CatalogRevision = cached.revision
 	out.ServingCatalogRevision = cached.servingRevision
 
-	out.GenerationUnchanged = q.KnownGenerationID == out.GenerationID && q.KnownGenerationRevision == out.GenerationRevision
 	if !out.GenerationUnchanged {
-		out.Candidates = &candidates
+		// Public responses must not expose mutable slices/pointers held by the
+		// validation cache. The normal unchanged path allocates no candidate copy.
+		responseCandidates := cloneSportsSourceCandidates(candidates)
+		out.Candidates = &responseCandidates
 	}
 
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	return out, nil
+}
+
+func cloneSportsSourceCandidates(source []SportsSourceCandidate) []SportsSourceCandidate {
+	out := append([]SportsSourceCandidate{}, source...)
+	for i := range out {
+		if out[i].PublishedAt != nil {
+			value := *out[i].PublishedAt
+			out[i].PublishedAt = &value
+		}
+		out[i].Analysis.Associations = append([]sportscore.Association{}, source[i].Analysis.Associations...)
+		for j := range out[i].Analysis.Associations {
+			out[i].Analysis.Associations[j].Evidence = append([]string{}, source[i].Analysis.Associations[j].Evidence...)
+		}
+		out[i].Analysis.SportIDs = append([]string{}, source[i].Analysis.SportIDs...)
+		out[i].Analysis.CompetitionIDs = append([]string{}, source[i].Analysis.CompetitionIDs...)
+	}
+	return out
 }
 
 // SportsSource restores conditional content only after the server revalidates

@@ -45,6 +45,14 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 	if err != nil {
 		return SportsPage{}, err
 	}
+	started = time.Now()
+	catalogIndexes, err := s.pageCatalogIndexes(ctx, catalog)
+	if err != nil {
+		return SportsPage{}, err
+	}
+	selectionFilter := catalogIndexes.selections.WithSelections(prefs)
+	ObserveFeedPhase(ctx, "catalog-index", time.Since(started))
+	byID, entityIndex := catalogIndexes.byID, catalogIndexes.resolver
 	regionName := "global"
 	if region != nil {
 		regionName = *region
@@ -95,12 +103,6 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 			if !ok {
 				return SportsPage{}, ErrInvalidCursor
 			}
-			byID := map[string]sportscore.Entity{}
-			for _, e := range catalog {
-				if _, exists := byID[e.ID]; !exists {
-					byID[e.ID] = e
-				}
-			}
 			usIDs := map[string]bool{}
 			for _, id := range []string{"nfl", "nba", "wnba", "mlb", "nhl", "mls", "nwsl", "ncaa-football", "ncaa-mens-basketball", "ncaa-womens-basketball", "ncaa-baseball", "ncaa-softball", "ncaa-hockey", "nascar", "indycar"} {
 				usIDs[sportscore.ReviewedID("competition:"+id)] = true
@@ -142,14 +144,6 @@ func (s *SportsStore) Page(ctx context.Context, cursor string, limit int, lang, 
 	if !ok {
 		return SportsPage{}, ErrInvalidCursor
 	}
-	byID := map[string]sportscore.Entity{}
-	for _, e := range catalog {
-		if _, exists := byID[e.ID]; !exists {
-			byID[e.ID] = e
-		}
-	}
-	entityIndex := sportscore.NewEntityIndex(catalog)
-	selectionFilter := sportscore.NewSelectionFilter(prefs, catalog)
 	accepted := []SportsItem{}
 	for ordinal < len(snapshot.Candidates) && len(accepted) < limit {
 		end := min(ordinal+corpuscore.MaximumBatchItems, len(snapshot.Candidates))

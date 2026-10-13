@@ -166,6 +166,9 @@ func TestPostgresSportsSourceCurrentEligibilityAndResolver(t *testing.T) {
 	summary := "Héllo 世界"
 	published := now
 	candidate := sportscore.RankCandidate{Item: wirecore.FeedItem{ItemID: key, CanonicalURL: "https://example.com/lean", Title: "Héllo 世界", Summary: &summary, PublishedAt: &published, Source: wirecore.ItemSource{Name: "Example", Domain: "example.com"}, Reasons: []wirecore.ReasonCode{}, Provenance: []string{}}, Analysis: sportscore.ArticleAnalysis{ResolverVersion: sportscore.ResolverVersion, Eligible: true, Materiality: "championship", Associations: []sportscore.Association{}, SportIDs: []string{}, CompetitionIDs: []string{}}, BaseScore: 1}
+	candidate.Analysis.Associations = []sportscore.Association{{EntityID: "team", Confidence: 1, Evidence: []string{"fixture"}, ResolverVersion: sportscore.ResolverVersion}}
+	candidate.Analysis.SportIDs = []string{"sport"}
+	candidate.Analysis.CompetitionIDs = []string{"competition"}
 	payload, _ := json.Marshal([]sportscore.RankCandidate{candidate})
 	execFixture(t, db, `INSERT INTO sports_generations(generation_id,source_generation_id,language,algorithm_version,generated_at,expires_at,payload,is_active)VALUES($1::uuid,$1::uuid,'en','fixture',$2,$3,$4::jsonb,TRUE)`, id, now, now.Add(time.Hour), string(payload))
 	store := &PostgreSQLStore{DB: db}
@@ -188,6 +191,39 @@ func TestPostgresSportsSourceCurrentEligibilityAndResolver(t *testing.T) {
 	if queryPhases["db-query"] != 2 {
 		t.Fatal("warm source must read exactly baseline and current eligible lean source", queryPhases)
 	}
+	if queryPhases["source-generation-cache-hit"] != 1 {
+		t.Fatal("warm request transferred/decoded candidate payload", queryPhases)
+	}
+	queryPhases = map[string]int{}
+	uncachedClient, err := store.SportsSource(ctx, SportsSourceRequest{Language: "en"}, now)
+	if err != nil || uncachedClient.GenerationUnchanged || uncachedClient.Candidates == nil || len(*uncachedClient.Candidates) != 1 || queryPhases["db-query"] != 2 || queryPhases["source-generation-cache-hit"] != 1 {
+		t.Fatal("client without conditionals did not reuse server-validated current generation", uncachedClient, err, queryPhases)
+	}
+	// Mutating a public full response must not poison the server-validated revision.
+	exposed := &(*uncachedClient.Candidates)[0]
+	exposed.Title = "caller mutation"
+	*exposed.PublishedAt = now.Add(-time.Hour)
+	exposed.Analysis.Associations[0].Evidence[0] = "caller evidence"
+	exposed.Analysis.SportIDs[0] = "caller sport"
+	exposed.Analysis.CompetitionIDs[0] = "caller competition"
+	isolated, err := store.SportsSource(ctx, SportsSourceRequest{Language: "en"}, now)
+	if err != nil || (*isolated.Candidates)[0].Title != candidate.Item.Title || !(*isolated.Candidates)[0].PublishedAt.Equal(published) || (*isolated.Candidates)[0].Analysis.Associations[0].Evidence[0] != "fixture" || (*isolated.Candidates)[0].Analysis.SportIDs[0] != "sport" || (*isolated.Candidates)[0].Analysis.CompetitionIDs[0] != "competition" {
+		t.Fatal("caller mutation changed validated candidate cache", isolated, err)
+	}
+	// A cold replica must validate the body even when the caller knows its exact hash.
+	queryPhases = map[string]int{}
+	if cold, err := (&PostgreSQLStore{DB: db}).SportsSource(ctx, q, now); err != nil || !cold.GenerationUnchanged || queryPhases["source-generation-cache-miss"] != 1 || queryPhases["db-query"] != 3 {
+		t.Fatal("caller conditional bypassed cold server validation", cold, err, queryPhases)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancelCtx := WithQueryObserver(cancelled, func(phase string, _ time.Duration) {
+		if phase == "source-generation-cache-hit" {
+			cancel()
+		}
+	})
+	if _, err := store.SportsSource(cancelCtx, q, now); !errors.Is(err, context.Canceled) {
+		t.Fatal("cancelled warm candidate cache returned success", err)
+	}
 	execFixture(t, db, `UPDATE wire_items SET expires_at=$2 WHERE canonical_key=$1`, key, now.Add(-time.Second))
 	removed, err := store.SportsSource(ctx, q, now)
 	if err != nil || removed.GenerationUnchanged || len(*removed.Candidates) != 0 || removed.GenerationRevision == first.GenerationRevision {
@@ -205,6 +241,15 @@ func TestPostgresSportsSourceCurrentEligibilityAndResolver(t *testing.T) {
 	execFixture(t, db, `UPDATE sports_generations SET payload=($2::jsonb #- '{0,item,title}') WHERE generation_id=$1::uuid`, id, string(payload))
 	if _, err := store.SportsSource(ctx, q, now); !errors.Is(err, ErrContractMismatch) {
 		t.Fatal("missing required title became empty string", err)
+	}
+	// An invented matching hash for malformed current data cannot use the fast path.
+	invalidMetadata, err := store.query(ctx, sportsSourceProjection+`SELECT revision FROM current_source`, "en", now)
+	if err != nil || len(invalidMetadata) != 1 {
+		t.Fatal("invalid metadata fixture", err)
+	}
+	forged := SportsSourceRequest{Language: "en", KnownGenerationID: id, KnownGenerationRevision: invalidMetadata[0].String(0)}
+	if _, err := store.SportsSource(ctx, forged, now); !errors.Is(err, ErrContractMismatch) {
+		t.Fatal("caller hash skipped malformed current source validation", err)
 	}
 	execFixture(t, db, `UPDATE wire_label_refresh_state SET is_current=FALSE WHERE source_did=$1`, labeler)
 	queryPhases = map[string]int{}

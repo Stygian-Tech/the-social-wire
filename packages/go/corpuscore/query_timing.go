@@ -20,6 +20,10 @@ func queryObserver(ctx context.Context) func(string, time.Duration) {
 	return observer
 }
 
+// QueryObserver lets a caller preserve and serialize an independently supplied
+// callback when request-scoped stages run concurrently.
+func QueryObserver(ctx context.Context) func(string, time.Duration) { return queryObserver(ctx) }
+
 // QueryRows preserves ordinary pool behavior when observation is absent. With an
 // observer, acquisition is measured separately and the owned connection remains
 // reserved until rows are drained or closed. Call closeRows on every success.
