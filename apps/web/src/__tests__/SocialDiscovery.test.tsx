@@ -12,7 +12,7 @@ import * as ExploreDiscovery from "@/lib/socialExploreDiscoveryClient";
 import * as Interactive from "@/components/Social/InteractiveSocialPost";
 import { SocialExplore } from "@/components/Social/SocialExplore";
 import { SocialNotifications } from "@/components/Social/SocialNotifications";
-import { useSocialExplore, useSocialNotifications } from "@/hooks/useSocialDiscovery";
+import { useSocialExplore, useSocialNotifications, useMarkSocialNotificationsSeen } from "@/hooks/useSocialDiscovery";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
 const alice = "did:plc:alice";
@@ -250,11 +250,12 @@ it("groups Explore search, trends, feeds and people into separate cards", async 
 
 it("automatically marks loaded notifications seen only after two visible seconds at their loaded boundary", async () => {
   const clock = pageReadClock();
-  let marked = false;
-  const loaded = { ...notification("delayed-post"), indexedAt: "2026-10-10T12:34:56Z" };
-  restoreSpy(spyOn(Client, "getSocialNotificationsPage").mockImplementation(async () => ({ notifications: [{ ...loaded, isRead: marked }], posts: [post("delayed-post")] })));
-  restoreSpy(spyOn(Client, "getSocialNotificationUnread").mockImplementation(async () => marked ? 0 : 1));
-  const seen = restoreSpy(spyOn(Client, "markSocialNotificationsSeen").mockImplementation(async () => { marked = true; }));
+  let serverSeenAt = -Infinity;
+  const loaded = { ...notification("delayed-post"), indexedAt: "2026-10-13T22:21:22.275Z" };
+  const serverIsRead = () => Date.parse(loaded.indexedAt) < serverSeenAt;
+  const fetchPage = restoreSpy(spyOn(Client, "getSocialNotificationsPage").mockImplementation(async () => ({ notifications: [{ ...loaded, isRead: serverIsRead() }], posts: [post("delayed-post")] })));
+  restoreSpy(spyOn(Client, "getSocialNotificationUnread").mockImplementation(async () => serverIsRead() ? 0 : 1));
+  const seen = restoreSpy(spyOn(Client, "markSocialNotificationsSeen").mockImplementation(async (_session, seenAt) => { serverSeenAt = Date.parse(seenAt); }));
   render(<SocialNotifications />, { wrapper: Wrapper });
   await screen.findByText("delayed-post");
   await waitFor(() => expect(clock.pending).toBe(1));
@@ -264,8 +265,14 @@ it("automatically marks loaded notifications seen only after two visible seconds
   await clock.advance(1);
   await waitFor(() => expect(seen).toHaveBeenCalledTimes(1));
   expect(seen.mock.calls[0]![0].did).toBe(alice);
-  expect(seen.mock.calls[0]![1]).toBe(new Date(loaded.indexedAt).toISOString());
+  expect(seen.mock.calls[0]![1]).toBe("2026-10-13T22:21:22.276Z");
   await screen.findByText("0 Unread");
+  await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2));
+  expect(serverIsRead()).toBe(true);
+  expect(screen.queryByText("Unread")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(3));
+  expect(screen.queryByText("Unread")).toBeNull();
   await clock.advance(2_000);
   expect(seen).toHaveBeenCalledTimes(1);
 });
@@ -301,4 +308,21 @@ it("cancels notification auto-read when leaving or switching away from the loade
   await clock.advance(2_000);
   expect(seen).not.toHaveBeenCalled();
   view.unmount();
+});
+
+
+it("updates cached notifications strictly before seenAt while preserving later arrivals", async () => {
+  const seenAt = "2026-10-13T22:21:22.276Z";
+  const rows = [
+    { ...notification("loaded"), indexedAt: "2026-10-13T22:21:22.275Z" },
+    { ...notification("at-cutoff"), indexedAt: seenAt },
+    { ...notification("later"), indexedAt: "2026-10-13T22:21:22.277Z" },
+  ];
+  const key = ["blueskySocial", alice, "notifications", 0];
+  queryClient.setQueryData(key, { pages: [{ notifications: rows, posts: [] }], pageParams: [undefined] });
+  restoreSpy(spyOn(Client, "markSocialNotificationsSeen").mockResolvedValue(undefined));
+  const { result } = renderHook(() => useMarkSocialNotificationsSeen(), { wrapper: Wrapper });
+  await act(async () => { await result.current.mutateAsync(seenAt); });
+  const cached = queryClient.getQueryData<{ pages: Client.SocialNotificationPage[] }>(key)!;
+  expect(cached.pages[0]!.notifications.map(row => row.isRead)).toEqual([true, false, false]);
 });

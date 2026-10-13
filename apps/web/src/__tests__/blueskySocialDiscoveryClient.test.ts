@@ -119,7 +119,20 @@ it("discards mismatched hydration results instead of using a parent for a missin
 it("reads only the loaded unread boundary using chronological RFC 3339 ordering", () => {
   const item = (indexedAt: string, isRead = false) => ({ indexedAt, isRead }) as SocialNotification;
   expect(notificationReadBoundary([item("2026-10-10T00:00:00Z"), item("2026-10-09T23:00:00.001-01:00"), item("2026-10-11T00:00:00Z", true)]))
-    .toBe("2026-10-10T00:00:00.001Z");
+    .toBe("2026-10-10T00:00:00.002Z");
   expect(notificationReadBoundary([])).toBeUndefined();
   expect(notificationReadBoundary([item("2026-10-11T00:00:00Z", true)])).toBeUndefined();
+});
+
+
+it("advances exclusive read boundaries through submillisecond precision and date rollovers", () => {
+  const item = (indexedAt: string) => ({ indexedAt, isRead: false }) as SocialNotification;
+  for (const [indexedAt, boundary] of [
+    ["2026-10-13T22:21:22.275Z", "2026-10-13T22:21:22.276Z"],
+    ["2026-10-13T22:21:22.275999Z", "2026-10-13T22:21:22.276Z"],
+    ["2026-10-13T22:21:22.999Z", "2026-10-13T22:21:23.000Z"],
+    ["2026-12-31T23:59:59.999Z", "2027-01-01T00:00:00.000Z"],
+  ]) {
+    expect(notificationReadBoundary([item(indexedAt!)])).toBe(boundary);
+  }
 });
