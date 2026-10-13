@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { Agent, AppBskyActorDefs, AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as BaseClient from "@/lib/blueskySocialClient";
-import { getSocialExplorePage, getSocialNotificationsPage, getSocialNotificationUnread, markSocialNotificationsSeen, notificationPostUri, nextDiscoveryCursor, type SocialNotification } from "@/lib/blueskySocialDiscoveryClient";
+import { getSocialExplorePage, getSocialNotificationsPage, getSocialNotificationUnread, markSocialNotificationsSeen, notificationPostUri, notificationReadBoundary, nextDiscoveryCursor, type SocialNotification } from "@/lib/blueskySocialDiscoveryClient";
 
 const did = "did:plc:viewer";
 const session = { did } as unknown as OAuthSession;
@@ -113,4 +113,13 @@ it("discards mismatched hydration results instead of using a parent for a missin
   const page = await getSocialNotificationsPage({ session, moderation });
   expect(page.posts).toEqual([]);
   expect(notificationPostUri(page.notifications[0]!)).toBe(notification().uri);
+});
+
+
+it("reads only the loaded unread boundary using chronological RFC 3339 ordering", () => {
+  const item = (indexedAt: string, isRead = false) => ({ indexedAt, isRead }) as SocialNotification;
+  expect(notificationReadBoundary([item("2026-10-10T00:00:00Z"), item("2026-10-09T23:00:00.001-01:00"), item("2026-10-11T00:00:00Z", true)]))
+    .toBe("2026-10-10T00:00:00.001Z");
+  expect(notificationReadBoundary([])).toBeUndefined();
+  expect(notificationReadBoundary([item("2026-10-11T00:00:00Z", true)])).toBeUndefined();
 });

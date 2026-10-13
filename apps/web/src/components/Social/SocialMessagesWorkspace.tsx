@@ -15,6 +15,7 @@ import { floatingSidebarClassName } from "@/components/shared/floatingSidebarSty
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { attachFloatingGlassScrollOverlay } from "@/components/shared/floatingGlassScrollOverlay";
 import { useAuth } from "@/hooks/useAuth";
+import { usePageReadDelay } from "@/hooks/usePageReadDelay";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { socialHttpsUrl } from "./socialUrls";
 import { SocialMessageInput } from "./SocialMessageInput";
@@ -37,6 +38,7 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
   const [reply, setReply] = useState<{ id: string; text: string }>();
   const [text, setText] = useState(draft);
   const [actionError, setActionError] = useState<string>();
+  const [readRetry, setReadRetry] = useState(0);
   const [inbox, setInbox] = useState<"accepted" | "request">("accepted");
   const [confirm, setConfirm] = useState<{ kind: "leave" | "block" | "unblock"; convoId: string; subjectDid?: string }>();
   const [report, setReport] = useState<{ convoId: string; senderDid: string; messageId?: string }>();
@@ -155,6 +157,13 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
     } catch (failure) { if (mounted.current) setActionError(chatErrorMessage(failure)); }
     finally { lock.current = false; }
   }
+  // Bind the read to the loaded newest message, never messages that arrive while
+  // this request is in flight. Pending requests remain unread until accepted.
+  const newestMessage = chat.messages.data?.pages[0]?.messages[0];
+  const readMessageId = newestMessage && "id" in newestMessage ? String(newestMessage.id) : undefined;
+  usePageReadDelay(active && readMessageId ? `${viewerDid}:${active.id}:${readMessageId}:${readRetry}` : undefined,
+    !!moderation && !!active && !pendingRequest && active.unreadCount > 0 && !!chat.messages.data && !error && !chat.action.isPending,
+    () => { if (active) void perform({ kind: "read", convoId: active.id, messageId: readMessageId }); });
   return <div className="flex min-h-0 flex-1 flex-col">
     <FeedHeader title={header?.name ?? "Messages"} subtitle={pendingRequest ? "Pending Message Request" : active?.muted ? "Muted Conversation" : isGroup ? `${group?.memberCount ?? activeMembers.length + 1} Participants` : active ? "Private Conversation" : "Private Conversations"} leading={header ? <Avatar src={header.avatar} alt="" size={36} className="shrink-0" /> : undefined} >
       {active ? <div className="flex shrink-0 items-center gap-1"><Button variant="outline" size="sm" disabled={chat.action.isPending} onClick={() => { void perform({ kind: active.muted ? "unmute" : "mute", convoId: active.id }); }}>{active.muted ? <BellOff aria-hidden className="size-4" /> : null}{active.muted ? "Unmute" : "Mute"}</Button>
@@ -170,7 +179,7 @@ export function SocialMessagesWorkspace({ viewerDid, draft = "" }: { viewerDid: 
       </div> : null}
     </FeedHeader>
     {!chat.available ? <section role="status" className="space-y-2 p-6"><h2 className="font-semibold">Messages Unavailable Locally</h2><p className="text-sm text-muted-foreground">{LOCAL_CHAT_UNAVAILABLE}</p></section> : <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-      {error ? <section role="alert" className="mb-4 rounded-lg border p-3"><p className="text-sm">{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" onClick={() => { void listing.refetch(); void catalog.refetch(); if (convoId) void chat.messages.refetch(); }}>Retry</Button>}</section> : null}
+      {error ? <section role="alert" className="mb-4 rounded-lg border p-3"><p className="text-sm">{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" onClick={() => { setActionError(undefined); setReadRetry(attempt => attempt + 1); void listing.refetch(); void catalog.refetch(); if (convoId) void chat.messages.refetch(); }}>Retry</Button>}</section> : null}
       {notice ? <p role="status" className="mb-3 text-sm">{notice}</p> : null}
       <div className="grid min-h-0 w-full flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 md:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px] md:grid-rows-[minmax(0,1fr)]">
         <aside className={`${floatingSidebarClassName} max-h-64 w-full min-h-0 space-y-3 overflow-y-auto overscroll-contain md:col-start-2 md:row-start-1 md:max-h-full`} aria-label="Conversations">

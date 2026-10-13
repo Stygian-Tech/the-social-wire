@@ -9,9 +9,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { usePageReadDelay } from "@/hooks/usePageReadDelay";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { useSocialNotifications, useSocialNotificationUnread, useMarkSocialNotificationsSeen } from "@/hooks/useSocialDiscovery";
-import { notificationFeedItem, notificationIdentity, notificationPostUri, socialDiscoveryErrorMessage } from "@/lib/blueskySocialDiscoveryClient";
+import { notificationFeedItem, notificationIdentity, notificationPostUri, notificationReadBoundary, socialDiscoveryErrorMessage } from "@/lib/blueskySocialDiscoveryClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { SocialPostLink } from "./SocialPostLink";
 import { InteractiveSocialPost } from "./InteractiveSocialPost";
@@ -46,6 +47,10 @@ function SocialNotificationsViewer() {
   const queryClient = useQueryClient();
   const error = catalog.isError ? socialDiscoveryErrorMessage(catalog.error, "Notifications") : notifications.isError ? socialDiscoveryErrorMessage(notifications.error, "Notifications") : undefined;
   const pages = notifications.data?.pages ?? [];
+  const readBoundary = notificationReadBoundary(pages.flatMap(page => page.notifications));
+  usePageReadDelay(session && readBoundary ? `${session.did}:${readBoundary}` : undefined,
+    !!moderation && !!notifications.data && !error && !markSeen.isPending && !markSeen.isError,
+    () => { if (readBoundary) markSeen.mutate(readBoundary); });
   const posts = new Map(pages.flatMap(page => page.posts).map(post => [post.uri, post]));
   const unavailablePosts = new Set(pages.flatMap(page => page.unavailablePostUris ?? []));
   const seen = new Set<string>();
@@ -72,14 +77,14 @@ function SocialNotificationsViewer() {
   const unreadSubtitle = allUnreadKnown ? `${unread.data! + activeBrands.reduce((sum, did) => sum + brandUnread[did]!, 0)} Unread` : unread.isError ? "Unread Counts Unavailable" : unread.data === undefined ? "Social" : `${unread.data} Personal Unread · Brand Counts Unavailable`;
   return <div className="flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title="Notifications" subtitle={!moderation ? "Social" : unreadSubtitle}>
-      <Button size="sm" variant="ghost" disabled={!moderation || markSeen.isPending || notifications.isPending || !!error} onClick={() => markSeen.mutate()}>{markSeen.isPending ? "Marking…" : brandAccounts.length ? "Mark Personal As Read" : "Mark All As Read"}</Button>
+      <Button size="sm" variant="ghost" disabled={!moderation || markSeen.isPending || notifications.isPending || !!error} onClick={() => markSeen.mutate(new Date().toISOString())}>{markSeen.isPending ? "Marking…" : brandAccounts.length ? "Mark Personal As Read" : "Mark All As Read"}</Button>
       <Button size="sm" variant="ghost" disabled={catalog.isFetching || notifications.isFetching} onClick={() => { void refresh(); }}>Refresh</Button>
     </FeedHeader>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" key={session?.did}>
       <div className="mx-auto flex max-w-2xl flex-col gap-4 p-3 sm:p-4">
         {session ? <BrandNotificationSections ownerDid={session.did} accounts={brandAccounts} included={includeBrands} setIncluded={changeIncludeBrands} onUnread={reportBrandUnread} /> : null}
         {includeBrands && brandAccounts.length ? <h2 className="font-semibold">Personal Notifications</h2> : null}
-        {markSeen.isError || unread.isError ? <section role="alert" className="flex flex-col items-start gap-2"><p className="text-sm text-destructive">{socialDiscoveryErrorMessage(markSeen.error ?? unread.error, "Notifications")}</p>{socialDiscoveryErrorMessage(markSeen.error ?? unread.error, "Notifications") === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" onClick={() => { void unread.refetch(); }}>Retry Unread Status</Button>}</section> : null}
+        {markSeen.isError || unread.isError ? <section role="alert" className="flex flex-col items-start gap-2"><p className="text-sm text-destructive">{socialDiscoveryErrorMessage(markSeen.error ?? unread.error, "Notifications")}</p>{socialDiscoveryErrorMessage(markSeen.error ?? unread.error, "Notifications") === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" size="sm" onClick={() => { if (markSeen.isError) markSeen.mutate(new Date().toISOString()); else void unread.refetch(); }}>Retry Unread Status</Button>}</section> : null}
         {error ? <section role="alert" className="flex flex-col items-start gap-3 py-4">
           <h2 className="text-lg font-semibold">Notifications Unavailable</h2><p className="text-sm text-muted-foreground">{error}</p>
           {error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={() => { void refresh(); }}>Retry</Button>}
