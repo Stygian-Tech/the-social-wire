@@ -66,6 +66,37 @@ func TestSportsPostgresSnapshotLiveChangesAndResolverGate(t *testing.T) {
 	if fixture.batchCalls != 2 || fixture.itemCalls != 0 || dbPhases["db-acquisition"] != 2 || dbPhases["db-query"] != 2 {
 		t.Fatal("continuation batch budget", fixture.batchCalls, fixture.itemCalls)
 	}
+	var beforeVersion, afterVersion string
+	if err = db.QueryRow(`SELECT xmin::text FROM sports_personalized_snapshots WHERE snapshot_id=$1::uuid`, page.GenerationID).Scan(&beforeVersion); err != nil {
+		t.Fatal(err)
+	}
+	// Re-ranking this changed source would favor its third candidate, but the
+	// existing conflict contract retains this tuple's original snapshot order.
+	if _, err = db.Exec(`UPDATE sports_generations SET payload=jsonb_set(payload,'{2,baseScore}','100'::jsonb) WHERE generation_id=$1::uuid`, id); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := s.Page(ctx, "", 1, "en", "", false, now, "sports", nil)
+	if err != nil || repeated.GenerationID != page.GenerationID || len(repeated.Items) != 1 || repeated.Items[0].Story.ItemID != page.Items[0].Story.ItemID || dbPhases["snapshot-persistence"] != 1 || dbPhases["snapshot-lookup"] != 2 || dbPhases["analysis"] != 4 || fixture.batchCalls != 3 {
+		t.Fatal("warm snapshot reuse", repeated, err, dbPhases, fixture.batchCalls)
+	}
+	if err = db.QueryRow(`SELECT xmin::text FROM sports_personalized_snapshots WHERE snapshot_id=$1::uuid`, page.GenerationID).Scan(&afterVersion); err != nil || beforeVersion != afterVersion {
+		t.Fatal("reused snapshot was rewritten", beforeVersion, afterVersion, err)
+	}
+	lookupScope := mustHash(t, s.Hasher, "anonymous-sports") + ":sports"
+	for _, test := range []struct {
+		scope, language, revision string
+		at                        time.Time
+	}{
+		{"wrong-viewer", "en", page.PreferenceRevision, now},
+		{lookupScope, "fr", page.PreferenceRevision, now},
+		{lookupScope, "en", "changed-preferences", now},
+		{lookupScope, "en", page.PreferenceRevision, now.Add(2 * time.Hour)},
+	} {
+		value, err := s.reusable(ctx, id, test.scope, test.language, test.revision, test.at)
+		if value != nil || err != nil {
+			t.Fatal("lookup escaped scope or expiration", value, err, test)
+		}
+	}
 	outside := "outside-us"
 	if _, err = s.Page(ctx, *page.Cursor, 1, "en", "", false, now, "sports", &outside); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatal("region context escaped", err)
@@ -81,6 +112,11 @@ func TestSportsPostgresSnapshotLiveChangesAndResolverGate(t *testing.T) {
 	old, _ := json.Marshal(payloadJSON)
 	if _, err = db.Exec(`UPDATE sports_personalized_snapshots SET payload=$2::jsonb WHERE snapshot_id=$1::uuid`, page.GenerationID, old); err != nil {
 		t.Fatal(err)
+	}
+	// Reuse rejects obsolete resolver snapshots; the existing persistence conflict
+	// path also rejects that same snapshot, rather than silently replacing it.
+	if _, err = s.Page(ctx, "", 1, "en", "", false, now, "sports", nil); !errors.Is(err, ErrCursorExpired) {
+		t.Fatal("obsolete snapshot reused or silently replaced", err)
 	}
 	if _, err = s.Page(ctx, *page.Cursor, 1, "en", "", false, now, "sports", nil); !errors.Is(err, ErrCursorExpired) {
 		t.Fatal("old resolver snapshot served", err)

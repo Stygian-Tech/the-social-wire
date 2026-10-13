@@ -88,46 +88,56 @@ func (s *FinanceStore) Page(ctx context.Context, cursor string, limit int, langu
 			return FinancePage{}, ErrUnavailable
 		}
 		started = time.Now()
-		definition, ok := financeDefinition(feed, catalog)
-		if !ok {
-			return FinancePage{}, ErrInvalidCursor
-		}
-		permitted := map[string]bool{}
-		for _, i := range catalog {
-			permitted[i.ID] = true
-		}
-		candidates := []financecore.RankCandidate{}
-		for _, candidate := range initial.Candidates {
-			if feed != "finance" {
-				candidate.Analysis = analyzeFinance(candidate.Item, structuredFinance(candidate.Analysis), catalog)
-				if !definition.Matches(candidate.Analysis, candidate.Item.Title, candidate.Item.Summary) {
-					continue
-				}
-			}
-			if hideCrypto && financeCryptoStory(candidate.Item.Title, candidate.Item.Summary, candidate.Analysis, catalog) {
-				continue
-			}
-			candidates = append(candidates, candidate)
-		}
-		instruments, sectors := map[string]bool{}, map[string]bool{}
-		if feed == "finance" {
-			for _, id := range prefs.Instruments {
-				if permitted[id] {
-					instruments[id] = true
-				}
-			}
-			for _, id := range prefs.Sectors {
-				sectors[id] = true
-			}
-		}
-		ranked := financecore.Rank(candidates, instruments, sectors, feed == "finance")
-		ObserveFeedPhase(ctx, "analysis", time.Since(started))
-		proposal := corpuscore.FinanceGeneration{GenerationID: newID(), GeneratedAt: initial.GeneratedAt, ExpiresAt: minTime(initial.ExpiresAt, now.Add(48*time.Hour)), Language: language, Candidates: ranked, Source: initial.Source}
-		started = time.Now()
-		snapshot, err = s.persist(ctx, proposal, initial, snapshotScope, revision, now)
-		ObserveFeedPhase(ctx, "snapshot-persistence", time.Since(started))
+		reused, err := s.reusable(ctx, initial.GenerationID, snapshotScope, language, revision, now)
+		ObserveFeedPhase(ctx, "snapshot-lookup", time.Since(started))
 		if err != nil {
 			return FinancePage{}, err
+		}
+		if reused != nil {
+			snapshot = *reused
+		} else {
+			started = time.Now()
+			definition, ok := financeDefinition(feed, catalog)
+			if !ok {
+				return FinancePage{}, ErrInvalidCursor
+			}
+			permitted := map[string]bool{}
+			for _, i := range catalog {
+				permitted[i.ID] = true
+			}
+			candidates := []financecore.RankCandidate{}
+			for _, candidate := range initial.Candidates {
+				if feed != "finance" {
+					candidate.Analysis = analyzeFinance(candidate.Item, structuredFinance(candidate.Analysis), catalog)
+					if !definition.Matches(candidate.Analysis, candidate.Item.Title, candidate.Item.Summary) {
+						continue
+					}
+				}
+				if hideCrypto && financeCryptoStory(candidate.Item.Title, candidate.Item.Summary, candidate.Analysis, catalog) {
+					continue
+				}
+				candidates = append(candidates, candidate)
+			}
+			instruments, sectors := map[string]bool{}, map[string]bool{}
+			if feed == "finance" {
+				for _, id := range prefs.Instruments {
+					if permitted[id] {
+						instruments[id] = true
+					}
+				}
+				for _, id := range prefs.Sectors {
+					sectors[id] = true
+				}
+			}
+			ranked := financecore.Rank(candidates, instruments, sectors, feed == "finance")
+			ObserveFeedPhase(ctx, "analysis", time.Since(started))
+			proposal := corpuscore.FinanceGeneration{GenerationID: newID(), GeneratedAt: initial.GeneratedAt, ExpiresAt: minTime(initial.ExpiresAt, now.Add(48*time.Hour)), Language: language, Candidates: ranked, Source: initial.Source}
+			started = time.Now()
+			snapshot, err = s.persist(ctx, proposal, initial, snapshotScope, revision, now)
+			ObserveFeedPhase(ctx, "snapshot-persistence", time.Since(started))
+			if err != nil {
+				return FinancePage{}, err
+			}
 		}
 	}
 	if ordinal > len(snapshot.Candidates) {

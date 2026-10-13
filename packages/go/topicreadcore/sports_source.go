@@ -10,11 +10,25 @@ import (
 )
 
 func (s *SportsStore) Catalog(ctx context.Context) ([]sportscore.Entity, error) {
+	observer := feedPhaseObserver(ctx)
+	var queryStarted time.Time
+	if observer != nil {
+		queryStarted = time.Now()
+	}
 	rows, closeRows, err := corpuscore.QueryRows(ctx, s.DB, `SELECT payload::text FROM sports_entities ORDER BY entity_id LIMIT 50000`)
+	if observer != nil {
+		observer("catalog-query-open", time.Since(queryStarted))
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer closeRows()
+	var scanElapsed, decodeElapsed time.Duration
+	var scanStarted, decodeStarted time.Time
+	if observer != nil {
+		scanStarted = time.Now()
+		defer func() { observer("catalog-scan", scanElapsed); observer("catalog-decode", decodeElapsed) }()
+	}
 	out := []sportscore.Entity{}
 	count := 0
 	for rows.Next() {
@@ -22,14 +36,26 @@ func (s *SportsStore) Catalog(ctx context.Context) ([]sportscore.Entity, error) 
 		if err = rows.Scan(&raw); err != nil {
 			return nil, err
 		}
+		if observer != nil {
+			scanElapsed += time.Since(scanStarted)
+			decodeStarted = time.Now()
+		}
 		var e sportscore.Entity
-		if err = corpuscore.DecodeContract(raw, &e); err != nil {
+		err = corpuscore.DecodeContract(raw, &e)
+		if observer != nil {
+			decodeElapsed += time.Since(decodeStarted)
+			scanStarted = time.Now()
+		}
+		if err != nil {
 			return nil, err
 		}
 		count++
 		if e.Active {
 			out = append(out, e)
 		}
+	}
+	if observer != nil {
+		scanElapsed += time.Since(scanStarted)
 	}
 	if err = rows.Err(); err != nil {
 		return nil, err

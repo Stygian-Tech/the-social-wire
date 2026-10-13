@@ -49,6 +49,14 @@ func (w *feedTimingWriter) Write(body []byte) (int, error) {
 	return w.ResponseWriter.Write(body)
 }
 
+func isFeedTimingPhase(phase string) bool {
+	switch phase {
+	case "moderation", "source", "source-transport", "source-decode", "catalog", "catalog-query-open", "catalog-scan", "catalog-decode", "catalog-revision", "selections", "snapshot-lookup", "snapshot-load", "snapshot-persistence", "rehydration", "analysis", "db-acquisition", "db-query":
+		return true
+	}
+	return false
+}
+
 func (r Routes) observeFeed(feed string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		started := time.Now()
@@ -63,6 +71,9 @@ func (r Routes) observeFeed(feed string, next http.HandlerFunc) http.HandlerFunc
 		}
 		authMode, pageMode := dims["auth"], dims["page"]
 		ctx := topicreadcore.WithFeedPhaseObserver(req.Context(), func(phase string, elapsed time.Duration) {
+			if !isFeedTimingPhase(phase) {
+				return
+			}
 			writer.mu.Lock()
 			if writer.closed {
 				writer.mu.Unlock()

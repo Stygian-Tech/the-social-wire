@@ -15,11 +15,16 @@ func WithQueryObserver(ctx context.Context, observer func(string, time.Duration)
 	return context.WithValue(ctx, queryObserverKey{}, observer)
 }
 
+func queryObserver(ctx context.Context) func(string, time.Duration) {
+	observer, _ := ctx.Value(queryObserverKey{}).(func(string, time.Duration))
+	return observer
+}
+
 // QueryRows preserves ordinary pool behavior when observation is absent. With an
 // observer, acquisition is measured separately and the owned connection remains
 // reserved until rows are drained or closed. Call closeRows on every success.
 func QueryRows(ctx context.Context, db *sql.DB, statement string, args ...any) (*sql.Rows, func(), error) {
-	observer, _ := ctx.Value(queryObserverKey{}).(func(string, time.Duration))
+	observer := queryObserver(ctx)
 	if observer == nil {
 		rows, err := db.QueryContext(ctx, statement, args...)
 		if err != nil {

@@ -14,8 +14,13 @@ func WithFeedPhaseObserver(ctx context.Context, observer func(string, time.Durat
 	return corpuscore.WithQueryObserver(context.WithValue(ctx, feedPhaseObserverKey{}, observer), observer)
 }
 
+func feedPhaseObserver(ctx context.Context) func(string, time.Duration) {
+	observer, _ := ctx.Value(feedPhaseObserverKey{}).(func(string, time.Duration))
+	return observer
+}
+
 func ObserveFeedPhase(ctx context.Context, phase string, elapsed time.Duration) {
-	if observer, ok := ctx.Value(feedPhaseObserverKey{}).(func(string, time.Duration)); ok && observer != nil {
+	if observer := feedPhaseObserver(ctx); observer != nil {
 		observer(phase, elapsed)
 	}
 }
