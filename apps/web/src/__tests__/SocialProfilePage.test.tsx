@@ -7,6 +7,7 @@ import * as Auth from "@/hooks/useAuth";
 import * as Catalog from "@/hooks/useBlueskySocialCatalog";
 import * as Profile from "@/hooks/useBlueskyProfile";
 import * as Timeline from "@/hooks/useBlueskyProfileTimeline";
+import * as Atproto from "@/lib/atprotoClient";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import ProfilePage from "@/app/social/profile/page";
 import { socialProfilePageHref } from "@/lib/socialProfileNavigation";
@@ -70,6 +71,28 @@ describe("other-user profile page", () => {
     expect(screen.getByText("Profile withheld by your moderation settings.")).toBeTruthy();
     expect(screen.queryByText("Other Person") === null).toBe(true);
     expect(screen.queryByRole("button", { name: "Posts" }) === null).toBe(true);
+    expect(screen.queryByRole("button", { name: /Follow/ })).toBeNull();
+  });
+  it("follows from the full viewer and shares Following state with profile previews", async () => {
+    const follow = mock(async () => ({ uri: `at://${did}/app.bsky.graph.follow/one`, cid: "cid" }));
+    const agent = spyOn(Atproto, "createOAuthAgent").mockReturnValue({ follow } as unknown as ReturnType<typeof Atproto.createOAuthAgent>);
+    restores.push(() => agent.mockRestore());
+    show();
+    fireEvent.click(screen.getByRole("button", { name: "Follow @other.test" }));
+    await screen.findByRole("button", { name: "Following @other.test" });
+    expect(follow).toHaveBeenCalledTimes(1);
+    expect(follow).toHaveBeenCalledWith(post.author.did);
+    expect(cache.getQueryData<string>(["blueskySocial", did, "following", 0, post.author.did])).toBe(`at://${did}/app.bsky.graph.follow/one`);
+  });
+  it("shows an existing follow and omits following your own profile", () => {
+    profileValue.viewer = { following: `at://${did}/app.bsky.graph.follow/existing` };
+    const view = show();
+    expect(screen.getByRole("button", { name: "Following @other.test" }).hasAttribute("disabled")).toBe(true);
+    view.unmount();
+    profileValue.did = did;
+    params = new URLSearchParams({ actor: did, returnTo: "/social" });
+    show();
+    expect(screen.queryByRole("button", { name: /Follow/ })).toBeNull();
   });
   it("fails closed when the viewer moderation catalog fails", async () => {
     catalogError = new Error(SCOPE_RECOVERY_MESSAGE);
