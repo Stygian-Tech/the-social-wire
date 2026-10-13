@@ -26,6 +26,14 @@ describe("entriesNextPageParam", () => {
     ).toBeUndefined();
   });
 
+  it("stops repeated cursors even when duplicate stories are returned", () => {
+    expect(entriesNextPageParam({ entries: [{ entryId: "a" } as never], cursor: "same" }, [], "same")).toBeUndefined();
+  });
+
+  it("stops a cursor cycle across earlier pages", () => {
+    expect(entriesNextPageParam({ entries: [], cursor: "first" }, [], "second", [undefined, "first", "second"])).toBeUndefined();
+  });
+
   it("continues scanning when an empty page advances the cursor", () => {
     const nextCursor = "2026-01-02T00:00:00.000Z|at://did/entry/2";
     expect(

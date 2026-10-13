@@ -4,7 +4,7 @@ import { useFeedFirstContentTiming } from "@/hooks/useFeedFirstContentTiming";
 
 import { RefreshCw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +18,8 @@ import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
 import { SocialFeedsSheet } from "./SocialFeedsSheet";
 import { SocialComposeButton } from "./SocialComposeButton";
+import { SOCIAL_HOME_REFRESH_EVENT } from "@/lib/socialHomeRefresh";
+import { groupSocialFeedItems } from "@/lib/socialFeedGrouping";
 
 export function SocialTimeline() {
   const params = useSearchParams();
@@ -31,7 +33,7 @@ export function SocialTimeline() {
   const moderation = !routeError && !catalog.isError ? catalog.data?.moderation : undefined;
   const timeline = useBlueskySocialTimeline(feed, moderation);
   const selected = catalog.data?.feeds.find(item => item.kind === feed.kind && item.uri === feed.uri) ?? feed;
-  const posts = moderation ? flattenSocialPages(timeline.data?.pages ?? []).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
+  const posts = moderation ? groupSocialFeedItems(flattenSocialPages(timeline.data?.pages ?? []), moderation).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
   useFeedFirstContentTiming(`social:${session?.did}:${feed.kind}:${feed.uri ?? ""}`, !!moderation && posts.length > 0 && !catalog.isError && !timeline.isError, !timeline.isFetchedAfterMount);
   const error = routeError || (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined);
   const loading = !error && (catalog.isPending || timeline.isPending);
@@ -45,12 +47,24 @@ export function SocialTimeline() {
     try { await signIn(session.did); } catch { setReauthorizing(false); setReauthorizeError(true); }
   }
 
-  async function refresh() {
-    const settings = await catalog.refetch();
+  const refetchCatalog = catalog.refetch;
+  const refreshFirstPage = timeline.refreshFirstPage;
+  const refresh = useCallback(async () => {
+    const settings = await refetchCatalog();
     if (!settings.isError && session) {
-      await timeline.refreshFirstPage(settings.data?.moderation);
+      await refreshFirstPage(settings.data?.moderation);
     }
-  }
+  }, [refetchCatalog, session, refreshFirstPage]);
+
+  useEffect(() => {
+    const returnHome = () => {
+      if (routeError) return;
+      if (scrollContainer.current) scrollContainer.current.scrollTop = 0;
+      void refresh();
+    };
+    window.addEventListener(SOCIAL_HOME_REFRESH_EVENT, returnHome);
+    return () => window.removeEventListener(SOCIAL_HOME_REFRESH_EVENT, returnHome);
+  }, [refresh, routeError, scrollContainer]);
 
   return <div className="relative flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title={selected.name} subtitle="Social">

@@ -56,15 +56,16 @@ export type EntriesPage = { entries: EntryListItem[]; cursor?: string };
 /** Matches {@link useEntries} `staleTime` / `prefetchInfiniteQuery` for entry lists. */
 export const ENTRIES_QUERY_STALE_MS = 30_000;
 
-/** Stop pagination when the server returns an empty page without advancing the cursor. */
+/** Stop pagination when the server repeats a cursor, including duplicate rows. */
 export function entriesNextPageParam(
   lastPage: EntriesPage,
   _allPages: EntriesPage[],
-  lastPageParam: string | undefined
+  lastPageParam: string | undefined,
+  allPageParams: (string | undefined)[] = [],
 ): string | undefined {
   const cursor = lastPage.cursor;
   if (!cursor) return undefined;
-  if (lastPage.entries.length === 0 && lastPageParam === cursor) {
+  if (lastPageParam === cursor || allPageParams.includes(cursor)) {
     return undefined;
   }
   return cursor;

@@ -90,9 +90,7 @@ describe("Social Post Rendering", () => {
     expect(unavailable).toContain("lucide-message-circle");
     expect(unavailable).toContain("Replying To an unavailable post");
     const withheld = card({ ...value, reply: { root: parent, parent: { ...parent, author: { ...author, viewer: { muted: true } } } } });
-    expect(withheld).toContain("lucide-message-circle");
-    expect(withheld).toContain("Replying To a withheld post");
-    expect(withheld).not.toContain('class="break-all hover:underline"');
+    expect(withheld).toBe("");
   });
   it("labels record-only replies when feed metadata is missing", () => {
     const value = item();

@@ -21,6 +21,7 @@ import { SocialAuthorThreadIndicator } from "./SocialAuthorThreadIndicator";
 import { socialAuthorThreadRoot } from "@/lib/socialAuthorThread";
 import { SocialPostActions } from "./SocialPostActions";
 import { moderateSocialPost } from "./socialModeration";
+import { isSocialInteractionHidden } from "@/lib/socialInteractionModeration";
 
 export function SocialPostPage() {
   const { session } = useAuth();
@@ -65,6 +66,7 @@ function SocialPostViewer({ uri }: { uri: string | null | undefined }) {
         <section id="social-post-replies" aria-label="Replies" className="flex flex-col gap-3">
           <h2 className="font-medium">Replies</h2>
           {!replies.length ? <p className="text-sm text-muted-foreground">No replies yet.</p> : replies.map(({ post, parent, depth, hasMore }) => {
+            if (isSocialInteractionHidden({ post, reply: { root: { ...root.post, $type: "app.bsky.feed.defs#postView" }, parent: { ...parent, $type: "app.bsky.feed.defs#postView" } } }, moderation)) return null;
             const content = moderateSocialPost(post, moderation).ui("contentList");
             const showMore = hasMore && !content.filter && !content.blur && !content.noOverride && AppBskyFeedPost.validateRecord(post.record).success;
             return <div key={post.uri} data-thread-post-uri={post.uri} data-reply-depth={depth} className={`min-w-0 ${depth > 0 ? "border-l-2 border-border pl-2 sm:pl-3" : ""} ${socialThreadReplyIndent(depth)}`}>
