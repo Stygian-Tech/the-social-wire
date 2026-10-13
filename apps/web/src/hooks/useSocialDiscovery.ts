@@ -63,16 +63,15 @@ export function useMarkSocialNotificationsSeen() {
   const { session, getOAuthSession } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (seenAt: string = new Date().toISOString()) => {
       const oauth = getOAuthSession();
       if (!oauth) throw new Error(SCOPE_RECOVERY_MESSAGE);
       if (oauth.did !== session?.did) throw new Error("Your account changed. Please reload this page.");
-      const seenAt = new Date().toISOString();
       await markSocialNotificationsSeen(oauth, seenAt);
       return { did: oauth.did, seenAt };
     },
     onSuccess: async ({ did, seenAt }) => {
-      queryClient.setQueriesData<InfiniteData<SocialNotificationPage>>({ queryKey: ["blueskySocial", did, "notifications"] }, current => current ? { ...current, pages: current.pages.map(page => ({ ...page, notifications: page.notifications.map(notification => notification.indexedAt <= seenAt ? { ...notification, isRead: true } : notification) })) } : current);
+      queryClient.setQueriesData<InfiniteData<SocialNotificationPage>>({ queryKey: ["blueskySocial", did, "notifications"] }, current => current ? { ...current, pages: current.pages.map(page => ({ ...page, notifications: page.notifications.map(notification => Date.parse(notification.indexedAt) < Date.parse(seenAt) ? { ...notification, isRead: true } : notification) })) } : current);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["blueskySocial", did, "notificationUnread"] }),
         queryClient.invalidateQueries({ queryKey: ["blueskySocial", did, "notifications"] }),

@@ -6,9 +6,9 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { composeLinkUrl, type ComposeLinkPreview } from "@/lib/blueskyExternalEmbed";
 import { fetchLatrOgPreview } from "@/lib/latrSaveMetadataBackfill";
 
-export function useComposeLinkPreview(text: string, session: OAuthSession | null | undefined, enabled = true) {
+export function useComposeLinkPreview(text: string, session: OAuthSession | null | undefined, enabled = true, initialRemovedUrl?: string) {
   const url = enabled ? composeLinkUrl(text) : undefined;
-  const [removed, setRemoved] = useState<string>();
+  const [removed, setRemoved] = useState<string | undefined>(initialRemovedUrl);
   const [settledUrl, setSettledUrl] = useState<string>();
   useEffect(() => {
     const timer = setTimeout(() => setSettledUrl(url), 350);
@@ -26,6 +26,7 @@ export function useComposeLinkPreview(text: string, session: OAuthSession | null
     staleTime: 10 * 60_000,
   });
   return {
+    removedUrl: removed,
     preview: active ? query.data ?? undefined : undefined,
     needsResolution: active && !!session && query.isPending,
     loading: active && query.isPending,
