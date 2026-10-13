@@ -26,5 +26,5 @@ export function SocialMentionProfileCard({ actor }: { actor: string }) {
   const identity = decision.ui("displayName");
   const hideIdentity = identity.filter || identity.blur || identity.noOverride;
   const avatar = decision.ui("avatar");
-  return <SocialExplorePersonCard actor={{ ...profile.data, $type: "app.bsky.actor.defs#profileView", ...(hideIdentity ? { displayName: "Account", handle: "", description: undefined } : {}), ...(avatar.filter || avatar.blur || avatar.noOverride ? { avatar: undefined } : {}) }} moderation={moderation} returnTo="/social" />;
+  return <SocialExplorePersonCard actor={{ ...profile.data, $type: "app.bsky.actor.defs#profileView", ...(hideIdentity ? { displayName: "Account", handle: "", description: undefined } : {}), ...(avatar.filter || avatar.blur || avatar.noOverride ? { avatar: undefined } : {}) }} moderation={moderation} returnTo="/social" descriptionBelow />;
 }

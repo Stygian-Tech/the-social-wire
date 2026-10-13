@@ -12,7 +12,7 @@ export function SocialMentionLink({ actor, children, className }: { actor: strin
     <PreviewCard.Trigger delay={300} closeDelay={300} render={<Link href={socialProfilePageHref(actor)} prefetch={false} />} className={className}>{children}</PreviewCard.Trigger>
     <PreviewCard.Portal>
       <PreviewCard.Positioner side="bottom" align="start" sideOffset={8} className="isolate z-50">
-        <PreviewCard.Popup className="w-80 max-w-[calc(100vw-2rem)] rounded-2xl bg-card text-card-foreground shadow-lg" onClick={event => event.stopPropagation()}>
+        <PreviewCard.Popup className="w-100 max-w-[calc(100vw-2rem)] rounded-2xl bg-card text-card-foreground shadow-lg" onClick={event => event.stopPropagation()}>
           {open ? <SocialMentionProfileCard actor={actor} /> : null}
         </PreviewCard.Popup>
       </PreviewCard.Positioner>
