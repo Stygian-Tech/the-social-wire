@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-
-import { ArticleSocialToolbar } from "@/components/EntryDetail/ArticleSocialToolbar";
-import type { EntryDetail, EntryListItem } from "@/lib/atprotoClient";
+import { useAuth } from "@/hooks/useAuth";
+import type { EntryListItem } from "@/lib/atprotoClient";
+import { LazyArticleCardActions } from "./LazyArticleCardActions";
 
 export function EntryCardActionMenu({
   entry,
@@ -12,37 +11,6 @@ export function EntryCardActionMenu({
   entry: EntryListItem;
   showWireFeedback?: boolean;
 }) {
-  const actionEntry = useMemo<EntryDetail>(
-    () => ({
-      entryId: entry.entryId,
-      financeItem: entry.financeItem,
-      title: entry.title,
-      summary: entry.summary,
-      publishedAt: entry.publishedAt,
-      contentHtml: entry.summary ?? "",
-      thumbnailUrl: entry.thumbnailUrl,
-      thumbnailFallbackUrl: entry.thumbnailFallbackUrl,
-      originalUrl: entry.originalUrl,
-      embedUrl: entry.originalUrl,
-      ...(entry.wireItem?.representativeUri
-        ? { entryId: entry.wireItem.representativeUri }
-        : {}),
-    }),
-    [entry],
-  );
-
-  return (
-    <div
-      className="flex items-center"
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
-    >
-      <ArticleSocialToolbar
-        entry={actionEntry}
-        variant="menu"
-        className="size-8"
-        showWireFeedback={showWireFeedback}
-      />
-    </div>
-  );
+  const { session, oauthSessionReloadSeq } = useAuth();
+  return <LazyArticleCardActions key={`${session?.did ?? "public"}:${oauthSessionReloadSeq}:${entry.entryId}`} entry={entry} showWireFeedback={showWireFeedback} />;
 }

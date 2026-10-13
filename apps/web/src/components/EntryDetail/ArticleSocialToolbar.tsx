@@ -2,7 +2,7 @@
 
 import { SocialPeopleTextField } from "@/components/Social/SocialPeopleTextField";
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, Fragment, useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
   Check,
@@ -65,6 +65,7 @@ interface ArticleSocialToolbarProps {
   extraActions?: ReactNode;
   variant?: "toolbar" | "menu";
   showWireFeedback?: boolean;
+  menuContentOnly?: boolean;
 }
 
 export function ArticleSocialToolbar({
@@ -74,6 +75,7 @@ export function ArticleSocialToolbar({
   extraActions,
   variant = "toolbar",
   showWireFeedback = false,
+  menuContentOnly = false,
 }: ArticleSocialToolbarProps) {
   const {
     viewerQuery,
@@ -204,12 +206,13 @@ export function ArticleSocialToolbar({
   };
 
   if (!entry) return null;
+  const MenuRoot = menuContentOnly ? Fragment : DropdownMenu;
 
   return (
     <>
       {variant === "menu" ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
+        <MenuRoot>
+          {!menuContentOnly ? <DropdownMenuTrigger
             render={
               <Button
                 type="button"
@@ -221,7 +224,7 @@ export function ArticleSocialToolbar({
             }
           >
             <MoreHorizontal className="size-4" />
-          </DropdownMenuTrigger>
+          </DropdownMenuTrigger> : null}
           <DropdownMenuContent
             align="end"
             className="min-w-64 [&_[data-slot=dropdown-menu-item]]:whitespace-nowrap"
@@ -351,7 +354,7 @@ export function ArticleSocialToolbar({
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
-        </DropdownMenu>
+        </MenuRoot>
       ) : (
         <div
           className={cn(
