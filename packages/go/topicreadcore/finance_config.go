@@ -26,6 +26,7 @@ type FinanceStore struct {
 	Remote           corpuscore.Store
 	Cursor           *TopicCursorCodec
 	Hasher           *wirecore.ActorHasher
+	snapshots        *decodedSnapshotCache[financecore.RankCandidate]
 	mu               sync.Mutex
 	importedRevision string
 	lastRetention    time.Time

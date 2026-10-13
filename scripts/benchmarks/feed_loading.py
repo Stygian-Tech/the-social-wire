@@ -4,6 +4,7 @@
 import argparse
 import json
 import math
+import re
 import subprocess
 import tempfile
 import time
@@ -12,6 +13,22 @@ from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
 METHODS = {"wire": "getWire", "finance": "getFinance", "sports": "getSports"}
+
+
+def phase_timings(headers):
+    """Keep numeric Server-Timing phases only; never persist auth headers."""
+    phases = {}
+    for line in headers.splitlines():
+        name, separator, value = line.partition(":")
+        if not separator or name.lower() != "server-timing":
+            continue
+        for phase in value.split(","):
+            match = re.fullmatch(r'\s*([a-zA-Z0-9_-]+)\s*;\s*dur=([0-9]+(?:\.[0-9]+)?)\s*', phase)
+            if match:
+                duration = float(match.group(2))
+                if math.isfinite(duration):
+                    phases[match.group(1)] = duration
+    return phases
 
 
 def percentile(values, percent):
@@ -26,9 +43,10 @@ def probe(origin, feed, cursor=None):
     target = origin.rstrip("/") + "/xrpc/app.thesocialwire.discovery." + METHODS[feed] + "?" + urlencode(query)
     with tempfile.TemporaryDirectory(prefix="tsw-feed-probe-") as directory:
         body = Path(directory) / "response.json"
+        headers = Path(directory) / "response.headers"
         result = subprocess.run([
             "curl", "--silent", "--show-error", "--max-time", "35", "--max-filesize", str(8 << 20),
-            "--output", str(body), "--write-out", "%{json}", target,
+            "--output", str(body), "--dump-header", str(headers), "--write-out", "%{json}", target,
         ], capture_output=True, text=True, check=False)
         try:
             metrics = json.loads(result.stdout)
@@ -49,6 +67,7 @@ def probe(origin, feed, cursor=None):
             "item_count": len(response.get("items", [])),
             "degraded": response.get("degraded"),
             "source": response.get("source"),
+            "server_phases_ms": phase_timings(headers.read_text()) if headers.exists() else {},
         }
         return sample, response.get("cursor")
 
@@ -60,6 +79,7 @@ def main():
     parser.add_argument("--samples", type=int, default=100)
     parser.add_argument("--continuation", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--revision", help="Verified deployed API revision; supplied by the release operator.")
     parser.add_argument("--interval", type=float, default=1.1, help="Seconds between samples; respects the anonymous one-request-per-second limiter.")
     args = parser.parse_args()
     origin = urlparse(args.origin)
@@ -71,11 +91,15 @@ def main():
         parser.error("interval must be at least one second")
     samples = []
     report = {"origin": args.origin, "feed": args.feed, "auth": "public", "cache_state": "unverified", "page": "continuation" if args.continuation else "first", "samples": samples}
+    if args.revision:
+        report["verified_deployed_revision"] = args.revision
     cursor = None
     if args.continuation:
         _, cursor = probe(args.origin, args.feed)
         if not cursor:
             parser.error("feed has no continuation; no pagination measurements were recorded")
+        # The seed uses the same anonymous limiter as measured requests.
+        time.sleep(args.interval)
     for index in range(args.samples):
         sample, _ = probe(args.origin, args.feed, cursor)
         samples.append(sample)

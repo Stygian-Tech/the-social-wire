@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -49,6 +50,8 @@ type RemoteStore struct {
 	Client               *http.Client
 	Now                  func() time.Time
 	MaximumResponseBytes int64
+	sportsMu             sync.Mutex
+	sportsCached         *SportsSourceResponse
 }
 
 func NewRemoteStore(config RemoteConfig, client *http.Client) *RemoteStore {
@@ -57,7 +60,7 @@ func NewRemoteStore(config RemoteConfig, client *http.Client) *RemoteStore {
 	}
 	copy := *client
 	copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &RemoteStore{config, &copy, time.Now, 8 << 20}
+	return &RemoteStore{Config: config, Client: &copy, Now: time.Now, MaximumResponseBytes: 8 << 20}
 }
 
 var _ Store = (*RemoteStore)(nil)
@@ -150,6 +153,14 @@ func (s *RemoteStore) request(ctx context.Context, method, target string, body [
 		if err != nil || version < minimum || version > 3 {
 			failure("contract-version", 200, len(data), limit)
 			return nil, 200, RemoteVersionError{}
+		}
+	}
+	if family != "" {
+		if observer := queryObserver(ctx); observer != nil {
+			phase := response.Header.Get("X-Wire-Corpus-Catalog-Cache")
+			if phase == "source-catalog-cache-hit" || phase == "source-catalog-cache-miss" {
+				observer(phase, 0)
+			}
 		}
 	}
 	return data, 200, nil

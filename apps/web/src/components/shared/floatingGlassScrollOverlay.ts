@@ -13,16 +13,24 @@ export function attachFloatingGlassScrollOverlay(surface: HTMLElement, edge: "to
   const previousPadding = scrollPane.style.getPropertyValue(paddingProperty);
   const previousMarker = scrollPane.getAttribute(marker);
   const style = window.getComputedStyle(scrollPane);
-  scrollPane.style.setProperty(paddingProperty, edge === "top" ? style.paddingTop : style.paddingBottom);
-  scrollPane.setAttribute(marker, "true");
+  const padding = edge === "top" ? style.paddingTop : style.paddingBottom;
 
-  const updateExtent = () => {
+  const measureExtent = () => {
     const style = window.getComputedStyle(surface);
-    const extent = surface.getBoundingClientRect().height +
+    return surface.getBoundingClientRect().height +
       (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
-    parent.style.setProperty(extentProperty, `${extent}px`);
   };
-  updateExtent();
+  const writeExtent = (extent: number) => {
+    const value = `${extent}px`;
+    if (parent.style.getPropertyValue(extentProperty) !== value) parent.style.setProperty(extentProperty, value);
+  };
+  // Read geometry before changing the scroll overlay: a write followed by these
+  // reads forces a second layout of the newly mounted feed.
+  const initialExtent = measureExtent();
+  scrollPane.style.setProperty(paddingProperty, padding);
+  scrollPane.setAttribute(marker, "true");
+  writeExtent(initialExtent);
+  const updateExtent = () => writeExtent(measureExtent());
   const observer = new ResizeObserver(updateExtent);
   observer.observe(surface);
   window.addEventListener("resize", updateExtent);
@@ -47,7 +55,8 @@ export function attachFloatingGlassControlsOverlay(controls: HTMLElement | null)
   const property = "--floating-glass-controls-extent";
   const previous = parent.style.getPropertyValue(property);
   const updateExtent = () => {
-    parent.style.setProperty(property, `${controls.getBoundingClientRect().height}px`);
+    const value = `${controls.getBoundingClientRect().height}px`;
+    if (parent.style.getPropertyValue(property) !== value) parent.style.setProperty(property, value);
   };
   updateExtent();
   const observer = new ResizeObserver(updateExtent);

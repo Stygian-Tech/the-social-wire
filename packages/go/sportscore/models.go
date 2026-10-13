@@ -58,8 +58,9 @@ type ArticleAnalysis struct {
 // RankCandidate pairs a serving item with analysis, an unpersonalized base score, and
 // global-reserve eligibility.
 type RankCandidate struct {
-	Item        wirecore.FeedItem `json:"item"`
-	Analysis    ArticleAnalysis   `json:"analysis"`
-	BaseScore   float64           `json:"baseScore"`
-	MajorGlobal bool              `json:"majorGlobal"`
+	PresentationFingerprint string            `json:"presentationFingerprint,omitempty"`
+	Item                    wirecore.FeedItem `json:"item"`
+	Analysis                ArticleAnalysis   `json:"analysis"`
+	BaseScore               float64           `json:"baseScore"`
+	MajorGlobal             bool              `json:"majorGlobal"`
 }

@@ -8,14 +8,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 )
 
 type PostgreSQLStore struct {
-	DB    *sql.DB
-	Cache *PayloadCache
+	DB                       *sql.DB
+	Cache                    *PayloadCache
+	sportsCatalogMu          sync.Mutex
+	sportsSourceCatalogCache *sportsCatalogCache
 }
 
 var _ Store = (*PostgreSQLStore)(nil)

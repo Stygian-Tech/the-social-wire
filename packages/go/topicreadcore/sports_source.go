@@ -10,6 +10,12 @@ import (
 )
 
 func (s *SportsStore) Catalog(ctx context.Context) ([]sportscore.Entity, error) {
+	if value, ok, err := s.cachedCatalog(ctx); ok || err != nil {
+		return value, err
+	}
+	return s.loadCatalog(ctx)
+}
+func (s *SportsStore) loadCatalog(ctx context.Context) ([]sportscore.Entity, error) {
 	observer := feedPhaseObserver(ctx)
 	var queryStarted time.Time
 	if observer != nil {
@@ -111,8 +117,27 @@ func (s *SportsStore) Entities(ctx context.Context, q string) ([]sportscore.Enti
 }
 func (s *SportsStore) source(ctx context.Context, lang string, now time.Time) (corpuscore.SportsGeneration, error) {
 	if s.Remote != nil {
-		value, err := s.Remote.Sports(ctx, lang, now)
+		var value corpuscore.SportsGeneration
+		var err error
+		lean := false
+		if remote, ok := s.Remote.(corpuscore.SportsSourceStore); ok {
+			var response corpuscore.SportsSourceResponse
+			lean = true
+			response, err = remote.SportsSource(ctx, corpuscore.SportsSourceRequest{Language: lang}, now)
+			if err == nil {
+				value = corpuscore.SportsSourceGeneration(response)
+				err = s.requireSourceCatalog(ctx, value)
+				if err != nil {
+					return value, err
+				}
+			}
+		} else {
+			value, err = s.Remote.Sports(ctx, lang, now)
+		}
 		if err == nil && value.Language == lang && value.ExpiresAt.After(now) && len(value.Candidates) <= 5000 && sportsCurrent(value.Candidates) {
+			if lean {
+				return value, nil
+			}
 			if err = s.importCatalog(ctx, value, now); err == nil {
 				return value, nil
 			}

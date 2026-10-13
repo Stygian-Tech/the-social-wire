@@ -6,7 +6,6 @@ package sportscore
 // domain/sport diversification.
 
 import (
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -30,58 +29,9 @@ func RankSelections(candidates []RankCandidate, selections []Selection, catalog 
 // Rank applies current-evidence and mute precedence, personalization, duplicate
 // suppression, global reserves, and domain/sport diversity.
 func Rank(candidates []RankCandidate, follows, mutes map[string]bool, entities []Entity, reserveGlobal bool) []RankCandidate {
-	byID := map[string]Entity{}
-	for _, entity := range entities {
-		if _, ok := byID[entity.ID]; !ok {
-			byID[entity.ID] = entity
-		}
-	}
-	parents := ParentIDs(entities)
-	direct := func(candidate RankCandidate) map[string]bool {
-		ids := set(nil)
-		for _, association := range candidate.Analysis.Associations {
-			if association.Confidence >= .9 && association.ResolverVersion == ResolverVersion {
-				ids[association.EntityID] = true
-			}
-		}
-		return ids
-	}
-	broad := func(candidate RankCandidate) map[string]bool {
-		ids := Ancestors(set(candidate.Analysis.SportIDs), parents)
-		for _, id := range candidate.Analysis.CompetitionIDs {
-			ids[id] = true
-		}
-		for id := range direct(candidate) {
-			if byID[id].Kind == "classification" {
-				ids[id] = true
-			}
-		}
-		return ids
-	}
-	personal := func(id string) bool {
-		switch byID[id].Kind {
-		case "team", "national-side", "athlete", "driver", "ncaa-team":
-			return true
-		}
-		return false
-	}
-	permitted := func(candidate RankCandidate) bool {
-		ids := direct(candidate)
-		for id := range ids {
-			if mutes[id] && personal(id) {
-				return false
-			}
-		}
-		if !intersects(broad(candidate), mutes) && !intersects(ids, mutes) {
-			return true
-		}
-		for id := range ids {
-			if follows[id] && !mutes[id] && personal(id) {
-				return true
-			}
-		}
-		return false
-	}
+	filter := newSelectionFilter(follows, mutes, entities)
+	byID, parents := filter.byID, filter.parents
+	direct, broad, personal := filter.direct, filter.broad, filter.personal
 	score := func(candidate RankCandidate) float64 {
 		boost := 0.0
 		for id := range direct(candidate) {
@@ -114,7 +64,7 @@ func Rank(candidates []RankCandidate, follows, mutes map[string]bool, entities [
 	}
 	sorted := []RankCandidate{}
 	for _, candidate := range candidates {
-		if candidate.Analysis.Eligible && candidate.Analysis.ResolverVersion == ResolverVersion && !math.IsNaN(candidate.BaseScore) && !math.IsInf(candidate.BaseScore, 0) && candidate.BaseScore >= 0 && permitted(candidate) {
+		if filter.Allows(candidate) {
 			sorted = append(sorted, candidate)
 		}
 	}
