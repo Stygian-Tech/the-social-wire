@@ -19,7 +19,7 @@ export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
       let href: string | undefined;
       let actor: string | undefined;
       if (AppBskyRichtextFacet.isLink(feature)) href = socialHttpsUrl(feature.uri);
-      else if (AppBskyRichtextFacet.isMention(feature) && isSocialProfileActor(feature.did)) actor = feature.did;
+      else if (AppBskyRichtextFacet.isMention(feature) && feature.did.startsWith("did:") && isSocialProfileActor(feature.did)) actor = feature.did;
       else if (AppBskyRichtextFacet.isTag(feature)) href = `https://bsky.app/search?q=${encodeURIComponent(`#${feature.tag}`)}`;
       facets.push({ start: offset, end: offset + segment.text.length, href, actor });
     }
