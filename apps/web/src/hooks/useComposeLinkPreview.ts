@@ -14,7 +14,7 @@ export function useComposeLinkPreview(text: string, session: OAuthSession | null
     const timer = setTimeout(() => setSettledUrl(url), 350);
     return () => clearTimeout(timer);
   }, [url]);
-  const active = !!url && url !== removed && enabled;
+  const active = !!url && url !== (removed ?? initialRemovedUrl) && enabled;
   const query = useQuery({
     queryKey: ["blueskySocial", session?.did, "composeLinkPreview", url],
     enabled: active && url === settledUrl && !!session,
@@ -26,7 +26,7 @@ export function useComposeLinkPreview(text: string, session: OAuthSession | null
     staleTime: 10 * 60_000,
   });
   return {
-    removedUrl: removed,
+    removedUrl: removed ?? initialRemovedUrl,
     preview: active ? query.data ?? undefined : undefined,
     needsResolution: active && !!session && query.isPending,
     loading: active && query.isPending,

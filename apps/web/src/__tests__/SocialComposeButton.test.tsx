@@ -1,4 +1,7 @@
 import * as Tools from "@/lib/toolsEnabled";
+import * as draftStorage from "@/lib/composerDraftStorage";
+import * as gifs from "@/lib/klipyClient";
+import type { GifAsset } from "@/lib/composerMedia";
 import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -23,6 +26,9 @@ let cache: QueryClient;
 const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
 let isPro = true;
 beforeEach(() => {
+  const load = spyOn(draftStorage, "loadComposerDraft").mockResolvedValue(undefined);
+  const save = spyOn(draftStorage, "saveComposerDraft").mockResolvedValue(undefined);
+  restores.push(() => load.mockRestore(), () => save.mockRestore());
   isPro = true;
   const entitlement = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => entitlement.mockRestore());
   const scheduler = spyOn(scheduling, "useSkejScheduling").mockReturnValue({ readiness: { data: { accountDid: oauth.did, connected: true }, isPending: false, isError: false, refetch: async () => ({}) }, schedules: {}, pending: false, schedule: async () => ({}), cancel: async () => {}, reschedule: async () => {}, connectUrl: "https://skej.test/connect" } as unknown as ReturnType<typeof scheduling.useSkejScheduling>); restores.push(() => scheduler.mockRestore());
@@ -45,6 +51,42 @@ async function open() {
   fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
   return await screen.findByRole("textbox", { name: "Post Text" });
 }
+
+const gifAsset: GifAsset = { id: "123", title: "Celebrate", description: "A celebration", url: "https://static.klipy.com/ii/example/full.gif", poster: "https://static.klipy.com/ii/example/still.jpg", mp4: "https://static.klipy.com/ii/example/video.mp4", width: 280, height: 498, attribution: "Powered by KLIPY" };
+it("allows a GIF-only post only after explicitly acknowledging missing descriptions", async () => {
+  const search = spyOn(gifs, "getComposerGifs").mockResolvedValue({ results: [gifAsset], next: "" });
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: `at://${oauth.did}/app.bsky.feed.post/new`, cid: "cid" });
+  restores.push(() => search.mockRestore(), () => publish.mockRestore());
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "GIF" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Select GIF: A celebration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  expect(publish).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole("button", { name: "Post Without Descriptions" }));
+  await screen.findByText("Post Published");
+  expect(publish.mock.calls[0][0]).toMatchObject({ text: "", media: { kind: "gif", asset: { id: "123" } } });
+});
+
+it("keeps GIFs and edited alt text on their original segment when a thread is reordered", async () => {
+  const search = spyOn(gifs, "getComposerGifs").mockResolvedValue({ results: [gifAsset], next: "" });
+  const publish = spyOn(threads, "publishBlueskyThread").mockResolvedValue([]);
+  restores.push(() => search.mockRestore(), () => publish.mockRestore());
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "GIF" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Select GIF: A celebration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Alt Text" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Alt Text" }), { target: { value: "A person celebrates a win" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Description" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add Post" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Post 2 Text" }), { target: { value: "Second segment" } });
+  fireEvent.click(screen.getByRole("button", { name: "Move Post 1 Down" }));
+  fireEvent.click(screen.getByRole("button", { name: "Post Thread" }));
+  await waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+  const segments = publish.mock.calls[0][0].publication.segments;
+  expect(segments[0].draft).toMatchObject({ text: "Second segment" });
+  expect(segments[0].draft.media).toBeUndefined();
+  expect(segments[1].draft).toMatchObject({ id: "first", media: { kind: "gif", alt: "A person celebrates a win", asset: { id: "123" } } });
+});
 
 it("opens from the floating button and publishes only on explicit submission", async () => {
   const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: `at://${oauth.did}/app.bsky.feed.post/new`, cid: "cid" });

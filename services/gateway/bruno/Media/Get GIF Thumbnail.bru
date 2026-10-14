@@ -1,0 +1,16 @@
+meta {
+  name: Get GIF Thumbnail
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/media/gifs/thumbnail?id={{gifId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
