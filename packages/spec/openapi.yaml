@@ -1936,6 +1936,65 @@ security:
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 paths:
+  /v1/media/gifs:
+    get:
+      summary: Search or resolve KLIPY GIFs through the authenticated Gateway
+      description: Uses the server-side KLIPY partner key. Empty q returns featured results; id resolves a saved selection. Only verified Klipy assets with compatible video renditions are returned. Results carry provider attribution.
+      parameters:
+        - {in: query, name: q, schema: {type: string, maxLength: 200}}
+        - {in: query, name: cursor, schema: {type: string, maxLength: 512}}
+        - {in: query, name: id, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$'}}
+      responses:
+        '200':
+          description: Normalized assets and an opaque next-page cursor
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results, next]
+                properties:
+                  next: {type: string}
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, description, url, poster, width, height, attribution]
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        description: {type: string}
+                        url: {type: string, format: uri}
+                        poster: {type: string, format: uri}
+                        mp4: {type: string, format: uri}
+                        webm: {type: string, format: uri}
+                        width: {type: integer, minimum: 1, maximum: 20000}
+                        height: {type: integer, minimum: 1, maximum: 20000}
+                        attribution: {type: string}
+        '400': {description: Invalid query}
+        '401': {description: Authentication required}
+        '404': {description: Selected asset no longer available}
+        '429': {description: Search rate limit reached}
+        '502': {description: Provider failure or invalid response}
+        '503': {description: KLIPY API key is not configured}
+  /v1/media/gifs/thumbnail:
+    get:
+      summary: Fetch a verified GIF poster for authenticated PDS upload
+      description: Resolves the asset ID through KLIPY; accepts no arbitrary fetch URL. JPEG, PNG or WebP, at most 1000000 bytes.
+      parameters:
+        - {in: query, name: id, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$'}}
+      responses:
+        '200':
+          description: Verified poster bytes
+          content:
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
+        '400': {description: Invalid or missing asset ID}
+        '401': {description: Authentication required}
+        '404': {description: Asset no longer available}
+        '429': {description: Rate limit reached}
+        '502': {description: Provider or poster failure}
+        '503': {description: KLIPY API key is not configured}
   /v1/lists:
     get:
       summary: Own and saved Standard Reader lists from public PDS records

@@ -75,3 +75,7 @@ Ordinary Reader/Social observation ingestion remains available to Free viewers.
 Canonical deployment reference: [railway/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/railway/README.md).
 
 Related: [[Service-API]], [[Operations]], [[Testing]].
+
+### Composer GIF Provider
+
+Gateway accepts `KLIPY_API_KEY` (legacy `KLIPPY_API_KEY` fallback) for KLIPY’s Tenor-compatible `/v2` API. Confirm partner API compatibility, production access and attribution before rollout. The web client never receives the key. Authenticated `GET /v1/media/gifs` supports search/featured pagination and asset-ID resolution. `GET /v1/media/gifs/thumbnail?id=…` resolves a verified poster bounded to 1 MB. Missing configuration returns 503. Scheduled and brand-account media remain gated until their publishing contracts support attachments.
