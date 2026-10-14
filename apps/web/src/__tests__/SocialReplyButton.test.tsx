@@ -1,3 +1,4 @@
+import * as draftStorage from "@/lib/composerDraftStorage";
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -23,6 +24,9 @@ const restores: (() => void)[] = [];
 let cache: QueryClient;
 
 beforeEach(() => {
+  const load = spyOn(draftStorage, "loadComposerDraft").mockResolvedValue(undefined);
+  const save = spyOn(draftStorage, "saveComposerDraft").mockResolvedValue(undefined);
+  restores.push(() => load.mockRestore(), () => save.mockRestore());
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const stored = spyOn(storedAuth, "getStoredOAuthDid").mockReturnValue(oauth.did);
   const account = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
@@ -111,7 +115,7 @@ it("preserves the failed draft and successfully retries without closing prematur
   expect(publish.mock.calls[1]![0].text).toBe("Keep This Draft");
 });
 
-it("enforces grapheme and byte limits and clears cancelled drafts on reopening", async () => {
+it("enforces grapheme and byte limits and preserves cancelled drafts on reopening", async () => {
   const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue(result);
   restores.push(() => publish.mockRestore());
   show();
@@ -127,8 +131,8 @@ it("enforces grapheme and byte limits and clears cancelled drafts on reopening",
   expect(publish).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect((await open()).value).toBe("");
-  expect(screen.queryByText("Reply Text Exceeds the Size Limit")).toBeNull();
+  expect((await open()).value).toBe("👨‍👩‍👧‍👦".repeat(300));
+  expect(screen.getByText("Reply Text Exceeds the Size Limit")).toBeTruthy();
 });
 
 it("withholds composition for disabled replies and invalid post records", () => {

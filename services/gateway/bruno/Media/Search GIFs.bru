@@ -1,0 +1,16 @@
+meta {
+  name: Search GIFs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/media/gifs?q=celebrate
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
