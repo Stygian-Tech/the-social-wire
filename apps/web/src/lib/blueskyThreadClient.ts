@@ -1,3 +1,4 @@
+import { compilePostText } from "./composePostText";
 import { AppBskyFeedPost } from "@atproto/api";
 import { TID } from "@atproto/common-web";
 import { cidForLex } from "@atproto/lex-cbor";
@@ -6,18 +7,21 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { postTextLength, prepareBlueskyPost } from "./blueskyComposeClient";
 import type { ComposeLinkPreview } from "./blueskyExternalEmbed";
+import type { ComposerMedia } from "./composerMedia";
+import { mediaHasContent, mediaReady } from "./composerMedia";
+import type { AppBskyFeedDefs } from "@atproto/api";
 
 type Reference = { uri: string; cid: string };
-export type ThreadSegment = { id: string; text: string; linkPreview?: ComposeLinkPreview };
+export type ThreadSegment = { id: string; text: string; removedLinkUrl?: string; linkPreview?: ComposeLinkPreview; media?: ComposerMedia; replyTo?: AppBskyFeedDefs.PostView; quoteTo?: AppBskyFeedDefs.PostView };
 export type ThreadPublication = { did: string; segments: { draft: ThreadSegment; rkey: string; record?: AppBskyFeedPost.Record; attempted?: boolean; result?: Reference }[] };
 
-export function validThreadText(text: string) {
+export function validThreadText(text: string, media?: ComposerMedia) {
   const { graphemes, bytes } = postTextLength(text);
-  return !!text.trim() && graphemes <= 300 && bytes <= 3000;
+  return (!!compilePostText(text).text.trim() || mediaHasContent(media)) && mediaReady(media) && graphemes <= 300 && bytes <= 3000;
 }
 
 export function newThreadPublication(did: string, segments: ThreadSegment[]): ThreadPublication {
-  if (!segments.length || !segments.every(segment => validThreadText(segment.text))) throw new Error("Every Post Needs Text Within the Size Limit.");
+  if (!segments.length || !segments.every(segment => validThreadText(segment.text, segment.media))) throw new Error("Every Post Needs Text Or Ready Media Within The Size Limit.");
   return { did, segments: segments.map(draft => ({ draft: { ...draft }, rkey: TID.nextStr() })) };
 }
 
@@ -27,13 +31,16 @@ export async function publishBlueskyThread(args: {
   publication: ThreadPublication;
   assertCurrentAccount: () => void;
   onProgress?: (completed: number) => void;
+  onMediaProgress?: (message: string) => void;
+  checkpoint?: () => Promise<void>;
 }): Promise<Reference[]> {
   const { publication, session, assertCurrentAccount } = args;
   if (publication.did !== session.did) throw new Error("Your Account Changed. Reopen the Composer.");
   assertCurrentAccount();
   // Resolve and validate each segment independently before creating any records.
-  for (const segment of publication.segments) {
-    segment.record ??= await prepareBlueskyPost({ session, text: segment.draft.text, linkPreview: segment.draft.linkPreview, assertCurrentAccount });
+  for (const [index, segment] of publication.segments.entries()) {
+    segment.record ??= await prepareBlueskyPost({ session, ...segment.draft, assertCurrentAccount, onMediaProgress: message => args.onMediaProgress?.(`Post ${index + 1}: ${message}`) });
+    await args.checkpoint?.();
   }
   const agent = createOAuthAgent(session);
   for (let index = 0; index < publication.segments.length; index++) {
@@ -57,11 +64,14 @@ export async function publishBlueskyThread(args: {
       if (!segment.result) {
         assertCurrentAccount();
         segment.attempted = true;
+        await args.checkpoint?.();
+        assertCurrentAccount();
         const result = await agent.com.atproto.repo.createRecord({ repo: session.did, collection: "app.bsky.feed.post", rkey: segment.rkey, record: segment.record! });
         segment.result = { uri: result.data.uri, cid: result.data.cid };
       }
     }
     assertCurrentAccount();
+    await args.checkpoint?.();
     args.onProgress?.(index + 1);
   }
   return publication.segments.map(segment => segment.result!);

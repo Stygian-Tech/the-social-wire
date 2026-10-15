@@ -1,3 +1,4 @@
+import * as draftStorage from "@/lib/composerDraftStorage";
 import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -24,6 +25,9 @@ const restores: (() => void)[] = [];
 let cache: QueryClient;
 
 beforeEach(() => {
+  const load = spyOn(draftStorage, "loadComposerDraft").mockResolvedValue(undefined);
+  const save = spyOn(draftStorage, "saveComposerDraft").mockResolvedValue(undefined);
+  restores.push(() => load.mockRestore(), () => save.mockRestore());
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const stored = spyOn(storedAuth, "getStoredOAuthDid").mockReturnValue(oauth.did);
   const account = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
@@ -118,7 +122,7 @@ it.each(["signed-out", "pending", "mismatched-viewer"])("disables the action for
   expect(onRepost).not.toHaveBeenCalled();
 });
 
-it("cancels without publishing and resets the draft on reopening", async () => {
+it("cancels without publishing and preserves the draft on reopening", async () => {
   const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue(result);
   restores.push(() => publish.mockRestore());
   show();
@@ -126,7 +130,7 @@ it("cancels without publishing and resets the draft on reopening", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(publish).not.toHaveBeenCalled();
-  expect((await openQuote()).value).toBe("");
+  expect((await openQuote()).value).toBe("Cancelled Draft");
 });
 
 it("preserves failed quotes and retries with the same target and draft", async () => {

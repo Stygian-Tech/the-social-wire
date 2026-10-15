@@ -6,9 +6,9 @@ import { getBlueskySocialCatalog } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 
 export function useBlueskySocialCatalog({ enabled = true }: { enabled?: boolean } = {}) {
-  const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
+  const { session, getOAuthSession } = useAuth();
   const client = useQueryClient();
-  const key = ["blueskySocial", session?.did ?? "", "catalog", oauthSessionReloadSeq];
+  const key = ["blueskySocial", session?.did ?? "", "catalog", "cache-v1"];
   return useQuery({
     queryKey: key,
     enabled: enabled && !!session,
@@ -21,6 +21,8 @@ export function useBlueskySocialCatalog({ enabled = true }: { enabled?: boolean 
       } });
     },
     staleTime: 60_000,
+    gcTime: 7 * 24 * 60 * 60 * 1000,
+    refetchOnMount: "always",
     retry: false,
   });
 }

@@ -1,3 +1,4 @@
+import * as draftStorage from "@/lib/composerDraftStorage";
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -16,6 +17,9 @@ const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
 const moderation: ModerationOpts = { userDid: oauth.did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } };
 const post: AppBskyFeedDefs.PostView = { uri: "at://did:plc:alice/app.bsky.feed.post/one", cid: "bafyreia", author: { did: "did:plc:alice", handle: "alice.test" }, record: { $type: "app.bsky.feed.post", text: "Hello", createdAt: "2026-10-11T12:00:00Z" }, indexedAt: "2026-10-11T12:00:00Z" };
 beforeEach(() => {
+  const load = spyOn(draftStorage, "loadComposerDraft").mockResolvedValue(undefined);
+  const save = spyOn(draftStorage, "saveComposerDraft").mockResolvedValue(undefined);
+  restores.push(() => load.mockRestore(), () => save.mockRestore());
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const spies = [spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>), spyOn(storedAuth, "getStoredOAuthDid").mockReturnValue(oauth.did)];
   restores.push(...spies.map(spy => () => spy.mockRestore()));
@@ -34,14 +38,22 @@ async function open(mode: "reply" | "quote") {
   return { view, field };
 }
 
-it.each(["reply", "quote"] as const)("previews %s formatting and refreshes only after publishing", async mode => {
+it("restores reply drafts only when the composer opens, without loading every feed card's draft", async () => {
+  const load = spyOn(draftStorage, "loadComposerDraft");
+  render(<QueryClientProvider client={cache}><SocialPostComposeDialog post={post} moderation={moderation} mode="reply" trigger={() => <DialogTrigger>Compose</DialogTrigger>} /></QueryClientProvider>);
+  expect(load).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Compose" }));
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+});
+
+it.each(["reply", "quote"] as const)("previews native %s text and refreshes only after publishing", async mode => {
   const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: "at://did:plc:viewer/app.bsky.feed.post/new", cid: "bafyreia" });
   let stopped = false;
   const reload = spyOn(refresh, "refreshSocialPostQueries").mockReturnValue(() => { stopped = true; });
   restores.push(() => publish.mockRestore(), () => reload.mockRestore());
   const { view, field } = await open(mode);
   fireEvent.change(field, { target: { value: "**Formatted** *draft*" } });
-  expect(screen.getByRole("region", { name: "Post Preview" }).querySelector("strong")?.textContent).toBe("Formatted");
+  expect(screen.getByRole("region", { name: "Post Preview" }).textContent).toBe("PreviewFormatted draft");
   expect(reload).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: mode === "reply" ? "Post Reply" : "Post Quote" }));
   await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
@@ -63,7 +75,7 @@ it("keeps the formatted draft and skips refresh when posting fails", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Post Reply" }));
   await screen.findByRole("alert");
   expect((field as HTMLTextAreaElement).value).toBe("**Keep Me**");
-  expect(screen.getByRole("region", { name: "Post Preview" }).querySelector("strong")?.textContent).toBe("Keep Me");
+  expect(screen.getByRole("region", { name: "Post Preview" }).textContent).toBe("PreviewKeep Me");
   expect(reload).not.toHaveBeenCalled();
 });
 

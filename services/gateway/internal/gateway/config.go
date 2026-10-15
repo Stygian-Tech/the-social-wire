@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	KlipyAPIKey                                                               string
 	EndpointPolicy                                                            *gatewaycore.EndpointPolicy
 	PodcastsEnabled, ToolsEnabled                                             bool
 	Environment, Address, DatabaseURL, RedisURL, CacheBackend                 string
@@ -40,6 +41,7 @@ func ParseConfig(env map[string]string) (Config, error) {
 	if raw := strings.TrimSpace(env["TOOLS_ENABLED"]); raw != "" {
 		c.ToolsEnabled = strings.EqualFold(raw, "true")
 	}
+	c.KlipyAPIKey = get("KLIPY_API_KEY", get("KLIPPY_API_KEY", ""))
 	c.PodcastsEnabled = strings.EqualFold(env["PODCASTS_ENABLED"], "true")
 	c.ProDIDs = make(map[string]bool)
 	c.ProGatingEnabled = strings.EqualFold(strings.TrimSpace(env["SOCIALWIRE_PRO_GATING_ENABLED"]), "true")

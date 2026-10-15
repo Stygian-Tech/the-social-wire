@@ -12,11 +12,12 @@ describe("External GIF embeds", () => {
   it("uses the animated original with retained query and dimensions", () => {
     expect(socialExternalGif(external)).toEqual({ thumb: uri, fullsize: uri, alt: "Cooking with Fire", aspectRatio: { width: 280, height: 498 } });
     const html = renderToStaticMarkup(<SocialPostEmbed embed={{ $type: "app.bsky.embed.external#view", external }} moderation={moderation} />);
-    expect(html).toContain("a.gif?");
-    expect(html).not.toContain("still.jpg");
+    expect(html).toContain("video.mp4");
+    expect(html).toContain("still.jpg");
     expect(html).toContain('width="280" height="498"');
-    expect(html).toContain("Open Image 1: Cooking with Fire");
-    expect(html).toContain("h-auto w-full");
+    expect(html).toContain("Play GIF");
+    expect(html).toContain("Open GIF Viewer");
+    expect(html).toContain("object-contain");
     expect(html).not.toContain("object-cover");
   });
   it("uses natural dimensions for absent or invalid hints", () => {
@@ -30,7 +31,7 @@ describe("External GIF embeds", () => {
   it("rejects unsafe sources and retains ordinary external cards", () => {
     expect(socialExternalGif({ ...external, uri: "javascript:alert(1)", thumb: "http://media.example/a.gif" })).toBeUndefined();
     expect(socialExternalGif({ ...external, uri: "https://user:secret@media.example/a.gif" })).toBeUndefined();
-    const html = renderToStaticMarkup(<SocialPostEmbed embed={{ $type: "app.bsky.embed.external#view", external: { ...external, uri: "https://example.com/story" } }} moderation={moderation} />);
+    const html = renderToStaticMarkup(<SocialPostEmbed embed={{ $type: "app.bsky.embed.external#view", external: { ...external, uri: "https://example.com/story", thumb: "https://media.example/still.jpg" } }} moderation={moderation} />);
     expect(html).toContain("still.jpg");
     expect(html).toContain("Chef Wok");
     expect(html).not.toContain("Open Image");

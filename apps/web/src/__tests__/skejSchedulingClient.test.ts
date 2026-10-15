@@ -104,3 +104,11 @@ test("stores external previews in the scheduled publication payload", async () =
   const record = f.requests[0].payload!.record as SkejScheduleRecord;
   expect(record.posts[0]).toMatchObject({ text: linkPreview.uri, embed: { $type: "app.bsky.embed.external", external: linkPreview } });
 });
+
+test("schedules native link-label text and retains its external card", async () => {
+  const f = fixture();
+  const linkPreview = { uri: "https://labs.xbox.com/", title: "XBOX Labs", description: "Explore" };
+  await createSkejSchedule(f.actor, "[XBOX Labs](labs.xbox.com)", future, linkPreview);
+  const record = f.requests[0].payload!.record as SkejScheduleRecord;
+  expect(record.posts[0]).toMatchObject({ text: "XBOX Labs", facets: [{ index: { byteStart: 0, byteEnd: 9 }, features: [{ uri: linkPreview.uri }] }], embed: { external: linkPreview } });
+});

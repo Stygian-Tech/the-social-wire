@@ -18,7 +18,7 @@ export function PodcastClipComposer({ open, onOpenChange, title, url, accountDid
   const profileQuery = useViewerProfile();
   const profile = profileQuery.data?.did === accountDid ? profileQuery.data : undefined;
   const name = profile?.displayName || (profile?.handle && !profile.handle.startsWith("did:") ? profile.handle : "Personal Account");
-  const length = postTextLength(text);
+  const length = postTextLength(text, { markdown: false });
   const valid = length.graphemes <= 300 && length.bytes <= 3000;
   return <Dialog open={open} onOpenChange={next => { if (!pending) onOpenChange(next); }}>
     <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">

@@ -1,7 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, dehydrate } from "@tanstack/react-query";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { prepareSocialQueryPersistence, shouldPersistSocialQuery } from "@/lib/socialQueryPersist";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Navigation from "next/navigation";
 
@@ -64,6 +66,37 @@ function servePage(value: Client.BlueskySocialPage = { feed: [] }) {
 }
 
 describe("Social timeline page", () => {
+  it("restores a feed into a new client before network responses and updates it in place", async () => {
+    const old = item("cached", "Cached post on reload");
+    const catalogKey = ["blueskySocial", did, "catalog", "cache-v1"];
+    const timelineKey = ["blueskySocial", did, "timeline", "cache-v1", "following", "", []];
+    const source = new QueryClient();
+    source.setQueryData(catalogKey, { feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
+    source.setQueryData(timelineKey, { pages: [{ feed: [old] }], pageParams: [undefined] });
+    const snapshot = prepareSocialQueryPersistence({ timestamp: Date.now(), buster: "", clientState: dehydrate(source, { shouldDehydrateQuery: shouldPersistSocialQuery }) });
+    source.clear();
+    const restored = deferred<typeof snapshot>();
+    const freshCatalog = deferred<Client.BlueskySocialCatalog>();
+    serveCatalog().mockReturnValue(freshCatalog.promise);
+    const freshPage = deferred<Client.BlueskySocialPage>();
+    const posts = servePage().mockReturnValue(freshPage.promise);
+    await act(async () => { render(<PersistQueryClientProvider client={queryClient} persistOptions={{ persister: { restoreClient: () => restored.promise, persistClient: async () => {}, removeClient: async () => {} } }}><SidebarProvider><SocialPage /></SidebarProvider></PersistQueryClientProvider>); });
+    expect(posts).not.toHaveBeenCalled();
+    await act(async () => { restored.resolve(structuredClone(snapshot)); });
+    await screen.findByText("Cached post on reload");
+    await waitFor(() => expect(posts).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("status", { name: "Loading Social Posts" })).toBeNull();
+    const row = screen.getByText("Cached post on reload").closest("[data-analytics-subject]");
+    expect(row).not.toBeNull();
+    await act(async () => {
+      freshCatalog.resolve({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
+      freshPage.resolve({ feed: [{ ...old, post: { ...old.post, likeCount: 5 } }, item("new", "New post from background refresh")] });
+    });
+    await screen.findByText("New post from background refresh");
+    expect(screen.getByText("Cached post on reload").closest("[data-analytics-subject]")).toBe(row);
+    expect(posts.mock.calls[0][0].cursor).toBeUndefined();
+  });
+
   it("returns to the top and reloads only the first page on Home refresh", async () => {
     serveCatalog();
     const posts = servePage({ feed: [item("one", "First page")], cursor: "older" });
@@ -168,7 +201,7 @@ describe("Social timeline page", () => {
     expect(posts.mock.calls[0]?.[0].moderation).toBe(safety);
   });
 
-  it("hides cached posts when moderation reload fails and offers retry", async () => {
+  it("retains posts under cached moderation when its refresh fails and offers retry", async () => {
     const catalog = serveCatalog();
     const posts = servePage({ feed: [item("one", "Previously visible post")] });
     await show();
@@ -176,7 +209,7 @@ describe("Social timeline page", () => {
     catalog.mockRejectedValue(new Error("Your moderation settings could not be loaded. Please retry."));
     fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("moderation settings could not be loaded"));
-    expect(screen.queryByText("Previously visible post")).toBeNull();
+    expect(screen.getByText("Previously visible post")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(posts).toHaveBeenCalledTimes(1);
   });

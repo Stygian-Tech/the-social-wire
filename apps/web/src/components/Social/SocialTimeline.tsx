@@ -30,13 +30,15 @@ export function SocialTimeline() {
   const [reauthorizing, setReauthorizing] = useState(false);
   const [reauthorizeError, setReauthorizeError] = useState(false);
   const catalog = useBlueskySocialCatalog();
-  const moderation = !routeError && !catalog.isError ? catalog.data?.moderation : undefined;
+  const cachedModeration = catalog.data?.moderation;
+  const moderation = !routeError && cachedModeration?.userDid === session?.did ? cachedModeration : undefined;
   const timeline = useBlueskySocialTimeline(feed, moderation);
   const selected = catalog.data?.feeds.find(item => item.kind === feed.kind && item.uri === feed.uri) ?? feed;
   const posts = moderation ? groupSocialFeedItems(flattenSocialPages(timeline.data?.pages ?? []), moderation).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
-  useFeedFirstContentTiming(`social:${session?.did}:${feed.kind}:${feed.uri ?? ""}`, !!moderation && posts.length > 0 && !catalog.isError && !timeline.isError, !timeline.isFetchedAfterMount);
-  const error = routeError || (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined);
-  const refreshError = timeline.refreshError ? socialErrorMessage(timeline.refreshError) : undefined;
+  useFeedFirstContentTiming(`social:${session?.did}:${feed.kind}:${feed.uri ?? ""}`, !!moderation && posts.length > 0, !timeline.isFetchedAfterMount);
+  const backgroundError = moderation && timeline.data ? (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined) : undefined;
+  const error = routeError || (!backgroundError && catalog.isError ? socialErrorMessage(catalog.error) : !backgroundError && timeline.isError ? socialErrorMessage(timeline.error) : undefined);
+  const refreshError = backgroundError ?? (timeline.refreshError ? socialErrorMessage(timeline.refreshError) : undefined);
   const loading = !error && (catalog.isPending || timeline.isPending);
   const scrollContainer = useSocialFeedScroll(session?.did, `${feed.kind}:${feed.uri ?? ""}`, !loading && !error && !!moderation);
 

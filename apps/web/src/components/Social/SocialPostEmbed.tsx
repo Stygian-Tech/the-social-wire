@@ -1,4 +1,4 @@
-/* eslint-disable @next/next/no-img-element -- Remote PDS media preserve publisher formats. */
+import { CachedImage } from "@/components/shared/CachedImage";
 import {
   AppBskyEmbedExternal,
   AppBskyEmbedImages,
@@ -16,6 +16,7 @@ import { SocialImageGallery } from "./SocialImageGallery";
 import { SocialRichText } from "./SocialRichText";
 import { socialHttpsUrl, socialPostUrl } from "./socialUrls";
 import { socialExternalGif } from "./socialExternalGif";
+import { SocialGifEmbed } from "./SocialGifEmbed";
 import { socialGalleryImages } from "./socialGalleryImages";
 import { SocialProfileLink } from "./SocialProfileLink";
 import { SocialCashtags } from "./SocialCashtags";
@@ -50,7 +51,7 @@ export function SocialPostEmbed({
     const href = socialHttpsUrl(embed.external.uri);
     if (!href) return null;
     const gif = socialExternalGif(embed.external);
-    if (gif) return <SocialImageGallery images={[gif]} />;
+    if (gif) return <SocialGifEmbed key={gif.fullsize} external={embed.external} image={gif} />;
     const youtube = socialYouTubePlayerUrl(href);
     if (youtube) return <SocialYouTubeEmbed external={embed.external} href={href} src={youtube} />;
     const thumb = socialHttpsUrl(embed.external.thumb);
@@ -62,11 +63,12 @@ export function SocialPostEmbed({
         className="block overflow-hidden rounded-xl border bg-muted/30 hover:bg-muted/60"
       >
         {thumb ? (
-          <img
+          <CachedImage
             src={thumb}
+            width={600}
+            height={400}
             alt=""
             loading="lazy"
-            referrerPolicy="no-referrer"
             className="mx-auto block h-auto max-h-60 w-auto max-w-full"
           />
         ) : null}

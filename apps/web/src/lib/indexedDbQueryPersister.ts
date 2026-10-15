@@ -10,6 +10,7 @@ type IndexedDbQueryPersisterOptions = {
   storeName: string;
   key: string;
   throttleTime?: number;
+  prepareClient?: (client: PersistedClient) => PersistedClient;
 };
 
 function canUseIndexedDb(): boolean {
@@ -55,6 +56,7 @@ export function createIndexedDbQueryPersister({
   storeName,
   key,
   throttleTime = 2_000,
+  prepareClient = client => client,
 }: IndexedDbQueryPersisterOptions): Persister {
   let pendingClient: PersistedClient | null = null;
   let pendingTimer: number | null = null;
@@ -73,7 +75,7 @@ export function createIndexedDbQueryPersister({
   return {
     persistClient: async (client) => {
       if (!canUseIndexedDb()) return;
-      pendingClient = client;
+      pendingClient = prepareClient(client);
       if (pendingTimer != null) return;
       pendingTimer = window.setTimeout(() => {
         pendingTimer = null;

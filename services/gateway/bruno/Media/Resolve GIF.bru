@@ -1,0 +1,16 @@
+meta {
+  name: Resolve GIF
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/media/gifs?id={{gifId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

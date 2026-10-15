@@ -91,6 +91,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.Handle("POST /v1/telemetry/client-performance", auth(http.HandlerFunc(s.performance)))
 	mux.Handle("GET /v1/subscription/entitlements", auth(http.HandlerFunc(s.subscriptionEntitlements)))
+	for _, path := range []string{"/v1/media/gifs", "/v1/media/gifs/thumbnail"} {
+		mux.Handle("GET "+path, auth(s.Limiter.Middleware(http.HandlerFunc(s.gifs))))
+	}
 	return s.requestTrace(s.cors(mux))
 }
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
