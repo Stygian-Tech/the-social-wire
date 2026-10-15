@@ -16,6 +16,7 @@ import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
 import { shouldPersistFinanceQuery } from "@/lib/financeQueryPersist";
+import { shouldPersistSocialQuery, prepareSocialQueryPersistence, restoreSocialQueryData } from "@/lib/socialQueryPersist";
 import { shouldPersistEntriesQuery } from "@/lib/entriesQueryPersist";
 import { CircleViewerCacheCleanup } from "@/components/Circle/CircleViewerCacheCleanup";
 import { SocialViewerCacheCleanup } from "@/components/Social/SocialViewerCacheCleanup";
@@ -81,6 +82,7 @@ function shouldDehydrateQuery(query: Query): boolean {
   return (
     shouldPersistFinanceQuery(query) ||
     shouldPersistEntriesQuery(query) ||
+    shouldPersistSocialQuery(query) ||
     shouldPersistWireEditionQuery(query) ||
     shouldPersistCircleEditionQuery(query) ||
     shouldPersistSidebarProjectionQuery(query)
@@ -107,6 +109,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       key: QUERY_PERSIST_KEY,
       /** The Wire + entry streams: throttle persist writes. */
       throttleTime: 2000,
+      prepareClient: prepareSocialQueryPersistence,
     })
   );
 
@@ -117,6 +120,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         persistOptions={{
           persister,
           maxAge: QUERY_PERSIST_MAX_AGE_MS,
+          hydrateOptions: { defaultOptions: { deserializeData: restoreSocialQueryData } },
           dehydrateOptions: {
             shouldDehydrateQuery,
           },

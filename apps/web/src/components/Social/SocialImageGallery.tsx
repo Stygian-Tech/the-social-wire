@@ -1,6 +1,7 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- Publisher images retain their original formats. */
+import { CachedImage } from "@/components/shared/CachedImage";
+
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { AppBskyEmbedImages } from "@atproto/api";
@@ -92,8 +93,8 @@ export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedIm
         <button type="button" data-gallery-image aria-label={`Open Image ${index + 1}${image.alt ? `: ${image.alt}` : ""}`}
           className="block w-full min-w-0 overflow-hidden rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
           onClick={event => { event.stopPropagation(); setSelected(index); }}>
-          <img src={socialHttpsUrl(image.thumb)} alt={image.alt} width={image.aspectRatio?.width} height={image.aspectRatio?.height}
-            loading="lazy" referrerPolicy="no-referrer" draggable={false} className="block h-auto w-full" />
+          <CachedImage src={socialHttpsUrl(image.thumb)} alt={image.alt} width={image.aspectRatio?.width ?? 1200} height={image.aspectRatio?.height ?? 800}
+            loading="lazy" draggable={false} className="block h-auto w-full" />
         </button>
         <SocialAltTextBadge key={`${image.thumb}:${index}`} alt={image.alt} label={`View Image ${index + 1} Alt Text`} />
       </div>

@@ -7,6 +7,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import * as Auth from "@/hooks/useAuth";
 import * as Client from "@/lib/blueskySocialClient";
+import { SocialViewerCacheCleanup } from "@/components/Social/SocialViewerCacheCleanup";
 import { useBlueskySocialCatalog } from "@/hooks/useBlueskySocialCatalog";
 import { useBlueskySocialTimeline } from "@/hooks/useBlueskySocialTimeline";
 
@@ -146,14 +147,14 @@ describe("Bluesky Social query safety", () => {
     expect(result.current.data?.pages).toHaveLength(2);
   });
 
-  it("starts a fresh query when OAuth reconnects for the same viewer", async () => {
+  it("refreshes after OAuth reconnects without clearing the same viewer cached rows", async () => {
     const timeline = spyOn(Client, "getBlueskySocialPage").mockResolvedValueOnce(page("old-session")).mockImplementation(args => waitUntilAborted(args.signal));
     restores.push(() => timeline.mockRestore());
-    const { result, rerender } = renderHook(() => useBlueskySocialTimeline(Client.SOCIAL_FOLLOWING_FEED, moderation(alice)), { wrapper: Wrapper });
+    const { result, rerender } = renderHook(() => useBlueskySocialTimeline(Client.SOCIAL_FOLLOWING_FEED, moderation(alice)), { wrapper: ({ children }) => <Wrapper><SocialViewerCacheCleanup />{children}</Wrapper> });
     await waitFor(() => expect(result.current.data?.pages[0]?.feed[0]?.post.uri).toBe("old-session"));
     reloadSeq += 1;
     rerender();
-    expect(result.current.data).toBeUndefined();
+    expect(result.current.data?.pages[0]?.feed[0]?.post.uri).toBe("old-session");
     await waitFor(() => expect(timeline).toHaveBeenCalledTimes(2));
   });
 });

@@ -31,7 +31,7 @@ describe("External GIF embeds", () => {
   it("rejects unsafe sources and retains ordinary external cards", () => {
     expect(socialExternalGif({ ...external, uri: "javascript:alert(1)", thumb: "http://media.example/a.gif" })).toBeUndefined();
     expect(socialExternalGif({ ...external, uri: "https://user:secret@media.example/a.gif" })).toBeUndefined();
-    const html = renderToStaticMarkup(<SocialPostEmbed embed={{ $type: "app.bsky.embed.external#view", external: { ...external, uri: "https://example.com/story" } }} moderation={moderation} />);
+    const html = renderToStaticMarkup(<SocialPostEmbed embed={{ $type: "app.bsky.embed.external#view", external: { ...external, uri: "https://example.com/story", thumb: "https://media.example/still.jpg" } }} moderation={moderation} />);
     expect(html).toContain("still.jpg");
     expect(html).toContain("Chef Wok");
     expect(html).not.toContain("Open Image");

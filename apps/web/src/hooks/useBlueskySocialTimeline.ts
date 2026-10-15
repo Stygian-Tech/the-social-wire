@@ -11,8 +11,8 @@ import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 export function useBlueskySocialTimeline(feed: SocialFeed, moderation: ModerationOpts | undefined) {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
   const client = useQueryClient();
-  const key = ["blueskySocial", session?.did ?? "", "timeline", oauthSessionReloadSeq, feed.kind, feed.uri, moderation?.prefs.labelers.map(labeler => labeler.did)];
-  const refreshScope = JSON.stringify(key);
+  const key = ["blueskySocial", session?.did ?? "", "timeline", "cache-v1", feed.kind, feed.uri, moderation?.prefs.labelers.map(labeler => labeler.did)];
+  const refreshScope = JSON.stringify([key, oauthSessionReloadSeq]);
   const refreshContext = useMemo(() => ({ scope: refreshScope }), [refreshScope]);
   const currentRefreshContext = useRef<typeof refreshContext | undefined>(refreshContext);
   useEffect(() => {
@@ -33,6 +33,7 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
     getNextPageParam: (lastPage, _pages, _lastParam, pageParams) => nextSocialCursor(lastPage, pageParams),
     retry: false,
     staleTime: 30_000,
+    gcTime: 7 * 24 * 60 * 60 * 1000,
   });
   const pages = query.data?.pages;
   useEffect(() => {
@@ -63,8 +64,8 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
   }, [pages, client, getOAuthSession, moderation]);
   const refreshFirstPage = async (freshModeration = moderation) => {
     const oauth = getOAuthSession();
-    const freshKey = ["blueskySocial", oauth?.did ?? session?.did ?? "", "timeline", oauthSessionReloadSeq, feed.kind, feed.uri, freshModeration?.prefs.labelers.map(labeler => labeler.did)];
-    const requestScope = JSON.stringify(freshKey);
+    const freshKey = ["blueskySocial", oauth?.did ?? session?.did ?? "", "timeline", "cache-v1", feed.kind, feed.uri, freshModeration?.prefs.labelers.map(labeler => labeler.did)];
+    const requestScope = JSON.stringify([freshKey, oauthSessionReloadSeq]);
     setRefreshState({ context: refreshContext, scope: requestScope, pending: true });
     try {
       if (!oauth || !freshModeration || freshModeration.userDid !== oauth.did) throw new Error(SCOPE_RECOVERY_MESSAGE);

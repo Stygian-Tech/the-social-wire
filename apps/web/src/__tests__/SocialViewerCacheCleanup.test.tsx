@@ -11,6 +11,7 @@ const aliceTimeline = ["blueskySocial", alice, "timeline", 0, "following", ""];
 const aliceCatalog = ["blueskySocial", alice, "catalog", 0];
 const bobTimeline = ["blueskySocial", bob, "timeline", 0, "following", ""];
 let viewerDid: string | undefined;
+let sequence = 0;
 let queryClient: QueryClient;
 let restoreAuth: () => void;
 
@@ -20,8 +21,9 @@ function view() {
 
 beforeEach(() => {
   viewerDid = alice;
+  sequence = 0;
   queryClient = new QueryClient();
-  const auth = spyOn(Auth, "useAuth").mockImplementation(() => ({ session: viewerDid ? { did: viewerDid } : null } as ReturnType<typeof Auth.useAuth>));
+  const auth = spyOn(Auth, "useAuth").mockImplementation(() => ({ session: viewerDid ? { did: viewerDid } : null, oauthSessionReloadSeq: sequence } as ReturnType<typeof Auth.useAuth>));
   restoreAuth = () => auth.mockRestore();
   queryClient.setQueryData(aliceTimeline, { pages: [{ feed: ["Alice post"] }] });
   queryClient.setQueryData(aliceCatalog, { feeds: ["Alice feed"], moderation: { userDid: alice } });
@@ -40,6 +42,16 @@ describe("Social viewer cache cleanup", () => {
     rerender(view());
     expect(queryClient.getQueryData(aliceTimeline)).toBeDefined();
     expect(queryClient.getQueryData(aliceCatalog)).toBeDefined();
+  });
+
+  it("refreshes stable caches after OAuth restoration without removing their rows", async () => {
+    const stable = ["blueskySocial", alice, "timeline", "cache-v1", "following", "", []];
+    queryClient.setQueryData(stable, { pages: [{ feed: ["Retained post"] }] });
+    const { rerender } = render(view());
+    sequence++;
+    rerender(view());
+    await waitFor(() => expect(queryClient.getQueryState(stable)?.isInvalidated).toBe(true));
+    expect(queryClient.getQueryData<{ pages: { feed: string[] }[] }>(stable)).toEqual({ pages: [{ feed: ["Retained post"] }] });
   });
 
   it("removes previous viewer timelines and moderation settings on account switch and logout", () => {
