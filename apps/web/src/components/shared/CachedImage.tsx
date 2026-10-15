@@ -12,6 +12,7 @@ interface CachedImageProps {
   className?: string;
   loading?: "eager" | "lazy";
   onError?: () => void;
+  draggable?: boolean;
 }
 
 /** Remote image: same-origin IndexedDB blob cache; cross-origin direct `src` (no CORS fetch). */
@@ -23,6 +24,7 @@ export function CachedImage({
   className = "",
   loading = "lazy",
   onError,
+  draggable,
 }: CachedImageProps) {
   const { objectUrl, failed } = useCachedImageUrl(src);
   const reportedFailureSrc = useRef<string | null>(null);
@@ -53,6 +55,7 @@ export function CachedImage({
       height={height}
       loading={loading}
       decoding="async"
+      draggable={draggable}
       referrerPolicy="no-referrer"
       className={className}
       onError={() => onError?.()}

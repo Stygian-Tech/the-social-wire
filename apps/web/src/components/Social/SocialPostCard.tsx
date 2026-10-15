@@ -1,6 +1,7 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- Remote PDS media preserve publisher formats. */
+import { CachedImage } from "@/components/shared/CachedImage";
+
 import type { ReactNode } from "react";
 import {
   AppBskyEmbedRecord,
@@ -122,13 +123,12 @@ export function SocialPostCard({
       ) : null}
       <div className="flex items-center gap-3">
         <SocialProfileLink actor={post.author.did} aria-label={`Open Profile: ${name}`} className="inline-flex shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-ring">{image ? (
-          <img
+          <CachedImage
             src={image}
             alt=""
             width={40}
             height={40}
             loading="lazy"
-            referrerPolicy="no-referrer"
             className="size-10 shrink-0 rounded-full object-cover"
           />
         ) : (
