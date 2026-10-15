@@ -1,4 +1,4 @@
-/* eslint-disable @next/next/no-img-element -- Remote PDS media preserve publisher formats. */
+import { CachedImage } from "@/components/shared/CachedImage";
 import {
   AppBskyEmbedExternal,
   AppBskyEmbedImages,
@@ -63,11 +63,12 @@ export function SocialPostEmbed({
         className="block overflow-hidden rounded-xl border bg-muted/30 hover:bg-muted/60"
       >
         {thumb ? (
-          <img
+          <CachedImage
             src={thumb}
+            width={600}
+            height={400}
             alt=""
             loading="lazy"
-            referrerPolicy="no-referrer"
             className="mx-auto block h-auto max-h-60 w-auto max-w-full"
           />
         ) : null}
