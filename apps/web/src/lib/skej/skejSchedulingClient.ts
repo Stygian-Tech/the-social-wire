@@ -1,4 +1,4 @@
-import { AppBskyRichtextFacet, RichText } from "@atproto/api";
+import { compilePostText, resolvePostText } from "@/lib/composePostText";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
@@ -70,15 +70,16 @@ export async function listSkejSchedules(actor: Actor, signal?: AbortSignal): Pro
 }
 export async function createSkejSchedule(actor: Actor, text: string, scheduledAt: string, linkPreview?: ComposeLinkPreview): Promise<SkejScheduleSummary> {
   const length = postTextLength(text);
-  if (!text.trim() || length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts Must Contain 1–300 Characters and At Most 3,000 UTF-8 Bytes.");
+  if (!compilePostText(text).text.trim() || length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts Must Contain 1–300 Characters and At Most 3,000 UTF-8 Bytes.");
   const scheduled = validateScheduledAt(scheduledAt);
   actor.assertCurrentActor();
-  const rich = new RichText({ text }); await rich.detectFacets(createAuthenticatedAppViewAgent(actor.session)); actor.assertCurrentActor();
-  const facets = rich.facets?.map(facet => ({ ...facet, features: facet.features.filter(feature => !AppBskyRichtextFacet.isMention(feature) || feature.did.startsWith("did:")) })).filter(facet => facet.features.length);
+  const compiled = await resolvePostText(text, createAuthenticatedAppViewAgent(actor.session));
+  const facets = compiled.facets;
+  actor.assertCurrentActor();
   const embed = await composeExternalEmbed(actor.session, text, linkPreview, actor.assertCurrentActor);
   actor.assertCurrentActor();
   const now = new Date().toISOString(), publishRkey = crypto.randomUUID();
-  const record: SkejScheduleRecord = { $type: "at.skej.schedule", scheduledAt: scheduled, timezonePolicy: "absolute_utc", userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone, createdAt: now, updatedAt: now, status: "scheduled", recordType: "app.bsky.feed.post", publishRkey, retry: { attemptCount: 0, maxAttempts: 8 }, posts: [{ text, publishRkey, ...(facets?.length ? { facets } : {}), ...(embed ? { embed } : {}) }] };
+  const record: SkejScheduleRecord = { $type: "at.skej.schedule", scheduledAt: scheduled, timezonePolicy: "absolute_utc", userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone, createdAt: now, updatedAt: now, status: "scheduled", recordType: "app.bsky.feed.post", publishRkey, retry: { attemptCount: 0, maxAttempts: 8 }, posts: [{ text: compiled.text, publishRkey, ...(facets?.length ? { facets } : {}), ...(embed ? { embed } : {}) }] };
   return summary(await request(actor, "at.skej.schedule.create", { accountDid: actor.session.did, record }), actor.session.did);
 }
 function assertEditable(actor: Actor, item: SkejScheduleSummary) {

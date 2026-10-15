@@ -1,4 +1,5 @@
-import { AppBskyFeedPost, AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichText, type AppBskyFeedDefs } from "@atproto/api";
+import { compilePostText, resolvePostText } from "@/lib/composePostText";
+import { AppBskyFeedPost, ComAtprotoRepoStrongRef, type AppBskyFeedDefs } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
@@ -7,7 +8,7 @@ import { postTextLength } from "@/lib/blueskyComposeClient";
 
 export async function publishBrandPost(args: { session: OAuthSession; text: string; linkPreview?: ComposeLinkPreview; parent?: AppBskyFeedDefs.PostView; assertCurrentActor: () => void }) {
   const length = postTextLength(args.text);
-  if (!args.text.trim() || length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts Must Contain 1–300 Characters and At Most 3,000 UTF-8 Bytes.");
+  if (!compilePostText(args.text).text.trim() || length.graphemes > 300 || length.bytes > 3000) throw new Error("Posts Must Contain 1–300 Characters and At Most 3,000 UTF-8 Bytes.");
   let reply;
   if (args.parent) {
     const parent = { uri: args.parent.uri, cid: args.parent.cid };
@@ -17,13 +18,12 @@ export async function publishBrandPost(args: { session: OAuthSession; text: stri
     if (!ComAtprotoRepoStrongRef.validateMain(reply.root).success) throw new Error("The Reply Thread Is Invalid.");
   }
   args.assertCurrentActor();
-  const rich = new RichText({ text: args.text });
-  await rich.detectFacets(createAuthenticatedAppViewAgent(args.session));
-  const facets = rich.facets?.map(facet => ({ ...facet, features: facet.features.filter(feature => !AppBskyRichtextFacet.isMention(feature) || feature.did.startsWith("did:")) })).filter(facet => facet.features.length);
+  const compiled = await resolvePostText(args.text, createAuthenticatedAppViewAgent(args.session));
+  const facets = compiled.facets;
   args.assertCurrentActor();
   const embed = await composeExternalEmbed(args.session, args.text, args.linkPreview, args.assertCurrentActor);
   args.assertCurrentActor();
-  const result = await createOAuthAgent(args.session).post({ text: args.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) });
+  const result = await createOAuthAgent(args.session).post({ text: compiled.text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) });
   args.assertCurrentActor();
   return result;
 }
