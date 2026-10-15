@@ -4,17 +4,14 @@ import { SocialComposePreview } from "@/components/Social/SocialComposePreview";
 
 afterEach(() => { cleanup(); });
 
-it("renders formatting while drafting and updates as text changes", () => {
+it("previews the native text that other clients will display", () => {
   const view = render(<SocialComposePreview text="**Bold** *Italic* `code`" />);
   const preview = screen.getByRole("region", { name: "Post Preview" });
-  expect(preview.querySelector("strong")?.textContent).toBe("Bold");
-  expect(preview.querySelector("em")?.textContent).toBe("Italic");
-  expect(preview.querySelector("code")?.textContent).toBe("code");
-  view.rerender(<SocialComposePreview text={"## Heading\n\n- Item\n\n> Quote"} />);
-  expect(preview.querySelector("h2")?.textContent).toBe("Heading");
-  expect(preview.querySelector("li")?.textContent).toBe("Item");
-  expect(preview.querySelector("blockquote")?.textContent).toBe("Quote");
-  expect(preview.querySelector("strong")).toBeNull();
+  expect(preview.textContent).toBe("PreviewBold Italic code");
+  expect(preview.querySelector("strong, em, code")).toBeNull();
+  view.rerender(<SocialComposePreview text="[XBOX Labs](labs.xbox.com) is interesting" />);
+  expect(preview.textContent).toBe("PreviewXBOX Labs is interesting");
+  expect(preview.querySelector("a")?.getAttribute("href")).toBe("https://labs.xbox.com/");
 });
 
 it("previews safe links and hashtags without resolving mentions or executing HTML", () => {

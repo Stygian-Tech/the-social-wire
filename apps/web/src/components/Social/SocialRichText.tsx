@@ -8,7 +8,7 @@ import { socialMarkdownBlocks, socialMarkdownInline, type MarkdownRange, type So
 type FacetRange = MarkdownRange & { href?: string; actor?: string };
 const linkClassName = "text-primary underline-offset-4 hover:underline";
 
-export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
+export function SocialRichText({ record, markdown = true }: { record: AppBskyFeedPost.Record; markdown?: boolean }) {
   // The SDK converts UTF-8 byte facets before Markdown is interpreted. Keeping
   // source positions lets formatting and emoji coexist with native facet links.
   const facets: FacetRange[] = [];
@@ -59,6 +59,8 @@ export function SocialRichText({ record }: { record: AppBskyFeedPost.Record }) {
     }
   });
   const inline = (text: string, start: number) => renderInline(socialMarkdownInline(text, start, facets));
+
+  if (!markdown) return <div className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">{textWithFacets({ kind: "text", text: record.text, start: 0, end: record.text.length })}</div>;
 
   return <div className="flex flex-col gap-2 break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
     {socialMarkdownBlocks(record.text).map(block => {

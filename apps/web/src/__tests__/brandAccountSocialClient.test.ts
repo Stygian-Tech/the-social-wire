@@ -43,3 +43,12 @@ it("publishes the selected brand's external link preview alongside its facets", 
   });
   await publishBrandPost({ session, text: linkPreview.uri, linkPreview, assertCurrentActor: () => {} });
 });
+
+it("publishes brand Markdown links as native label facets", async () => {
+  const session = sessionFor((path, body) => {
+    expect(path).toBe("/xrpc/com.atproto.repo.createRecord");
+    expect(body.record).toMatchObject({ text: "XBOX Labs", facets: [{ index: { byteStart: 0, byteEnd: 9 }, features: [{ uri: "https://labs.xbox.com/" }] }] });
+    return { uri: `at://${did}/app.bsky.feed.post/one`, cid };
+  });
+  await publishBrandPost({ session, text: "[XBOX Labs](labs.xbox.com)", assertCurrentActor: () => {} });
+});

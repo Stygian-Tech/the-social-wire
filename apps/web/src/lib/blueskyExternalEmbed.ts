@@ -1,12 +1,13 @@
-import { AppBskyEmbedExternal, AppBskyRichtextFacet, RichText } from "@atproto/api";
+import { AppBskyEmbedExternal, AppBskyRichtextFacet } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
+
+import { compilePostText } from "./composePostText";
 
 export type ComposeLinkPreview = { uri: string; title: string; description: string; image?: string };
 
 export function composeLinkUrl(text: string): string | undefined {
-  const rich = new RichText({ text });
-  rich.detectFacetsWithoutResolution();
+  const rich = compilePostText(text);
   for (const facet of rich.facets ?? []) {
     for (const feature of facet.features) {
       if (AppBskyRichtextFacet.isLink(feature) && publicLinkUrl(feature.uri)) return feature.uri;
