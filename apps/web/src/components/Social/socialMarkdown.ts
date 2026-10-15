@@ -39,7 +39,13 @@ export function socialMarkdownInline(text: string, offset = 0, protectedRanges: 
   };
   while (index < text.length) {
     const start = index;
-    // Code wins over facets: URLs and mentions in examples must remain literal.
+    const protectedRange = protectedRanges.find(range => range.start <= offset + index && range.end > offset + index);
+    if (protectedRange) {
+      index = Math.min(text.length, protectedRange.end - offset);
+      addText(start, index);
+      continue;
+    }
+    // Code delimiters outside a facet keep examples literal.
     if (text[index] === "`") {
       const marker = /^`+/.exec(text.slice(index))![0];
       const end = text.indexOf(marker, index + marker.length);
@@ -48,12 +54,6 @@ export function socialMarkdownInline(text: string, offset = 0, protectedRanges: 
         index = end + marker.length;
         continue;
       }
-    }
-    const protectedRange = protectedRanges.find(range => range.start <= offset + index && range.end > offset + index);
-    if (protectedRange) {
-      index = Math.min(text.length, protectedRange.end - offset);
-      addText(start, index);
-      continue;
     }
     if (text[index] === "\\" && /[\\`*_\[\]()]/.test(text[index + 1] ?? "")) {
       addText(index, index + 2, text[index + 1]);

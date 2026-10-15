@@ -27,6 +27,28 @@ function sessionFor(respond: (request: Request) => unknown | Promise<unknown>): 
 
 describe("Bluesky post creation", () => {
   const linkPreview = { uri: "https://example.com/story", title: "A Story", description: "A summary" };
+  it("publishes the example as linked label text with the card and UTF-8 offsets intact", async () => {
+    const preview = { uri: "https://labs.xbox.com/", title: "XBOX Labs", description: "Explore" };
+    let writes = 0;
+    const session = sessionFor(request => {
+      writes++;
+      expect(request.method).toBe("com.atproto.repo.createRecord");
+      expect(AppBskyFeedPost.validateRecord(request.body!.record).success).toBe(true);
+      expect(request.body!.record).toMatchObject({ text: "🌎 XBOX Labs is interesting\n\nCurious to see", facets: [{ index: { byteStart: 5, byteEnd: 14 }, features: [{ uri: preview.uri }] }], embed: { external: preview } });
+      return result;
+    });
+    await createBlueskyPost({ session, text: "🌎 [XBOX Labs](labs.xbox.com) is interesting\n\nCurious to see", linkPreview: preview });
+    expect(writes).toBe(1);
+  });
+  it("does not resolve handles inside code or explicit link labels", async () => {
+    const session = sessionFor(request => {
+      expect(request.method).toBe("com.atproto.repo.createRecord");
+      expect(request.body!.record).toMatchObject({ text: "@code.test @label.test", facets: [{ features: [{ uri: "https://target.test/" }] }] });
+      return result;
+    });
+    await createBlueskyPost({ session, text: "`@code.test` [@label.test](https://target.test)" });
+    await expect(createBlueskyPost({ session, text: "[](https://example.com)" })).rejects.toThrow("Write Something");
+  });
   it("serializes a valid external embed alongside URL facets on a direct PDS post", async () => {
     const session = sessionFor(request => {
       const record = request.body!.record;

@@ -1,3 +1,4 @@
+import { compilePostText } from "./composePostText";
 import { AppBskyFeedPost } from "@atproto/api";
 import { TID } from "@atproto/common-web";
 import { cidForLex } from "@atproto/lex-cbor";
@@ -16,7 +17,7 @@ export type ThreadPublication = { did: string; segments: { draft: ThreadSegment;
 
 export function validThreadText(text: string, media?: ComposerMedia) {
   const { graphemes, bytes } = postTextLength(text);
-  return (!!text.trim() || mediaHasContent(media)) && mediaReady(media) && graphemes <= 300 && bytes <= 3000;
+  return (!!compilePostText(text).text.trim() || mediaHasContent(media)) && mediaReady(media) && graphemes <= 300 && bytes <= 3000;
 }
 
 export function newThreadPublication(did: string, segments: ThreadSegment[]): ThreadPublication {

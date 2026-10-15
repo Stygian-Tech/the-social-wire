@@ -107,3 +107,10 @@ describe("Social Markdown", () => {
     expect(socialMarkdownInline("** x **")[0].kind).toBe("text");
   });
 });
+
+it("keeps native link labels containing Markdown delimiters intact", () => {
+  const text = "Read `literal` and *literal*";
+  const element = documentFor(html(text, [facet(text, "`literal` and *literal*", { $type: "app.bsky.richtext.facet#link", uri: "https://example.com/" })]));
+  expect(element.querySelector("a")?.textContent).toBe("`literal` and *literal*");
+  expect(element.querySelector("em, code")).toBeNull();
+});
