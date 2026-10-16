@@ -456,12 +456,18 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ReadStateContext.Provider value={value}>{children}{mutationError && mutationError.viewer === viewerDid ? (
-      <aside role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border bg-background p-3 text-sm shadow-md">
-        <p>{mutationError.message}</p>
-        <button type="button" className="mt-1 underline" onClick={() => setMutationError(undefined)}>Dismiss</button>
-      </aside>
-    ) : null}<PDSReadStateSyncNotice /></ReadStateContext.Provider>
+    <ReadStateContext.Provider value={value}>
+      {children}
+      <div className="fixed bottom-4 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2">
+        {mutationError && mutationError.viewer === viewerDid ? (
+          <aside role="alert" className="rounded-xl border bg-background p-3 text-sm shadow-md">
+            <p>{mutationError.message}</p>
+            <button type="button" className="mt-1 underline" onClick={() => setMutationError(undefined)}>Dismiss</button>
+          </aside>
+        ) : null}
+        <PDSReadStateSyncNotice />
+      </div>
+    </ReadStateContext.Provider>
   );
 }
 

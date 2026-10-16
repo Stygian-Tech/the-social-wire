@@ -36,9 +36,9 @@ test("an unready projection remains visibly restoring with no pending writes", (
   expect(renderToStaticMarkup(<PDSReadStateSyncNotice />)).toContain("Restoring read history");
 });
 
-test("pending read-history notice stays above persistent podcast playback", () => {
+test("pending read-history notice participates in its shared notification stack", () => {
   snapshot({ status: { authority: "pds", migrationState: "verified", legacyRevision: 1, projectionReady: false } });
   const markup = renderToStaticMarkup(<PDSReadStateSyncNotice />);
-  expect(markup).toContain("bottom-4");
+  expect(markup).not.toContain("fixed");
   expect(markup).toContain("Read History Settings");
 });

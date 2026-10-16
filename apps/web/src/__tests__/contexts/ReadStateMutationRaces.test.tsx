@@ -7,6 +7,7 @@ import * as Auth from "@/hooks/useAuth";
 import * as Pending from "@/hooks/usePendingPDSReadState";
 import * as Runtime from "@/lib/pdsReadStateRuntime";
 import * as Thin from "@/lib/thinAppViewClient";
+import * as Status from "@/hooks/usePDSReadStateStatus";
 import * as Notice from "@/components/Account/PDSReadStateSyncNotice";
 import { ReadStateProvider, useReadState } from "@/contexts/ReadStateContext";
 import { effectiveEntryReadState } from "@/lib/pendingReadStateOverlay";
@@ -23,7 +24,7 @@ function deferred<T = void>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-function fixture(initialRead: boolean, pds = false) {
+function fixture(initialRead: boolean, pds = false, realNotice = false) {
   let oauth = alice;
   const getOAuthSession = () => oauth;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -38,7 +39,7 @@ function fixture(initialRead: boolean, pds = false) {
     spyOn(Runtime, "pdsReadStateEnabled").mockReturnValue(false),
     spyOn(Runtime, "usesPDSReadState").mockResolvedValue(pds),
     spyOn(Runtime, "loadPDSReadStateSync").mockImplementation(async () => ({ snapshot: async () => ({ viewerDid: alice.did, entries: durablePending ? [{ intent: { selection: "exact", state: "unread", subjectUris: [id] } }] : [] }) } as unknown as PDSReadStateSync)),
-    spyOn(Notice, "PDSReadStateSyncNotice").mockReturnValue(null),
+    ...(realNotice ? [] : [spyOn(Notice, "PDSReadStateSyncNotice").mockReturnValue(null)]),
     spyOn(Thin, "isThinAppViewEnabled").mockReturnValue(true),
   ];
   const read = spyOn(Thin, "writeThroughReadMark").mockResolvedValue();
@@ -146,4 +147,30 @@ it("rolls back to an earlier accepted write when the latest opposite action fail
   await act(async () => first.resolve());
   await waitFor(() => expect(screen.getByRole("alert")).toBeDefined());
   expect(env.effective()).toBe(true);
+});
+
+it("stacks a failed gesture and the real PDS synchronization notice without covering either", async () => {
+  const status = spyOn(Status, "usePDSReadStateStatus").mockReturnValue({
+    enabled: true, error: "Read history sync is unavailable. Saved pending changes will retry.", migrate: async () => {},
+  });
+  restores.push(() => status.mockRestore());
+  const env = fixture(true, true, true); await act(async () => {});
+  env.unread.mockRejectedValue(new Error("PDS enqueue failed"));
+  act(() => env.result.current.markEntryUnread(id));
+  const alert = await screen.findByRole("alert");
+  const notice = screen.getByRole("status");
+  expect(alert.textContent).toContain("Could not confirm");
+  expect(notice.textContent).toContain("Saved pending changes will retry");
+  const stack = alert.parentElement!;
+  expect(notice.parentElement).toBe(stack);
+  expect(stack.classList.contains("fixed")).toBe(true);
+  expect(stack.classList.contains("bottom-4")).toBe(true);
+  expect(stack.classList.contains("flex-col")).toBe(true);
+  expect(stack.classList.contains("gap-2")).toBe(true);
+  expect(stack.classList.contains("w-[calc(100vw-2rem)]")).toBe(true);
+  expect(alert.classList.contains("fixed")).toBe(false);
+  expect(notice.classList.contains("fixed")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("status")).toBe(notice);
 });
