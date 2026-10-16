@@ -6,6 +6,10 @@ package wirecore
 
 import "time"
 
+// MaximumWireGenerationAge includes the normal lifetime and any last-good
+// serving window, measured from the original ranking time.
+const MaximumWireGenerationAge = 6 * time.Hour
+
 const (
 	SignalRetention              = 7 * 24 * time.Hour
 	AppliedInboxRetention        = 24 * time.Hour

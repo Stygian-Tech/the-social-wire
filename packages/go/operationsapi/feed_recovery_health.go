@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
+	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 )
 
 const feedRecoveryProgressWindow = 10 * time.Minute
@@ -174,7 +174,7 @@ func feedRecoveryAlertConditions(health *feedRecoveryHealth, unavailable bool, a
 		generationEvidence["generated_at"] = generation.GeneratedAt.UTC().Format(time.RFC3339)
 		generationEvidence["expires_at"] = generation.ExpiresAt.UTC().Format(time.RFC3339)
 		generationEvidence["age_seconds"] = strconv.FormatFloat(age.Seconds(), 'f', 0, 64)
-		if !generation.ExpiresAt.After(at) || age >= corpuscore.MaximumWireGenerationAge {
+		if !generation.ExpiresAt.After(at) || age >= wirecore.MaximumWireGenerationAge {
 			severity, summary = "critical", "The Wire is serving beyond its normal generation lifetime or has exhausted its six-hour last-good ceiling."
 		}
 	} else if wireActive {

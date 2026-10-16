@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/stygian-tech/the-social-wire/packages/go/corpuscore"
+	"github.com/stygian-tech/the-social-wire/packages/go/wirecore"
 )
 
 func feedRecoveryRules(conditions []AlertCondition) map[string]AlertCondition {
@@ -83,7 +83,7 @@ func TestFeedRecoveryGenerationAlertEscalatesBeforeServingCeiling(t *testing.T) 
 		{"healthy", time.Minute, false, false, "warning"},
 		{"stale", 10 * time.Minute, false, true, "warning"},
 		{"normal expiry", time.Hour, true, true, "critical"},
-		{"six hour ceiling", corpuscore.MaximumWireGenerationAge, false, true, "critical"},
+		{"six hour ceiling", wirecore.MaximumWireGenerationAge, false, true, "critical"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			expires := at.Add(time.Hour)
