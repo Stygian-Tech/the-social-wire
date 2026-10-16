@@ -49,7 +49,7 @@ func TestUnreadRedisRoundTripPreservesLargeViewerSnapshot(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
 	t.Cleanup(func() { client.Close() })
 	cache := CacheStore{Redis: socialwireredis.NewCacheClient(socialwireredis.RedisCommands{Client: client})}
-	at := time.Now().UTC().Truncate(time.Millisecond)
+	at := time.Date(2026, time.October, 16, 12, 0, 0, 0, time.UTC)
 	counts := map[string]int{}
 	ids := []string{}
 	for i := 0; i < 596; i++ {
