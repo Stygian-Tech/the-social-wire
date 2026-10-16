@@ -64,39 +64,40 @@ var WireCollections = []string{
 }
 
 type Config struct {
-	PipelineMode         string
-	Environment          string
-	DatabaseURL          string
-	Host                 string
-	StreamNSID           string
-	CursorKind           string
-	SourceGeneration     string
-	Collections          []string
-	ScopePolicy          string
-	FilterFingerprint    string
-	APIKey               string
-	Port                 int
-	BatchSize            int
-	DownloadConcurrency  int
-	SegmentStripes       int
-	MaxDownloadAttempts  int
-	LeaderLeaseName      string
-	LeaderLeaseTTL       time.Duration
-	TrackedDIDRefresh    time.Duration
-	ReplayIncidentBytes  int64
-	ReplayDailyBytes     int64
-	ReplayBudgetPause    time.Duration
-	BackoffMin           time.Duration
-	BackoffMax           time.Duration
-	WireInboxMaxRows     int64
-	WireDatabaseMaxBytes int64
-	WireAdmissionPause   time.Duration
-	WireAdmissionRate    float64
-	WireAdmissionBurst   int
-	BootstrapAfterSeq    *uint64
-	ReplayBeforeSeq      *uint64
-	ReplaySnapshotOnly   bool
-	ExitAfterSnapshot    bool
+	AutomaticRecoveryEnabled bool
+	PipelineMode             string
+	Environment              string
+	DatabaseURL              string
+	Host                     string
+	StreamNSID               string
+	CursorKind               string
+	SourceGeneration         string
+	Collections              []string
+	ScopePolicy              string
+	FilterFingerprint        string
+	APIKey                   string
+	Port                     int
+	BatchSize                int
+	DownloadConcurrency      int
+	SegmentStripes           int
+	MaxDownloadAttempts      int
+	LeaderLeaseName          string
+	LeaderLeaseTTL           time.Duration
+	TrackedDIDRefresh        time.Duration
+	ReplayIncidentBytes      int64
+	ReplayDailyBytes         int64
+	ReplayBudgetPause        time.Duration
+	BackoffMin               time.Duration
+	BackoffMax               time.Duration
+	WireInboxMaxRows         int64
+	WireDatabaseMaxBytes     int64
+	WireAdmissionPause       time.Duration
+	WireAdmissionRate        float64
+	WireAdmissionBurst       int
+	BootstrapAfterSeq        *uint64
+	ReplayBeforeSeq          *uint64
+	ReplaySnapshotOnly       bool
+	ExitAfterSnapshot        bool
 
 	ReplayCanaryExpiresAt *time.Time
 
@@ -318,6 +319,10 @@ func loadLaneConfiguration(pipelineMode, prefix string, legacy, requireAPIKey bo
 	if err != nil {
 		return Config{}, err
 	}
+	automaticRecovery, err := envBool(prefix+"AUTOMATIC_RECOVERY_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		PipelineMode:         pipelineMode,
 		Environment:          strings.TrimSpace(os.Getenv("APP_ENV")),
@@ -351,6 +356,7 @@ func loadLaneConfiguration(pipelineMode, prefix string, legacy, requireAPIKey bo
 		ReplaySnapshotOnly:   replaySnapshotOnly,
 		ExitAfterSnapshot:    exitAfterSnapshot,
 
+		AutomaticRecoveryEnabled: automaticRecovery,
 		WireCompactIngestEnabled: compactIngestEnabled,
 		DatabasePoolMaxOpen:      envInt(prefix+"DATABASE_POOL_MAX_OPEN", 8),
 		DatabasePoolMaxIdle:      envInt(prefix+"DATABASE_POOL_MAX_IDLE", 1),
@@ -461,6 +467,9 @@ func (c Config) validate(requireAPIKey bool) error {
 	}
 	if c.ReplayCanaryExpiresAt != nil && c.PipelineMode != WirePipelineMode {
 		problems = append(problems, errors.New("replay canary expiry is supported only for Wire lanes"))
+	}
+	if c.AutomaticRecoveryEnabled && (!c.SupportsAutomaticRecovery() || c.ReplaySnapshotOnly) {
+		problems = append(problems, errors.New("automatic recovery requires a non-snapshot Wire lane containing only fenced standard.site publication collections"))
 	}
 	if c.ReplayBudgetPause < time.Minute {
 		problems = append(problems, errors.New("JETSTREAM_REPLAY_BUDGET_PAUSE must be at least 1m"))

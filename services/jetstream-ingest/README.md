@@ -320,3 +320,45 @@ represented as safely stopped. Existing fenced commits and usage accounting
 remain authoritative. The byte cap still permits already-in-flight overshoot.
 This guard does not authorize replay or replace the byte/disk/queue stop gates
 in `docs/runbooks/development-wire-replay-budget.md`.
+
+### Automatic Recovery For Publication Lanes
+
+`JETSTREAM_<LANE>_AUTOMATIC_RECOVERY_ENABLED=true` opts a non-snapshot Wire lane
+into separate live intake and bounded archive recovery. For named Wire lanes the
+prefix is `JETSTREAM_WIRE_<NAME>_`. It defaults to false and is rejected unless
+all configured collections are `site.standard.document`, `site.standard.entry`,
+or `site.standard.publication`. These projections have durable mutation fences;
+account events also retain their monotonic account fence. AppView, external
+records, feedback, recommendations, and explicit snapshot jobs keep sequential
+replay. Their deterministic poison protection still applies.
+
+Live reconnects use the saved live cursor directly. A provider `CursorTooOld`
+response records an owed gap, then the first fresh batch atomically registers an
+immutable archive range before advancing live coverage. Recovery stages into the
+same canonical inbox generation consumed by existing workers, but advances its
+own job checkpoint. It cannot move the live checkpoint backward. Concurrent job
+claims and writes remain fenced by the parent lane lease.
+
+Recovery jobs share their canonical parent generation's durable incident and
+rolling daily byte accounting. Restarts, new jobs, and fresh live batches never
+reset that incident allowance. An exhausted incident limit requires explicit
+operator action; daily exhaustion can resume when rolling usage expires. The
+original `REPLAY_CANARY_EXPIRES_AT` deadline applies to historical recovery while
+fresh live intake continues. Restarting with a later deadline cannot extend the
+retained controller deadline. Explicit snapshot canaries retain their original
+whole-job expiry behavior. Expired or blocked gaps remain unresolved evidence.
+
+A `FutureCursor`, source identity mismatch, or sequence regression fails closed.
+The controller retains its existing cursor and records a source discontinuity;
+it does not translate sequences, invent another provider epoch, or claim repaired
+coverage. Operations must verify the source before taking further action.
+
+Deterministic payload failures are retained in `ingestion_poison_records` with
+original raw bytes, SHA-256, source sequence, and record CID, atomically with good
+rows and checkpoint advancement. Per canonical lane, evidence is capped at
+10,000 records and 64 MiB of raw payloads; an exact replay consumes no new
+capacity. Exhaustion stops admission instead of dropping evidence. Raw bytes
+expire after seven days through bounded batches of 500, retaining unresolved
+identity/hash evidence. Transient SQL, lease, capacity, and transport errors are
+never treated as poison. Controller, gap, and poison states remain visible in
+Operations and public coverage stays degraded while obligations are unresolved.
