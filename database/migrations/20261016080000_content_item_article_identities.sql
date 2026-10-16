@@ -20,16 +20,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='content_items'::regclass
-    AND tgname='content_item_article_identity_projection') THEN
-    CREATE TRIGGER content_item_article_identity_projection
-    AFTER INSERT OR UPDATE OF render_json ON content_items
-    FOR EACH ROW EXECUTE FUNCTION project_content_item_article_identity();
-  END IF;
-END;
-$$;
 
 ALTER TABLE content_item_article_identities ENABLE ROW LEVEL SECURITY;
 DO $$
@@ -46,6 +36,19 @@ BEGIN
 END;
 $$;
 REVOKE ALL ON FUNCTION project_content_item_article_identity() FROM PUBLIC;
+
+-- The migration is nontransactional: grant writer access before exposing the
+-- trigger, so concurrent ingestion can maintain the projection immediately.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='content_items'::regclass
+    AND tgname='content_item_article_identity_projection') THEN
+    CREATE TRIGGER content_item_article_identity_projection
+    AFTER INSERT OR UPDATE OF render_json ON content_items
+    FOR EACH ROW EXECUTE FUNCTION project_content_item_article_identity();
+  END IF;
+END;
+$$;
 
 -- Commit each small keyset batch. The trigger is already installed, so writes
 -- racing the backfill project their latest key. DO NOTHING never replaces that
