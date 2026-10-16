@@ -99,6 +99,10 @@ func (s FeedStore) Feed(ctx context.Context, viewer, kind, id, filter, cursor st
 			return nil, err
 		}
 		hasCursor, internalCursor = true, true
+		// Sparse filters and duplicate runs can require the entire history. Grow
+		// each continuation batch to amortize round trips, while retaining a
+		// bounded hydration unit and the caller's original context deadline.
+		batchSize = min(512, batchSize*2)
 	}
 	if len(page.Response.Entries) > limit {
 		page.Response.Entries = page.Response.Entries[:limit]
