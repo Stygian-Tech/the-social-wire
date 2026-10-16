@@ -278,9 +278,24 @@ func (r *Runner) runOnce(ctx context.Context) error {
 	}
 	defer client.Close()
 	r.health.Stream(true)
+	subscriptionContext, stopSubscription := context.WithCancelCause(ctx)
+	progressTicker := time.NewTicker(30 * time.Second)
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		watchLiveProgress(subscriptionContext, progressTicker.C, r.lastSeq.Load, client.Stats, r.cfg.ReplaySnapshotOnly, stopSubscription)
+	}()
+	defer func() {
+		stopSubscription(nil)
+		progressTicker.Stop()
+		<-progressDone
+	}()
 
-	for batch, streamErr := range client.Events(ctx) {
+	for batch, streamErr := range client.Events(subscriptionContext) {
 		if streamErr != nil {
+			if errors.Is(context.Cause(subscriptionContext), errLiveProgressStalled) {
+				return errLiveProgressStalled
+			}
 			// The SDK can surface recoverable transport errors while retaining the
 			// ordered stream and retrying internally. Closing that healthy client
 			// here turns one transient failure into an avoidable archive replay.
@@ -341,6 +356,9 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		if lastSeq > previousSeq {
 			r.health.Progress(lastSeq)
 		}
+	}
+	if errors.Is(context.Cause(subscriptionContext), errLiveProgressStalled) {
+		return errLiveProgressStalled
 	}
 	stats := client.Stats()
 	completionError := subscriptionEndError(
