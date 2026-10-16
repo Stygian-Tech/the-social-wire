@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -97,6 +98,9 @@ func (c PostgresInboxClaims) ClaimNext(ctx context.Context, repo InboxRepository
 	return &events[0], nil
 }
 func (c PostgresInboxClaims) claimHeads(ctx context.Context, at time.Time, limit int, after *InboxRepository) ([]InboxEvent, error) {
+	if c.Scope != nil {
+		return c.claimScopedHeads(ctx, at, limit, after)
+	}
 	token, err := newGenerationID()
 	if err != nil {
 		return nil, err
@@ -111,6 +115,61 @@ func (c PostgresInboxClaims) claimHeads(ctx context.Context, at time.Time, limit
 	scan := `SELECT candidate.environment,candidate.source_generation,candidate.repo_did,candidate.seq FROM wire_ingestion_inbox candidate WHERE candidate.status IN('pending','leased','retry') AND ($1::text IS NULL OR candidate.environment=$1 AND candidate.source_generation IN(SELECT jsonb_array_elements_text($2::jsonb)))`
 	query := `WITH RECURSIVE repository_heads AS((` + scan + ` AND($3::text IS NULL OR(candidate.environment,candidate.source_generation,candidate.repo_did)>($3,$4,$5)) ORDER BY candidate.environment,candidate.source_generation,candidate.repo_did,candidate.seq LIMIT 1) UNION ALL SELECT successor.* FROM repository_heads previous CROSS JOIN LATERAL(` + scan + ` AND(candidate.environment,candidate.source_generation,candidate.repo_did)>(previous.environment,previous.source_generation,previous.repo_did) ORDER BY candidate.environment,candidate.source_generation,candidate.repo_did,candidate.seq LIMIT 1)successor),candidates AS(SELECT candidate.environment,candidate.source_generation,candidate.seq FROM repository_heads head JOIN wire_ingestion_inbox candidate ON candidate.environment=head.environment AND candidate.source_generation=head.source_generation AND candidate.seq=head.seq WHERE(candidate.status IN('pending','retry') AND candidate.next_attempt_at<=$6) OR(candidate.status='leased' AND candidate.lease_expires_at<=$6) ORDER BY candidate.environment,candidate.source_generation,candidate.repo_did FOR UPDATE OF candidate SKIP LOCKED LIMIT $7),claimed AS(UPDATE wire_ingestion_inbox inbox SET status='leased',lease_owner='wire-worker',lease_token=$8,lease_expires_at=$9,attempt_count=attempt_count+1,updated_at=$6 FROM candidates WHERE inbox.environment=candidates.environment AND inbox.source_generation=candidates.source_generation AND inbox.seq=candidates.seq RETURNING inbox.*) SELECT ` + inboxReturnColumns + ` FROM claimed inbox ORDER BY inbox.environment,inbox.source_generation,inbox.repo_did`
 	rows, err := c.DB.QueryContext(ctx, query, scope, generations, afterEnv, afterGeneration, afterDID, at, limit, token, at.Add(120*time.Second))
+	if err != nil {
+		return nil, err
+	}
+	return scanInboxRows(rows)
+}
+
+// Scoped seeks constrain the leading FIFO index columns with equality before
+// seeking repo_did. A composite seek across environment/generation can otherwise
+// scan unrelated retained generations on every recursive step.
+func scopedRepositoryHeads(scope InboxScope, after *InboxRepository) (string, []any) {
+	generations := append([]string(nil), scope.Generations...)
+	sort.Strings(generations)
+	args := []any{scope.Environment}
+	definitions, selections := []string{}, []string{}
+	previousGeneration := ""
+	for index, generation := range generations {
+		if index > 0 && generation == previousGeneration {
+			continue
+		}
+		previousGeneration = generation
+		if after != nil && (scope.Environment < after.Environment || scope.Environment == after.Environment && generation < after.SourceGeneration) {
+			continue
+		}
+		args = append(args, generation)
+		generationBind := fmt.Sprintf("$%d", len(args))
+		seedBound := ""
+		if after != nil && scope.Environment == after.Environment && generation == after.SourceGeneration {
+			args = append(args, after.RepoDID)
+			seedBound = fmt.Sprintf(" AND candidate.repo_did>$%d", len(args))
+		}
+		name := fmt.Sprintf("scoped_heads_%d", index)
+		scan := `SELECT candidate.environment,candidate.source_generation,candidate.repo_did,candidate.seq FROM wire_ingestion_inbox candidate WHERE candidate.status IN('pending','leased','retry') AND candidate.environment=$1 AND candidate.source_generation=` + generationBind
+		order := ` ORDER BY candidate.repo_did,candidate.seq LIMIT 1`
+		definitions = append(definitions, name+` AS((`+scan+seedBound+order+`) UNION ALL SELECT successor.* FROM `+name+` previous CROSS JOIN LATERAL(`+scan+` AND candidate.repo_did>previous.repo_did`+order+`)successor)`)
+		selections = append(selections, `SELECT * FROM `+name)
+	}
+	if len(definitions) == 0 {
+		return "", nil
+	}
+	return strings.Join(definitions, ",") + `,repository_heads AS(` + strings.Join(selections, ` UNION ALL `) + `)`, args
+}
+
+func (c PostgresInboxClaims) claimScopedHeads(ctx context.Context, at time.Time, limit int, after *InboxRepository) ([]InboxEvent, error) {
+	heads, args := scopedRepositoryHeads(*c.Scope, after)
+	if heads == "" {
+		return nil, nil
+	}
+	token, err := newGenerationID()
+	if err != nil {
+		return nil, err
+	}
+	bind := len(args)
+	args = append(args, at, limit, token, at.Add(120*time.Second))
+	query := `WITH RECURSIVE ` + heads + fmt.Sprintf(`,candidates AS(SELECT candidate.environment,candidate.source_generation,candidate.seq FROM repository_heads head CROSS JOIN LATERAL(SELECT candidate.environment,candidate.source_generation,candidate.seq FROM wire_ingestion_inbox candidate WHERE candidate.environment=head.environment AND candidate.source_generation=head.source_generation AND candidate.seq=head.seq AND((candidate.status IN('pending','retry') AND candidate.next_attempt_at<=$%d) OR(candidate.status='leased' AND candidate.lease_expires_at<=$%d)) FOR UPDATE OF candidate SKIP LOCKED LIMIT 1)candidate LIMIT $%d),claimed AS(UPDATE wire_ingestion_inbox inbox SET status='leased',lease_owner='wire-worker',lease_token=$%d,lease_expires_at=$%d,attempt_count=attempt_count+1,updated_at=$%d FROM candidates WHERE inbox.environment=candidates.environment AND inbox.source_generation=candidates.source_generation AND inbox.seq=candidates.seq RETURNING inbox.*) SELECT `, bind+1, bind+1, bind+2, bind+3, bind+4, bind+1) + inboxReturnColumns + ` FROM claimed inbox ORDER BY inbox.environment,inbox.source_generation,inbox.repo_did`
+	rows, err := c.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
