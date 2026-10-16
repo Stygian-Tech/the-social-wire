@@ -16,8 +16,13 @@ const keysetIndexesMigration = readFileSync(
   ),
   "utf8"
 );
-const feedQuery = readFileSync(
-  resolve(import.meta.dir, "../../go/appviewcore/feed_query.go"),
+const feedBatchQuery = readFileSync(
+  resolve(import.meta.dir, "../../go/appviewcore/feed_batch_query.go"),
+  "utf8"
+);
+
+const coveringIndexMigration = readFileSync(
+  resolve(import.meta.dir, "../../../database/migrations/20261016070000_cover_subscribed_feed_candidates.sql"),
   "utf8"
 );
 
@@ -53,27 +58,37 @@ describe("Subscribed feed performance migration", () => {
       "ON content_items (author_did, publication_site, created_at DESC, uri DESC)"
     );
 
-    const matchingStart = feedQuery.indexOf("matched_content AS (");
-    const matchingEnd = feedQuery.indexOf("%s\n, candidates AS (", matchingStart);
+    const matchingStart = feedBatchQuery.indexOf("raw_candidates AS (");
+    const batchStart = feedBatchQuery.indexOf("), batch AS MATERIALIZED (", matchingStart);
+    const resolvedStart = feedBatchQuery.indexOf("), resolved AS (", batchStart);
     expect(matchingStart).toBeGreaterThanOrEqual(0);
-    expect(matchingEnd).toBeGreaterThan(matchingStart);
-    const matchingQuery = feedQuery.slice(matchingStart, matchingEnd);
-    expect(matchingQuery).toContain("ci.author_did = scope.author_did");
-    expect(matchingQuery).toContain("ci.publication_site = scope.scope_key");
-    expect(matchingQuery).toContain("scope.scope_key = ''");
-    expect(matchingQuery).toContain("ci.created_at < $8");
-    expect(matchingQuery).toContain("ci.created_at = $8 AND ci.uri < $9");
-    // Matching/deduplication carries a scalar article identity, never full bodies.
-    expect(matchingQuery).toContain("ci.render_json->>'articleUrl'");
-    expect(matchingQuery).not.toContain("render_json::text");
+    expect(batchStart).toBeGreaterThan(matchingStart);
+    expect(resolvedStart).toBeGreaterThan(batchStart);
+    const matchingQuery = feedBatchQuery.slice(matchingStart, batchStart);
+    expect(matchingQuery).toContain("ci.author_did=scope.author_did");
+    expect(matchingQuery).toContain("ci.publication_site=scope.scope_key");
+    expect(matchingQuery).toContain("WHERE scope.scope_key=''");
+    expect(matchingQuery).toContain("(ci.created_at,ci.uri)<($8,$9)");
+    expect(matchingQuery).toContain("ORDER BY ci.created_at DESC,ci.uri DESC LIMIT $1");
+    // Even scalar article identity waits until the bounded global batch, so
+    // candidate index scans need no stored payload or full article body.
+    expect(matchingQuery).not.toContain("render_json");
     expect(matchingQuery).not.toMatch(/SELECT\s+ci\.\*/);
+    const batchQuery = feedBatchQuery.slice(batchStart, resolvedStart);
+    expect(batchQuery).toContain("ORDER BY created_at DESC,uri DESC,publication_id DESC LIMIT $1");
+    const hydration = feedBatchQuery.indexOf("JOIN content_items rendered ON rendered.uri=batch.uri");
+    expect(hydration).toBeGreaterThan(resolvedStart);
+    expect(feedBatchQuery.slice(resolvedStart)).toContain("rendered.render_json->>'articleUrl'");
+  });
 
-    const pageStart = feedQuery.indexOf("), page AS (");
-    const pageLimit = feedQuery.indexOf("LIMIT $1", pageStart);
-    const hydration = feedQuery.indexOf("LEFT JOIN content_items rendered ON rendered.uri = page.uri");
-    expect(pageStart).toBeGreaterThan(matchingEnd);
-    expect(pageLimit).toBeGreaterThan(pageStart);
-    expect(hydration).toBeGreaterThan(pageLimit);
-    expect(feedQuery.slice(pageStart, pageLimit)).toContain("ORDER BY created_at DESC, uri DESC");
+  test("builds the ordered expiry-covering candidate index concurrently with retry validation", () => {
+    expect(coveringIndexMigration).toContain("-- socialwire:transaction=off");
+    expect(coveringIndexMigration).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_content_items_author_site_feed_cover");
+    expect(coveringIndexMigration).toContain("ON content_items (author_did, publication_site, created_at DESC, uri DESC)");
+    expect(coveringIndexMigration).toContain("INCLUDE (expires_at)");
+    expect(coveringIndexMigration).toContain("AND NOT indisvalid");
+    expect(coveringIndexMigration).toContain("DROP INDEX CONCURRENTLY IF EXISTS public.idx_content_items_author_site_feed_cover");
+    expect(coveringIndexMigration).toContain("AND indisvalid AND indisready");
+    expect(coveringIndexMigration).not.toContain("DROP INDEX CONCURRENTLY IF EXISTS public.idx_content_items_author_site_created_uri");
   });
 });
