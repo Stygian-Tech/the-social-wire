@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { useWireEdition } from "@/hooks/useWireEdition";
 import { useWireFeedEntries } from "@/hooks/useWireFeed";
 import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
-import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 import { useCircleEdition } from "@/hooks/useCircleFeed";
 import { editorialFeedForReadRoute } from "@/lib/editorialFeedRoute";
 
@@ -91,15 +90,7 @@ export function ReadArticleFilterBar() {
     return (
       <FeedHeader
         className="xl:mr-[calc(19rem+2rem)]"
-        title={
-          <span
-            aria-label={`${title}, Beta`}
-            className="inline-flex items-center gap-2"
-          >
-            <span>{title}</span>
-            <WireBetaBadge />
-          </span>
-        }
+        title={title}
       >
         <Button
           type="button"

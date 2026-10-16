@@ -85,7 +85,8 @@ describe("read feed header", () => {
   it.each([["wire", "The Wire"], ["circle", "Your Circle"]])("centers the %s header with shared symmetric padding and preserves refresh", (routeFeed, title) => {
     feed = routeFeed;
     const { container } = render(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));
-    expect(screen.getByRole("heading", { name: `${title}, Beta` })).toBeDefined();
+    expect(screen.getByRole("heading", { name: title })).toBeDefined();
+    expect(screen.queryByText("Beta")).toBeNull();
     const header = container.querySelector("header")!;
     expect(header.classList.contains("items-center")).toBe(true);
     expect(header.classList.contains("py-1")).toBe(true);
