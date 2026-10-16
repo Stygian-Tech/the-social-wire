@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
   useQueryClient,
   type InfiniteData,
   type QueryKey,
 } from "@tanstack/react-query";
 
+import { acquireBulkRead, bulkReadPending, readEntryMutationRevision, readFeedRefreshRevision, recordReadEntryMutations, releaseBulkRead, subscribeBulkReadPending } from "@/lib/feedRefreshCoordinator";
+import { invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
 import { pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 import { useAuth } from "@/hooks/useAuth";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
@@ -30,10 +32,17 @@ export function useCachedBulkReadActions(
   const entriesEpoch = useEntriesCacheEpoch();
   const { session, getOAuthSession } = useAuth();
   const viewerDid = session?.did;
+  const oauthSession = getOAuthSession();
+  const pendingBulk = useSyncExternalStore(
+    useCallback(listener => subscribeBulkReadPending(queryClient, listener), [queryClient]),
+    useCallback(() => bulkReadPending(queryClient, oauthSession), [queryClient, oauthSession]),
+    () => false,
+  );
   const {
     markEntriesRead,
     markEntriesUnread,
     isEntryRead,
+    pendingEntryReadState,
   } = useReadRoute();
 
   const cachedEntryIds = useMemo(() => {
@@ -43,20 +52,35 @@ export function useCachedBulkReadActions(
       : [];
   }, [queryClient, publications, entriesEpoch, viewerDid]);
 
-  const bulkDisabled =
+  const bulkDisabled = pendingBulk ||
     cachedEntryIds.length === 0 &&
     publications.length === 0 &&
     (options?.gatewayScopes?.length ?? 0) === 0;
 
   const applyMarkAllRead = useCallback(() => {
+    const oauth = getOAuthSession();
+    const scopes = options?.gatewayScopes ?? publications.map(publication => ({
+      kind: "publication" as const, publicationId: publication.publicationId,
+    }));
+    const operation = oauth && scopes.length ? acquireBulkRead(queryClient, oauth) : null;
+    if (oauth && scopes.length && !operation) return;
+    const revision = oauth ? recordReadEntryMutations(queryClient, oauth, cachedEntryIds) : 0;
+    const sameSession = () => getOAuthSession() === oauth;
+    const stillOwnsEntry = (entryId: string) => sameSession() &&
+      (!oauth || readEntryMutationRevision(queryClient, oauth, entryId) <= revision);
+    const countsAreCurrent = () => sameSession() &&
+      (!oauth || readFeedRefreshRevision(queryClient, oauth) === revision);
     const deferOptimism = pdsReadStateEnabled();
-    const entryWasRead = isEntryRead ?? (() => false);
-    const previouslyRead = cachedEntryIds.filter(entryWasRead);
-    const newlyRead = cachedEntryIds.filter((entryId) => !entryWasRead(entryId));
     const cacheSnapshots = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
       predicate: ({ queryKey }) =>
-        queryKey[0] === "entries" || queryKey[0] === "aggregateEntries",
+        (queryKey[0] === "entries" || queryKey[0] === "aggregateEntries") && queryKey[1] === viewerDid,
     });
+    const serverReadIds = new Set(cacheSnapshots.flatMap(([, data]) =>
+      data?.pages.flatMap(page => page.entries.filter(entry => entry.isRead).map(entry => entry.entryId)) ?? []));
+    const entryWasRead = (entryId: string) => pendingEntryReadState?.(entryId) ??
+      (serverReadIds.has(entryId) || isEntryRead(entryId));
+    const previouslyRead = cachedEntryIds.filter(entryWasRead);
+    const newlyRead = cachedEntryIds.filter(entryId => !entryWasRead(entryId));
     if (!deferOptimism) markEntriesRead(cachedEntryIds, {
       publications,
       syncToAppView: false,
@@ -75,18 +99,27 @@ export function useCachedBulkReadActions(
         })),
       });
     }
-    const oauth = getOAuthSession();
-    const scopes =
-      options?.gatewayScopes ??
-      publications.map((publication) => ({
-        kind: "publication" as const,
-        publicationId: publication.publicationId,
-      }));
+    const rollback = () => {
+      if (deferOptimism || !sameSession()) return;
+      const ownedIds = new Set(cachedEntryIds.filter(stillOwnsEntry));
+      const countPublications = countsAreCurrent() ? publications : undefined;
+      for (const [queryKey, snapshot] of cacheSnapshots) {
+        const prior = new Map(snapshot?.pages.flatMap(page => page.entries.map(entry => [entry.entryId, entry] as const)) ?? []);
+        queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, current => current ? {
+          ...current,
+          pages: current.pages.map(page => ({ ...page, entries: page.entries.map(entry =>
+            ownedIds.has(entry.entryId) && prior.has(entry.entryId) ? { ...entry, isRead: prior.get(entry.entryId)?.isRead } : entry) })),
+        } : current);
+      }
+      markEntriesUnread(newlyRead.filter(entryId => ownedIds.has(entryId)), { publications: countPublications });
+      const restoreRead = previouslyRead.filter(entryId => ownedIds.has(entryId));
+      if (restoreRead.length) markEntriesRead(restoreRead, { syncToAppView: false });
+    };
     if (oauth && scopes.length > 0) {
       void Promise.all(scopes.map((scope) => pdsReadStateEnabled()
         ? markAllReadOnGateway(oauth, scope, cachedEntryIds.slice(0, 1000)) : markAllReadOnGateway(oauth, scope)))
         .then((confirmations) => {
-          if (!viewerDid || confirmations.some(confirmation => confirmation.pendingSync)) return;
+          if (!sameSession() || !viewerDid || confirmations.some(confirmation => confirmation.pendingSync)) return;
           const confirmedCounts = Object.assign(
             {},
             ...confirmations.map((confirmation) => confirmation.unreadCounts ?? {})
@@ -107,7 +140,7 @@ export function useCachedBulkReadActions(
             .filter(Boolean)
             .sort()
             .at(-1);
-          queryClient.setQueryData<PublicationSidebarProjection>(
+          if (countsAreCurrent()) queryClient.setQueryData<PublicationSidebarProjection>(
             PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
             (current) =>
               current
@@ -128,10 +161,10 @@ export function useCachedBulkReadActions(
             queryClient,
             viewerDid,
             publications
-          );
+          ).filter(stillOwnsEntry);
           if (settledEntryIds.length > 0) {
             markEntriesRead(settledEntryIds, {
-              publications,
+              publications: countsAreCurrent() ? publications : undefined,
               syncToAppView: false,
             });
           }
@@ -158,29 +191,13 @@ export function useCachedBulkReadActions(
           void queryClient.invalidateQueries({ predicate: isUnreadFeedQuery });
         })
         .catch(() => {
-          if (deferOptimism) return;
-          for (const [queryKey, snapshot] of cacheSnapshots) {
-            queryClient.setQueryData(queryKey as QueryKey, snapshot);
-          }
-          markEntriesUnread(newlyRead, { publications });
-          if (previouslyRead.length > 0) {
-            markEntriesRead(previouslyRead, {
-              publications,
-              syncToAppView: false,
-            });
-          }
-        });
-    } else if (scopes.length > 0 && !deferOptimism) {
-      for (const [queryKey, snapshot] of cacheSnapshots) {
-        queryClient.setQueryData(queryKey as QueryKey, snapshot);
-      }
-      markEntriesUnread(newlyRead, { publications });
-      if (previouslyRead.length > 0) {
-        markEntriesRead(previouslyRead, {
-          publications,
-          syncToAppView: false,
-        });
-      }
+          rollback();
+          if (sameSession() && viewerDid) void invalidateConfirmedReadStateQueries(queryClient, viewerDid).catch(() => {});
+        }).finally(() => {
+          if (operation) releaseBulkRead(queryClient, oauth, operation);
+        }).catch(() => {});
+    } else if (scopes.length > 0) {
+      rollback();
     }
   }, [
     markEntriesRead,
@@ -189,6 +206,7 @@ export function useCachedBulkReadActions(
     getOAuthSession,
     options?.gatewayScopes,
     isEntryRead,
+    pendingEntryReadState,
     markEntriesUnread,
     queryClient,
     viewerDid,
