@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	mathrand "math/rand/v2"
 	"os"
 	"time"
 
@@ -485,9 +486,6 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 		p.wirePreprocessing.recordInput(len(prepared), originalBytes, compactBytes)
 		events = prepared
 	}
-	if !p.source.IsWire() || !p.wireCompactIngestEnabled {
-		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects)
-	}
 	return retryStageSerialization(ctx, func() error {
 		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects)
 	})
@@ -949,16 +947,23 @@ func postgresInterval(duration time.Duration) string {
 	return fmt.Sprintf("%f seconds", duration.Seconds())
 }
 
-// A snapshot conflict must replay the complete fenced unit, including membership,
+// A transaction conflict must replay the complete fenced unit, including membership,
 // inbox insertion, counters, anchors and checkpoint. Never retry just an INSERT.
+// Eight attempts add at most 2.26 seconds of backoff, all bounded by the caller.
 func retryStageSerialization(ctx context.Context, stage func() error) error {
 	for attempt := 0; ; attempt++ {
-		err := stage()
-		var postgresError *pgconn.PgError
-		if !errors.As(err, &postgresError) || postgresError.Code != "40001" || attempt == 4 {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		timer := time.NewTimer(time.Duration(10<<attempt) * time.Millisecond)
+		err := stage()
+		var postgresError *pgconn.PgError
+		if !errors.As(err, &postgresError) || (postgresError.Code != "40001" && postgresError.Code != "40P01") || attempt == 7 {
+			return err
+		}
+		// Live and recovery lanes contend on the same admission row. Spread
+		// retries so a busy lane cannot keep winning synchronized retries.
+		backoff := min(time.Duration(20<<attempt)*time.Millisecond, time.Second)
+		timer := time.NewTimer(backoff/2 + mathrand.N(backoff/2))
 		select {
 		case <-ctx.Done():
 			timer.Stop()

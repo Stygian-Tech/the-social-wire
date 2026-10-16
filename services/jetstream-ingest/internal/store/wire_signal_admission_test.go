@@ -298,14 +298,14 @@ func TestStageRetriesWholeTransactionAfterSerializationConflict(t *testing.T) {
 func TestSerializationRetryIsBoundedAndCancellable(t *testing.T) {
 	attempts := 0
 	err := retryStageSerialization(context.Background(), func() error { attempts++; return &pgconn.PgError{Code: "40001"} })
-	if err == nil || attempts != 5 {
+	if err == nil || attempts != 8 {
 		t.Fatalf("retry attempts = %d, err = %v", attempts, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	attempts = 0
 	err = retryStageSerialization(ctx, func() error { attempts++; return &pgconn.PgError{Code: "40001"} })
-	if !errors.Is(err, context.Canceled) || attempts != 1 {
+	if !errors.Is(err, context.Canceled) || attempts != 0 {
 		t.Fatalf("cancelled retry attempts = %d, err = %v", attempts, err)
 	}
 	attempts = 0
