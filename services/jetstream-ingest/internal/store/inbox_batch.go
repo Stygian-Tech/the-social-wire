@@ -35,7 +35,16 @@ func (p *Postgres) stageInboxEvents(ctx context.Context, tx *sql.Tx, events []in
 	args := make([]any, 0, len(events)*14)
 	for _, event := range events {
 		payload := event.Payload
-		if p.source.IsWire() && !p.wireCompactIngestEnabled {
+		if !p.source.IsWire() {
+			// AppView envelopes can contain valid JSON strings (notably U+0000)
+			// that JSONB cannot store. Normalize the derived copy, retaining the
+			// original event and record identity; never replace a failed envelope.
+			var err error
+			payload, err = normalizeWireJSONPayloadForPostgres(payload)
+			if err != nil {
+				return 0, fmt.Errorf("normalize AppView inbox payload at seq %d: %w", event.Seq, err)
+			}
+		} else if !p.wireCompactIngestEnabled {
 			payload = wireJSONPayloadForPostgres(payload)
 		}
 		start := len(args) + 1
