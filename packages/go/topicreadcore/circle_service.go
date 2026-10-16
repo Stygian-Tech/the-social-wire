@@ -127,11 +127,13 @@ func (s *CircleService) Edition(ctx context.Context, auth gatewaycore.AuthContex
 		}
 		ordinal = value.NextOrdinal
 	}
+	coverageDegraded := s.State.recoveryCoverageDegraded(ctx)
 	if ordinal == 0 && s.State.Cache != nil {
 		body, _ := s.State.Cache.CachedEdition(ctx, auth.DID, graph.Graph.SnapshotID, candidates.GenerationID, language, hidden, now)
 		if body != nil {
 			var response CircleEdition
 			if corpuscore.DecodeContract(body, &response) == nil {
+				response.Degraded = graph.Degraded() || coverageDegraded
 				return response, nil
 			}
 		}
@@ -245,6 +247,9 @@ func (s *CircleService) Edition(ctx context.Context, auth gatewaycore.AuthContex
 		}
 		_ = s.State.Cache.StoreEdition(ctx, auth.DID, graph.Graph.SnapshotID, candidates.GenerationID, language, hidden, minTime(now.Add(10*time.Minute), graph.Graph.GeneratedAt.Add(24*time.Hour)), body, now)
 	}
+	// Cache graph presentation separately so repaired corpus coverage can clear
+	// its warning immediately, including when the edition itself remains cached.
+	response.Degraded = response.Degraded || coverageDegraded
 	return response, nil
 }
 func minTime(a, b time.Time) time.Time {
