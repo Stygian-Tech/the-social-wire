@@ -36,7 +36,7 @@ import {
 } from "@/lib/dummyReaderData";
 import { recordClientPerformance } from "@/lib/clientPerformanceTelemetry";
 import { useAuth } from "./useAuth";
-import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
+import { coalesceFeedFirstPage, readFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { refreshPublicationFeedFirstPage } from "@/lib/feedRefresh";
 import { useFeedFirstContentTiming } from "./useFeedFirstContentTiming";
 
@@ -520,12 +520,14 @@ export function useAggregateFeedEntries(
     const oauth = getOAuthSession();
     if (!oauth) return;
     const refreshStartedAt = performance.now();
+    const readRevision = readFeedRefreshRevision(queryClient, oauth);
     void coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, () => listAggregateFeedFromAppView({
       feed,
       filter: articleFilter,
       oauthSession: oauth,
     }))
       .then((freshPage) => {
+        if (getOAuthSession() !== oauth || readFeedRefreshRevision(queryClient, oauth) !== readRevision) return;
         queryClient.setQueryData<InfiniteData<EntriesPage>>(
           aggregateQueryKey,
           (current) => mergeFeedRefreshForFilter(current, freshPage, articleFilter)
@@ -583,8 +585,9 @@ export function useAggregateFeedEntries(
   return { ...query, refetch: async () => {
     const oauth = getOAuthSession();
     if (!oauth || !feed) return;
+    const readRevision = readFeedRefreshRevision(queryClient, oauth);
     const fresh = await coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, () => listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: oauth }));
-    if (getOAuthSession() !== oauth) return;
+    if (getOAuthSession() !== oauth || readFeedRefreshRevision(queryClient, oauth) !== readRevision) return;
     queryClient.setQueryData<InfiniteData<EntriesPage>>(aggregateQueryKey, current => mergeFeedRefreshForFilter(current, fresh, articleFilter));
   } };
 }

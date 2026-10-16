@@ -1,4 +1,4 @@
-import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
+import { coalesceFeedFirstPage, readFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 import {
@@ -37,10 +37,12 @@ export async function refreshPublicationUnreadCount(args: {
   oauthSession: OAuthSession;
 }): Promise<void> {
   const { queryClient, viewerDid, publicationId, oauthSession } = args;
+  const readRevision = readFeedRefreshRevision(queryClient, oauthSession);
   try {
     const countSnapshot = await fetchAppViewUnreadCounts(oauthSession, [
       publicationId,
     ]);
+    if (readFeedRefreshRevision(queryClient, oauthSession) !== readRevision) return;
     queryClient.setQueryData<PublicationSidebarProjection>(
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
       (current) =>
@@ -79,7 +81,7 @@ export function refreshPublicationFeedFirstPage(args: FeedRefreshArgs): Promise<
   if (!sessions) { sessions = new WeakMap(); inFlightRefreshes.set(args.queryClient, sessions); }
   let pending = sessions.get(args.oauthSession);
   if (!pending) { pending = new Map(); sessions.set(args.oauthSession, pending); }
-  const key = JSON.stringify([args.viewerDid, normalizeAtRepoParam(args.publicationKey), args.articleFilter ?? "all", args.allowCacheMiss ?? false]);
+  const key = JSON.stringify([args.viewerDid, normalizeAtRepoParam(args.publicationKey), args.articleFilter ?? "all", args.allowCacheMiss ?? false, readFeedRefreshRevision(args.queryClient, args.oauthSession)]);
   const existing = pending.get(key);
   if (existing) return existing;
   const task = performPublicationFeedRefresh({ ...args, publicationKey: normalizeAtRepoParam(args.publicationKey) }).finally(() => {
@@ -130,6 +132,7 @@ async function performPublicationFeedRefresh(args: FeedRefreshArgs): Promise<boo
     return true;
   }
 
+  const readRevision = readFeedRefreshRevision(queryClient, oauthSession);
   const freshPage = await coalesceFeedFirstPage(queryClient, oauthSession, queryKey, () => fetchEntriesInfinitePage({
     normalizedPublicationKey: publicationKey,
     pageParam: undefined,
@@ -141,6 +144,7 @@ async function performPublicationFeedRefresh(args: FeedRefreshArgs): Promise<boo
     skipEnroll,
   }));
 
+  if (readFeedRefreshRevision(queryClient, oauthSession) !== readRevision) return false;
   queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, (current) =>
     mergeFeedRefreshForFilter(current, freshPage, articleFilter)
   );
