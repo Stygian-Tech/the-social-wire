@@ -37,7 +37,7 @@ export function ReadArticleFilterBar() {
   } = useReadRoute();
   const isTabletPortrait = useIsTabletPortrait();
   const clientHydrated = useClientHydrated();
-  const { refresh } = useSidebarBootstrap();
+  const { refresh, projectionError } = useSidebarBootstrap();
   const editorialFeed = editorialFeedForReadRoute(
     pathname,
     searchParams.get("feed"),
@@ -130,7 +130,9 @@ export function ReadArticleFilterBar() {
   }
 
   return (
-    <FeedHeader title={feedTitle}>
+    <FeedHeader title={feedTitle} subtitle={projectionError ? (
+      <span role="alert" className="text-destructive" title={projectionError.message}>Couldn’t refresh. Try Refresh.</span>
+    ) : undefined}>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {isTabletPortrait ? (
           <Button

@@ -10,6 +10,8 @@ import * as Hydration from "@/hooks/useClientHydrated";
 import * as WireEdition from "@/hooks/useWireEdition";
 import * as WireFeed from "@/hooks/useWireFeed";
 import * as Circle from "@/hooks/useCircleFeed";
+import * as Auth from "@/hooks/useAuth";
+import * as ReadAge from "@/hooks/useFeedReadAgeActions";
 import { ReadArticleFilterBar } from "@/app/read/ReadArticleFilterBar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
@@ -17,9 +19,13 @@ const restores: (() => void)[] = [];
 let feed = "wire";
 const retryWire = mock(async () => undefined);
 const retryCircle = mock(async () => undefined);
+const refreshPublications = mock(() => undefined);
+let refreshError: Error | null = null;
+let refreshPending = false;
 
 beforeEach(() => {
   retryWire.mockClear(); retryCircle.mockClear();
+  refreshPublications.mockClear(); refreshError = null; refreshPending = false;
   const media = Object.getOwnPropertyDescriptor(window, "matchMedia");
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -31,11 +37,13 @@ beforeEach(() => {
   });
   const wireState = { isRefreshingFirstPage: false, isLoading: false, viewerModerationRetryUnavailable: false, retryTheWire: retryWire };
   const spies = [
+    spyOn(Auth, "useAuth").mockReturnValue({ session: null } as ReturnType<typeof Auth.useAuth>),
+    spyOn(ReadAge, "useFeedReadAgeActions").mockReturnValue({ loadOptions: mock(async () => []), markBefore: mock(async () => undefined) }),
     spyOn(Navigation, "usePathname").mockReturnValue("/read"),
     spyOn(Navigation, "useSearchParams").mockImplementation(() => new URLSearchParams({ feed }) as unknown as ReturnType<typeof Navigation.useSearchParams>),
     spyOn(ReadRoute, "useReadRoute").mockReturnValue({ articleListFilter: "all" } as unknown as ReturnType<typeof ReadRoute.useReadRoute>),
     spyOn(ReadScope, "useReadSidebarScope").mockReturnValue({ activeFeedScope: { publications: [], displayName: "" } } as unknown as ReturnType<typeof ReadScope.useReadSidebarScope>),
-    spyOn(Bootstrap, "useSidebarBootstrap").mockReturnValue({ refresh: { mutate: mock(() => undefined) } } as unknown as ReturnType<typeof Bootstrap.useSidebarBootstrap>),
+    spyOn(Bootstrap, "useSidebarBootstrap").mockImplementation(() => ({ projectionError: refreshError, refresh: { mutate: refreshPublications, isPending: refreshPending } }) as unknown as ReturnType<typeof Bootstrap.useSidebarBootstrap>),
     spyOn(BulkRead, "useCachedBulkReadActions").mockReturnValue({ bulkDisabled: true, applyMarkAllRead: mock(() => undefined) } as unknown as ReturnType<typeof BulkRead.useCachedBulkReadActions>),
     spyOn(Hydration, "useClientHydrated").mockReturnValue(true),
     spyOn(WireEdition, "useWireEdition").mockReturnValue(wireState as unknown as ReturnType<typeof WireEdition.useWireEdition>),
@@ -48,6 +56,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 describe("read feed header", () => {
+  it("shows a compact refresh failure and leaves the existing refresh control available for retry", () => {
+    feed = "subscribed";
+    refreshError = new Error("Refresh took too long. Previously loaded stories are still available.");
+    const { rerender } = render(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));
+    expect(screen.getByRole("alert").textContent).toBe("Couldn’t refresh. Try Refresh.");
+    expect(screen.getByRole("alert").getAttribute("title")).toBe(refreshError.message);
+    const refresh = screen.getByRole("button", { name: "Refresh Publications" }) as HTMLButtonElement;
+    expect(refresh.disabled).toBe(false);
+    fireEvent.click(refresh);
+    expect(refreshPublications).toHaveBeenCalledTimes(1);
+    refreshError = null; refreshPending = true;
+    rerender(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByRole("button", { name: "Refresh Publications" }) as HTMLButtonElement).disabled).toBe(true);
+  });
   it.each([["finance", "Finance"], ["sports", "Sports"]])("provides the shared route header for %s without unrelated reader actions", (routeFeed, title) => {
     feed = routeFeed;
     const { container } = render(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));

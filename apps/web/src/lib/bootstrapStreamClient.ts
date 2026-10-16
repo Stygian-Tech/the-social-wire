@@ -34,21 +34,41 @@ export async function consumeBootstrapStream(args: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let complete = false;
+  const streamHandlers: BootstrapStreamHandlers = {
+    ...handlers,
+    onEvent: event => {
+      if (complete) return;
+      handlers.onEvent(event);
+      if (event.kind === "done") complete = true;
+    },
+  };
+  // An open HTTP body must not keep Refresh pending after protocol completion,
+  // and abort must also wake a reader stalled between NDJSON chunks.
+  const cancelReader = () => { void reader.cancel().catch(() => undefined); };
+  signal?.addEventListener("abort", cancelReader, { once: true });
 
   try {
+    signal?.throwIfAborted();
     while (true) {
       const { done, value } = await reader.read();
+      signal?.throwIfAborted();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      buffer = consumeBufferedNdjsonLines(buffer, handlers);
+      buffer = consumeBufferedNdjsonLines(buffer, streamHandlers);
+      if (complete) break;
     }
-    if (buffer.trim()) {
-      consumeLine(buffer.trim(), handlers);
+    if (!complete && buffer.trim()) {
+      consumeLine(buffer.trim(), streamHandlers);
     }
   } catch (error) {
-    if (signal?.aborted) return;
+    if (signal?.aborted) throw signal.reason;
     handlers.onError?.(error instanceof Error ? error : new Error(String(error)));
     throw error;
+  } finally {
+    signal?.removeEventListener("abort", cancelReader);
+    cancelReader();
+    reader.releaseLock();
   }
 }
 
