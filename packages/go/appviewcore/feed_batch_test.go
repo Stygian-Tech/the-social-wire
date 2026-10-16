@@ -3,6 +3,7 @@ package appviewcore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -87,6 +88,7 @@ func TestFeedBatchesPreserveGlobalDedupeFiltersAndCursor(t *testing.T) {
 	for _, table := range []string{"content_items", "appview_publication_scopes", "appview_publication_scope_keys", "appview_feed_publications", "read_marks"} {
 		exec("ANALYZE " + table)
 	}
+	exec("VACUUM (ANALYZE) content_items")
 	// The candidate stage uses ordered index seeks capped before payload hydration.
 	rows, err := db.QueryContext(ctx, "EXPLAIN (ANALYZE,BUFFERS,TIMING OFF) "+feedBatchQuery, 128, false, viewer, "subscribed", "", at, false, at, "", "", false)
 	if err != nil {
@@ -106,10 +108,39 @@ func TestFeedBatchesPreserveGlobalDedupeFiltersAndCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if (!strings.Contains(plan.String(), "idx_content_items_author_site_created_uri") && !strings.Contains(plan.String(), "idx_content_items_author_publication_site_created")) || strings.Contains(plan.String(), "Seq Scan on content_items") || !strings.Contains(plan.String(), "Limit") {
+	if !strings.Contains(plan.String(), "idx_content_items_author_site_feed_cover") || strings.Contains(plan.String(), "Seq Scan on content_items") || !strings.Contains(plan.String(), "Limit") {
 		t.Fatalf("missing bounded index seeks:\n%s", plan.String())
 	}
 	t.Log(plan.String())
+	var rawPlan []byte
+	if err := db.QueryRowContext(ctx, "EXPLAIN (ANALYZE,FORMAT JSON,TIMING OFF) "+feedBatchQuery, 51, false, viewer, "subscribed", "", at, false, at, "", "", false).Scan(&rawPlan); err != nil {
+		t.Fatal(err)
+	}
+	var document []map[string]any
+	if err := json.Unmarshal(rawPlan, &document); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	var visit func(map[string]any)
+	visit = func(node map[string]any) {
+		if node["Index Name"] == "idx_content_items_author_site_feed_cover" {
+			found = true
+			// Other package fixtures can hold older snapshots during VACUUM.
+			// Even then, heap visibility checks must stay within this batch.
+			if node["Node Type"] != "Index Only Scan" || node["Heap Fetches"].(float64) > 51 {
+				t.Fatalf("candidate scan fetched history beyond its batch: %s", rawPlan)
+			}
+		}
+		if children, ok := node["Plans"].([]any); ok {
+			for _, child := range children {
+				visit(child.(map[string]any))
+			}
+		}
+	}
+	visit(document[0]["Plan"].(map[string]any))
+	if !found {
+		t.Fatalf("covering candidate index not used: %s", rawPlan)
+	}
 }
 
 func referenceFeed(t *testing.T, db *sql.DB, viewer, filter, cursor string, limit int, at time.Time) *FeedPage {
