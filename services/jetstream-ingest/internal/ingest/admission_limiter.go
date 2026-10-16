@@ -3,12 +3,14 @@ package ingest
 import (
 	"errors"
 	"math"
+	"sync"
 	"time"
 )
 
-// AdmissionRateLimiter is a single-consumer token bucket. Reserve returns the
+// AdmissionRateLimiter is a shared token bucket. Reserve returns the
 // delay required before a bounded staging transaction may be committed.
 type AdmissionRateLimiter struct {
+	mu            sync.Mutex
 	ratePerSecond float64
 	burst         int
 	tokens        float64
@@ -31,6 +33,8 @@ func NewAdmissionRateLimiter(ratePerSecond float64, burst int, now time.Time) (*
 }
 
 func (l *AdmissionRateLimiter) Reserve(count int, now time.Time) (time.Duration, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if count < 0 || count > l.burst {
 		return 0, errors.New("admission reservation exceeds configured burst")
 	}
@@ -49,6 +53,9 @@ func (l *AdmissionRateLimiter) Reserve(count int, now time.Time) (time.Duration,
 	missing := float64(count) - l.tokens
 	waitNanoseconds := math.Ceil(missing / l.ratePerSecond * float64(time.Second))
 	wait := time.Duration(waitNanoseconds)
+	if l.updatedAt.After(now) {
+		wait += l.updatedAt.Sub(now)
+	}
 	l.tokens = 0
 	l.updatedAt = now.Add(wait)
 	return wait, nil

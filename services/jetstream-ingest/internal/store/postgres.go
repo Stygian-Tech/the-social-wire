@@ -36,6 +36,9 @@ func (e *WireCapacityExceededError) Error() string {
 func (e *WireCapacityExceededError) Unwrap() error { return ErrWireAdmissionPaused }
 
 type Postgres struct {
+	liveIntake               bool
+	quarantineEnabled        bool
+	recoveryJob              *RecoveryJob
 	wirePreprocessing        wirePreprocessingMetrics
 	wireCompactIngestEnabled bool
 	db                       *sql.DB
@@ -221,6 +224,9 @@ func (p *Postgres) ReconcileWireAdmission(ctx context.Context, lease Lease) (boo
 }
 
 func (p *Postgres) LoadCheckpoint(ctx context.Context) (*ingest.Checkpoint, error) {
+	if p.recoveryJob != nil {
+		return p.loadRecoveryCheckpoint(ctx)
+	}
 	row := p.db.QueryRowContext(ctx, `
 		SELECT source_host, stream_nsid, filter_fingerprint, cursor_kind,
 		       last_staged_seq, replay_bytes_downloaded, replay_state,
@@ -297,6 +303,9 @@ func (p *Postgres) ReplayUsageBuckets(ctx context.Context) ([]ingest.ReplayUsage
 func (p *Postgres) RecordReplayBytes(ctx context.Context, bytes int64) error {
 	if bytes <= 0 {
 		return nil
+	}
+	if p.liveIntake || p.recoveryJob != nil {
+		return p.recordAutomaticReplayBytes(ctx, bytes)
 	}
 	_, err := p.db.ExecContext(ctx, `
 		INSERT INTO appview_ingestion_replay_usage
@@ -469,6 +478,20 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	if checkpointSeq == 0 {
 		return errors.New("cannot stage a zero Jetstream checkpoint")
 	}
+	if p.recoveryJob != nil {
+		if checkpointSeq <= p.recoveryJob.AfterSeq || checkpointSeq > p.recoveryJob.BeforeSeq {
+			return errors.New("recovery checkpoint is outside its immutable range")
+		}
+		for _, event := range events {
+			if event.Seq <= p.recoveryJob.AfterSeq || event.Seq > p.recoveryJob.BeforeSeq {
+				return errors.New("recovery event is outside its immutable range")
+			}
+		}
+	}
+	var poison []poisonRecord
+	if p.quarantineEnabled {
+		events, poison = preparePoisonRecords(events)
+	}
 	// Normalize once before retries; never change caller-owned event payloads.
 	var subjects wireSignalSubjects
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
@@ -487,11 +510,11 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 		events = prepared
 	}
 	return retryStageSerialization(ctx, func() error {
-		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects)
+		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects, poison)
 	})
 }
 
-func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, events []ingest.InboxEvent, checkpointSeq uint64, checkpointEventTime time.Time, progress ReplayProgress, subjects wireSignalSubjects) error {
+func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, events []ingest.InboxEvent, checkpointSeq uint64, checkpointEventTime time.Time, progress ReplayProgress, subjects wireSignalSubjects, poison []poisonRecord) error {
 	isolation := sql.LevelDefault
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
 		isolation = sql.LevelRepeatableRead
@@ -538,6 +561,14 @@ func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, event
 	}
 
 	var preprocessing wireCommittedMetrics
+	if p.liveIntake {
+		if err := p.stageLiveSeam(ctx, tx, checkpointSeq); err != nil {
+			return err
+		}
+	}
+	if err := p.stagePoisonRecords(ctx, tx, poison); err != nil {
+		return err
+	}
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
 		var err error
 		events, err = filterPreparedWireSignals(ctx, tx, events, subjects, &preprocessing)
@@ -600,6 +631,19 @@ func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, event
 		}
 	}
 
+	if p.recoveryJob != nil {
+		if err := p.stageRecoveryCheckpoint(ctx, tx, lease, checkpointSeq, progress, false); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit recovery stage batch: %w", err)
+		}
+		if p.source.IsWire() && p.wireCompactIngestEnabled {
+			preprocessing.insertedEvents = uint64(admittedWireEvents)
+			p.wirePreprocessing.recordCommitted(preprocessing)
+		}
+		return nil
+	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO appview_jetstream_checkpoints
 		  (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
@@ -747,6 +791,9 @@ func (p *Postgres) CompleteSnapshot(
 	beforeSeq uint64,
 	progress ReplayProgress,
 ) error {
+	if p.recoveryJob != nil {
+		return p.CompleteRecoveryJob(ctx, lease, afterSeq, beforeSeq, progress)
+	}
 	if beforeSeq == 0 || afterSeq >= beforeSeq || progress.SealedSeq != beforeSeq {
 		return errors.New("invalid bounded snapshot completion range")
 	}

@@ -1,7 +1,7 @@
 -- Preserve the existing presentation-safe health shape and legacy recovery
 -- semantics while including the independently checkpointed automatic repair lane.
-CREATE INDEX IF NOT EXISTS ingestion_recovery_controllers_unhealthy_idx
- ON ingestion_recovery_controllers(environment,source_generation)
+CREATE INDEX IF NOT EXISTS ingestion_recovery_controllers_issue_idx
+ ON ingestion_recovery_controllers(environment,status,updated_at)
  WHERE status <> 'healthy' OR gap_after_seq IS NOT NULL;
 
 CREATE OR REPLACE VIEW wire_publication_recovery_health AS
