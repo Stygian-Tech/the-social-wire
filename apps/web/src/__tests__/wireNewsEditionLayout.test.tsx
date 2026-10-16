@@ -141,6 +141,29 @@ const page: WireEditionPage = {
 };
 
 describe("WireNewsEditionLayout", () => {
+  it("keeps the recovery notice in the main story column and outside floating controls", async () => {
+    const { WireNewsEditionLayout } = await import("@/components/Wire/WireNewsEditionLayout");
+    const { container } = render(
+      <WireNewsEditionLayout
+        pages={[{ ...page, degraded: true }]}
+        continuedStories={[]}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        isLoadMoreError={false}
+        onLoadMore={async () => undefined}
+        onSelect={() => undefined}
+        editionLabel="Your Circle"
+      />,
+    );
+    const notice = screen.getByRole("status");
+    const topStories = screen.getByRole("heading", { name: "Top Stories" }).closest("section")!;
+    const trending = screen.getByRole("heading", { name: "Trending Stories" }).closest("aside")!;
+    expect(topStories.parentElement?.contains(notice)).toBe(true);
+    expect(topStories.parentElement?.contains(trending)).toBe(false);
+    expect(notice.closest("[data-floating-glass-controls]")).toBeNull();
+    expect(container.querySelector("[data-wire-scroll-container]")?.contains(notice)).toBe(true);
+  });
+
   it("collapses media when cached image resolution fails", async () => {
     const failedURL = "https://analysis.example/cache-failure.jpg";
     cachedImageFailureSrc = failedURL;
