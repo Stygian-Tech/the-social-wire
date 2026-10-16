@@ -362,3 +362,9 @@ expire after seven days through bounded batches of 500, retaining unresolved
 identity/hash evidence. Transient SQL, lease, capacity, and transport errors are
 never treated as poison. Controller, gap, and poison states remain visible in
 Operations and public coverage stays degraded while obligations are unresolved.
+
+Failed automatic archive attempts use bounded exponential backoff with jitter;
+only durable job-cursor advancement resets retry pressure. A full Wire inbox
+holds the already-downloaded staging chunk and its existing rate reservation
+while waiting `WIRE_ADMISSION_PAUSE`; it does not reopen or redownload the archive.
+The retained canary deadline, cancellation, and lease-loss checks still apply.
