@@ -81,6 +81,7 @@ const PublicationSidebarContext =
 const EMPTY_PUBLICATION_ROWS: SidebarProjectionState["allPublicationRows"] = [];
 
 const RECENT_BOOTSTRAP_REUSE_MS = 30_000;
+export const MANUAL_SIDEBAR_REFRESH_TIMEOUT_MS = 30_000;
 const bootstrapCompletedAtByDid = new Map<string, number>();
 
 export function PublicationSidebarProvider({ children }: { children: ReactNode }) {
@@ -116,6 +117,7 @@ function PublicationSidebarProviderInner({
     useState(false);
   const [projectionError, setProjectionError] = useState<Error | null>(null);
   const streamGenerationRef = useRef(0);
+  const manualRefreshControllerRef = useRef<AbortController | null>(null);
   const streamSawSidebarSectionRef = useRef(false);
   const pendingAutoSelectPublicationIdRef = useRef<string | null>(null);
   const bootstrapFeedPublicationIdRef = useRef<string | null>(null);
@@ -165,6 +167,7 @@ function PublicationSidebarProviderInner({
     ) => {
       const oauth = getOAuthSession();
       if (!oauth || !did) return;
+      controller.signal.throwIfAborted();
 
       resetBootstrapPerf();
       const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
@@ -209,7 +212,7 @@ function PublicationSidebarProviderInner({
           signal: controller.signal,
           handlers: {
             onEvent: (event) => {
-              if (generation !== streamGenerationRef.current || getOAuthSession() !== oauth) return;
+              if (controller.signal.aborted || generation !== streamGenerationRef.current || getOAuthSession() !== oauth) return;
               if (event.kind === "lists") {
                 const listsKey = standardReaderListsQueryKey(did, oauthSessionReloadSeq);
                 qc.setQueryData(listsKey, mergeStandardReaderListsPage(qc.getQueryData(listsKey), event.payload));
@@ -314,6 +317,7 @@ function PublicationSidebarProviderInner({
                 streamSawSidebarSectionRef.current;
 
               setStreamProjection((currentStream) => {
+                if (controller.signal.aborted || generation !== streamGenerationRef.current || getOAuthSession() !== oauth) return currentStream;
                 if (skipLegacySidebarFolders) return currentStream;
                 const baseline =
                   qc.getQueryData<PublicationSidebarProjection>(
@@ -340,7 +344,7 @@ function PublicationSidebarProviderInner({
               });
             },
             onError: (error) => {
-              if (generation !== streamGenerationRef.current) return;
+              if (controller.signal.aborted || generation !== streamGenerationRef.current || getOAuthSession() !== oauth) return;
               setProjectionError(error);
             },
           },
@@ -352,6 +356,7 @@ function PublicationSidebarProviderInner({
             error instanceof Error ? error : new Error(String(error))
           );
         }
+        if (options.force) throw error;
       } finally {
         if (generation === streamGenerationRef.current) {
           setSidebarFetching(false);
@@ -445,12 +450,47 @@ function PublicationSidebarProviderInner({
       // is what produces the content, painting priority rows first and filling folders as they
       // land. Applying the POST's own payload here as well would rebuild the same projection twice
       // and stall every other gateway request behind it for the duration.
-      await refreshPublicationSidebar(oauth);
-      setStreamProjection(undefined);
       const controller = new AbortController();
-      await runBootstrapStream(controller, { force: true });
+      manualRefreshControllerRef.current = controller;
+      const timeout = setTimeout(() => controller.abort(new DOMException(
+        "Refresh took too long. Previously loaded stories are still available. Try Refresh again.", "TimeoutError",
+      )), MANUAL_SIDEBAR_REFRESH_TIMEOUT_MS);
+      let rejectAbort!: (reason: unknown) => void;
+      const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+      const onAbort = () => rejectAbort(controller.signal.reason);
+      controller.signal.addEventListener("abort", onAbort, { once: true });
+      setProjectionError(null);
+      try {
+        const work = async () => {
+          await refreshPublicationSidebar(oauth, controller.signal);
+          controller.signal.throwIfAborted();
+          if (getOAuthSession() !== oauth) throw new DOMException("Account changed", "AbortError");
+          setStreamProjection(undefined);
+          await runBootstrapStream(controller, { force: true });
+        };
+        // OAuth proof creation can precede fetch and need not support AbortSignal.
+        // Race the whole operation; Promise.race also observes any late rejection.
+        await Promise.race([work(), aborted]);
+      } catch (error) {
+        if (getOAuthSession() === oauth && manualRefreshControllerRef.current === controller) {
+          setSidebarFetching(false);
+          setFolderPublicationsLoading(false);
+          if (!(error instanceof DOMException && error.name === "AbortError")) {
+            setProjectionError(error instanceof Error ? error : new Error(String(error)));
+          }
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+        controller.signal.removeEventListener("abort", onAbort);
+        if (manualRefreshControllerRef.current === controller) manualRefreshControllerRef.current = null;
+      }
     },
   });
+
+  useEffect(() => () => {
+    manualRefreshControllerRef.current?.abort();
+  }, [did, oauthSessionReloadSeq]);
 
   const refreshUnreadCountsFromAppViewImpl = useCallback(async () => {
     if (dummyReaderDataEnabled) return;

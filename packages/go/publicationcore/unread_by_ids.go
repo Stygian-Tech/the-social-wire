@@ -42,6 +42,13 @@ func (s *Service) UnreadCountsByPublicationIDs(ctx context.Context, auth gateway
 		}
 	}
 	if len(missing()) > 0 {
+		persisted, err := s.unreadScopeRows(ctx, auth.DID, missing())
+		if err != nil {
+			return CounterSnapshot{}, err
+		}
+		merge(Sidebar{ViewerDID: auth.DID, AllPublicationRows: persisted})
+	}
+	if len(missing()) > 0 {
 		sidebar, err := s.Sidebar(ctx, auth, "full")
 		if err != nil {
 			return CounterSnapshot{}, err
