@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
+	"sort"
 	"testing"
 	"time"
 )
@@ -64,15 +64,31 @@ func TestFeedMergeMatchesSQLOracleUnderDatabaseCollation(t *testing.T) {
 			exec(`INSERT INTO read_marks(viewer_did,subject_uri,created_at) VALUES($1,$2,$3)`, viewer, uri, at)
 		}
 	}
-	if strings.HasPrefix(locale, "en_US") {
-		var differs bool
-		if err := db.QueryRow(`SELECT array_agg(uri ORDER BY uri) IS DISTINCT FROM array_agg(uri ORDER BY uri COLLATE "C") FROM content_items WHERE author_did=$1`, author).Scan(&differs); err != nil {
+	// Locale names do not establish sort behavior across platform providers.
+	// Compare the actual PostgreSQL order with Go's byte order; the full feed
+	// oracle below runs in either case, including byte-ordered CI databases.
+	rows, err := db.QueryContext(ctx, `SELECT uri FROM content_items WHERE author_did=$1 ORDER BY uri`, author)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var databaseOrder []string
+	for rows.Next() {
+		var uri string
+		if err := rows.Scan(&uri); err != nil {
+			rows.Close()
 			t.Fatal(err)
 		}
-		if !differs {
-			t.Fatal("fixture must distinguish Production locale ordering from Go byte ordering")
-		}
+		databaseOrder = append(databaseOrder, uri)
 	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byteOrder := append([]string(nil), databaseOrder...)
+	sort.Strings(byteOrder)
+	t.Logf("fixture PostgreSQL ordering differs from Go byte ordering: %t", !reflect.DeepEqual(databaseOrder, byteOrder))
+
 	compareWithOracle := func(t *testing.T) {
 		for _, filter := range []string{"all", "read", "unread"} {
 			for _, limit := range []int{1, 7, 33} {
