@@ -1,3 +1,4 @@
+import { queueReadStateMutation } from "./readStateMutationQueue";
 import { loadPDSReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
@@ -146,8 +147,17 @@ export async function markAllReadOnGateway(
   scope: GatewayMarkAllReadScope,
   previewSubjectUris?: string[]
 ): Promise<GatewayMarkAllReadResponse> {
-  if (await usesPDSReadState(oauthSession)) {
-    const prepared = await (await loadPDSReadStateSync(oauthSession)).bulk(scope, undefined, previewSubjectUris);
+  return queueReadStateMutation(oauthSession, assertCurrent => markAllReadOrdered(oauthSession, scope, previewSubjectUris, assertCurrent));
+}
+async function markAllReadOrdered(oauthSession: OAuthSession, scope: GatewayMarkAllReadScope,
+  previewSubjectUris: string[] | undefined, assertCurrent: () => void, canonicalAuthority = false): Promise<GatewayMarkAllReadResponse> {
+  const canonical = canonicalAuthority || await usesPDSReadState(oauthSession);
+  assertCurrent();
+  if (canonical) {
+    const runtime = await loadPDSReadStateSync(oauthSession);
+    assertCurrent();
+    const prepared = await runtime.bulk(scope, undefined, previewSubjectUris);
+    assertCurrent();
     return { marked: 0, confirmedAt: prepared.actedAt, pendingSync: true,
       boundaries: (prepared.boundaries ?? []).map(boundary => ({ publicationId: boundary.scope.publicationId,
         createdAt: boundary.createdAt, ...(boundary.entryId ? { entryId: boundary.entryId } : {}) })), unreadCounts: {} };
@@ -157,8 +167,13 @@ export async function markAllReadOnGateway(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scope }),
   });
+  assertCurrent();
   if (!res.ok) {
-    if (res.status === 409 && await usesPDSReadState(oauthSession, true)) return markAllReadOnGateway(oauthSession, scope, previewSubjectUris);
+    if (res.status === 409) {
+      const canonical = await usesPDSReadState(oauthSession, true);
+      assertCurrent();
+      if (canonical) return markAllReadOrdered(oauthSession, scope, previewSubjectUris, assertCurrent, true);
+    }
     throw new Error(`Mark all read failed (${res.status})`);
   }
   return (await res.json()) as GatewayMarkAllReadResponse;

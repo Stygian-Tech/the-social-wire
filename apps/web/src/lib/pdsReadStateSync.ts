@@ -1,6 +1,7 @@
+import { resumeReadStateMutations, stopReadStateMutations } from "./readStateMutationQueue";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { IndexedDBReadStateOutbox, ReadStateError, V2ReadStateOutbox, browserReadStateLock, migrateReadState,
-  MANIFEST_COLLECTION, collectReadStateGarbage, recordCID, validateManifest, validateV2Manifest, type Intent, type MigrationCheckpointStore, type OutboxState, type ReadStateStatus } from "@thesocialwire/read-state";
+  MANIFEST_COLLECTION, collectReadStateGarbage, recordCID, validateManifest, validateV2Manifest, type Intent, type MigrationCheckpointStore, type OutboxState, type OutboxStore, type ReadStateStatus } from "@thesocialwire/read-state";
 import { IndexedDBReadStateGarbageCollectionStore, OAuthReadStateGarbageCollection, pdsReadStateGarbageCollectionEnabled } from "./pdsReadStateGarbageCollection";
 import { OAuthReadStateRepository } from "./pdsReadStateRepository";
 import { PDSReadStateGateway } from "./pdsReadStateGateway";
@@ -13,6 +14,8 @@ const runtimes = new WeakMap<OAuthSession, PDSReadStateSync>();
 
 export class PDSReadStateSync {
   private active = true;
+  private intentGeneration = 0;
+  private intentTail: Promise<void> = Promise.resolve();
   private cleanupAttemptedAt = 0;
   private consumers = 0;
   localError?: string;
@@ -27,22 +30,37 @@ export class PDSReadStateSync {
     const assertCurrent = () => { if (!this.active) throw new ReadStateError("reauthorize"); };
     this.repository = new OAuthReadStateRepository(oauth, assertCurrent);
     this.gateway = new PDSReadStateGateway(oauth, assertCurrent);
-    this.outbox = new V2ReadStateOutbox(this.store, this.repository, async reference => {
-      const status = await this.gateway.confirm(reference);
-      if (status.authority !== "pds" || status.migrationState !== "verified") throw new ReadStateError("incomplete_generation");
-      this.statusValue = status;
-      await this.rememberAuthority(status);
-    }, browserReadStateLock);
+    this.outbox = this.makeOutbox(this.store);
     this.migrationStore = {
       read: async viewer => (await this.store.read(viewer)).migration ?? null,
       write: async (viewer, checkpoint) => { await this.store.update(viewer, state => ({ ...state, migration: checkpoint ?? undefined })); },
     };
   }
+  private makeOutbox(store: OutboxStore): V2ReadStateOutbox {
+    return new V2ReadStateOutbox(store, this.repository, async reference => {
+      const status = await this.gateway.confirm(reference);
+      if (status.authority !== "pds" || status.migrationState !== "verified") throw new ReadStateError("incomplete_generation");
+      this.statusValue = status;
+      await this.rememberAuthority(status);
+    }, browserReadStateLock);
+  }
+  private queueIntent<T>(operation: (assertCurrent: () => void) => Promise<T>): Promise<T> {
+    const generation = this.intentGeneration;
+    const assertCurrent = () => {
+      if (!this.active || generation !== this.intentGeneration) throw new ReadStateError("reauthorize");
+    };
+    try { assertCurrent(); } catch (error) { return Promise.reject(error); }
+    const result = this.intentTail.then(() => { assertCurrent(); return operation(assertCurrent); });
+    // A failed preparation must release subsequent actions. This queue orders
+    // local intent creation only; the outbox owns its existing cross-tab lock.
+    this.intentTail = result.then(() => {}, () => {});
+    return result;
+  }
   retain(): () => void {
-    this.active = true; this.consumers++;
+    this.active = true; resumeReadStateMutations(this.oauth); this.consumers++;
     return () => { if (--this.consumers === 0) this.stop(); };
   }
-  stop() { this.active = false; if (this.timer) clearInterval(this.timer); this.timer = undefined; }
+  stop() { stopReadStateMutations(this.oauth); this.active = false; this.intentGeneration++; this.intentTail = Promise.resolve(); if (this.timer) clearInterval(this.timer); this.timer = undefined; }
   private async rememberAuthority(status: ReadStateStatus): Promise<void> {
     if (status.authority === "pds" && status.migrationState === "verified")
       await this.store.update(this.oauth.did, state => ({ ...state, verifiedAuthority: status }));
@@ -118,25 +136,46 @@ export class PDSReadStateSync {
     const status = await browserReadStateLock(this.oauth.did, () => migrateReadState(this.repository, this.gateway, this.migrationStore));
     this.statusValue = status; await this.rememberAuthority(status); this.changed(); return status;
   }
-  async enqueue(intent: Intent, previewSubjectUris?: string[]): Promise<void> {
+  enqueue(intent: Intent, previewSubjectUris?: string[]): Promise<void> {
+    return this.queueIntent(assertCurrent => this.enqueueCurrent(intent, previewSubjectUris, assertCurrent));
+  }
+  private async enqueueCurrent(intent: Intent, previewSubjectUris: string[] | undefined, assertCurrent: () => void): Promise<void> {
     try {
+      assertCurrent();
       if ((await this.status()).authority !== "pds") throw new ReadStateError("incomplete_generation");
-      await this.outbox.enqueue(intent, previewSubjectUris); this.localError = undefined; this.changed("queued"); }
-    catch (error) { this.localError = "Changes could not be saved on this device. Try again before closing this page."; this.changed("error"); throw error; }
-  }
-  async exact(subjectUris: string[], state: "read" | "unread", actedAt = new Date().toISOString()): Promise<void> {
-    await this.enqueue({ actionId: crypto.randomUUID(), state, actedAt, selection: "exact", subjectUris: [...new Set(subjectUris)] });
-  }
-  async bulk(scope: GatewayMarkAllReadScope, calendar?: { before: string; timeZone: string; referenceDate: string }, previewSubjectUris?: string[]) {
-    const prepared = await this.gateway.prepare(scope, calendar, previewSubjectUris);
-    if ((prepared.selection === "exact" ? prepared.subjectUris.length : prepared.boundaries.length) > 0) {
-      const common = { actionId: crypto.randomUUID(), state: "read" as const, actedAt: prepared.actedAt };
-      await this.enqueue(prepared.selection === "exact"
-        ? { ...common, selection: "exact", subjectUris: prepared.subjectUris, ...(prepared.calendar ? { calendar: prepared.calendar } : {}) }
-        : { ...common, selection: "boundaries", boundaries: prepared.boundaries },
-        prepared.selection === "boundaries" ? prepared.previewSubjectUris : undefined);
+      assertCurrent();
+      // Guard the actual IndexedDB update as well as network continuations. A
+      // stopped generation cannot publish an old intent after retain() restarts.
+      const store: OutboxStore = {
+        read: async viewer => { assertCurrent(); const state = await this.store.read(viewer); assertCurrent(); return state; },
+        update: (viewer, update) => this.store.update(viewer, state => { assertCurrent(); return update(state); }),
+      };
+      await this.makeOutbox(store).enqueue(intent, previewSubjectUris);
+      assertCurrent();
+      this.localError = undefined; this.changed("queued");
+    } catch (error) {
+      // Session cancellation must not paint an old error onto the next session.
+      try { assertCurrent(); } catch { throw error; }
+      this.localError = "Changes could not be saved on this device. Try again before closing this page.";
+      this.changed("error"); throw error;
     }
-    return prepared;
+  }
+  exact(subjectUris: string[], state: "read" | "unread", actedAt = new Date().toISOString()): Promise<void> {
+    return this.enqueue({ actionId: crypto.randomUUID(), state, actedAt, selection: "exact", subjectUris: [...new Set(subjectUris)] });
+  }
+  bulk(scope: GatewayMarkAllReadScope, calendar?: { before: string; timeZone: string; referenceDate: string }, previewSubjectUris?: string[]) {
+    return this.queueIntent(async assertCurrent => {
+      const prepared = await this.gateway.prepare(scope, calendar, previewSubjectUris);
+      assertCurrent();
+      if ((prepared.selection === "exact" ? prepared.subjectUris.length : prepared.boundaries.length) > 0) {
+        const common = { actionId: crypto.randomUUID(), state: "read" as const, actedAt: prepared.actedAt };
+        await this.enqueueCurrent(prepared.selection === "exact"
+          ? { ...common, selection: "exact", subjectUris: prepared.subjectUris, ...(prepared.calendar ? { calendar: prepared.calendar } : {}) }
+          : { ...common, selection: "boundaries", boundaries: prepared.boundaries },
+          prepared.selection === "boundaries" ? prepared.previewSubjectUris : undefined, assertCurrent);
+      }
+      return prepared;
+    });
   }
   private changed(kind: "queued" | "confirmed" | "error" = "confirmed") {
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PDS_READ_STATE_SYNC_EVENT, { detail: { viewerDid: this.oauth.did, kind } }));
