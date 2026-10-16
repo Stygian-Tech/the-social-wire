@@ -93,7 +93,7 @@ describe("PublicationTabs", () => {
     );
     expect(screen.getAllByRole("tab")).toHaveLength(2);
     expect(
-      screen.getByRole("tab", { name: "Your Circle, Beta" }),
+      screen.getByRole("tab", { name: "Your Circle" }),
     ).toBeDefined();
     expect(screen.queryByRole("tab", { name: "Finance, Beta" })).toBeNull();
     rerender(
@@ -138,9 +138,8 @@ describe("PublicationTabs", () => {
       </SidebarProvider>,
     );
 
-    const wire = screen.getByRole("tab", { name: "The Wire, Beta" });
-    const beta = wire.querySelector("span.ml-auto")!;
-    expect(beta.className).toContain("ml-auto");
+    const wire = screen.getByRole("tab", { name: "The Wire" });
+    expect(wire.textContent).not.toContain("Beta");
     expect(wire.querySelector("svg")?.classList.contains("lucide-rss")).toBe(
       true,
     );
@@ -164,8 +163,8 @@ describe("PublicationTabs", () => {
       </SidebarProvider>,
     );
 
-    const circle = screen.getByRole("tab", { name: "Your Circle, Beta" });
-    expect(circle.querySelector("span.ml-auto")).not.toBeNull();
+    const circle = screen.getByRole("tab", { name: "Your Circle" });
+    expect(circle.textContent).not.toContain("Beta");
     expect(
       circle.querySelector("svg")?.classList.contains("lucide-network"),
     ).toBe(true);
@@ -248,8 +247,8 @@ test("keeps every feed destination visible before catalogs load", () => {
     </SidebarProvider>,
   );
   for (const name of [
-    "The Wire, Beta",
-    "Your Circle, Beta",
+    "The Wire",
+    "Your Circle",
     "Finance, Beta",
     "Subscribed",
     "Following",
@@ -258,7 +257,7 @@ test("keeps every feed destination visible before catalogs load", () => {
   }
 });
 
-test("aligns unread counts with beta badges inside the feed buttons", () => {
+test("keeps unread counts aligned inside the feed buttons", () => {
   render(
     <SidebarProvider>
       <PublicationTabs
@@ -271,11 +270,7 @@ test("aligns unread counts with beta badges inside the feed buttons", () => {
   );
   const subscribed = screen.getByRole("tab", { name: /^Subscribed/ });
   const count = screen.getByLabelText("653 unread");
-  const beta = screen
-    .getByRole("tab", { name: "The Wire, Beta" })
-    .querySelector("span.ml-auto")!;
   expect(subscribed.contains(count)).toBe(true);
   expect(count.className).toContain("ml-auto");
   expect(count.className).not.toContain("absolute");
-  expect(beta.className).toContain("ml-auto");
 });

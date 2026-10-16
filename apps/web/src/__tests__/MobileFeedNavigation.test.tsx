@@ -108,8 +108,8 @@ describe("MobileFeedNavigation", () => {
       />,
     );
 
-    const wire = screen.getByRole("button", { name: "The Wire, Beta" });
-    expect(screen.getByText("Beta")).toBeDefined();
+    const wire = screen.getByRole("button", { name: "The Wire" });
+    expect(screen.queryByText("Beta")).toBeNull();
     expect(wire.querySelector("svg")?.classList.contains("lucide-rss")).toBe(true);
     expect(wire.getAttribute("aria-current")).toBe("page");
     fireEvent.click(wire);
@@ -122,7 +122,7 @@ describe("MobileFeedNavigation", () => {
         onSelect={onSelect}
       />,
     );
-    expect(screen.queryByRole("button", { name: "The Wire, Beta" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "The Wire" })).toBeNull();
   });
 
   it("shows Your Circle only when the authenticated catalog enables it", () => {
@@ -135,8 +135,8 @@ describe("MobileFeedNavigation", () => {
       />,
     );
 
-    const circle = screen.getByRole("button", { name: "Your Circle, Beta" });
-    expect(screen.getByText("Beta")).toBeDefined();
+    const circle = screen.getByRole("button", { name: "Your Circle" });
+    expect(screen.queryByText("Beta")).toBeNull();
     expect(circle.querySelector("svg")?.classList.contains("lucide-network")).toBe(
       true,
     );
@@ -178,7 +178,7 @@ describe("MobileFeedNavigation", () => {
   it("opens Lists from More without replacing a primary feed slot", async () => {
     const onOpenLists = mock(() => undefined);
     render(<MobileFeedNavigation currentFeed={null} listsActive visibleFeeds={new Set(["wire", "circle", "subscribed", "following"])} onSelect={() => undefined} onOpenLists={onOpenLists} />);
-    expect(screen.getByRole("button", { name: "The Wire, Beta" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "The Wire" })).toBeDefined();
     const more = screen.getByRole("button", { name: "More Feeds" });
     expect(more.getAttribute("aria-current")).toBe("page");
     fireEvent.click(more);
