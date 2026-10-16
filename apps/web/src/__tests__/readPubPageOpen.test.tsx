@@ -9,8 +9,17 @@ import {
 } from "bun:test";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ReactNode } from "react";
 
+import * as DisplayPreferences from "@/hooks/useFeedDisplayPreferences";
+import { DEFAULT_FEED_DISPLAY_PREFERENCES } from "@/lib/feedPreferences";
+import * as Runtime from "@/lib/pdsReadStateRuntime";
+import * as PendingRead from "@/hooks/usePendingPDSReadState";
+import * as SyncNotice from "@/components/Account/PDSReadStateSyncNotice";
+import * as Thin from "@/lib/thinAppViewClient";
+import * as RssReader from "@/components/EntryDetail/RssArticleReaderDialog";
+import { ARTICLE_LIST_FILTER_STORAGE_KEY } from "@/lib/articleListFilterStorage";
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import * as AuthHook from "@/hooks/useAuth";
 import * as EntryListModule from "@/components/EntryList/EntryList";
@@ -140,17 +149,20 @@ function wireEditionPageForEntry(entry: EntryListItem): WireEditionPage {
 
 const renderEntryList = ({
     onSelectEntry,
+    markEntryUnread,
     resolvingEntryId,
     wireFeed,
     readIndicatorsEnabled,
     articleFilter,
   }: {
     onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
+    markEntryUnread: (entryId: string) => void;
     resolvingEntryId?: string | null;
     wireFeed?: boolean;
     readIndicatorsEnabled?: boolean;
     articleFilter?: string;
   }) => (
+    <>
     <button
       type="button"
       data-testid="entry-row"
@@ -166,6 +178,8 @@ const renderEntryList = ({
     >
       {renderedEntry.title}
     </button>
+    <button data-testid="mark-unread" onClick={() => markEntryUnread(renderedEntry.entryId)}>Mark As Unread</button>
+    </>
   );
 
 const { default: ReadPubPage } = await import(
@@ -340,3 +354,92 @@ describe("ReadPubPage entry open fallback", () => {
     }
   });
 });
+
+function mutationHarness() {
+  let oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const read = spyOn(Thin, "writeThroughReadMark").mockResolvedValue();
+  const unread = spyOn(Thin, "writeThroughReadMarkDelete").mockResolvedValue();
+  const spies = [
+    spyOn(AuthHook, "useAuth").mockImplementation(() => ({ session: { did: oauth.did }, getOAuthSession } as ReturnType<typeof AuthHook.useAuth>)),
+    spyOn(DisplayPreferences, "useFeedDisplayPreferences").mockReturnValue({ preferences: { ...DEFAULT_FEED_DISPLAY_PREFERENCES, rssArticleOpenMode: "reader" } } as ReturnType<typeof DisplayPreferences.useFeedDisplayPreferences>),
+    spyOn(Runtime, "pdsReadStateEnabled").mockReturnValue(false),
+    spyOn(Runtime, "usesPDSReadState").mockResolvedValue(false),
+    spyOn(PendingRead, "usePendingPDSReadState").mockReturnValue(new Map()),
+    spyOn(SyncNotice, "PDSReadStateSyncNotice").mockReturnValue(null),
+    spyOn(Thin, "isThinAppViewEnabled").mockReturnValue(true),
+    spyOn(RssReader, "RssArticleReaderDialog").mockImplementation(({ open, onClose }) => <>{open ? <button data-testid="close-reader" onClick={onClose}>Close Reader</button> : null}</>),
+    read, unread,
+  ];
+  return { read, unread, restore() { spies.forEach(spy => spy.mockRestore()); }, switchAccount() { oauth = { did: "did:plc:other" } as unknown as OAuthSession; } };
+}
+function persistedRead(entryId: string) { return JSON.parse(window.localStorage.getItem(READ_STATE_STORAGE_KEY) ?? "{}")[entryId]; }
+it("does not replay an old async article-open read over a newer explicit unread", async () => {
+  const mutations = mutationHarness(); const tabs = stubWindowOpen();
+  let finish!: (url: string) => void;
+  resolveEntryOpenUrlFromPds.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  try {
+    renderedEntry = { ...unresolvedEntry, isRead: true };
+    const page = renderPage(); await act(async () => {});
+    act(() => screen.getByTestId("entry-row").click());
+    act(() => screen.getByTestId("mark-unread").click());
+    await waitFor(() => expect(mutations.unread).toHaveBeenCalledTimes(1));
+    await act(async () => finish("https://example.com/resolved"));
+    expect(tabs.tabs[0].location.href).toBe("https://example.com/resolved");
+    expect(mutations.read).not.toHaveBeenCalled();
+    expect(persistedRead(unresolvedEntry.entryId)).toBeUndefined();
+    page.unmount(); renderPage(); await act(async () => {});
+    expect(persistedRead(unresolvedEntry.entryId)).toBeUndefined();
+  } finally { tabs.restore(); mutations.restore(); }
+});
+it("discards an old account's unresolved article-open completion", async () => {
+  const mutations = mutationHarness(); const tabs = stubWindowOpen(); let finish!: (url: string) => void;
+  resolveEntryOpenUrlFromPds.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  try {
+    const page = renderPage(); await act(async () => {});
+    act(() => screen.getByTestId("entry-row").click());
+    act(() => { mutations.switchAccount(); page.rerender(<ReadPubPage pubId="at://did:plc:alice/site.standard.publication/main" />); });
+    await act(async () => finish("https://example.com/resolved"));
+    expect(mutations.read).not.toHaveBeenCalled(); expect(tabs.tabs[0].closed).toBe(true);
+  } finally { tabs.restore(); mutations.restore(); }
+});
+for (const explicitUnread of [false, true]) {
+  it(`RSS deferred close ${explicitUnread ? "preserves a newer explicit unread" : "still marks an untouched article read"}`, async () => {
+    const mutations = mutationHarness();
+    renderedEntry = { ...unresolvedEntry, entryId: "rssentry:article", originalUrl: "https://example.com/rss" };
+    window.localStorage.setItem(ARTICLE_LIST_FILTER_STORAGE_KEY, "unread");
+    try {
+      renderPage(); await act(async () => {});
+      act(() => screen.getByTestId("entry-row").click());
+      expect(mutations.read).not.toHaveBeenCalled();
+      if (explicitUnread) {
+        act(() => screen.getByTestId("mark-unread").click());
+        await waitFor(() => expect(mutations.unread).toHaveBeenCalledTimes(1));
+      }
+      act(() => screen.getByTestId("close-reader").click()); await act(async () => {});
+      expect(mutations.read.mock.calls.length).toBe(explicitUnread ? 0 : 1);
+    } finally { mutations.restore(); }
+  });
+}
+
+for (const explicitUnread of [false, true]) {
+  it(`switching RSS articles ${explicitUnread ? "preserves the previous article's newer unread" : "still marks the previous article read"}`, async () => {
+    const mutations = mutationHarness();
+    const firstId = "rssentry:first"; const secondId = "rssentry:second";
+    renderedEntry = { ...unresolvedEntry, entryId: firstId, originalUrl: "https://example.com/first" };
+    window.localStorage.setItem(ARTICLE_LIST_FILTER_STORAGE_KEY, "unread");
+    try {
+      renderPage(); await act(async () => {});
+      act(() => screen.getByTestId("entry-row").click());
+      if (explicitUnread) {
+        act(() => screen.getByTestId("mark-unread").click());
+        await waitFor(() => expect(mutations.unread).toHaveBeenCalledTimes(1));
+      }
+      renderedEntry = { ...renderedEntry, entryId: secondId, originalUrl: "https://example.com/second" };
+      act(() => screen.getByTestId("entry-row").click()); await act(async () => {});
+      expect(mutations.read.mock.calls.map(([, id]) => id)).toEqual(explicitUnread ? [] : [firstId]);
+      act(() => screen.getByTestId("close-reader").click()); await act(async () => {});
+      expect(mutations.read.mock.calls.map(([, id]) => id)).toEqual(explicitUnread ? [secondId] : [firstId, secondId]);
+    } finally { mutations.restore(); }
+  });
+}

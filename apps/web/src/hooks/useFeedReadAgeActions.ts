@@ -1,5 +1,6 @@
 "use client";
 
+import { acquireBulkRead, readEntryMutationRevision, readFeedRefreshRevision, recordReadEntryMutations, releaseBulkRead } from "@/lib/feedRefreshCoordinator";
 import { pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useQueryClient, type InfiniteData, type QueryKey } from "@tanstack/react-query";
@@ -66,55 +67,63 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
 
   const markBefore = useCallback(async (before: string) => {
     const action = beginAction();
-    const selectedCalendar = calendarSnapshot.current;
-    const confirmation = pdsReadStateEnabled() && selectedCalendar?.context === context
-      ? await markReadBefore(action.oauth, action.scope, before, selectedCalendar)
-      : await markReadBefore(action.oauth, action.scope, before);
-    action.assertCurrent();
-    const isViewerFeedQuery = ({ queryKey }: { queryKey: QueryKey }) =>
-      (queryKey[0] === "entries" || queryKey[0] === "aggregateEntries") &&
-      queryKey[1] === action.viewerDid;
+    const owner = acquireBulkRead(queryClient, action.oauth);
+    if (!owner) throw new Error("Another bulk read action is still pending. Please wait.");
+    const revision = recordReadEntryMutations(queryClient, action.oauth, []);
+    try {
+      const selectedCalendar = calendarSnapshot.current;
+      const confirmation = pdsReadStateEnabled() && selectedCalendar?.context === context
+        ? await markReadBefore(action.oauth, action.scope, before, selectedCalendar)
+        : await markReadBefore(action.oauth, action.scope, before);
+      action.assertCurrent();
+      const isViewerFeedQuery = ({ queryKey }: { queryKey: QueryKey }) =>
+        (queryKey[0] === "entries" || queryKey[0] === "aggregateEntries") &&
+        queryKey[1] === action.viewerDid;
 
-    // A pre-mutation request must not overwrite the confirmed read flags.
-    await queryClient.cancelQueries({ predicate: isViewerFeedQuery });
-    action.assertCurrent();
-    const confirmedIds = new Set(confirmation.entryIds);
-    if (confirmedIds.size > 0) {
-      markEntriesRead([...confirmedIds], { syncToAppView: false });
-      queryClient.setQueriesData<InfiniteData<EntriesPage>>(
-        { predicate: isViewerFeedQuery },
-        (current) => current ? {
-          ...current,
-          pages: current.pages.map((page) => ({
-            ...page,
-            entries: page.entries.map((entry) =>
-              confirmedIds.has(entry.entryId) ? { ...entry, isRead: true } : entry
-            ),
-          })),
-        } : current
-      );
-    }
+      // A pre-mutation request must not overwrite the confirmed read flags.
+      await queryClient.cancelQueries({ predicate: isViewerFeedQuery });
+      action.assertCurrent();
+      const countsAreCurrent = readFeedRefreshRevision(queryClient, action.oauth) === revision;
+      const confirmedIds = new Set(confirmation.entryIds.filter(entryId =>
+        readEntryMutationRevision(queryClient, action.oauth, entryId) <= revision));
+      recordReadEntryMutations(queryClient, action.oauth, [...confirmedIds]);
+      if (confirmedIds.size > 0) {
+        markEntriesRead([...confirmedIds], { syncToAppView: false });
+        queryClient.setQueriesData<InfiniteData<EntriesPage>>(
+          { predicate: isViewerFeedQuery },
+          (current) => current ? {
+            ...current,
+            pages: current.pages.map((page) => ({
+              ...page,
+              entries: page.entries.map((entry) =>
+                confirmedIds.has(entry.entryId) ? { ...entry, isRead: true } : entry
+              ),
+            })),
+          } : current
+        );
+      }
 
-    if (confirmation.pendingSync) return;
-    const sidebarKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(action.viewerDid);
-    // Empty counts mean the recount was unavailable, not that the feed is empty.
-    const countKeys = Object.keys(confirmation.unreadCounts);
-    if (countKeys.length > 0) {
-      queryClient.setQueryData<PublicationSidebarProjection>(sidebarKey, (current) =>
-        current ? applyUnreadCountsEvent(current, confirmation.unreadCounts, {
-          replacePublicationIds: countKeys,
-          accuracy: "exact",
-          countedAt: confirmation.readAt,
-        }) : current
-      );
-    }
-    void queryClient.invalidateQueries({ queryKey: sidebarKey });
-    const isUnreadFeedQuery = (query: { queryKey: QueryKey }) =>
-      isViewerFeedQuery(query) && query.queryKey.at(-1) === "unread";
-    // Inactive feeds opt out of refetch-on-mount, so discard stale unread pages.
-    queryClient.removeQueries({ predicate: isUnreadFeedQuery, type: "inactive" });
-    // Restart every active feed request cancelled above, including an initial All load.
-    void queryClient.invalidateQueries({ predicate: isViewerFeedQuery });
+      if (confirmation.pendingSync) return;
+      const sidebarKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(action.viewerDid);
+      // Empty counts mean the recount was unavailable, not that the feed is empty.
+      const countKeys = Object.keys(confirmation.unreadCounts);
+      if (countsAreCurrent && countKeys.length > 0) {
+        queryClient.setQueryData<PublicationSidebarProjection>(sidebarKey, (current) =>
+          current ? applyUnreadCountsEvent(current, confirmation.unreadCounts, {
+            replacePublicationIds: countKeys,
+            accuracy: "exact",
+            countedAt: confirmation.readAt,
+          }) : current
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: sidebarKey });
+      const isUnreadFeedQuery = (query: { queryKey: QueryKey }) =>
+        isViewerFeedQuery(query) && query.queryKey.at(-1) === "unread";
+      // Inactive feeds opt out of refetch-on-mount, so discard stale unread pages.
+      queryClient.removeQueries({ predicate: isUnreadFeedQuery, type: "inactive" });
+      // Restart every active feed request cancelled above, including an initial All load.
+      void queryClient.invalidateQueries({ predicate: isViewerFeedQuery });
+    } finally { releaseBulkRead(queryClient, action.oauth, owner); }
   }, [beginAction, context, markEntriesRead, queryClient]);
 
   return { loadOptions, markBefore };
