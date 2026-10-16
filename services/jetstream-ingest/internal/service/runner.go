@@ -296,11 +296,10 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			if errors.Is(context.Cause(subscriptionContext), errLiveProgressStalled) {
 				return errLiveProgressStalled
 			}
-			// The SDK can surface recoverable transport errors while retaining the
-			// ordered stream and retrying internally. Closing that healthy client
-			// here turns one transient failure into an avoidable archive replay.
-			// ErrFatal is the boundary at which ordering can no longer continue;
-			// reconnect it from the last committed database cursor.
+			// Archive fetch/decode errors are emitted in order, but the pinned SDK
+			// then continues with the next entry. Stop before later batches can
+			// checkpoint past that gap. Only its explicit live-session reconnect
+			// notification retains the same ordered tail safely inside the SDK.
 			if streamErrorRequiresReconnect(streamErr) {
 				return fmt.Errorf("Jetstream V2 stream: %w", streamErr)
 			}
@@ -383,7 +382,13 @@ func (r *Runner) runOnce(ctx context.Context) error {
 }
 
 func streamErrorRequiresReconnect(err error) bool {
-	return errors.Is(err, jetstream.ErrFatal)
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, jetstream.ErrFatal) {
+		return true
+	}
+	return !strings.HasPrefix(err.Error(), "jetstream: live tail reconnecting: ")
 }
 
 type wireStagingBatch struct {
