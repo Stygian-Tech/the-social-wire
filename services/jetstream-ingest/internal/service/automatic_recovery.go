@@ -124,6 +124,7 @@ func (r *Runner) runAutomatic(ctx context.Context) error {
 
 func (r *Runner) runRecoveryJobs(ctx context.Context) {
 	nextPrune := time.Time{}
+	backoff := newRecoveryRetryBackoff(r.cfg.BackoffMin, r.cfg.BackoffMax)
 	for ctx.Err() == nil {
 		if !time.Now().Before(nextPrune) {
 			if err := r.store.PrunePoisonPayloads(ctx); err != nil {
@@ -182,10 +183,26 @@ func (r *Runner) runRecoveryJobs(ctx context.Context) {
 		err = child.runOnce(jobContext)
 		cause := context.Cause(jobContext)
 		cancel()
+		// A burst prefix can commit even when a later staging chunk fails;
+		// child.lastSeq advances only after the complete SDK batch. Consult
+		// durable job state rather than transport bytes or the in-memory cursor.
+		progressed := false
+		if checkpoint, checkpointErr := child.store.LoadCheckpoint(ctx); checkpointErr == nil {
+			progressed = recoveryCursorProgressed(job.LastStagedSeq, checkpoint)
+		} else if ctx.Err() == nil {
+			r.logger.Warn("inspect durable recovery progress", "job", job.ID, "error", checkpointErr)
+		}
 		if errors.Is(err, errSnapshotComplete) {
+			if progressed {
+				backoff.current = 0
+			}
 			continue
 		}
 		if ctx.Err() != nil {
+			return
+		}
+		if errors.Is(err, store.ErrLeaseUnavailable) {
+			r.logger.Error("historical recovery lost parent lease", "job", job.ID, "error", err)
 			return
 		}
 		status := "pending"
@@ -211,7 +228,12 @@ func (r *Runner) runRecoveryJobs(ctx context.Context) {
 			r.logger.Error("retain bounded recovery failure", "job", job.ID, "error", releaseErr)
 		}
 		r.logger.Warn("historical recovery stopped; live intake remains independent", "job", job.ID, "state", status, "error", reason)
-		if !sleepContext(ctx, r.cfg.BackoffMin) {
+		delay := jitterDuration(backoff.next(progressed))
+		if job.ExpiresAt != nil {
+			delay = min(delay, max(0, time.Until(*job.ExpiresAt)))
+		}
+		r.logger.Warn("bounded recovery retry delayed", "job", job.ID, "delay", delay, "durableProgress", progressed)
+		if !sleepContext(ctx, delay) {
 			return
 		}
 	}

@@ -494,10 +494,22 @@ func (r *Runner) stagePreparedBatch(
 				r.health.AdmissionPacing(false, 0)
 			}
 		}
-		if err := r.store.StageBatch(
-			ctx, r.lease, batch.events, batch.lastSeq, batch.lastEventTime, progress,
-		); err != nil {
-			return err
+		for {
+			err := r.store.StageBatch(ctx, r.lease, batch.events, batch.lastSeq, batch.lastEventTime, progress)
+			if err == nil {
+				break
+			}
+			var capacity *store.WireCapacityExceededError
+			if !r.sharedRecoveryBudget || !r.cfg.ReplaySnapshotOnly || !errors.As(err, &capacity) {
+				return err
+			}
+			// Keep this already-downloaded bounded chunk and its one rate
+			// reservation. A full inbox must not repeatedly download an archive.
+			r.health.Backpressure(true, capacity.InboxRows, capacity.InboxMaxRows, capacity.DatabaseBytes, capacity.DatabaseMaxBytes)
+			r.logger.Warn("holding prepared recovery batch at admission boundary", "lastSeq", batch.lastSeq, "pause", r.cfg.WireAdmissionPause)
+			if !sleepContext(ctx, r.cfg.WireAdmissionPause) {
+				return ctx.Err()
+			}
 		}
 	}
 	return nil
