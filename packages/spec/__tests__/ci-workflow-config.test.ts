@@ -31,6 +31,27 @@ const railwayServices = [
 ] as const;
 
 describe("CI workflow configuration", () => {
+  it("runs AppView PostgreSQL deadline contracts separately without dropping coverage", () => {
+    const parsed = Bun.YAML.parse(workflow) as {
+      jobs: Record<string, { steps: { name?: string; run?: string; env?: Record<string, string>; "working-directory"?: string; if?: string; "continue-on-error"?: boolean }[] }>;
+    };
+    const steps = parsed.jobs["shared-swift"].steps;
+    const mainIndex = steps.findIndex(step => step.name === "Test retained AppView shared contracts");
+    expect(mainIndex).toBeGreaterThanOrEqual(0);
+    const main = steps[mainIndex];
+    const isolated = steps[mainIndex + 1];
+    // The exact skip leaves pure AppViewFeedQueryDeadlineTests in the main suite.
+    expect(main.run).toBe("swift test --skip PostgresFeedQueryDeadlineTests");
+    expect(isolated.run).toBe("swift test --skip-build --no-parallel --filter PostgresFeedQueryDeadlineTests");
+    for (const step of [main, isolated]) {
+      expect(step["working-directory"]).toBe("packages/swift/ThinAppViewCore");
+      expect(step.env?.THIN_APPVIEW_TEST_DATABASE_URL).toBe("postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable");
+      expect(step.env?.PODCAST_PRIVATE_TEST_DATABASE_URL).toBe(main.env?.PODCAST_PRIVATE_TEST_DATABASE_URL);
+      expect(step.if).toBeUndefined();
+      expect(step["continue-on-error"]).toBeUndefined();
+    }
+  });
+
   it("retires standalone Swift worker jobs while retaining API domain tests", () => {
     for (const name of ["charybdis", "wire-worker"]) {
       expect(workflow).not.toContain(`  ${name}:`);

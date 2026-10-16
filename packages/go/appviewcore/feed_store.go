@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -37,44 +36,73 @@ func (s FeedStore) Feed(ctx context.Context, viewer, kind, id, filter, cursor st
 		}
 		at, uri = c.CreatedAt, c.URI
 	}
-	selection, ranking, source := "", "ROW_NUMBER() OVER (PARTITION BY content.article_key ORDER BY content.created_at DESC,content.uri DESC)", "matched_content"
-	if filter == "all" {
-		selection, ranking, source = feedSelectionAll, "1", "selected_content"
-	}
 	started := time.Now()
-	rows, err := s.DB.QueryContext(ctx, fmt.Sprintf(feedQuery, selection, ranking, source), limit+1, kind == "publication", viewer, kind, id, now, cursor != "", at, uri, filter == "all", filter == "unread", filter == "read")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	page := FeedPage{Response: EntryPage{Entries: []Entry{}}}
-	known := false
-	for rows.Next() {
-		var updated time.Time
-		var rowURI, render, publication sql.NullString
-		var created sql.NullTime
-		var read sql.NullBool
-		if err := rows.Scan(&updated, &rowURI, &render, &created, &publication, &read); err != nil {
+	seen := map[string]bool{}
+	publicationCursor := ""
+	internalCursor := false
+	hasCursor := cursor != ""
+	accepted := 0
+	// Avoid reading a large history slice from every scope for a small page.
+	batchSize := max(32, limit+1)
+	for {
+		rows, err := s.DB.QueryContext(ctx, feedBatchQuery, batchSize, kind == "publication", viewer, kind, id, now, hasCursor, at, uri, publicationCursor, internalCursor)
+		if err != nil {
 			return nil, err
 		}
-		known = true
-		page.MembershipUpdatedAt = updated
-		if !rowURI.Valid || !render.Valid || !created.Valid || !publication.Valid {
-			continue
+		known, scanned := false, 0
+		for rows.Next() {
+			var updated time.Time
+			var rowURI, render, publication, article sql.NullString
+			var created sql.NullTime
+			var read sql.NullBool
+			if err := rows.Scan(&updated, &rowURI, &render, &created, &publication, &read, &article); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			known = true
+			page.MembershipUpdatedAt = updated
+			if !rowURI.Valid {
+				continue
+			}
+			scanned++
+			at, uri, publicationCursor = created.Time, rowURI.String, publication.String
+			if accepted > limit || seen[article.String] {
+				continue
+			}
+			seen[article.String] = true
+			if filter == "unread" && read.Bool || filter == "read" && !read.Bool {
+				continue
+			}
+			// Match the SQL page limit before skipping malformed render payloads.
+			accepted++
+			entry, err := (ContentRow{URI: rowURI.String, CreatedAt: created.Time, RenderJSON: []byte(render.String)}).Entry()
+			if err != nil {
+				continue
+			}
+			entry.PublicationID = &publication.String
+			entry.IsRead = read.Bool
+			page.Response.Entries = append(page.Response.Entries, entry)
 		}
-		entry, err := (ContentRow{URI: rowURI.String, CreatedAt: created.Time, RenderJSON: []byte(render.String)}).Entry()
+		err = rows.Err()
+		rows.Close()
 		if err != nil {
-			continue
-		} // The Swift contract skips malformed stored render payloads.
-		entry.PublicationID = &publication.String
-		entry.IsRead = read.Bool
-		page.Response.Entries = append(page.Response.Entries, entry)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if !known {
-		return nil, nil
+			return nil, err
+		}
+		if !known {
+			return nil, nil
+		}
+		if accepted > limit || scanned < batchSize {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		hasCursor, internalCursor = true, true
+		// Sparse filters and duplicate runs can require the entire history. Grow
+		// each continuation batch to amortize round trips, while retaining a
+		// bounded hydration unit and the caller's original context deadline.
+		batchSize = min(512, batchSize*2)
 	}
 	if len(page.Response.Entries) > limit {
 		page.Response.Entries = page.Response.Entries[:limit]

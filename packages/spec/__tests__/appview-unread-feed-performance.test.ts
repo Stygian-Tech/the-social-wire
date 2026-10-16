@@ -11,6 +11,7 @@ const migration = readFileSync(
   "utf8"
 );
 const feedQuery = readFileSync(resolve(root, "packages/go/appviewcore/feed_query.go"), "utf8");
+const feedBatchQuery = readFileSync(resolve(root, "packages/go/appviewcore/feed_batch_query.go"), "utf8");
 const feedStore = readFileSync(resolve(root, "packages/go/appviewcore/feed_store.go"), "utf8");
 const markAllStore = readFileSync(resolve(root, "packages/go/appviewcore/mark_all_store.go"), "utf8");
 const unreadSnapshot = readFileSync(resolve(root, "packages/go/appviewcore/unread_snapshot.go"), "utf8");
@@ -36,34 +37,51 @@ describe("AppView unread feed performance", () => {
     );
   });
 
-  test("joins indexed author/site scope keys before authoritative read filtering", () => {
+  test("binds viewer-owned scope keys before bounded candidates and read authority", () => {
     expect(feedQuery).toContain("matching_scope_keys AS (");
-    expect(feedQuery).toContain("JOIN appview_publication_scope_keys keys");
-    expect(feedQuery).toContain("keys.viewer_did = scope.viewer_did");
-    expect(feedQuery).toContain("keys.publication_id = scope.publication_id");
-    expect(feedQuery).toContain("WHERE scope.viewer_did = $3");
-    expect(feedQuery).toContain("ci.author_did = scope.author_did");
-    expect(feedQuery).toContain("ci.publication_site = scope.scope_key");
-    expect(feedQuery).toContain("scope.scope_key = ''");
-    expect(feedQuery).not.toContain("jsonb_array_length(scope.scope_keys) = 0");
-    const matching = feedQuery.indexOf("matched_content AS (");
-    const authority = feedQuery.indexOf("LEFT JOIN LATERAL appview_effective_entry_read_state(");
-    const filteredPage = feedQuery.indexOf("), page AS (");
-    expect(authority).toBeGreaterThan(matching);
-    expect(filteredPage).toBeGreaterThan(authority);
+    expect(feedQuery).toContain("FROM appview_publication_scope_keys keys");
+    expect(feedQuery).toContain("membership.viewer_did=keys.viewer_did");
+    expect(feedQuery).toContain("membership.publication_id=keys.publication_id");
+    expect(feedQuery).toContain("keys.viewer_did=$3");
+    expect(feedQuery).toContain("keys.viewer_did=scope.viewer_did");
+    expect(feedQuery).toContain("keys.publication_id=scope.publication_id");
+    expect(feedQuery).toContain("scope.viewer_did=$3");
+    expect(feedBatchQuery).toContain("const feedBatchQuery = feedScopeQuery +");
+    expect(feedBatchQuery).toContain("ci.author_did=scope.author_did");
+    expect(feedBatchQuery).toContain("ci.publication_site=scope.scope_key");
+    expect(feedBatchQuery).toContain("WHERE scope.scope_key=''");
+    expect(feedBatchQuery).not.toContain("jsonb_array_length(scope.scope_keys)");
+    const batch = feedBatchQuery.indexOf("batch AS MATERIALIZED (");
+    const authority = feedBatchQuery.indexOf("LEFT JOIN LATERAL appview_effective_entry_read_state(");
+    expect(batch).toBeGreaterThan(feedBatchQuery.indexOf("raw_candidates AS ("));
+    expect(authority).toBeGreaterThan(batch);
+    expect(feedBatchQuery).toContain("state.unread_uri IS NOT NULL THEN FALSE");
+    expect(feedBatchQuery).toContain("state.read_uri IS NOT NULL THEN TRUE");
+    expect(feedBatchQuery).toContain("batch.created_at<floor.read_floor_at");
   });
 
-  test("streams ordered candidates into read authority without capping sparse unread searches", () => {
-    const orderedStart = feedQuery.indexOf("ordered_candidates AS (");
-    const orderedEnd = feedQuery.indexOf("), resolved AS (", orderedStart);
-    expect(orderedStart).toBeGreaterThanOrEqual(0);
-    expect(orderedEnd).toBeGreaterThan(orderedStart);
-    const ordered = feedQuery.slice(orderedStart, orderedEnd);
-    expect(ordered).toContain("ORDER BY created_at DESC, uri DESC");
-    expect(ordered).toContain("OFFSET 0");
-    expect(ordered).not.toMatch(/LIMIT\s+(?:\$\d+|\d+)/);
-    // Only the unfiltered plan may cap content before PDS read authority resolves.
-    expect(feedStore).toMatch(/if filter == "all"\s*\{\s*selection, ranking, source = feedSelectionAll/);
+  test("continues bounded batches through sparse filters with dedupe before read filtering", () => {
+    expect(feedBatchQuery).toContain("ORDER BY ci.created_at DESC,ci.uri DESC LIMIT $1");
+    expect(feedBatchQuery).toContain("ORDER BY created_at DESC,uri DESC,publication_id DESC LIMIT $1");
+    expect(feedStore).toContain("batchSize := max(32, limit+1)");
+    expect(feedStore).toContain("for {");
+    expect(feedStore).toContain("s.DB.QueryContext(ctx, feedBatchQuery");
+    const dedupe = feedStore.indexOf("seen[article.String] = true");
+    const filter = feedStore.indexOf('if filter == "unread" && read.Bool');
+    const accepted = feedStore.indexOf("accepted++");
+    const decode = feedStore.indexOf(".Entry()", accepted);
+    expect(dedupe).toBeGreaterThanOrEqual(0);
+    expect(filter).toBeGreaterThan(dedupe);
+    expect(accepted).toBeGreaterThan(filter);
+    expect(decode).toBeGreaterThan(accepted);
+    // A full raw batch continues even when every row was read or duplicated.
+    expect(feedStore).toContain("if accepted > limit || scanned < batchSize {");
+    expect(feedStore).toContain("if err := ctx.Err(); err != nil");
+    expect(feedStore).toContain("hasCursor, internalCursor = true, true");
+    expect(feedStore).not.toContain("context.WithTimeout");
+    expect(feedStore).toContain("at, uri, publicationCursor = created.Time, rowURI.String, publication.String");
+    expect(feedBatchQuery).toContain("(ci.created_at,ci.uri)=($8,$9) AND scope.publication_id<$10");
+    expect(feedStore).toContain("EntryCursor{CreatedAt: last.FeedPositionAt, URI: last.EntryID}");
   });
 
   test("bulk read deletes covered viewer/publication overrides before recounting in its transaction", () => {

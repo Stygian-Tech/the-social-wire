@@ -253,7 +253,14 @@ jobs:
         env:
           THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
           PODCAST_PRIVATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
-        run: swift test
+        run: swift test --skip PostgresFeedQueryDeadlineTests
+      - name: Test AppView PostgreSQL deadlines without unrelated test load
+        working-directory: packages/swift/ThinAppViewCore
+        env:
+          THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
+          PODCAST_PRIVATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_shared_test?sslmode=disable
+        # Keep the real query deadline assertion independent of unrelated test scheduling.
+        run: swift test --skip-build --no-parallel --filter PostgresFeedQueryDeadlineTests
       - name: Test retained Wire and topic domains
         run: |
           (cd packages/swift/WireCore && swift test)

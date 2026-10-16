@@ -11685,7 +11685,7 @@
         },
         {
           "path": "packages/spec/__tests__/appview-unread-feed-performance.test.ts",
-          "sha256": "4b31965d96bc5a8ca641250d89f71a49df3624135e0b05959b095084818aaa97"
+          "sha256": "4dd7f4e59e83e837c63b3dcd664ee0b2280ef784a9a99e9a5dc6da238f3c4607"
         },
         {
           "path": "packages/spec/__tests__/ci-bun-installation.test.ts",
@@ -11705,7 +11705,7 @@
         },
         {
           "path": "packages/spec/__tests__/ci-workflow-config.test.ts",
-          "sha256": "9b07c040cc4390a2287330a11f7d413a5092eec8f92bfd9ce9f84f421d792b26"
+          "sha256": "4722b9c3b8cfae63f1921f4d36aedcc3c30061facc122b8ebdb50fc37578e665"
         },
         {
           "path": "packages/spec/__tests__/circle-private-state-migration.test.ts",
@@ -11809,7 +11809,7 @@
         },
         {
           "path": "packages/spec/__tests__/subscribed-feed-performance-migration.test.ts",
-          "sha256": "1e59c71b16c92e6a2a92e0627a47658b1f061835456431ebd3b7f0b75ec20d85"
+          "sha256": "b2df0c53645c3fb3af7ba98e4996936e0f58537b60b33ad8bcea9c77f4d2d628"
         },
         {
           "path": "packages/spec/__tests__/subscription-entitlements.test.ts",
