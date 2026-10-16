@@ -170,6 +170,10 @@ func TestPostgresSportsSourceWarmPlanSkipsCandidateJSONAggregation(t *testing.T)
 	if catalogs == 0 {
 		execFixture(t, db, `INSERT INTO sports_catalog_snapshots(snapshot_id,version,generated_at,payload,is_active)VALUES($1::uuid,'plan-fixture',$2,'{"entities":[]}',TRUE)`, id, now)
 	}
+	// This physical-plan assertion needs representative fixture statistics;
+	// autovacuum timing must not decide between point lookups and repeated scans.
+	execFixture(t, db, `ANALYZE wire_items`)
+	execFixture(t, db, `ANALYZE sports_generations`)
 	var revision string
 	if err := db.QueryRow(sportsSourceProjection+`SELECT revision FROM current_source`, "xx", now).Scan(&revision); err != nil {
 		t.Fatal(err)
