@@ -55,24 +55,19 @@ function shouldRetryGatewayDpopNonce(res: Response): boolean {
   return Boolean(res.headers.get("DPoP-Nonce")?.trim());
 }
 
-/**
- * Manually-signed requests read the cached DPoP nonce, mint a proof, and only refresh the
- * cache once the response comes back. Concurrent callers (e.g. bulk mark-read/unread, which
- * fire one write per entry) all read the same stale nonce before any of them return, so the
- * gateway accepts one and rejects the rest with 400. Serializing dispatch per gateway origin
- * makes each request observe the previous one's refreshed nonce instead of racing it.
- */
+// PDS proof ceremonies and writes share a lane. Receipt-backed projection reads
+// cannot advance the PDS nonce and do not hold this lane during server work.
 const gatewayOriginQueues = new Map<string, Promise<unknown>>();
 const PDS_SESSION_PREFLIGHT_PATH =
   "/xrpc/app.thesocialwire.appview.listEntries";
 
-function enqueueForGatewayOrigin<T>(origin: string, task: () => Promise<T>): Promise<T> {
+function enqueueForGatewayOrigin<T>(origin: string, task: () => Promise<T>, signal?: AbortSignal | null): Promise<T> {
   const prior = gatewayOriginQueues.get(origin) ?? Promise.resolve();
   const settled = prior.then(
     () => undefined,
     () => undefined
   );
-  const result = settled.then(task);
+  const result = settled.then(() => { signal?.throwIfAborted(); return task(); });
   gatewayOriginQueues.set(
     origin,
     result.then(
@@ -80,7 +75,79 @@ function enqueueForGatewayOrigin<T>(origin: string, task: () => Promise<T>): Pro
       () => undefined
     )
   );
-  return result;
+  return waitForAbort(result, signal);
+}
+
+function waitForAbort<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const aborted = () => reject(signal.reason);
+    signal.addEventListener("abort", aborted, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+  });
+}
+
+type ReceiptState = { binding: string; receipt?: string; serializedUntil?: number; pending?: Promise<Response> };
+const projectionReceipts = new WeakMap<OAuthSession, Map<string, ReceiptState>>();
+
+function isProjectionRead(path: string, init?: RequestInit): boolean {
+  if ((init?.method ?? "GET").toUpperCase() !== "GET") return false;
+  const route = path.split("?")[0];
+  return /^\/xrpc\/app\.thesocialwire\.(appview|discovery)\.get[A-Z]/.test(route) ||
+    route === "/xrpc/app.thesocialwire.sync.getPreferences" || route === "/v1/podcasts/state";
+}
+
+async function tokenBinding(oauth: OAuthSession): Promise<string> {
+  const token = await (oauth as unknown as { getTokenSet(refresh: "auto"): Promise<{ access_token: string }> }).getTokenSet("auto");
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token.access_token));
+  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function projectionRead(oauth: OAuthSession, path: string, init?: RequestInit): Promise<Response> {
+  const origin = gatewayBaseUrl();
+  let states = projectionReceipts.get(oauth);
+  if (!states) { states = new Map(); projectionReceipts.set(oauth, states); }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    init?.signal?.throwIfAborted();
+    const binding = await tokenBinding(oauth);
+    init?.signal?.throwIfAborted();
+    let state = states.get(origin);
+    if (!state || state.binding !== binding) {
+      state = { binding }; states.set(origin, state);
+    }
+    if (state.serializedUntil && state.serializedUntil > Date.now()) return enqueueForGatewayOrigin(origin, () => gatewayFetchAttempt(oauth, path, init), init?.signal);
+    if (!state.receipt) {
+      const current = state;
+      if (!current.pending) {
+        const signal = AbortSignal.timeout(15_000);
+        const pending = enqueueForGatewayOrigin(origin, async () => {
+          const response = await gatewayFetchAttempt(oauth, pdsSessionPreflightPath(oauth.did), { signal });
+          if (response.ok) {
+            current.receipt = pdsSessionAttestationReceipt(response);
+            current.serializedUntil = current.receipt ? undefined : Date.now() + 50_000;
+          }
+          return response;
+        }, signal);
+        current.pending = pending;
+        void pending.finally(() => { if (current.pending === pending) current.pending = undefined; }).catch(() => {});
+      }
+      const preflight = await waitForAbort(current.pending, init?.signal);
+      init?.signal?.throwIfAborted();
+      if (!preflight.ok) return preflight.clone();
+      // Public-JWKS authentication does not issue receipts. Preserve its existing
+      // serialized path rather than sending an unbacked Prepared declaration.
+      if (!current.receipt) return enqueueForGatewayOrigin(origin, () => gatewayFetchAttempt(oauth, path, init), init?.signal);
+    }
+    init?.signal?.throwIfAborted();
+    const receipt = state.receipt;
+    const response = await gatewayFetchAttempt(oauth, path, init,
+      { "X-ATProto-Upstream-DPoP-Prepared": "true" }, undefined, receipt);
+    if (!shouldRefreshPdsSessionAttestation(response) || attempt === 1) return response;
+    // Another rejected concurrent read must not discard an already refreshed receipt.
+    if (state.receipt === receipt) state.receipt = undefined;
+  }
+  throw new Error("Gateway receipt refresh did not produce a response");
 }
 
 export async function gatewayFetch(
@@ -89,8 +156,8 @@ export async function gatewayFetch(
   init?: RequestInit,
   prepareProofPool?: () => Promise<Readonly<Record<string, string>>>
 ): Promise<Response> {
+  const gatewayPath = path.startsWith("/") ? path : `/${path}`;
   const run = async () => {
-    const gatewayPath = path.startsWith("/") ? path : `/${path}`;
     const upstream = pdsXrpcMethodForSocialWireGatewayRequest(
       init?.method ?? "GET",
       gatewayPath
@@ -153,7 +220,10 @@ export async function gatewayFetch(
   };
   try {
     if (canManuallySignGatewayRequest(oauthSession)) {
-      return await enqueueForGatewayOrigin(gatewayBaseUrl(), run);
+      if (!prepareProofPool && !pdsXrpcMethodForSocialWireGatewayRequest(init?.method ?? "GET", gatewayPath) && isProjectionRead(gatewayPath, init)) {
+        return await projectionRead(oauthSession, gatewayPath, init);
+      }
+      return await enqueueForGatewayOrigin(gatewayBaseUrl(), run, init?.signal);
     }
     return await run();
   } catch (error) {
@@ -179,6 +249,7 @@ async function gatewayFetchAttempt(
   },
   gatewayDpopNonce?: string
 ): Promise<Response> {
+  init?.signal?.throwIfAborted();
   const gatewayPath = path.startsWith("/") ? path : `/${path}`;
   const url = `${gatewayBaseUrl()}${gatewayPath}`;
   const method = init?.method ?? "GET";
