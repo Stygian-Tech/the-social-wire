@@ -18,14 +18,20 @@ func (c CacheStore) unread(ctx context.Context, viewer string, ids []string, at 
 	var earliest *time.Time
 	stale := false
 	if c.Redis != nil {
-		for _, id := range ids {
-			hit, e := socialwireredis.LookupValue[unreadValue](ctx, c.Redis, c.Projection.Namespace.Key("unread", nil, []string{viewer, id}), at)
+		hits := make([]socialwireredis.Lookup[unreadValue], len(ids))
+		err := parallelUnreadCache(ctx, len(ids), func(i int) error {
+			hit, e := socialwireredis.LookupValue[unreadValue](ctx, c.Redis, c.Projection.Namespace.Key("unread", nil, []string{viewer, ids[i]}), at)
 			if e != nil {
-				if ctx.Err() != nil {
-					return counts, earliest, stale, ctx.Err()
-				}
-				continue
+				hits[i].State = socialwireredis.Miss
+				return ctx.Err()
 			}
+			hits[i] = hit
+			return nil
+		})
+		if err != nil {
+			return counts, earliest, stale, err
+		}
+		for _, hit := range hits {
 			if hit.State == socialwireredis.Miss {
 				continue
 			}
@@ -65,13 +71,19 @@ func (c CacheStore) storeUnread(ctx context.Context, viewer string, counts map[s
 	if hard <= 0 {
 		hard = 15 * time.Minute
 	}
+	if c.Redis != nil {
+		ids := make([]string, 0, len(counts))
+		for id := range counts {
+			ids = append(ids, id)
+		}
+		return parallelUnreadCache(ctx, len(ids), func(i int) error {
+			id := ids[i]
+			return socialwireredis.StoreValue(ctx, c.Redis, c.Projection.Namespace.Key("unread", nil, []string{viewer, id}), unreadValue{id, max(0, counts[id])}, socialwireredis.CachePolicy{FreshDuration: fresh, HardDuration: hard}, at)
+		})
+	}
 	for id, n := range counts {
 		n = max(0, n)
-		if c.Redis != nil {
-			if e := socialwireredis.StoreValue(ctx, c.Redis, c.Projection.Namespace.Key("unread", nil, []string{viewer, id}), unreadValue{id, n}, socialwireredis.CachePolicy{FreshDuration: fresh, HardDuration: hard}, at); e != nil {
-				return e
-			}
-		} else if _, e := c.Projection.DB.ExecContext(ctx, `INSERT INTO unread_counts_cache(viewer_did,publication_id,unread_count,cached_at,expires_at)VALUES($1,$2,$3,$4,$5)ON CONFLICT(viewer_did,publication_id)DO UPDATE SET unread_count=EXCLUDED.unread_count,cached_at=EXCLUDED.cached_at,expires_at=EXCLUDED.expires_at`, viewer, id, n, at, at.Add(fresh)); e != nil {
+		if _, e := c.Projection.DB.ExecContext(ctx, `INSERT INTO unread_counts_cache(viewer_did,publication_id,unread_count,cached_at,expires_at)VALUES($1,$2,$3,$4,$5)ON CONFLICT(viewer_did,publication_id)DO UPDATE SET unread_count=EXCLUDED.unread_count,cached_at=EXCLUDED.cached_at,expires_at=EXCLUDED.expires_at`, viewer, id, n, at, at.Add(fresh)); e != nil {
 			return e
 		}
 	}
