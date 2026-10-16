@@ -123,7 +123,7 @@ func TestPostgresAuthoritativeCacheAndCursor(t *testing.T) {
 	if err != nil || len(edition.LeadStories) != 0 {
 		t.Fatalf("blocked edition %+v %v", edition, err)
 	}
-	execFixture(t, db, `UPDATE wire_rank_generations SET expires_at=$2 WHERE generation_id=$1::uuid`, id, now.Add(-time.Second))
+	execFixture(t, db, `UPDATE wire_rank_generations SET generated_at=$2,expires_at=$3 WHERE generation_id=$1::uuid`, id, now.Add(-MaximumWireGenerationAge), now.Add(-time.Second))
 	if _, err := store.Feed(ctx, FeedQuery{Language: "en", GenerationID: &id, Limit: 10}, now); !errors.Is(err, ErrCursorExpired) {
 		t.Fatal("expired cursor", err)
 	}

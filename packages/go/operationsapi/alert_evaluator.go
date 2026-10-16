@@ -19,6 +19,8 @@ type AlertCondition struct {
 }
 
 type AlertEvaluationInput struct {
+	FeedRecovery                        *feedRecoveryHealth
+	FeedRecoveryUnavailable             bool
 	Services                            []ServiceState
 	Streams                             []StreamState
 	Durability                          *DurabilitySnapshot
@@ -29,6 +31,7 @@ type AlertEvaluationInput struct {
 
 func EvaluateAlertConditions(input AlertEvaluationInput, config Config, at time.Time) []AlertCondition {
 	rules := []AlertCondition{}
+	rules = append(rules, feedRecoveryAlertConditions(input.FeedRecovery, input.FeedRecoveryUnavailable, at)...)
 	appendRule := func(active bool, rule, key, severity, summary, runbook string, evidence map[string]string) {
 		rules = append(rules, AlertCondition{active, rule, key, severity, summary, runbook, evidence})
 	}
@@ -255,6 +258,8 @@ func optionalInt64(v *int64, fallback string) string {
 func (e AlertEvaluator) Evaluate(ctx context.Context, at time.Time) error {
 	input := AlertEvaluationInput{}
 	var err error
+	input.FeedRecovery, err = e.Store.loadFeedRecoveryHealth(ctx, at)
+	input.FeedRecoveryUnavailable = err != nil
 	input.Services, err = e.Store.ListServiceStates(ctx)
 	if err != nil {
 		return err

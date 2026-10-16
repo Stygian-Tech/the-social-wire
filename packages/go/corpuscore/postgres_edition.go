@@ -196,7 +196,7 @@ func (s *PostgreSQLStore) Edition(ctx context.Context, q EditionQuery, now time.
 		if e != nil {
 			return Edition{}, e
 		}
-		payload, err = cachedValue(ctx, s.Cache, []string{"edition", "actor-v2", strings.ToUpper(gen.id), q.Language, regionValue(q.Region)}, revision, now, GenerationLifetime(gen.expires, now), func(ctx context.Context) (string, error) { return s.editionRevision(ctx, gen.id) }, func(value cachedEdition) bool { return value.Proof.matches(revision, q.Region) }, load)
+		payload, err = cachedValue(ctx, s.Cache, []string{"edition", "actor-v2", strings.ToUpper(gen.id), q.Language, regionValue(q.Region)}, revision, now, GenerationLifetime(gen.servingDeadline(), now), func(ctx context.Context) (string, error) { return s.editionRevision(ctx, gen.id) }, func(value cachedEdition) bool { return value.Proof.matches(revision, q.Region) }, load)
 	}
 	if err != nil {
 		return Edition{}, err
