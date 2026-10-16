@@ -1,3 +1,4 @@
+import { queueReadStateMutation } from "./readStateMutationQueue";
 import { loadPDSReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
@@ -107,10 +108,19 @@ export async function markReadBefore(
   before: string,
   calendar?: { timeZone: string; referenceDate: string }
 ): Promise<MarkReadBeforeResponse> {
-  if (await usesPDSReadState(oauthSession)) {
+  return queueReadStateMutation(oauthSession, assertCurrent => markReadBeforeOrdered(oauthSession, scope, before, calendar, assertCurrent));
+}
+async function markReadBeforeOrdered(oauthSession: OAuthSession, scope: GatewayMarkAllReadScope, before: string,
+  calendar: { timeZone: string; referenceDate: string } | undefined, assertCurrent: () => void, canonicalAuthority = false): Promise<MarkReadBeforeResponse> {
+  const canonical = canonicalAuthority || await usesPDSReadState(oauthSession);
+  assertCurrent();
+  if (canonical) {
     const timeZone = calendar?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
     const referenceDate = calendar?.referenceDate ?? new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const prepared = await (await loadPDSReadStateSync(oauthSession)).bulk(scope, { before, timeZone, referenceDate });
+    const runtime = await loadPDSReadStateSync(oauthSession);
+    assertCurrent();
+    const prepared = await runtime.bulk(scope, { before, timeZone, referenceDate });
+    assertCurrent();
     return { marked: prepared.subjectUris?.length ?? 0, entryIds: prepared.subjectUris ?? [],
       readAt: prepared.actedAt, unreadCounts: {}, pendingSync: true };
   }
@@ -120,8 +130,13 @@ export async function markReadBefore(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scope, before }),
   });
+  assertCurrent();
   if (!response.ok) {
-    if (response.status === 409 && await usesPDSReadState(oauthSession, true)) return markReadBefore(oauthSession, scope, before, calendar);
+    if (response.status === 409) {
+      const canonical = await usesPDSReadState(oauthSession, true);
+      assertCurrent();
+      if (canonical) return markReadBeforeOrdered(oauthSession, scope, before, calendar, assertCurrent, true);
+    }
     throw new Error(`Mark older stories read failed (${response.status})`);
   }
   return (await response.json()) as MarkReadBeforeResponse;

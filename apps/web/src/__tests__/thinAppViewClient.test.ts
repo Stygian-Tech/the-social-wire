@@ -1,4 +1,5 @@
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
+import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestation";
 
 const ORIG_ENV = { ...process.env };
 const ORIG_FETCH = globalThis.fetch;
@@ -216,7 +217,18 @@ describe("thinAppViewClient", () => {
 function gatewayOAuthSession(
   gatewayHandler: (url: string, init?: RequestInit) => Promise<Response>
 ) {
-  globalThis.fetch = gatewayHandler as unknown as typeof fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const request = new URL(url);
+    if (request.pathname === "/xrpc/app.thesocialwire.appview.listEntries" &&
+      request.searchParams.get("authorDid") === "did:plc:viewer" && request.searchParams.get("limit") === "1") {
+      return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "viewer-receipt" } });
+    }
+    if (/\/app\.thesocialwire\.appview\.get[A-Z]/.test(request.pathname)) {
+      expect(new Headers(init?.headers).get(PDS_SESSION_ATTESTATION_RECEIPT_HEADER)).toBe("viewer-receipt");
+      expect(new Headers(init?.headers).get("X-ATProto-Upstream-DPoP-Prepared")).toBe("true");
+    }
+    return gatewayHandler(url, init);
+  }) as unknown as typeof fetch;
   const nonces = new Map<string, string>();
   let nonceIndex = 0;
   return {

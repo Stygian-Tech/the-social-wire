@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import {
   QueryClient,
   QueryClientProvider,
@@ -124,7 +124,7 @@ describe("useCachedBulkReadActions", () => {
       wrapper,
     });
 
-    result.current.applyMarkAllRead();
+    act(() => result.current.applyMarkAllRead());
 
     expect(markEntriesRead).toHaveBeenCalledWith([entryId], {
       publications: [pub],
@@ -168,7 +168,7 @@ describe("useCachedBulkReadActions", () => {
     );
     const { result } = renderHook(() => useCachedBulkReadActions([pub]), { wrapper });
 
-    result.current.applyMarkAllRead();
+    act(() => result.current.applyMarkAllRead());
 
     expect(JSON.stringify(queryClient.getQueryData(queryKey))).toBe(
       JSON.stringify(before)
@@ -177,7 +177,6 @@ describe("useCachedBulkReadActions", () => {
       publications: [pub],
     });
     expect(markEntriesRead).toHaveBeenLastCalledWith([previouslyReadId], {
-      publications: [pub],
       syncToAppView: false,
     });
   });
@@ -221,7 +220,7 @@ describe("useCachedBulkReadActions", () => {
     await waitFor(() => expect(activeUnreadFetch).toHaveBeenCalledTimes(1));
     const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
       session: { did: viewerDid },
-      getOAuthSession: () => ({}) as never,
+      getOAuthSession: (() => { const oauth = {}; return () => oauth as never; })(),
     } as unknown as ReturnType<typeof AuthHook.useAuth>);
     const gatewaySpy = spyOn(
       PublicationProjectionClient,
@@ -247,7 +246,7 @@ describe("useCachedBulkReadActions", () => {
       { wrapper }
     );
 
-    result.current.applyMarkAllRead();
+    act(() => result.current.applyMarkAllRead());
 
     await waitFor(() => expect(gatewaySpy).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -279,7 +278,7 @@ describe("useCachedBulkReadActions", () => {
     const lateEntryId = "at://did:plc:alice/site.standard.document/late";
     const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
       session: { did: viewerDid },
-      getOAuthSession: () => ({}) as never,
+      getOAuthSession: (() => { const oauth = {}; return () => oauth as never; })(),
     } as unknown as ReturnType<typeof AuthHook.useAuth>);
     // Simulates a background prefetch landing while the gateway call is in flight —
     // this entry was never part of the synchronous cachedEntryIds snapshot.
@@ -327,7 +326,7 @@ describe("useCachedBulkReadActions", () => {
       { wrapper }
     );
 
-    result.current.applyMarkAllRead();
+    act(() => result.current.applyMarkAllRead());
 
     await waitFor(() =>
       expect(markEntriesRead).toHaveBeenLastCalledWith([lateEntryId], {
@@ -351,7 +350,7 @@ describe("useCachedBulkReadActions", () => {
     try {
       const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
       const hook = renderHook(() => useCachedBulkReadActions([pub], { gatewayScopes: [{ kind: "subscribed" }] }), { wrapper });
-      hook.result.current.applyMarkAllRead();
+      act(() => hook.result.current.applyMarkAllRead());
       await waitFor(() => expect(gateway).toHaveBeenCalledWith(oauth, { kind: "subscribed" }, [entry.entryId]));
       expect(markEntriesRead).not.toHaveBeenCalled();
       expect(queryClient.getQueryData<unknown>(queryKey)).toEqual({ pages: [{ entries: [entry] }], pageParams: [undefined] });

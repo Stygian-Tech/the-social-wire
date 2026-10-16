@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { readFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { ParsedBootstrapStreamEvent } from "@/lib/bootstrapStreamModels";
@@ -397,10 +398,12 @@ export function writeStreamedEntriesPage(
   queryClient: QueryClient,
   viewerDid: string,
   payload: Extract<ParsedBootstrapStreamEvent, { kind: "entriesPage" }>["payload"],
-  articleFilter: "all" | "unread" = "all"
+  articleFilter: "all" | "unread" = "all",
+  readSnapshot?: { session: object; revision: number }
 ): void {
   // Missing evidence is not an authoritative empty feed, nor a fresh snapshot.
   if (payload.source === "unavailable") return;
+  if (readSnapshot && readFeedRefreshRevision(queryClient, readSnapshot.session) !== readSnapshot.revision) return;
   const updatedAt = payload.source === "projection_cache"
     ? Date.parse(payload.cachedAt ?? "")
     : undefined;

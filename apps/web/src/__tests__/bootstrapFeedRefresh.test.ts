@@ -5,6 +5,7 @@ import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 import { queueBootstrapFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 import { writeStreamedEntriesPage } from "@/lib/bootstrapStreamState";
 import { refreshPublicationFeedFirstPage } from "@/lib/feedRefresh";
+import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestation";
 
 const originalFetch = globalThis.fetch;
 const originalEnvironment = { ...process.env };
@@ -52,7 +53,10 @@ describe("bootstrap feed recovery", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = "https://api.example.test";
     let requests = 0;
-    globalThis.fetch = (async (url: string) => {
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("listEntries")) return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "receipt" } });
+      expect(new Headers(init?.headers).get(PDS_SESSION_ATTESTATION_RECEIPT_HEADER)).toBe("receipt");
+      expect(new Headers(init?.headers).get("X-ATProto-Upstream-DPoP-Prepared")).toBe("true");
       expect(url).toContain("/xrpc/app.thesocialwire.appview.getFeed");
       expect(new URL(url).searchParams.get("id")).toBe(publicationKey);
       requests++;
@@ -85,6 +89,7 @@ describe("bootstrap feed recovery", () => {
     const gate = new Promise<void>(resolve => { finish = resolve; });
     let feedRequests = 0;
     globalThis.fetch = (async (url: string) => {
+      if (url.includes("listEntries")) return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "receipt" } });
       if (url.includes("getFeed")) { feedRequests++; await gate; return Response.json(page); }
       return Response.json({ counts: {} });
     }) as unknown as typeof fetch;
@@ -165,7 +170,8 @@ describe("bootstrap feed recovery", () => {
     const queryClient = new QueryClient();
     process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = "https://api.example.test";
     let requests = 0;
-    globalThis.fetch = (async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("listEntries")) return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "receipt" } });
       requests++;
       return new Response(JSON.stringify({ error: "ServiceUnavailable" }), { status: 503 });
     }) as unknown as typeof fetch;

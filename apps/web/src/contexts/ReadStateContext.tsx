@@ -40,7 +40,7 @@ import { publicationEntryIsCached } from "@/lib/unreadCounts";
 import { PDS_READ_STATE_SYNC_EVENT, loadPDSReadStateSync, pdsReadStateEnabled, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import { PDSReadStateSyncNotice } from "@/components/Account/PDSReadStateSyncNotice";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
-import { invalidateReadFeedRefreshes } from "@/lib/feedRefreshCoordinator";
+import { invalidateReadFeedRefreshes, recordReadEntryMutations } from "@/lib/feedRefreshCoordinator";
 import type { EntriesPage } from "@/hooks/useEntries";
 
 type LocalReadAction = {
@@ -162,7 +162,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
     actions.current.set(key, action);
     setMutationError(undefined);
     bumpReadEpoch();
-    invalidateReadFeedRefreshes(queryClient, oauth);
+    recordReadEntryMutations(queryClient, oauth, [entryId]);
     void queryClient.cancelQueries({ predicate: query => isViewerReadFeed(query.queryKey, oauth.did) }).then(() => {
       if (actionIsCurrent(entryId, action)) patchReadFeedRows(queryClient, oauth.did, entryId, read);
     }).catch(() => {});

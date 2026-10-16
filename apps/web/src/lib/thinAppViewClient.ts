@@ -1,3 +1,4 @@
+import { queueReadStateMutation } from "./readStateMutationQueue";
 import { loadPDSReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
@@ -328,8 +329,22 @@ export async function writeThroughReadMark(
   subjectUri: string,
   readAt: string
 ): Promise<void> {
-  if (await usesPDSReadState(oauthSession)) {
-    await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "read", readAt);
+  return queueReadStateMutation(oauthSession, assertCurrent => writeThroughReadMarkOrdered(oauthSession, subjectUri, readAt, assertCurrent));
+}
+async function writeThroughReadMarkOrdered(
+  oauthSession: OAuthSession,
+  subjectUri: string,
+  readAt: string,
+  assertCurrent: () => void,
+  canonicalAuthority = false
+): Promise<void> {
+  const canonical = canonicalAuthority || await usesPDSReadState(oauthSession);
+  assertCurrent();
+  if (canonical) {
+    const runtime = await loadPDSReadStateSync(oauthSession);
+    assertCurrent();
+    await runtime.exact([subjectUri], "read", readAt);
+    assertCurrent();
     return;
   }
   const res = await gatewayFetch(oauthSession, socialWireXrpc.putReadMark, {
@@ -337,9 +352,12 @@ export async function writeThroughReadMark(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ subjectUri, readAt }),
   });
+  assertCurrent();
   if (!res.ok) {
-    if (res.status === 409 && await usesPDSReadState(oauthSession, true)) {
-      await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "read", readAt); return;
+    if (res.status === 409) {
+      const canonical = await usesPDSReadState(oauthSession, true);
+      assertCurrent();
+      if (canonical) return writeThroughReadMarkOrdered(oauthSession, subjectUri, readAt, assertCurrent, true);
     }
     throw new Error(`Thin AppView read-mark upsert failed (${res.status})`);
   }
@@ -349,8 +367,21 @@ export async function writeThroughReadMarkDelete(
   oauthSession: OAuthSession,
   subjectUri: string
 ): Promise<void> {
-  if (await usesPDSReadState(oauthSession)) {
-    await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "unread");
+  return queueReadStateMutation(oauthSession, assertCurrent => writeThroughReadMarkDeleteOrdered(oauthSession, subjectUri, assertCurrent));
+}
+async function writeThroughReadMarkDeleteOrdered(
+  oauthSession: OAuthSession,
+  subjectUri: string,
+  assertCurrent: () => void,
+  canonicalAuthority = false
+): Promise<void> {
+  const canonical = canonicalAuthority || await usesPDSReadState(oauthSession);
+  assertCurrent();
+  if (canonical) {
+    const runtime = await loadPDSReadStateSync(oauthSession);
+    assertCurrent();
+    await runtime.exact([subjectUri], "unread");
+    assertCurrent();
     return;
   }
   const res = await gatewayFetch(oauthSession, socialWireXrpc.deleteReadMark, {
@@ -358,9 +389,12 @@ export async function writeThroughReadMarkDelete(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ subjectUri }),
   });
+  assertCurrent();
   if (!res.ok) {
-    if (res.status === 409 && await usesPDSReadState(oauthSession, true)) {
-      await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "unread"); return;
+    if (res.status === 409) {
+      const canonical = await usesPDSReadState(oauthSession, true);
+      assertCurrent();
+      if (canonical) return writeThroughReadMarkDeleteOrdered(oauthSession, subjectUri, assertCurrent, true);
     }
     throw new Error(`Thin AppView read-mark delete failed (${res.status}`);
   }

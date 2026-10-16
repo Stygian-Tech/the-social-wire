@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 const publicSession = {};
 const pendingByClient = new WeakMap<QueryClient, WeakMap<object, Map<string, Promise<unknown>>>>();
+const entryMutations = new WeakMap<QueryClient, WeakMap<object, Map<string, number>>>();
 const readRevisions = new WeakMap<QueryClient, WeakMap<object, number>>();
 
 export function readFeedRefreshRevision(client: QueryClient, session: object): number {
@@ -18,6 +19,54 @@ export function invalidateReadFeedRefreshes(client: QueryClient, session: object
     const domain = JSON.parse(key)[0];
     if (domain === "entries" || domain === "aggregateEntries") pending?.delete(key);
   }
+}
+
+/** Explicit gestures own entries independently of unrelated refresh/reconciliation work. */
+export function recordReadEntryMutations(client: QueryClient, session: object, entryIds: readonly string[]): number {
+  invalidateReadFeedRefreshes(client, session);
+  let sessions = entryMutations.get(client);
+  if (!sessions) { sessions = new WeakMap(); entryMutations.set(client, sessions); }
+  let entries = sessions.get(session);
+  if (!entries) { entries = new Map(); sessions.set(session, entries); }
+  const revision = readFeedRefreshRevision(client, session);
+  for (const entryId of entryIds) entries.set(entryId, revision);
+  return revision;
+}
+
+export function readEntryMutationRevision(client: QueryClient, session: object, entryId: string): number {
+  return entryMutations.get(client)?.get(session)?.get(entryId) ?? 0;
+}
+
+const pendingBulkReads = new WeakMap<QueryClient, WeakMap<object, object>>();
+const bulkReadListeners = new WeakMap<QueryClient, Set<() => void>>();
+
+export function subscribeBulkReadPending(client: QueryClient, listener: () => void): () => void {
+  let listeners = bulkReadListeners.get(client);
+  if (!listeners) { listeners = new Set(); bulkReadListeners.set(client, listeners); }
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+export function bulkReadPending(client: QueryClient, session: object | null): boolean {
+  return Boolean(session && pendingBulkReads.get(client)?.has(session));
+}
+
+/** Acquire before optimism so sidebar and toolbar actions cannot share an unconfirmed baseline. */
+export function acquireBulkRead(client: QueryClient, session: object): object | null {
+  let sessions = pendingBulkReads.get(client);
+  if (!sessions) { sessions = new WeakMap(); pendingBulkReads.set(client, sessions); }
+  if (sessions.has(session)) return null;
+  const owner = {};
+  sessions.set(session, owner);
+  bulkReadListeners.get(client)?.forEach(listener => listener());
+  return owner;
+}
+
+export function releaseBulkRead(client: QueryClient, session: object, owner: object): void {
+  const sessions = pendingBulkReads.get(client);
+  if (sessions?.get(session) !== owner) return;
+  sessions.delete(session);
+  bulkReadListeners.get(client)?.forEach(listener => listener());
 }
 
 /** Share only page-one work for the same OAuth session and complete feed scope. */

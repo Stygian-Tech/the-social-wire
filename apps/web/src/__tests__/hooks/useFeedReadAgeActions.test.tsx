@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import React from "react";
 
+import { acquireBulkRead, bulkReadPending, recordReadEntryMutations, releaseBulkRead } from "@/lib/feedRefreshCoordinator";
 import { useFeedReadAgeActions } from "@/hooks/useFeedReadAgeActions";
 import * as AuthHook from "@/hooks/useAuth";
 import * as ReadRouteContext from "@/contexts/ReadRouteContext";
@@ -158,6 +159,7 @@ describe("useFeedReadAgeActions", () => {
     queryClient.setQueryData(key, entries());
 
     await expect(result.current.markBefore(before)).rejects.toThrow("Unavailable");
+    expect(bulkReadPending(queryClient, oauth)).toBe(false);
     expect(markEntriesRead).not.toHaveBeenCalled();
     expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(entries());
   });
@@ -256,4 +258,39 @@ it("guards streamed snapshots after feed changes", async () => {
   expect(onOptions).toHaveBeenCalledTimes(1);
   request.resolve({ referenceDay: before, options });
   await expect(operation).rejects.toThrow("account or feed changed");
+});
+
+it("preserves a newer explicit unread while applying eligible late-loaded age confirmations", async () => {
+  const request = pending<ReadAgeClient.MarkReadBeforeResponse>();
+  const gateway = spyOn(ReadAgeClient, "markReadBefore").mockReturnValue(request.promise);
+  restores.push(() => gateway.mockRestore());
+  const { queryClient, result } = harness();
+  const key = ["entries", viewerDid, "publication", "all"];
+  const sidebarKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid);
+  queryClient.setQueryData(key, entries()); queryClient.setQueryData(sidebarKey, sidebar());
+  const operation = result.current.markBefore(before);
+  recordReadEntryMutations(queryClient, oauth!, ["old"]);
+  const late = entries(); late.pages[0].entries.push({ entryId: "uncached-old", title: "Late", publishedAt: "2026-08-28T00:00:00Z", isRead: false });
+  queryClient.setQueryData(key, late);
+  queryClient.setQueryData<PublicationSidebarProjection>(sidebarKey, { ...sidebar(), unreadCountsByPublicationId: { publication: 21, untouched: 9 } });
+  request.resolve(confirmation()); await operation;
+  expect(markEntriesRead).toHaveBeenCalledWith(["uncached-old"], { syncToAppView: false });
+  expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries.find(entry => entry.entryId === "old")?.isRead).toBe(false);
+  expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries.find(entry => entry.entryId === "uncached-old")?.isRead).toBe(true);
+  expect(queryClient.getQueryData<PublicationSidebarProjection>(sidebarKey)?.unreadCountsByPublicationId).toEqual({ publication: 21, untouched: 9 });
+});
+
+it("shares bulk ownership through pending PDS enqueue without blocking newer single gestures", async () => {
+  const request = pending<ReadAgeClient.MarkReadBeforeResponse>();
+  const gateway = spyOn(ReadAgeClient, "markReadBefore").mockReturnValue(request.promise);
+  restores.push(() => gateway.mockRestore());
+  const { queryClient, result } = harness(); const owner = acquireBulkRead(queryClient, oauth!);
+  await expect(result.current.markBefore(before)).rejects.toThrow("bulk read action is still pending");
+  expect(gateway).not.toHaveBeenCalled(); releaseBulkRead(queryClient, oauth!, owner!);
+  const operation = result.current.markBefore(before);
+  expect(bulkReadPending(queryClient, oauth)).toBe(true);
+  recordReadEntryMutations(queryClient, oauth!, ["old"]);
+  request.resolve({ ...confirmation(), pendingSync: true }); await operation;
+  expect(markEntriesRead).toHaveBeenCalledWith(["uncached-old"], { syncToAppView: false });
+  expect(bulkReadPending(queryClient, oauth)).toBe(false);
 });

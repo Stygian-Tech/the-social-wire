@@ -43,13 +43,21 @@ describe("viewer cache proof negotiation", () => {
     const { session } = fixture();
     let prepared = 0;
     let requests = 0;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requests++;
+    let attestations = 0;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
       expect(new Headers(init.headers).has(header)).toBe(false);
+      if (url.includes("appview.listEntries")) {
+        attestations++;
+        return Response.json({}, { headers: { "X-ATProto-Session-Attestation-Receipt": "warm-receipt" } });
+      }
+      requests++;
+      expect(new Headers(init.headers).get("X-ATProto-Session-Attestation-Receipt")).toBe("warm-receipt");
+      expect(new Headers(init.headers).get("X-ATProto-Upstream-DPoP-Prepared")).toBe("true");
       return Response.json({ items: [] });
     }) as unknown as typeof fetch;
     await gatewayFetchWithProofChallenge(session, path, {}, header, async () => { prepared++; return "unused"; });
     expect(requests).toBe(1);
+    expect(attestations).toBe(1);
     expect(prepared).toBe(0);
   });
 
@@ -81,24 +89,32 @@ describe("viewer cache proof negotiation", () => {
       return "pool-current-pds-nonce";
     });
     expect(response.status).toBe(200);
-    expect(events).toEqual(["attestation", "prepare", "prepared-dispatch", "prepared-dispatch"]);
+    expect(events).toEqual(["attestation", "attestation", "prepare", "prepared-dispatch", "prepared-dispatch"]);
     expect(new Set(dispatchProofs).size).toBe(2);
   });
 
   it("renews an expired receipt once and stops on a repeated challenge", async () => {
     const { session } = fixture();
     let routes = 0, attestations = 0, pools = 0;
-    globalThis.fetch = (async (url: string) => {
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
       if (url.includes("appview.listEntries")) {
         attestations++;
         return Response.json({}, { headers: { "X-ATProto-Session-Attestation-Receipt": `receipt-${attestations}` } });
       }
-      if (++routes === 1) return challenge();
+      const headers = new Headers(init.headers);
+      expect(headers.get("X-ATProto-Session-Attestation-Receipt")).toBe(`receipt-${attestations}`);
+      if (++routes === 1) {
+        expect(headers.has(header)).toBe(false);
+        return challenge();
+      }
+      expect(headers.get(header)).toBe(`pool-${pools}`);
       return Response.json({}, { status: 428, headers: { "X-ATProto-Session-Attestation-Required": "true" } });
     }) as unknown as typeof fetch;
     const response = await gatewayFetchWithProofChallenge(session, path, {}, header, async () => `pool-${++pools}`);
     expect(response.status).toBe(428);
-    expect([routes, attestations, pools]).toEqual([3, 2, 2]);
+    // Initial projection authentication is distinct from the two bounded
+    // proof-pool ceremonies (original and one expired-receipt renewal).
+    expect([routes, attestations, pools]).toEqual([3, 3, 2]);
   });
 
   it("supports signed-JWKS sessions without an attestation receipt", async () => {
