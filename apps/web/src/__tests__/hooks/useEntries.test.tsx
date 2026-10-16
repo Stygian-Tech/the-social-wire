@@ -13,11 +13,17 @@ import {
   MOCK_ENTRY_DETAIL,
 } from "../mocks/handlers/service";
 import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
+import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestation";
 
 const ORIG_ENV = { ...process.env };
 const ORIG_FETCH = globalThis.fetch;
 
 const mockFetchHandler = mock(async (url: string) => {
+  if (url.includes("/xrpc/app.thesocialwire.appview.listEntries")) {
+    expect(new URL(url).searchParams.get("authorDid")).toBe("did:plc:testuser");
+    expect(new URL(url).searchParams.get("limit")).toBe("1");
+    return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "viewer-receipt" } });
+  }
   if (url.includes("/xrpc/app.thesocialwire.appview.getFeed")) {
     return new Response(
       JSON.stringify({ entries: MOCK_ENTRIES, cursor: undefined }),
