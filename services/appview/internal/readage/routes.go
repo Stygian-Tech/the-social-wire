@@ -187,7 +187,8 @@ func (a Routes) markBefore(w http.ResponseWriter, req *http.Request) {
 		fail(w, 503, "Read-state snapshot is unavailable")
 		return
 	}
-	if err := (appviewcore.ReadMutationStore{DB: a.DB}).PutMany(req.Context(), viewer.DID, ids, now); err != nil {
+	applied, err := (appviewcore.ReadMutationStore{DB: a.DB}).PutMany(req.Context(), viewer.DID, ids, now)
+	if err != nil {
 		if errors.Is(err, appviewcore.ErrPDSReadStateRequired) {
 			fail(w, 409, err.Error())
 		} else {
@@ -197,7 +198,7 @@ func (a Routes) markBefore(w http.ResponseWriter, req *http.Request) {
 	}
 	counts := map[string]int{}
 	if a.RefreshCounts != nil {
-		if refreshed, err := a.RefreshCounts(req.Context(), viewer.DID, scopes, now); err == nil {
+		if refreshed, err := a.RefreshCounts(req.Context(), viewer.DID, scopes, a.now()); err == nil {
 			counts = refreshed
 		}
 	}
@@ -208,7 +209,7 @@ func (a Routes) markBefore(w http.ResponseWriter, req *http.Request) {
 			_ = a.Invalidate(req.Context(), viewer.DID, []string{scope.PublicationID})
 		}
 	}
-	writeJSON(w, map[string]any{"marked": len(ids), "entryIds": ids, "readAt": readagecore.Timestamp(now), "unreadCounts": counts})
+	writeJSON(w, map[string]any{"marked": len(applied), "entryIds": applied, "readAt": readagecore.Timestamp(now), "unreadCounts": counts})
 }
 
 func (a Routes) markAll(w http.ResponseWriter, req *http.Request) {
