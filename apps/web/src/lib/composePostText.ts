@@ -3,29 +3,39 @@ import { socialMarkdownBlocks, socialMarkdownInline, type SocialMarkdownInline }
 
 type ByteRange = { byteStart: number; byteEnd: number };
 
-/** Keep draft Markdown separate from the native text and UTF-8 facets we publish. */
+/** Preserve Markdown source; only hyperlinks become label text and native UTF-8 facets. */
 export function compilePostText(source: string) {
   let text = "";
   const links: AppBskyRichtextFacet.Main[] = [];
   const protectedRanges: ByteRange[] = [];
   const byteLength = () => new TextEncoder().encode(text).length;
-  const inline = (nodes: SocialMarkdownInline[], insideLink = false) => {
+  const inline = (value: string, nodes: SocialMarkdownInline[], start = 0, end = value.length) => {
+    let cursor = start;
     for (const node of nodes) {
+      text += value.slice(cursor, node.start);
       const byteStart = byteLength();
-      if (node.kind === "text" || node.kind === "code") text += node.text;
-      else if ("children" in node) inline(node.children, insideLink || node.kind === "link");
-      const index = { byteStart, byteEnd: byteLength() };
-      if (node.kind === "code" || node.kind === "link") protectedRanges.push(index);
-      if (node.kind === "link" && !insideLink && index.byteEnd > byteStart) {
+      if (node.kind === "link") {
+        let href: string | undefined;
         try {
           const destination = /^[\p{L}\p{N}](?:[\p{L}\p{N}.-]*\.)[\p{L}]{2,}(?::\d+)?(?:[/?#]|$)/u.test(node.href) ? `https://${node.href}` : node.href;
           const url = new URL(destination);
-          if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) {
-            links.push({ index, features: [{ $type: "app.bsky.richtext.facet#link", uri: url.href }] });
-          }
-        } catch { /* An unsafe or unfinished destination remains plain label text. */ }
+          if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) href = url.href;
+        } catch { /* Keep unsafe or unfinished destinations literal and unfaceted. */ }
+        const labelEnd = value.indexOf("](", node.start + 1);
+        text += href ? value.slice(node.start + 1, labelEnd) : value.slice(node.start, node.end);
+        const index = { byteStart, byteEnd: byteLength() };
+        protectedRanges.push(index);
+        if (href && index.byteEnd > byteStart) links.push({ index, features: [{ $type: "app.bsky.richtext.facet#link", uri: href }] });
+      } else if ("children" in node) {
+        // Preserve the original delimiters, escapes and whitespace around nested links.
+        inline(value, node.children, node.start, node.end);
+      } else {
+        text += value.slice(node.start, node.end);
+        if (node.kind === "code") protectedRanges.push({ byteStart, byteEnd: byteLength() });
       }
+      cursor = node.end;
     }
+    text += value.slice(cursor, end);
   };
   const parseInline = (value: string) => {
     const rich = new RichText({ text: value });
@@ -43,21 +53,19 @@ export function compilePostText(source: string) {
     text += source.slice(cursor, block.start);
     if (block.kind === "code") {
       const byteStart = byteLength();
-      text += block.text;
+      text += source.slice(block.start, block.end);
       protectedRanges.push({ byteStart, byteEnd: byteLength() });
-      // The block parser includes the closing fence's newline in its range.
-      if (source.slice(block.start, block.end).endsWith("\n")) text += "\n";
     } else if (block.kind === "list") {
       let itemCursor = block.start;
       for (const item of block.items) {
         text += source.slice(itemCursor, item.start);
-        inline(parseInline(item.text));
+        inline(item.text, parseInline(item.text));
         itemCursor = item.start + item.text.length;
       }
       text += source.slice(itemCursor, block.end);
     } else {
-      if (block.kind === "quote") text += source.slice(block.start, block.contentStart);
-      inline(parseInline(block.text));
+      text += source.slice(block.start, block.contentStart);
+      inline(block.text, parseInline(block.text));
       text += source.slice(block.contentStart + block.text.length, block.end);
     }
     cursor = block.end;
