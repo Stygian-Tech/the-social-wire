@@ -164,14 +164,14 @@ func (s *PostgreSQLStore) generations(ctx context.Context, statement string, arg
 	return result, nil
 }
 func (s *PostgreSQLStore) activeGeneration(ctx context.Context, language string, now time.Time) (*generation, error) {
-	values, err := s.generations(ctx, `SELECT generation_id,language_bucket,generated_at,expires_at,recovering FROM wire_serving.feed_state WHERE language_bucket=$1 AND expires_at>$2 LIMIT 1`, language, now)
+	values, err := s.generations(ctx, `SELECT generation_id,language_bucket,generated_at,expires_at,recovering FROM wire_serving.feed_state WHERE language_bucket=$1 AND generated_at>$2 AND generated_at<=$3 LIMIT 1`, language, now.Add(-MaximumWireGenerationAge), now)
 	if err != nil || len(values) == 0 {
 		return nil, err
 	}
 	return &values[0], nil
 }
 func (s *PostgreSQLStore) retainedGeneration(ctx context.Context, id string, now time.Time) (*generation, error) {
-	values, err := s.generations(ctx, `SELECT generation_id,language_bucket,generated_at,expires_at,recovering FROM wire_serving.generations WHERE generation_id=$1::uuid AND expires_at>$2 LIMIT 1`, id, now)
+	values, err := s.generations(ctx, `SELECT generation_id,language_bucket,generated_at,expires_at,recovering FROM wire_serving.generations WHERE generation_id=$1::uuid AND generated_at>$2 AND generated_at<=$3 LIMIT 1`, id, now.Add(-MaximumWireGenerationAge), now)
 	if err != nil || len(values) == 0 {
 		return nil, err
 	}
@@ -301,7 +301,7 @@ func (s *PostgreSQLStore) cachedRankedRows(ctx context.Context, g *generation, s
 		return nil, err
 	}
 	keys := revisionIdentities(revision, 1)
-	return cachedValue(ctx, s.Cache, []string{"feed", strings.ToUpper(g.id), g.language, strconv.Itoa(start), strconv.Itoa(limit)}, revision, now, GenerationLifetime(g.expires, now), func(ctx context.Context) (string, error) { return s.rankedRevision(ctx, g.id, start, limit) }, func(rows []Row) bool {
+	return cachedValue(ctx, s.Cache, []string{"feed", strings.ToUpper(g.id), g.language, strconv.Itoa(start), strconv.Itoa(limit)}, revision, now, GenerationLifetime(g.servingDeadline(), now), func(ctx context.Context) (string, error) { return s.rankedRevision(ctx, g.id, start, limit) }, func(rows []Row) bool {
 		if len(rows) != len(keys) {
 			return false
 		}
@@ -345,7 +345,7 @@ type catalogSnapshot struct {
 }
 
 func (s *PostgreSQLStore) loadCatalog(ctx context.Context, now time.Time) (catalogSnapshot, error) {
-	gens, err := s.generations(ctx, `SELECT generation_id,language_bucket,generated_at,expires_at,recovering FROM wire_serving.feed_state WHERE expires_at>$1`, now)
+	gens, err := s.generations(ctx, `SELECT generation_id,language_bucket,generated_at,expires_at,recovering FROM wire_serving.feed_state WHERE generated_at>$1 AND generated_at<=$2`, now.Add(-MaximumWireGenerationAge), now)
 	if err != nil {
 		return catalogSnapshot{}, err
 	}
@@ -359,8 +359,8 @@ func (s *PostgreSQLStore) loadCatalog(ctx context.Context, now time.Time) (catal
 		if latest == nil || g.generated.After(latest.generated) {
 			latest = &gens[index]
 		}
-		if index == 0 || g.expires.Before(expires) {
-			expires = g.expires
+		if deadline := g.servingDeadline(); deadline.Before(expires) {
+			expires = deadline
 		}
 	}
 	sort.Strings(value.SupportedLanguages)
