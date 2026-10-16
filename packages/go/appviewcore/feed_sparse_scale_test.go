@@ -38,7 +38,7 @@ func testSparseFeedScale(t *testing.T, size int) {
 	exec(`INSERT INTO appview_viewer_feeds VALUES($1,'subscribed','',$2)`, viewer, at)
 	exec(`INSERT INTO appview_publication_scopes(viewer_did,publication_id,author_did,scope_keys,updated_at) SELECT $1,'pub-'||i,$1||'-author-'||i,CASE WHEN i<=63 THEN jsonb_build_array('site-'||i,'alias-'||i) ELSE jsonb_build_array('site-'||i) END,$2 FROM generate_series(1,80)i`, viewer, at)
 	exec(`INSERT INTO appview_feed_publications SELECT $1,'subscribed','',publication_id FROM appview_publication_scopes WHERE viewer_did=$1`, viewer)
-	exec(`INSERT INTO content_items(uri,cid,author_did,collection,created_at,indexed_at,publication_site,render_json,expires_at) SELECT 'at://'||$1||'-author-'||(1+(i%80))||'/site.standard.document/'||i,'fixture',$1||'-author-'||(1+(i%80)),'site.standard.document',$2::timestamptz-i*interval '1 second',$2,'site-'||(1+(i%80)),jsonb_build_object('title','Entry '||i,'articleUrl','https://scale.invalid/'||i,'summary',repeat('fixture ',64)),$2::timestamptz+interval '1 hour' FROM generate_series(1,$3::integer)i`, viewer, at, size)
+	exec(`INSERT INTO content_items(uri,cid,author_did,collection,created_at,indexed_at,publication_site,render_json,expires_at) SELECT 'at://'||$1||'-author-'||(1+(i%80))||'/site.standard.document/'||i,'fixture',$1||'-author-'||(1+(i%80)),'site.standard.document',$2::timestamptz-i*interval '1 second',$2,'site-'||(1+(i%80)),jsonb_build_object('title','Entry '||i,'articleUrl','https://scale.invalid/'||i,'summary',repeat('fixture ',64),'contentHTML',repeat(md5(i::text),1024)),$2::timestamptz+interval '1 hour' FROM generate_series(1,$3::integer)i`, viewer, at, size)
 	// Floors model a fully read publication history without tens of thousands of
 	// per-record mutation triggers during fixture setup and cleanup.
 	exec(`INSERT INTO appview_publication_read_floors(viewer_did,publication_id,read_floor_at,generation) SELECT $1,publication_id,$2,1 FROM appview_publication_scopes WHERE viewer_did=$1`, viewer, at)
@@ -52,8 +52,8 @@ func testSparseFeedScale(t *testing.T, size int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var calls atomic.Int64
-	counted := sql.OpenDB(feedCountingConnector{Connector: stdlib.GetConnector(*config), calls: &calls})
+	var calls, metadataRows atomic.Int64
+	counted := sql.OpenDB(feedCountingConnector{Connector: stdlib.GetConnector(*config), calls: &calls, metadataRows: &metadataRows})
 	defer counted.Close()
 	// A dense first page must still complete with the initial page-sized query.
 	page, err := (FeedStore{DB: counted}).Feed(context.Background(), viewer, "subscribed", "", "all", "", 50, at)
@@ -73,6 +73,7 @@ func testSparseFeedScale(t *testing.T, size int) {
 			exec(`DELETE FROM appview_unread_overrides WHERE viewer_did=$1`, viewer)
 		}
 		calls.Store(0)
+		metadataRows.Store(0)
 		ctx, cancel := context.WithTimeout(context.Background(), budget)
 		start := time.Now()
 		page, err := (FeedStore{DB: counted}).Feed(ctx, viewer, "subscribed", "", "unread", "", 50, at)
@@ -89,7 +90,10 @@ func testSparseFeedScale(t *testing.T, size int) {
 		if unread == 1 && page.Response.Entries[0].EntryID != oldest {
 			t.Fatal("oldest unread lost")
 		}
-		if calls.Load() > int64(10+size/512) {
+		if metadataRows.Load() != int64(size) {
+			t.Fatalf("scope history refetched: got %d metadata rows for %d records", metadataRows.Load(), size)
+		}
+		if calls.Load() > int64(40+4*(size/512+1)) {
 			t.Fatalf("sparse query count regressed: %d", calls.Load())
 		}
 	}

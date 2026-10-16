@@ -36,6 +36,9 @@ func (s FeedStore) Feed(ctx context.Context, viewer, kind, id, filter, cursor st
 		}
 		at, uri = c.CreatedAt, c.URI
 	}
+	if filter != "all" {
+		return s.filteredFeed(ctx, viewer, kind, id, filter, cursor, limit, now)
+	}
 	started := time.Now()
 	page := FeedPage{Response: EntryPage{Entries: []Entry{}}}
 	seen := map[string]bool{}
