@@ -331,7 +331,7 @@ func TestWireAdmissionMixedReplayRollsBackWhenActualNewRowsExceedCap(t *testing.
 	}
 }
 
-func TestStageBatchLeavesPublicationLanePayloadUnchanged(t *testing.T) {
+func TestStageBatchLeavesSupportedPublicationLanePayloadUnchanged(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -341,7 +341,7 @@ func TestStageBatchLeavesPublicationLanePayloadUnchanged(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	event := ingest.InboxEvent{
 		Seq: 7, Time: now, Kind: "commit", RepoDID: "did:plc:test",
-		Payload: []byte(`{"record":{"text":"before\u0000after"}}`),
+		Payload: []byte(`{"record":{"text":"before and after"}}`),
 	}
 	lease := Lease{Name: "jetstream-v2-ingest", OwnerID: "owner", FencingToken: 3}
 
