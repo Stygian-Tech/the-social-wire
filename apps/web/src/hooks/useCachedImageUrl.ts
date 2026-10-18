@@ -8,7 +8,7 @@ import {
 } from "@/lib/imageBlobCache";
 
 type CachedImageState = {
-  key: string | null;
+  key: { cacheKey: string | null; directUrl: string | undefined } | null;
   objectUrl: string | undefined;
   failed: boolean;
 };
@@ -27,6 +27,9 @@ export function useCachedImageUrl(src: string | null | undefined): {
     () => (cacheKey ? resolveDirectImageUrl(cacheKey) : undefined),
     [cacheKey]
   );
+  // A restored source needs a new resource identity: cleanup already revoked
+  // the previous blob even when its remote URL is the same.
+  const requestKey = useMemo(() => ({ cacheKey, directUrl }), [cacheKey, directUrl]);
   const [state, setState] = useState<CachedImageState>({
     key: null,
     objectUrl: undefined,
@@ -47,7 +50,7 @@ export function useCachedImageUrl(src: string | null | undefined): {
         }
         activeObjectUrl = url;
         setState({
-          key: cacheKey,
+          key: requestKey,
           objectUrl: url,
           failed: !url,
         });
@@ -55,7 +58,7 @@ export function useCachedImageUrl(src: string | null | undefined): {
       .catch(() => {
         if (!cancelled) {
           setState({
-            key: cacheKey,
+            key: requestKey,
             objectUrl: undefined,
             failed: true,
           });
@@ -66,13 +69,13 @@ export function useCachedImageUrl(src: string | null | undefined): {
       cancelled = true;
       if (activeObjectUrl?.startsWith("blob:")) URL.revokeObjectURL(activeObjectUrl);
     };
-  }, [cacheKey, directUrl]);
+  }, [cacheKey, directUrl, requestKey]);
 
   if (directUrl) {
     return { objectUrl: directUrl, failed: false };
   }
 
-  if (!cacheKey || state.key !== cacheKey) {
+  if (!cacheKey || state.key !== requestKey) {
     return { objectUrl: undefined, failed: false };
   }
 

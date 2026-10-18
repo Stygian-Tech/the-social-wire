@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock,
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as Navigation from "next/navigation";
 import * as Catalog from "@/hooks/useBlueskySocialCatalog";
+import * as CachedImage from "@/hooks/useCachedImageUrl";
 import { SocialFeeds } from "@/components/Social/SocialFeeds";
 import { SocialFeedsSheet } from "@/components/Social/SocialFeedsSheet";
 import { SOCIAL_FOLLOWING_FEED, type SocialFeed } from "@/lib/blueskySocialClient";
@@ -42,6 +43,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 describe("Social feed navigation", () => {
+  it("retries a new blob for the same feed avatar after an image load failure", () => {
+    state.data = { feeds: [{ ...custom, avatar: "https://cdn.bsky.app/img/avatar/plain/did:plc:feed/avatar" }] };
+    let objectUrl = "blob:expired";
+    const cached = spyOn(CachedImage, "useCachedImageUrl").mockImplementation(() => ({ objectUrl, failed: false }));
+    restores.push(() => cached.mockRestore());
+    const view = render(<SocialFeeds />);
+    const button = screen.getByRole("button", { name: custom.name });
+    fireEvent.error(button.querySelector("img")!);
+    expect(button.querySelector("img")).toBeNull();
+    objectUrl = "blob:replacement";
+    view.rerender(<SocialFeeds />);
+    expect(button.querySelector("img")?.getAttribute("src")).toBe("blob:replacement");
+  });
+
   it("shows feed and list avatars with decorative alt text and falls back on load errors", () => {
     state.data = { feeds: [SOCIAL_FOLLOWING_FEED, { ...custom, avatar: "https://images.example/feed.png" }, { ...list, avatar: "https://images.example/list.png" }] };
     render(<SocialFeeds />);
