@@ -5,17 +5,55 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
 
+func TestNativeMetadataMatchesAuthorizationRequest(t *testing.T) {
+	raw, err := os.ReadFile("../../../../apps/apple/SocialWire/Services/ATProtoOAuthService.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, array, found := strings.Cut(string(raw), "static let scopes = [")
+	if !found {
+		t.Fatal("native authorization scopes not found")
+	}
+	array, _, found = strings.Cut(array, "].joined(separator:")
+	if !found {
+		t.Fatal("native authorization scope array is unterminated")
+	}
+	matches := regexp.MustCompile(`(?m)^\s*"([^"\n]+)"`).FindAllStringSubmatch(array, -1)
+	if len(matches) == 0 {
+		t.Fatal("native authorization scopes are empty")
+	}
+	scopes := make([]string, 0, len(matches))
+	for _, match := range matches {
+		scopes = append(scopes, match[1])
+	}
+	want := strings.Join(scopes, " ")
+	for _, enabled := range []bool{false, true} {
+		s := Server{Config: Config{PodcastsEnabled: enabled}}
+		w := httptest.NewRecorder()
+		s.metadata(w, httptest.NewRequest("GET", "https://gateway.valid/ios-client-metadata.json", nil))
+		var doc struct{ Scope string }
+		if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil || w.Code != 200 {
+			t.Fatal(w.Code, err)
+		}
+		if doc.Scope != podcastScope(want, enabled) {
+			t.Fatalf("native metadata differs from authorization request (podcasts enabled: %t)", enabled)
+		}
+	}
+}
+
 // Web baseline includes the reviewed least-privilege Social (including create-only Follow), Articles, and chat moderation grants.
-// Native baseline includes the explicitly enabled Standard Reader Lists permissions
-// in the published native authorization request order.
+// Native baseline includes Social and Standard Reader Lists permissions in the
+// published native authorization request order.
 func TestPodcastDisabledMetadataKeepsProductionScope(t *testing.T) {
 	for _, fixture := range []struct{ path, scope, digest string }{
 		{"/oauth-client-metadata.json", webScope, "0a0e27bcf61ff00c2bcfa60044308b8344dbd32b993785092a3e414804f795e4"},
-		{"/ios-client-metadata.json", iosScope, "7001b4367000f36cab50a5cf3e517f23353b9ef7cb37b90c4310661b761d4a9d"},
+		{"/ios-client-metadata.json", iosScope, "f2a5d9a041bf093f429f1c93a00388a9de332f3ae38cea7245070d0066cd79b3"},
 	} {
 		for _, enabled := range []bool{false, true} {
 			s := Server{Config: Config{PodcastsEnabled: enabled}}
