@@ -72,6 +72,23 @@ describe("cached image URL lifecycle", () => {
     expect(result.current.objectUrl).toBe("https://publisher.example/current.png");
   });
 
+  it("does not reuse a revoked blob when catalog hydration restores the same avatar", async () => {
+    const replacement = deferred<string | undefined>();
+    fetchImage.mockResolvedValueOnce("blob:original").mockReturnValueOnce(replacement.promise);
+    const avatar = "https://cdn.bsky.app/img/avatar/plain/did:plc:feed/avatar";
+    const { result, rerender } = renderHook(
+      ({ src }) => useCachedImageUrl(src),
+      { initialProps: { src: avatar } },
+    );
+    await waitFor(() => expect(result.current.objectUrl).toBe("blob:original"));
+    rerender({ src: "" });
+    expect(revoke).toHaveBeenCalledWith("blob:original");
+    rerender({ src: avatar });
+    expect(result.current).toEqual({ objectUrl: undefined, failed: false });
+    await act(async () => replacement.resolve("blob:replacement"));
+    expect(result.current.objectUrl).toBe("blob:replacement");
+  });
+
   it("reports a missing cached image and resets failure on the next source", async () => {
     fetchImage.mockResolvedValue(undefined);
     const { result, rerender } = renderHook(
@@ -81,6 +98,25 @@ describe("cached image URL lifecycle", () => {
     await waitFor(() => expect(result.current.failed).toBe(true));
     rerender({ src: "" });
     expect(result.current).toEqual({ objectUrl: undefined, failed: false });
+  });
+
+  it("ignores a pending different source when returning to the original avatar", async () => {
+    const pending = deferred<string | undefined>();
+    const restored = deferred<string | undefined>();
+    fetchImage.mockResolvedValueOnce("blob:first").mockReturnValueOnce(pending.promise).mockReturnValueOnce(restored.promise);
+    const { result, rerender } = renderHook(
+      ({ src }) => useCachedImageUrl(src),
+      { initialProps: { src: "/first-avatar" } },
+    );
+    await waitFor(() => expect(result.current.objectUrl).toBe("blob:first"));
+    rerender({ src: "/other-avatar" });
+    rerender({ src: "/first-avatar" });
+    expect(result.current.objectUrl).toBeUndefined();
+    await act(async () => pending.resolve("blob:abandoned"));
+    expect(revoke).toHaveBeenCalledWith("blob:abandoned");
+    expect(result.current.objectUrl).toBeUndefined();
+    await act(async () => restored.resolve("blob:restored"));
+    expect(result.current.objectUrl).toBe("blob:restored");
   });
 
   it("reports a rejected image request without an unhandled rejection", async () => {
