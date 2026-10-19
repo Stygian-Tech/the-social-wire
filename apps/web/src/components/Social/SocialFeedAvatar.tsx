@@ -10,16 +10,16 @@ import { safeSocialFeedAvatarUrl, type SocialFeed } from "@/lib/blueskySocialCli
 export function SocialFeedAvatar({ feed }: { feed: SocialFeed }) {
   const source = feed.kind === "following" ? undefined : safeSocialFeedAvatarUrl(feed.avatar);
   const { objectUrl, failed } = useCachedImageUrl(source);
-  const [failedSource, setFailedSource] = useState<string>();
+  const [failedObjectUrl, setFailedObjectUrl] = useState<string>();
   const Icon = feed.kind === "following" ? Users : feed.kind === "list" ? List : Rss;
   return <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md">
-    {objectUrl && !failed && failedSource !== source ? <img
+    {objectUrl && !failed && failedObjectUrl !== objectUrl ? <img
       src={objectUrl}
       alt=""
       className="size-full object-cover"
       loading="lazy"
       referrerPolicy="no-referrer"
-      onError={() => setFailedSource(source)}
+      onError={() => setFailedObjectUrl(objectUrl)}
     /> : <Icon className="size-4" />}
   </span>;
 }
