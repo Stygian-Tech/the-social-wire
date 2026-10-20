@@ -1,7 +1,14 @@
-import { expect, it } from "bun:test";
-import { segmentsToSocialDraft, socialDraftFingerprint, socialDraftToSegments, removeUnavailableDraftMedia } from "@/lib/socialDraftConversion";
+import { afterEach, expect, it, spyOn } from "bun:test";
+import { segmentsToSocialDraft, socialDraftFingerprint, socialDraftToSegments, removeUnavailableDraftMedia, preparePrivateDraftPhotos, restorePrivateDraftPhotos, privatePhotoPath, privateDraftPhotoRefs } from "@/lib/socialDraftConversion";
 import { gifEmbedURI } from "@/lib/composerMedia";
 
+import * as Attachments from "@/lib/socialDraftAttachmentClient";
+import type { OAuthSession } from "@atproto/oauth-client-browser";
+import type { ThreadSegment } from "@/lib/blueskyThreadClient";
+
+const restores: (() => void)[] = [];
+afterEach(() => restores.splice(0).reverse().forEach(restore => restore()));
+const actor = { viewerDid: "did:plc:photo-owner", session: { did: "did:plc:photo-owner" } as unknown as OAuthSession };
 const device = "6d1d2e3f-1234-4567-8901-123456789012";
 it("roundtrips raw markdown, native gates, labels, languages, records, and unknown media metadata", () => {
   const original = {
@@ -164,4 +171,57 @@ it("keeps an explicitly removed imported external attachment out of the next nat
   expect(segments[0].linkPreview?.uri).toBe("https://example.com/article");
   segments[0].removedLinkUrl = "https://example.com/article";
   expect(segmentsToSocialDraft(segments, device, original).posts[0].embedExternals).toBeUndefined();
+});
+
+
+it("never uploads before both files and stable asset metadata are durably checkpointed", async () => {
+  const photo = { ...localPhotoSegment("p").media.photos[0], original: new Blob(["original"], { type: "image/png" }), blob: new Blob(["prepared"], { type: "image/jpeg" }) };
+  const upload = spyOn(Attachments, "uploadDraftAttachment").mockRejectedValue(new Error("Should Not Upload")); restores.push(() => upload.mockRestore());
+  let checkpoint: ThreadSegment[] | undefined;
+  await expect(preparePrivateDraftPhotos(actor, [{ id: "s", text: "", media: { kind: "photos", photos: [photo] } }], async segments => { checkpoint = segments; throw new Error("Disk Full"); })).rejects.toThrow("Disk Full");
+  expect(upload).not.toHaveBeenCalled();
+  const media = checkpoint?.[0].media;
+  if (media?.kind !== "photos") throw new Error("Missing Photo");
+  expect(media.photos[0].privateAttachment?.original.sha256).toHaveLength(64);
+  expect(media.photos[0].privateAttachment?.prepared.sha256).toHaveLength(64);
+});
+it("roundtrips private photos across reordered posts and image references with native metadata preserved", async () => {
+  const uploads = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (_actor, asset) => ({ ...asset, state: "ready" })); restores.push(() => uploads.mockRestore());
+  let local: ThreadSegment[] = [localPhotoSegment("first"), localPhotoSegment("second")].map(segment => ({ ...segment, media: { ...segment.media, photos: segment.media.photos.map(photo => ({ ...photo, original: new Blob([photo.id], { type: "image/png" }), blob: new Blob([photo.id], { type: "image/jpeg" }) })) } }));
+  await preparePrivateDraftPhotos(actor, local, async prepared => { local = prepared; });
+  const native = segmentsToSocialDraft(local, device);
+  const remote = { ...native, posts: [{ text: "Reordered", embedImages: [ { ...native.posts[1].embedImages![0], alt: "Second" }, { ...native.posts[0].embedImages![0], alt: "First" } ] }] };
+  const restored = socialDraftToSegments(remote, local);
+  expect(restored[0].unavailableDraftMedia).toBe(false);
+  const media = restored[0].media;
+  if (media?.kind !== "photos") throw new Error("Missing Photos");
+  expect(media.photos.map(photo => photo.id)).toEqual(["second", "first"]);
+  expect(media.photos.map(privatePhotoPath)).toEqual(remote.posts[0].embedImages.map(image => image.localRef.path));
+  expect(segmentsToSocialDraft(restored, device, remote)).toEqual(remote);
+  expect(privateDraftPhotoRefs(remote)).toHaveLength(4);
+});
+it("refuses a mismatched manifest rather than borrowing another attachment or fetching native paths", async () => {
+  const original = await Attachments.describeDraftAttachment(new Blob(["original"], { type: "image/png" }), "p.png");
+  const prepared = await Attachments.describeDraftAttachment(new Blob(["prepared"], { type: "image/jpeg" }), "p.png");
+  const path = `socialwire-private://v1/photo/${original.assetId}/${prepared.assetId}`;
+  const download = spyOn(Attachments, "downloadDraftAttachment").mockRejectedValue(new Error("Should Not Download")); restores.push(() => download.mockRestore());
+  const manifest = { draftId: "draft", revision: 1, deleted: false, attachments: [ { assetId: original.assetId, role: "original" as const, ref: path, asset: original }, { assetId: prepared.assetId, role: "prepared" as const, ref: "different-ref", asset: prepared } ] };
+  await expect(restorePrivateDraftPhotos(actor, { posts: [{ text: "", embedImages: [{ localRef: { path } }] }] }, manifest)).rejects.toThrow("Missing");
+  expect(download).not.toHaveBeenCalled();
+  const foreign = { posts: [{ text: "", embedImages: [{ localRef: { path: "file:///private/image.jpg" } }] }] };
+  expect((await restorePrivateDraftPhotos(actor, foreign, { ...manifest, attachments: [] }))[0].unavailableDraftMedia).toBe(true);
+  expect(download).not.toHaveBeenCalled();
+});
+it("allocates owner-specific IDs instead of reusing portable metadata from a different account", async () => {
+  const original = await Attachments.describeDraftAttachment(new Blob(["original"], { type: "image/png" }), "p.jpg");
+  const prepared = await Attachments.describeDraftAttachment(new Blob(["prepared"], { type: "image/jpeg" }), "p.jpg");
+  const photo = { ...localPhotoSegment("p").media.photos[0], original: new Blob(["original"], { type: "image/png" }), blob: new Blob(["prepared"], { type: "image/jpeg" }), privateAttachment: { ownerDid: "did:plc:other", original, prepared } };
+  const uploads = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (_actor, asset) => ({ ...asset, state: "ready" })); restores.push(() => uploads.mockRestore());
+  let result: ThreadSegment[] = [];
+  await preparePrivateDraftPhotos(actor, [{ id: "s", text: "", media: { kind: "photos", photos: [photo] } }], async segments => { result = segments; });
+  const media = result[0].media;
+  if (media?.kind !== "photos") throw new Error("Missing Photo");
+  expect(media.photos[0].privateAttachment?.ownerDid).toBe(actor.viewerDid);
+  expect(media.photos[0].privateAttachment?.original.assetId).not.toBe(original.assetId);
+  expect(media.photos[0].privateAttachment?.prepared.assetId).not.toBe(prepared.assetId);
 });

@@ -1,9 +1,12 @@
+import type { DraftAttachment } from "./socialDraftAttachmentClient";
+
 export type GifAsset = {
   id: string; title: string; description: string; url: string; poster: string;
   mp4?: string; webm?: string; width: number; height: number; attribution: string;
 };
 export type ComposerPhoto = {
   id: string; name: string; original: Blob; blob?: Blob; width?: number; height?: number;
+  privateAttachment?: { ownerDid: string; original: DraftAttachment; prepared: DraftAttachment };
   alt: string; status: "preparing" | "ready" | "failed"; error?: string;
 };
 export type ComposerMedia = { kind: "photos"; photos: ComposerPhoto[] } | { kind: "gif"; asset: GifAsset; alt: string };

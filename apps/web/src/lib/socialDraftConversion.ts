@@ -2,6 +2,8 @@ import type { AppBskyDraftDefs } from "@atproto/api";
 import type { ThreadSegment } from "./blueskyThreadClient";
 import { gifEmbedURI, klipyMediaURL, type ComposerPhoto } from "./composerMedia";
 
+import { assertDraftAttachmentActor, describeDraftAttachment, downloadDraftAttachment, uploadDraftAttachment, type DraftAttachmentActor, type DraftAttachmentManifest, type DraftAttachmentRef } from "./socialDraftAttachmentClient";
+
 const DEVICE_KEY = "the-social-wire.social-draft-device.v1";
 
 /** Refuse cloud creation if a stable device identity cannot be persisted. */
@@ -36,13 +38,19 @@ function restoreGif(uri: string): ThreadSegment["media"] | undefined {
   } catch { return; }
 }
 
-/** Files are never downloaded or uploaded here. Only matching local recovery owns bytes. */
+/** Pure conversion matches exact references; authenticated byte recovery is separate. */
 export function socialDraftToSegments(draft: AppBskyDraftDefs.Draft, localSegments?: ThreadSegment[]): ThreadSegment[] {
   const photosByPath = new Map<string, ComposerPhoto | null>();
   for (const segment of localSegments ?? []) {
     if (segment.media?.kind !== "photos") continue;
     for (const photo of segment.media.photos) {
       if (!(photo.original instanceof Blob)) continue;
+      if (photo.privateAttachment) {
+        const path = privatePhotoPath(photo);
+        const previous = photosByPath.get(path);
+        photosByPath.set(path, previous === undefined || previous === photo ? photo : null);
+        continue;
+      }
       const references = segment.nativeDraftPost?.embedImages?.filter(image => image.localRef.path.endsWith(`/${encodeURIComponent(photo.id)}`));
       const paths = references?.length ? references.map(image => image.localRef.path) : draft.deviceId ? [`socialwire://${draft.deviceId}/${encodeURIComponent(photo.id)}`] : [];
       for (const path of paths) {
@@ -105,8 +113,8 @@ export function segmentsToSocialDraft(segments: ThreadSegment[], deviceId: strin
       if (post.embedExternals?.length === 1 && restoreGif(post.embedExternals[0].uri)) delete post.embedExternals;
     }
     if (segment.media?.kind === "photos" && !segment.unavailableDraftMedia) post.embedImages = segment.media.photos.map(photo => {
-      const originalImage = post.embedImages?.find(image => image.localRef.path.endsWith(`/${encodeURIComponent(photo.id)}`));
-      return { ...originalImage, localRef: originalImage?.localRef ?? { path: `socialwire://${deviceId}/${encodeURIComponent(photo.id)}` }, ...(originalImage && originalImage.alt === undefined && photo.alt === "" ? {} : { alt: photo.alt }) };
+      const originalImage = post.embedImages?.find(image => (photo.privateAttachment ? (image.localRef.path === privatePhotoPath(photo) || image.localRef.path.startsWith(`socialwire-private://v1/photo/${photo.privateAttachment.original.assetId}/`)) : image.localRef.path.endsWith(`/${encodeURIComponent(photo.id)}`)));
+      return { ...originalImage, localRef: photo.privateAttachment ? { ...originalImage?.localRef, path: privatePhotoPath(photo) } : originalImage?.localRef ?? { path: `socialwire://${deviceId}/${encodeURIComponent(photo.id)}` }, ...(originalImage && originalImage.alt === undefined && photo.alt === "" ? {} : { alt: photo.alt }) };
     });
     if (segment.media?.kind === "gif") {
       const uri = gifEmbedURI(segment.media.asset);
@@ -125,4 +133,86 @@ export function segmentsToSocialDraft(segments: ThreadSegment[], deviceId: strin
 
 export function socialDraftHasContent(segments: ThreadSegment[]): boolean {
   return segments.some(segment => !!segment.text.trim() || !!segment.media || !!segment.nativeDraftPost?.embedImages?.length || !!segment.nativeDraftPost?.embedVideos?.length || !!segment.nativeDraftPost?.embedExternals?.length || !!segment.nativeDraftPost?.embedRecords?.length);
+}
+
+
+export function privatePhotoPath(photo: ComposerPhoto): string {
+  if (!photo.privateAttachment) throw new Error("Private Photo Has Not Been Checkpointed.");
+  return `socialwire-private://v1/photo/${photo.privateAttachment.original.assetId}/${photo.privateAttachment.prepared.assetId}`;
+}
+const privatePhotoPattern = /^socialwire-private:\/\/v1\/photo\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/i;
+export function hasPrivateDraftPhotos(draft?: AppBskyDraftDefs.Draft): boolean {
+  return !!draft?.posts.some(post => post.embedImages?.some(image => image.localRef.path.startsWith("socialwire-private:")));
+}
+export function privateDraftPhotoRefs(draft: AppBskyDraftDefs.Draft): DraftAttachmentRef[] {
+  const refs = new Map<string, DraftAttachmentRef>();
+  for (const post of draft.posts) for (const image of post.embedImages ?? []) {
+    const path = image.localRef.path;
+    if (!path.startsWith("socialwire-private:")) continue;
+    const match = privatePhotoPattern.exec(path);
+    if (!match) throw new Error("Invalid Private Photo Reference. Reattach The Photo.");
+    for (const [assetId, role] of [[match[1], "original"], [match[2], "prepared"]] as const) {
+      const ref = { assetId, role, ref: path };
+      refs.set(`${path}:${role}`, ref);
+    }
+  }
+  return [...refs.values()];
+}
+
+/** The callback must durably save IDs and both files before any request is sent. */
+export async function preparePrivateDraftPhotos(actor: DraftAttachmentActor, segments: ThreadSegment[], checkpoint: (prepared: ThreadSegment[]) => Promise<void>): Promise<void> {
+  let prepared = segments;
+  for (const segment of segments) {
+    if (segment.media?.kind !== "photos") continue;
+    for (const photo of segment.media.photos) {
+      assertDraftAttachmentActor(actor);
+      if (photo.status !== "ready" || !photo.blob || !photo.width || !photo.height) throw new Error("Photo Preparation Is Incomplete. Retry Or Reattach The Photo Before Saving.");
+      const previous = photo.privateAttachment?.ownerDid === actor.viewerDid ? photo.privateAttachment : undefined;
+      const original = await describeDraftAttachment(photo.original, photo.name, previous?.original);
+      const output = await describeDraftAttachment(photo.blob, photo.name, previous?.prepared);
+      assertDraftAttachmentActor(actor);
+      const replace = (value: ComposerPhoto) => { prepared = prepared.map(item => item.media?.kind === "photos" ? { ...item, media: { ...item.media, photos: item.media.photos.map(candidate => candidate.id === photo.id && candidate.original === photo.original && candidate.blob === photo.blob ? value : candidate) } } : item); };
+      let portable = { ...photo, privateAttachment: { ownerDid: actor.viewerDid, original, prepared: output } };
+      replace(portable);
+      await checkpoint(prepared);
+      assertDraftAttachmentActor(actor);
+      const originalReady = await uploadDraftAttachment(actor, original, photo.original);
+      const preparedReady = await uploadDraftAttachment(actor, output, photo.blob);
+      portable = { ...portable, privateAttachment: { ownerDid: actor.viewerDid, original: originalReady, prepared: preparedReady } };
+      replace(portable);
+      await checkpoint(prepared);
+    }
+  }
+}
+
+/** Download only exact manifest matches, never fetch native paths or PDS blobs. */
+export async function restorePrivateDraftPhotos(actor: DraftAttachmentActor, draft: AppBskyDraftDefs.Draft, manifest: DraftAttachmentManifest, local?: ThreadSegment[]): Promise<ThreadSegment[]> {
+  const recovered: ThreadSegment[] = [];
+  if (manifest.deleted) throw new Error("Private Draft Attachments Were Deleted. Reattach The Photos.");
+  const paths = new Set(draft.posts.flatMap(post => (post.embedImages ?? []).map(image => image.localRef.path)).filter(path => path.startsWith("socialwire-private:")));
+  const downloadedPaths = new Set<string>();
+  for (const path of paths) {
+    // Local unsynced edits and their bytes remain authoritative during recovery.
+    const available = local?.flatMap(segment => segment.media?.kind === "photos" ? segment.media.photos : []).filter(photo => photo.privateAttachment?.ownerDid === actor.viewerDid && privatePhotoPath(photo) === path && photo.original instanceof Blob && photo.blob instanceof Blob && photo.status === "ready");
+    if (available?.length === 1) continue;
+    const match = privatePhotoPattern.exec(path);
+    if (!match) throw new Error("Invalid Private Photo Reference. Reattach The Photo.");
+    const original = manifest.attachments.find(item => item.assetId === match[1] && item.ref === path && item.role === "original")?.asset;
+    const prepared = manifest.attachments.find(item => item.assetId === match[2] && item.ref === path && item.role === "prepared")?.asset;
+    if (!original || !prepared || original.kind !== "photo" || prepared.kind !== "photo" || !original.contentType.startsWith("image/") || !prepared.contentType.startsWith("image/")) throw new Error("Private Draft Photo Is Missing. Retry Or Reattach It On The Original Device.");
+    const originalBlob = await downloadDraftAttachment(actor, original);
+    const blob = await downloadDraftAttachment(actor, prepared);
+    assertDraftAttachmentActor(actor);
+    const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
+    const { width, height } = bitmap;
+    bitmap.close();
+    if (!width || !height || width > 20000 || height > 20000) throw new Error("Private Draft Photo Dimensions Are Invalid. Reattach The Photo.");
+    assertDraftAttachmentActor(actor);
+    const photo: ComposerPhoto = { id: prepared.assetId, name: original.name, original: originalBlob, blob, width, height, alt: "", status: "ready", privateAttachment: { ownerDid: actor.viewerDid, original, prepared } };
+    downloadedPaths.add(path);
+    recovered.push({ id: crypto.randomUUID(), text: "", media: { kind: "photos", photos: [photo] } });
+  }
+  // Recovered paths supersede local copies; retain unrelated device-bound bytes.
+  const remaining = local?.map(segment => segment.media?.kind === "photos" ? { ...segment, media: { ...segment.media, photos: segment.media.photos.filter(photo => !photo.privateAttachment || !downloadedPaths.has(privatePhotoPath(photo))) } } : segment);
+  return socialDraftToSegments(draft, [...(remaining ?? []), ...recovered]);
 }
