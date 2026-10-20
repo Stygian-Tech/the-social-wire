@@ -1,5 +1,5 @@
 import { SKEJ_SCHEDULING_SCOPES } from "@/lib/skej/skejEnvironment";
-import { BLUESKY_SOCIAL_RPC_SCOPES, WIRE_MODERATION_RPC_SCOPES } from "@/lib/atprotoOAuthScopes";
+import { BLUESKY_DRAFT_RPC_SCOPES, BLUESKY_SOCIAL_RPC_SCOPES, WIRE_MODERATION_RPC_SCOPES } from "@/lib/atprotoOAuthScopes";
 
 const brandMethods = new Set([
   "app.bsky.actor.getProfile", "app.bsky.actor.searchActors",
@@ -15,6 +15,7 @@ export const BRAND_ACCOUNT_OAUTH_SCOPES = [
   "repo:app.bsky.feed.repost?action=create&action=delete",
   "blob:image/*",
   ...BLUESKY_SOCIAL_RPC_SCOPES.filter(scope => brandMethods.has(scope.slice(4).split("?", 1)[0])),
+  ...BLUESKY_DRAFT_RPC_SCOPES,
   ...WIRE_MODERATION_RPC_SCOPES,
   ...SKEJ_SCHEDULING_SCOPES,
 ].join(" ");

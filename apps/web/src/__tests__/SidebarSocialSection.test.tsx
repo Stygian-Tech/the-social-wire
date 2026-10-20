@@ -38,7 +38,7 @@ describe("SidebarSocialSection", () => {
   it("shows enabled destinations without expansion controls or settings", async () => {
     const onNavigate = mock((href: string) => { void href; });
     const { onHome } = await renderSection({ active: true, activeSection: "bookmarks", onNavigate });
-    for (const name of ["Home", "Explore", "Notifications", "Messages", "Bookmarks", "Lists", "Feeds"]) {
+    for (const name of ["Home", "Explore", "Notifications", "Messages", "Bookmarks", "Drafts", "Lists", "Feeds"]) {
       const button = screen.getByRole("button", { name: `Social ${name}` }) as HTMLButtonElement;
       expect(button.disabled).toBe(false);
       expect(button.querySelector("[data-coming-soon]")).toBeNull();
@@ -55,6 +55,14 @@ describe("SidebarSocialSection", () => {
     expect(screen.queryByText("Settings")).toBeNull();
     expect(screen.queryByRole("button", { name: /Expand Social|Collapse Social/ })).toBeNull();
   });
+  it("navigates to Drafts and marks it as the active destination", async () => {
+    const onNavigate = mock((href: string) => { void href; });
+    await renderSection({ active: true, activeSection: "drafts", onNavigate });
+    const drafts = screen.getByRole("button", { name: "Social Drafts" });
+    expect(drafts.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(drafts);
+    expect(onNavigate).toHaveBeenCalledWith("/social/drafts");
+  });
   it("shows shared unread counters on Notifications and Messages and hides zero counts", async () => {
     const { onHome } = await renderSection({ notificationCount: 123, messageCount: 7 });
     expect(screen.getByRole("button", { name: "Social Notifications" }).parentElement!.querySelector('[aria-label="123 unread"]')?.textContent).toBe("123");
@@ -68,7 +76,7 @@ describe("SidebarSocialSection", () => {
     const catalog = spyOn(catalogHooks, "useBlueskySocialCatalog");
     try {
       await renderSection({ active: false });
-      expect(screen.getAllByRole("button")).toHaveLength(7);
+      expect(screen.getAllByRole("button")).toHaveLength(8);
       for (const button of screen.getAllByRole("button")) expect(button.getAttribute("aria-current")).toBeNull();
       expect(catalog).not.toHaveBeenCalled();
     } finally { catalog.mockRestore(); }

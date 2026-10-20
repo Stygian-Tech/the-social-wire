@@ -61,6 +61,14 @@ export const BLUESKY_SOCIAL_REPO_SCOPES = [
   "repo:app.bsky.graph.follow?action=create",
 ] as const;
 
+/** Native Bluesky drafts live in private AppView stash, never public repo records. */
+export const BLUESKY_DRAFT_RPC_SCOPES = [
+  "rpc:app.bsky.draft.createDraft?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.draft.getDrafts?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.draft.updateDraft?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.draft.deleteDraft?aud=did:web:api.bsky.app%23bsky_appview",
+] as const;
+
 /** Authenticated Social reads are routed through the viewer PDS AppView proxy. */
 export const BLUESKY_SOCIAL_RPC_SCOPES = [
   "rpc:app.bsky.actor.getProfile?aud=did:web:api.bsky.app%23bsky_appview",
@@ -157,6 +165,7 @@ export const AT_PROTO_OAUTH_SCOPES = [
   ...STREAMPLACE_REPO_SCOPES,
   ...SKEJ_SCHEDULING_SCOPES,
   ...BLUESKY_SOCIAL_RPC_SCOPES,
+  ...BLUESKY_DRAFT_RPC_SCOPES,
   ...BLUESKY_CHAT_RPC_SCOPES,
   ...WIRE_MODERATION_RPC_SCOPES,
   ...BLUESKY_SOCIAL_REPO_SCOPES,
