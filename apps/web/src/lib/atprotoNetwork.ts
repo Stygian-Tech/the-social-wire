@@ -93,15 +93,45 @@ export function localLoopbackOAuthScopes(scopes: string, appEnv = readAppEnvRaw(
     const remaining = params.toString();
     return remaining ? `${resource}?${remaining}` : resource!;
   });
+  // Repo scopes support repeated collections. Share only identical action sets;
+  // merging different sets would grant their cross-product to every collection.
+  const repoGroups = new Map<string, string[]>();
+  const repoActions = (scope: string): string | undefined => {
+    const match = /^repo:([^?]+)\?((?:action=(?:create|update|delete)&)*action=(?:create|update|delete))$/.exec(scope);
+    if (!match) return undefined;
+    return [...new Set(new URLSearchParams(match[2]).getAll("action"))].sort().join("&action=");
+  };
+  for (const scope of compact) {
+    const actions = repoActions(scope);
+    if (actions === undefined) continue;
+    const group = repoGroups.get(actions) ?? [];
+    if (!group.includes(scope)) group.push(scope);
+    repoGroups.set(actions, group);
+  }
+  const repoReplacements = new Map<string, string>();
+  for (const [actions, group] of repoGroups) {
+    if (group.length < 2) continue;
+    const combined = `repo?${group.map(scope => `collection=${scope.slice(5).split("?", 1)[0]}`).join("&")}&action=${actions}`;
+    // A single-action group can cost more than positional scopes. Only compact
+    // when it saves bytes, including the nested encoding in the OAuth client ID.
+    if (encodeURIComponent(combined).length < encodeURIComponent(group.join(" ")).length) {
+      repoReplacements.set(group[0], combined);
+      for (const scope of group.slice(1)) repoReplacements.set(scope, "");
+    }
+  }
+  const compactRepo = compact.flatMap(scope => {
+    const replacement = repoReplacements.get(scope);
+    return replacement === "" ? [] : [replacement ?? scope];
+  });
   // RPC scopes support repeated lxm values. Group only identical audiences:
   // this preserves exact permissions while keeping loopback client URLs bounded.
   const groups = new Map<string, string[]>();
-  for (const scope of compact) {
+  for (const scope of compactRepo) {
     const match = /^rpc:([^?]+)\?aud=([^&]+)$/.exec(scope);
     if (match) { const methods = groups.get(match[2]) ?? []; methods.push(match[1]); groups.set(match[2], methods); }
   }
   const emitted = new Set<string>();
-  return compact.flatMap(scope => {
+  return compactRepo.flatMap(scope => {
     const match = /^rpc:([^?]+)\?aud=([^&]+)$/.exec(scope);
     if (!match || groups.get(match[2])!.length < 2) return [scope];
     if (emitted.has(match[2])) return [];
