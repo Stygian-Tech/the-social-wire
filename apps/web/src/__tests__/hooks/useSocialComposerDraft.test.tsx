@@ -7,12 +7,18 @@ import type { AppBskyDraftDefs } from "@atproto/api";
 import { useSocialComposerDraft } from "@/hooks/useSocialComposerDraft";
 import type { ThreadPublication, ThreadSegment } from "@/lib/blueskyThreadClient";
 import * as Transport from "@/lib/blueskyDraftClient";
+import * as Attachments from "@/lib/socialDraftAttachmentClient";
+import * as Gateway from "@/lib/socialWireGatewayClient";
 import * as Storage from "@/lib/composerDraftStorage";
 
+const realGetManifest = Attachments.getDraftAttachmentManifest;
 let count = 0;
 let did: string;
 let session: OAuthSession;
 let remote: AppBskyDraftDefs.DraftView[];
+let manifests: Map<string, Attachments.DraftAttachmentManifest>;
+let files: Map<string, { asset: Attachments.DraftAttachment; blob: Blob }>;
+const originalBitmap = Object.getOwnPropertyDescriptor(globalThis, "createImageBitmap");
 const restores: (() => void)[] = [];
 const originalIDB = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
@@ -31,6 +37,8 @@ beforeEach(() => {
   did = `did:plc:autosave-${++count}`; session = { did } as OAuthSession; remote = [];
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: indexedDB });
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: window.localStorage });
+  manifests = new Map(); files = new Map();
+  Object.defineProperty(globalThis, "createImageBitmap", { configurable: true, value: async () => ({ width: 10, height: 20, close() {} }) });
   const held = new Set<string>();
   Object.defineProperty(navigator, "locks", { configurable: true, value: {
     async request<T>(name: string, options: LockOptions, callback: (lock: Lock | null) => Promise<T>): Promise<T> {
@@ -42,6 +50,20 @@ beforeEach(() => {
     },
   } });
   for (const mock of [
+    spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (actor, asset, blob) => { Attachments.assertDraftAttachmentActor(actor); const ready = { ...asset, state: "ready" as const }; files.set(asset.assetId, { asset: ready, blob }); return ready; }),
+    spyOn(Attachments, "downloadDraftAttachment").mockImplementation(async (actor, asset) => { Attachments.assertDraftAttachmentActor(actor); const file = files.get(asset.assetId); if (!file) throw new Error("Private Photo Missing. Retry Or Reattach."); return file.blob; }),
+    spyOn(Attachments, "getDraftAttachmentManifest").mockImplementation(async (actor, draftId) => { Attachments.assertDraftAttachmentActor(actor); return structuredClone(manifests.get(draftId) ?? { draftId, revision: 0, deleted: false, attachments: [] }); }),
+    spyOn(Attachments, "putDraftAttachmentManifest").mockImplementation(async (actor, draftId, expectedRevision, attachments) => {
+      Attachments.assertDraftAttachmentActor(actor);
+      if ((manifests.get(draftId)?.revision ?? 0) !== expectedRevision) throw Object.assign(new Error("CAS conflict"), { status: 409 });
+      const manifest = { draftId, revision: expectedRevision + 1, deleted: false, attachments: attachments.map(ref => ({ ...ref, asset: files.get(ref.assetId)!.asset })) };
+      manifests.set(draftId, manifest); return structuredClone(manifest);
+    }),
+    spyOn(Attachments, "deleteDraftAttachmentManifest").mockImplementation(async (actor, draftId, expectedRevision) => {
+      Attachments.assertDraftAttachmentActor(actor);
+      const manifest = { draftId, revision: expectedRevision + 1, deleted: true, attachments: [] };
+      manifests.set(draftId, manifest); return manifest;
+    }),
     spyOn(Transport, "listSocialDrafts").mockImplementation(async () => ({ drafts: structuredClone(remote) })),
     spyOn(Transport, "createSocialDraft").mockImplementation(async ({ draft }) => { const id = `cloud-${remote.length + 1}`; remote.push(view(id, draft)); return { id }; }),
     spyOn(Transport, "updateSocialDraft").mockImplementation(async ({ id, draft }) => { remote = remote.map(item => item.id === id ? view(id, draft) : item); }),
@@ -50,6 +72,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup(); await new Promise(resolve => setTimeout(resolve, 0)); restores.splice(0).reverse().forEach(restore => restore());
+  if (originalBitmap) Object.defineProperty(globalThis, "createImageBitmap", originalBitmap); else Reflect.deleteProperty(globalThis, "createImageBitmap");
   if (originalIDB) Object.defineProperty(globalThis, "indexedDB", originalIDB); else Reflect.deleteProperty(globalThis, "indexedDB");
   if (originalLocalStorage) Object.defineProperty(globalThis, "localStorage", originalLocalStorage); else Reflect.deleteProperty(globalThis, "localStorage");
   if (originalLocks) Object.defineProperty(navigator, "locks", originalLocks); else Reflect.deleteProperty(navigator, "locks");
@@ -167,7 +190,7 @@ it("refuses another session DID and blocks cloud requests if the local write fai
 });
 it("mirrors local files under the assigned cloud ID immediately and preserves them after close", async () => {
   const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
-  const photo = { id: "photo", name: "private.jpg", original: new Blob(["private bytes"]), blob: new Blob(["private bytes"]), width: 10, height: 20, alt: "Description", status: "ready" as const };
+  const photo = { id: "photo", name: "private.jpg", original: new Blob(["private bytes"], { type: "image/jpeg" }), blob: new Blob(["private bytes"], { type: "image/jpeg" }), width: 10, height: 20, alt: "Description", status: "ready" as const };
   act(() => hook.result.current.setSegments([{ id: "photo-segment", text: "", media: { kind: "photos", photos: [photo] } }]));
   await act(async () => hook.result.current.flush());
   const cloudId = hook.result.current.cloudId!;
@@ -515,4 +538,153 @@ it("retains local recovery and never recreates a known ID when close cannot conf
   expect(hook.result.current.syncError).toContain("Saved Draft Is Not Visible Yet");
   expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.id).toBe("not-indexed");
   expect(create).toHaveBeenCalledTimes(1); expect(Transport.deleteSocialDraft).not.toHaveBeenCalled();
+});
+
+function implementation<T extends (...args: never[]) => unknown>(value: T): T { return (value as T & { getMockImplementation(): T }).getMockImplementation(); }
+function privatePhotoSegments(): ThreadSegment[] {
+  return [{ id: "photo-post", text: "Private photo", media: { kind: "photos", photos: [{ id: "photo", name: "p.jpg", original: new Blob(["original private bytes"], { type: "image/png" }), blob: new Blob(["prepared private bytes"], { type: "image/jpeg" }), width: 10, height: 20, alt: "Description", status: "ready" }] } }];
+}
+it("restores original and prepared photo bytes in a fresh browser without IndexedDB recovery", async () => {
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments()));
+  await act(async () => hook.result.current.flush());
+  const id = hook.result.current.cloudId!;
+  expect(manifests.get(id)!.attachments.map(ref => ref.role).sort()).toEqual(["original", "prepared"]);
+  expect(remote[0].draft.posts[0].embedImages?.[0].localRef.path).toMatch(/^socialwire-private:\/\/v1\/photo\//);
+  expect(hook.result.current.status).toBe("Draft Saved"); hook.unmount();
+  await Storage.saveComposerDraft(did, "new-post"); await Storage.saveComposerDraft(did, `social-draft:${id}`);
+  hook = harness(remote[0]); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  const media = hook.result.current.segments[0].media;
+  if (media?.kind !== "photos") throw new Error("Missing Restored Photos");
+  expect(await media.photos[0].original.text()).toBe("original private bytes");
+  expect(await media.photos[0].blob!.text()).toBe("prepared private bytes");
+  expect(media.photos[0].status).toBe("ready"); expect(media.photos[0].alt).toBe("Description");
+  expect(hook.result.current.hasUnavailableMedia).toBe(false);
+});
+it("checkpoints stable asset IDs before upload and retains them through a failed upload retry", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments()));
+  const originalUpload = implementation(Attachments.uploadDraftAttachment); const ids: string[] = [];
+  const upload = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (_actor, asset) => {
+    const recovery = await Storage.loadComposerDraft(did, "new-post"); const media = recovery?.segments[0].media;
+    if (media?.kind !== "photos") throw new Error("Missing Durable Recovery");
+    expect([media.photos[0].privateAttachment?.original.assetId, media.photos[0].privateAttachment?.prepared.assetId]).toContain(asset.assetId);
+    ids.push(asset.assetId); throw new Error("Upload Failed");
+  }); restores.push(() => upload.mockRestore());
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Upload Failed"); });
+  expect(Transport.createSocialDraft).not.toHaveBeenCalled(); expect(hook.result.current.status).toBe("Draft Saved Locally");
+  upload.mockImplementation(originalUpload); await act(async () => hook.result.current.retry());
+  const media = hook.result.current.segments[0].media;
+  if (media?.kind !== "photos") throw new Error("Missing Photos");
+  expect(media.photos[0].privateAttachment?.original.assetId).toBe(ids[0]); expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("keeps the native ID and local bytes when manifest commit fails and reconciles a lost commit response", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments()));
+  const put = implementation(Attachments.putDraftAttachmentManifest);
+  const commit = spyOn(Attachments, "putDraftAttachmentManifest").mockImplementation(async (...args) => { await put(...args); throw new Error("Manifest Response Lost"); }); restores.push(() => commit.mockRestore());
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Manifest Response Lost"); });
+  expect(hook.result.current.cloudId).toBeDefined(); expect(hook.result.current.status).toBe("Draft Saved Locally");
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.pendingManifest).toBeDefined();
+  await act(async () => hook.result.current.retry()); expect(commit).toHaveBeenCalledTimes(1);
+  expect(Transport.createSocialDraft).toHaveBeenCalledTimes(1); expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("does not report Saved when manifest CAS conflicts and forks with shared asset IDs", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments()));
+  const commit = implementation(Attachments.putDraftAttachmentManifest);
+  const fail = spyOn(Attachments, "putDraftAttachmentManifest").mockRejectedValue(Object.assign(new Error("CAS conflict"), { status: 409 })); restores.push(() => fail.mockRestore());
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("CAS conflict"); });
+  expect(hook.result.current.hasConflict).toBe(true); expect(hook.result.current.status).toBe("Draft Saved Locally");
+  const sourceId = hook.result.current.cloudId!; const assetIds = [...files.keys()].sort(); fail.mockImplementation(commit);
+  await act(async () => hook.result.current.forkLocal()); expect(hook.result.current.cloudId).not.toBe(sourceId);
+  expect(manifests.get(hook.result.current.cloudId!)?.attachments.map(ref => ref.assetId).sort()).toEqual(assetIds);
+  expect([...files.keys()].sort()).toEqual(assetIds);
+});
+it("retains completed recovery on companion cleanup failure and retries cleanup without native deletion again", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments())); await act(async () => hook.result.current.flush()); const id = hook.result.current.cloudId!;
+  const remove = implementation(Attachments.deleteDraftAttachmentManifest);
+  const cleanup = spyOn(Attachments, "deleteDraftAttachmentManifest").mockRejectedValue(new Error("Companion Unavailable")); restores.push(() => cleanup.mockRestore());
+  await act(async () => { await expect(hook.result.current.clear()).rejects.toThrow("Companion Unavailable"); });
+  const recovery = await Storage.loadComposerDraft(did, `social-draft:${id}`);
+  expect(recovery?.cloud?.completed).toBe(true); expect(recovery?.cloud?.nativeDeleted).toBe(true);
+  expect(hook.result.current.completed).toBe(true); expect(hook.result.current.cleanupPending).toBe(true);
+  cleanup.mockImplementation(remove); await act(async () => hook.result.current.retry());
+  expect(Transport.deleteSocialDraft).toHaveBeenCalledTimes(1); expect(manifests.get(id)?.deleted).toBe(true); expect(hook.result.current.cleanupPending).toBe(false);
+});
+it("keeps missing private files unavailable, blocks publication, and restores them on explicit retry", async () => {
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments())); await act(async () => hook.result.current.flush()); const id = hook.result.current.cloudId!; hook.unmount();
+  await Storage.saveComposerDraft(did, "new-post"); await Storage.saveComposerDraft(did, `social-draft:${id}`);
+  const download = implementation(Attachments.downloadDraftAttachment);
+  const missing = spyOn(Attachments, "downloadDraftAttachment").mockRejectedValue(new Error("Private Photo Missing. Retry Or Reattach.")); restores.push(() => missing.mockRestore());
+  hook = harness(remote[0]); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  expect(hook.result.current.hasUnavailableMedia).toBe(true); expect(hook.result.current.syncError).toContain("Retry Or Reattach");
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Photos Are Unavailable"); });
+  missing.mockImplementation(download); await act(async () => hook.result.current.retry());
+  expect(hook.result.current.hasUnavailableMedia).toBe(false); expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("never claims that external GIF or imported video bytes are privately synced", async () => {
+  const gif = view("gif", { posts: [{ text: "", embedExternals: [{ uri: "https://static.klipy.com/ii/a/b.gif?ww=10&hh=20&mp4=b" }] }] });
+  remote = [gif]; let hook = harness(gif); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  await act(async () => hook.result.current.flush()); expect(hook.result.current.status).toBe("GIF File Not Privately Synced"); hook.unmount();
+  const video = view("video", { posts: [{ text: "video", embedVideos: [{ localRef: { path: "file:///private/movie.mp4" } }] }] });
+  remote = [video]; hook = harness(video); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  await act(async () => hook.result.current.flush()); expect(hook.result.current.status).toBe("Attachment Files Unavailable");
+  expect(hook.result.current.hasUnavailableMedia).toBe(true); expect(Attachments.downloadDraftAttachment).not.toHaveBeenCalled();
+});
+it("preserves unsynced text and photo edits while reopening local private recovery", async () => {
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments())); await act(async () => hook.result.current.flush());
+  const id = hook.result.current.cloudId!; hook.unmount();
+  const recovery = (await Storage.loadComposerDraft(did, `social-draft:${id}`))!;
+  const edited = { ...recovery, segments: recovery.segments.map(segment => ({ ...segment, text: "Unsynced local edit", media: segment.media?.kind === "photos" ? { ...segment.media, photos: segment.media.photos.map(photo => ({ ...photo, alt: "Unsynced description" })) } : segment.media })) };
+  await Storage.saveComposerDraft(did, `social-draft:${id}`, edited);
+  hook = harness(remote[0]); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  expect(hook.result.current.segments[0].text).toBe("Unsynced local edit");
+  const media = hook.result.current.segments[0].media;
+  if (media?.kind !== "photos") throw new Error("Missing Local Photo");
+  expect(media.photos[0].alt).toBe("Unsynced description");
+  expect(Attachments.downloadDraftAttachment).not.toHaveBeenCalled();
+});
+it("reconciles an unknown native create before committing its uploaded photo manifest", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments()));
+  const create = implementation(Transport.createSocialDraft);
+  const lost = spyOn(Transport, "createSocialDraft").mockImplementation(async args => { await create(args); throw new Error("Native Response Lost"); }); restores.push(() => lost.mockRestore());
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Native Response Lost"); });
+  expect(manifests.size).toBe(0); expect(files.size).toBe(2);
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.createIntent).toBeDefined();
+  await act(async () => hook.result.current.retry());
+  expect(lost).toHaveBeenCalledTimes(1); expect(manifests.size).toBe(1); expect(files.size).toBe(2);
+  expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("keeps the original manifest's shared files when a confirmed fork is published and cleaned", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments())); await act(async () => hook.result.current.flush());
+  const originalId = hook.result.current.cloudId!; const originalManifest = structuredClone(manifests.get(originalId)!);
+  act(() => hook.result.current.setSegments(previous => previous.map(segment => ({ ...segment, text: "Fork edit" }))));
+  remote = remote.map(item => view(item.id, { ...item.draft, posts: item.draft.posts.map(post => ({ ...post, text: "Remote edit" })) }));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Changed On Another Device"); });
+  await act(async () => hook.result.current.forkLocal()); const forkId = hook.result.current.cloudId!;
+  expect(manifests.get(forkId)?.attachments.map(ref => ref.assetId).sort()).toEqual(originalManifest.attachments.map(ref => ref.assetId).sort());
+  await act(async () => hook.result.current.clear());
+  expect(manifests.get(forkId)?.deleted).toBe(true);
+  expect(manifests.get(originalId)).toEqual(originalManifest); expect(files.size).toBe(2);
+});
+
+it("commits a new photo draft when the first real manifest response is HTTP 404", async () => {
+  const gateway = spyOn(Gateway, "gatewayFetch").mockImplementation(async (_session, path) => {
+    expect(path).toContain("/xrpc/app.thesocialwire.socialDraft.getManifest?draftId=");
+    return new Response(null, { status: 404 });
+  }); restores.push(() => gateway.mockRestore());
+  const get = spyOn(Attachments, "getDraftAttachmentManifest").mockImplementation(realGetManifest); restores.push(() => get.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments()));
+  await act(async () => hook.result.current.flush());
+  expect(gateway).toHaveBeenCalledTimes(1);
+  expect(Attachments.putDraftAttachmentManifest).toHaveBeenCalledWith(expect.anything(), hook.result.current.cloudId, 0, expect.any(Array));
+  expect(manifests.get(hook.result.current.cloudId!)?.revision).toBe(1);
+  expect(hook.result.current.status).toBe("Draft Saved");
 });

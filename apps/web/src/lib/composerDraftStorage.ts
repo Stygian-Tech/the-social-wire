@@ -1,9 +1,13 @@
+import type { DraftAttachmentManifest, DraftAttachmentRef } from "./socialDraftAttachmentClient";
 import type { ThreadPublication, ThreadSegment } from "./blueskyThreadClient";
 import type { AppBskyDraftDefs } from "@atproto/api";
 import { jsonToLex, stringifyLex } from "@atproto/api";
 
 export type ComposerDraft = { version: 1; did: string; segments: ThreadSegment[]; publication?: ThreadPublication; cloud?: {
   id?: string;
+  attachmentManifest?: DraftAttachmentManifest;
+  pendingManifest?: { draftId: string; expectedRevision: number; attachments: DraftAttachmentRef[] };
+  nativeDeleted?: boolean;
   deviceId: string;
   updatedAt: number;
   nativeDraft?: AppBskyDraftDefs.Draft;
