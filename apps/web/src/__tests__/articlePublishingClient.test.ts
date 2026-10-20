@@ -1,3 +1,4 @@
+import { setupGoPreparationService } from "./support/anypubService";
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { XRPCError, type Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
@@ -5,10 +6,11 @@ import { cidForLex } from "@atproto/lex-cbor";
 import { lexParse } from "@atproto/lex-json";
 import * as Atproto from "@/lib/atprotoClient";
 import { articleDraftRecordKey, articlePublicationHost, listArticlePublications, listPublishedArticles, publishArticle, uploadArticleImage } from "@/lib/articles/articlePublishingClient";
-import { articleRichText, buildArticleNativeContent } from "@/lib/articles/articleNativeContent";
+import { buildArticleNativeContent } from "@/lib/articles/articleNativeContent";
 import type { ArticleHost, ArticleImageAsset, ArticlePublication, ArticlePublishInput, ArticleRecord } from "@/lib/articles/articlePublishingTypes";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+setupGoPreparationService();
 const did = "did:plc:viewer", session = { did } as unknown as OAuthSession;
 const restores: (() => void)[] = [];
 afterEach(() => restores.splice(0).reverse().forEach(fn => fn()));
@@ -29,8 +31,8 @@ function agent(pub = publication()) {
 const blob = { $type: "blob" as const, ref: { $link: "bafkreie3zvlvg43mywvbvld32d7sk6xkgvjphhhgtjgwqhzfmvf6xnuw2m" }, mimeType: "image/png", size: 3 };
 const asset: ArticleImageAsset = { id: "image", blob, width: 640, height: 480, alt: "An image", url: "https://pds.test/xrpc/com.atproto.sync.getBlob?cid=example" };
 describe("native article content", () => {
-  it("publishes setext headings and variable-length fences without Markdown delimiters", () => {
-    const native = buildArticleNativeContent("offprint", "Setext Heading\n====\nFollowing paragraph\n\n````ts\n```literal\n````\n\n~~~\nUnclosed code", []);
+  it("publishes setext headings and variable-length fences without Markdown delimiters", async () => {
+    const native = await buildArticleNativeContent("offprint", "Setext Heading\n====\nFollowing paragraph\n\n````ts\n```literal\n````\n\n~~~\nUnclosed code", []);
     expect(native.content.items).toMatchObject([
       { $type: "app.offprint.block.heading", level: 1, plaintext: "Setext Heading" },
       { $type: "app.offprint.block.text", plaintext: "Following paragraph" },
@@ -39,13 +41,8 @@ describe("native article content", () => {
     ]);
     expect(native.textContent).toBe("Setext Heading\n\nFollowing paragraph\n\n```literal\n\nUnclosed code");
   });
-  it("counts rich facet ranges in UTF-8 plaintext and rejects unsafe link facets", () => {
-    const rich = articleRichText("😀 **é** and [safe](https://example.com) [bad](javascript:alert)", "pub.leaflet.richtext.facet");
-    expect(rich.plaintext).toBe("😀 é and safe bad");
-    expect(rich.facets).toEqual([{ index: { byteStart: 5, byteEnd: 7 }, features: [{ $type: "pub.leaflet.richtext.facet#bold" }] }, { index: { byteStart: 12, byteEnd: 16 }, features: [{ $type: "pub.leaflet.richtext.facet#link", uri: "https://example.com" }] }]);
-  });
-  it("uses Leaflet pages, headings, code, checked lists and native image blobs", () => {
-    const result = buildArticleNativeContent("leaflet", "# Title\n\n- [x] Done\n  - Child\n\n```TS\nconst a = 1\n```\n\n![Caption](article-asset://image)", [asset]);
+  it("uses Leaflet pages, headings, code, checked lists and native image blobs", async () => {
+    const result = await buildArticleNativeContent("leaflet", "# Title\n\n- [x] Done\n  - Child\n\n```TS\nconst a = 1\n```\n\n![Caption](article-asset://image)", [asset]);
     const pages = result.content.pages as { blocks: { block: ArticleRecord }[] }[];
     expect(pages[0].blocks.map(b => b.block.$type)).toEqual(["pub.leaflet.blocks.header", "pub.leaflet.blocks.unorderedList", "pub.leaflet.blocks.code", "pub.leaflet.blocks.image"]);
     const list = pages[0].blocks[1].block.children as ArticleRecord[];
@@ -54,21 +51,20 @@ describe("native article content", () => {
     expect(pages[0].blocks[2].block).toMatchObject({ plaintext: "const a = 1", language: "ts" });
     expect(pages[0].blocks[3].block).toMatchObject({ image: blob, aspectRatio: { width: 640, height: 480 } });
   });
-  it("maps Offprint heading bounds and pckt image attrs, summary, and trailing paragraph", () => {
-    const offprint = buildArticleNativeContent("offprint", "###### Heading", []);
+  it("maps Offprint heading bounds and pckt image attrs, summary, and trailing paragraph", async () => {
+    const offprint = await buildArticleNativeContent("offprint", "###### Heading", []);
     expect((offprint.content.items as ArticleRecord[])[0]).toMatchObject({ $type: "app.offprint.block.heading", level: 3 });
-    const pckt = buildArticleNativeContent("pckt", "![Caption](article-asset://image)", [asset], "Summary");
+    const pckt = await buildArticleNativeContent("pckt", "![Caption](article-asset://image)", [asset], "Summary");
     const items = pckt.content.items as ArticleRecord[];
     expect(items[0]).toMatchObject({ $type: "blog.pckt.block.heading", level: 3, plaintext: "Summary" });
     expect(items[1]).toMatchObject({ attrs: { src: `blob:${blob.ref.$link}`, blob, align: "center" } });
     expect(items.at(-1)).toMatchObject({ $type: "blog.pckt.block.text", plaintext: "" });
   });
-  it("resolves Markpub asset links and fails missing/native remote images", () => {
-    const result = buildArticleNativeContent("unknown", "![x](article-asset://image)", [asset]);
+  it("resolves Markpub asset links and fails missing/native remote images", async () => {
+    const result = await buildArticleNativeContent("unknown", "![x](article-asset://image)", [asset]);
     expect(result.content).toMatchObject({ $type: "at.markpub.markdown", text: { markdown: `![x](${asset.url})` } });
-    expect(() => buildArticleNativeContent("leaflet", "![x](article-asset://missing)", [])).toThrow("not been uploaded");
-    expect(() => buildArticleNativeContent("offprint", "![x](https://remote.test/a.png)", [])).toThrow("Upload remote");
-    expect(articleRichText("++Underlined++ ~~Removed~~ `literal **bold**`", "app.offprint.richtext.facet")).toMatchObject({ plaintext: "Underlined Removed literal **bold**", facets: [{ index: { byteStart: 0, byteEnd: 10 }, features: [{ $type: "app.offprint.richtext.facet#underline" }] }, { index: { byteStart: 11, byteEnd: 18 }, features: [{ $type: "app.offprint.richtext.facet#strikethrough" }] }, { index: { byteStart: 19, byteEnd: 35 }, features: [{ $type: "app.offprint.richtext.facet#code" }] }] });
+    await expect(buildArticleNativeContent("leaflet", "![x](article-asset://missing)", [])).rejects.toThrow("not been uploaded");
+    await expect(buildArticleNativeContent("offprint", "![x](https://remote.test/a.png)", [])).rejects.toThrow("Upload remote");
   });
 });
 describe("direct PDS article publishing", () => {
@@ -201,7 +197,8 @@ describe("direct PDS article publishing", () => {
   it("verifies pckt publication ownership and writes its same-key wrapper", async () => {
     const pub = publication("pckt"), calls = agent(pub);
     calls.get.mockImplementation(async params => params.collection === "site.standard.publication" ? { data: { uri: pub.uri, cid: pub.cid, value: pub.record } } : { data: { uri: `at://${did}/blog.pckt.publication/site`, cid: "pckt-pub", value: { $type: "blog.pckt.publication", publication: { uri: pub.uri, cid: pub.cid } } as ArticleRecord } });
-    const verification = spyOn(globalThis, "fetch").mockResolvedValue(new Response(pub.uri));
+    const preparationFetch = globalThis.fetch;
+    const verification = spyOn(globalThis, "fetch").mockImplementation(((url, init) => String(url).includes(".well-known/site.standard.publication") ? Promise.resolve(new Response(pub.uri)) : preparationFetch(url, init)) as typeof fetch);
     restores.push(() => verification.mockRestore());
     const result = await publishArticle(session, input("pckt"));
     const writes = calls.apply.mock.calls[0][0].writes;

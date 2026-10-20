@@ -1,3 +1,4 @@
+import { setupGoPreparationService } from "./support/anypubService";
 import { afterEach, expect, spyOn, test } from "bun:test";
 import type { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
@@ -8,6 +9,7 @@ import * as Social from "@/lib/blueskySocialClient";
 import { createEvent, getEvent, listEvents, publishLiveUpdate } from "@/lib/livePosts/livePostClient";
 import { appendLiveArticleContent } from "@/lib/livePosts/livePostContent";
 import type { LiveEvent } from "@/lib/livePosts/livePostTypes";
+setupGoPreparationService();
 const did = "did:plc:alice", session = { did } as unknown as OAuthSession;
 const initial: LiveEvent = { $type: "app.thesocialwire.liveEvent", uri: `at://${did}/app.thesocialwire.liveEvent/3mf6w2zabcd22`, cid: "initial", title: "Live", destination: "bluesky", tags: ["news"], entries: [], createdAt: "2026-10-11T12:00:00.000Z", updatedAt: "2026-10-11T12:00:00.000Z" };
 const op = { operationId: "operation-one", createdAt: "2026-10-11T12:01:00.000Z" };
@@ -60,10 +62,10 @@ test("concurrent and cross-account mutations fail before writes", async () => {
   await expect(publishLiveUpdate(session, initial, "Hello", { ...op, assertCurrentAccount: () => { throw new Error("switched"); } })).rejects.toThrow("switched"); expect(f.batches).toHaveLength(0);
 });
 test("pagination and post-length guards", async () => { const f = fixture({ repeated: true }); await expect(listEvents(session)).rejects.toThrow("repeated"); await expect(publishLiveUpdate(session, initial, "a".repeat(300), op)).rejects.toThrow("300"); expect(f.batches).toHaveLength(0); });
-test("native appends preserve old blocks and refuse blob-backed rewrites", () => {
+test("native appends preserve old blocks and refuse blob-backed rewrites", async () => {
   const old = { $type: "app.offprint.content", custom: true, items: [{ $type: "app.offprint.block.image", image: { ref: "original" } }] };
-  const next = appendLiveArticleContent("offprint", old, op.createdAt, "New"); expect((next.items as unknown[])[0]).toEqual(old.items[0]); expect(next.custom).toBe(true); expect(old.items).toHaveLength(1);
-  expect(() => appendLiveArticleContent("markpub", { $type: "at.markpub.markdown", text: { textBlob: {} } }, op.createdAt, "New")).toThrow("Blob-backed");
+  const next = await appendLiveArticleContent("offprint", old, op.createdAt, "New"); expect((next.items as unknown[])[0]).toEqual(old.items[0]); expect(next.custom).toBe(true); expect(old.items).toHaveLength(1);
+  await expect(appendLiveArticleContent("markpub", { $type: "at.markpub.markdown", text: { textBlob: {} } }, op.createdAt, "New")).rejects.toThrow("Blob-backed");
 });
 
 test("both destinations and native article append commit together", async () => {
@@ -90,16 +92,16 @@ test("external article edits fail closed and produce no append or post", async (
   const doc = f.docs.values().next().value!; doc.cid = "provider-edited";
   await expect(publishLiveUpdate(session, event, "Second", { ...op, operationId: "second" })).rejects.toThrow("changed outside"); expect(f.batches).toHaveLength(1);
 });
-test("native updates always append literal heading/text nodes and preserve all pages", () => {
+test("native updates always append literal heading/text nodes and preserve all pages", async () => {
   const text = "# Not a heading\n\n![literal](article-asset://not-uploaded)";
   const old = { $type: "pub.leaflet.content", pages: [{ $type: "pub.leaflet.pages.canvas", nodes: ["original"] }, { $type: "pub.leaflet.pages.linearDocument", id: "page", blocks: [{ block: "original" }], alignment: "kept" }] };
-  const result = appendLiveArticleContent("leaflet", old, op.createdAt, text);
+  const result = await appendLiveArticleContent("leaflet", old, op.createdAt, text);
   const pages = result.pages as { blocks: { block: { $type: string; plaintext: string } }[] }[];
   expect(pages[0] as unknown).toEqual(old.pages[0]); expect(pages[1].blocks).toHaveLength(3);
   expect(pages[1].blocks[2].block).toEqual({ $type: "pub.leaflet.blocks.text", plaintext: text });
   expect(old.pages[1].blocks).toHaveLength(1);
-  for (const host of ["offprint", "pckt"] as const) { const value = appendLiveArticleContent(host, undefined, op.createdAt, text); expect((value.items as { plaintext: string }[])[1].plaintext).toBe(text); }
-  expect(((appendLiveArticleContent("markpub", undefined, op.createdAt, "**Literal**").text) as { markdown: string }).markdown).toContain("\\*\\*Literal\\*\\*");
+  for (const host of ["offprint", "pckt"] as const) { const value = await appendLiveArticleContent(host, undefined, op.createdAt, text); expect((value.items as { plaintext: string }[])[1].plaintext).toBe(text); }
+  expect((((await appendLiveArticleContent("markpub", undefined, op.createdAt, "**Literal**")).text) as { markdown: string }).markdown).toContain("\\*\\*Literal\\*\\*");
 });
 test("read rejects malformed destination refs, dates and mismatched record identity", async () => {
   const f = fixture();

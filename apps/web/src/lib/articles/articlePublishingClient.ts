@@ -160,20 +160,20 @@ export async function publishArticle(session: OAuthSession, input: ArticlePublis
     const verification = await fetch(`${url}/.well-known/site.standard.publication`, { signal, credentials: "omit", redirect: "error" });
     if (!verification.ok || (await verification.text()).trim() !== input.publication.uri) throw new Error("The pckt site could not verify this publication.");
   }
-  const native = buildArticleNativeContent(host, input.markdown, input.bodyAssets ?? [], input.description);
-  const prepared = prepareContentOffload(host, native.content);
+  const native = await buildArticleNativeContent(host, input.markdown, input.bodyAssets ?? [], input.description, { signal });
+  const prepared = await prepareContentOffload(host, native.content, { signal });
   const content = prepared.offload
-    ? replaceContentOffload(prepared, (await uploadBlob(session, new Blob([prepared.offload.body], { type: prepared.offload.mimeType }), signal)).blob)
+    ? await replaceContentOffload(prepared, (await uploadBlob(session, new Blob([prepared.offload.body], { type: prepared.offload.mimeType }), signal)).blob, { signal })
     : prepared.content;
   const now = new Date().toISOString(), path = articlePath(input, rkey);
-  const record = buildDocumentRecord({
+  const record = await buildDocumentRecord({
     site: input.publication.uri, title: input.title.trim(), publishedAt: (previous.publishedAt as string | undefined) ?? now,
     updatedAt: now, path, content, textContent: native.textContent,
     description: input.description?.trim() || undefined,
     coverImage: input.cover?.blob,
     tags: input.tags.length || host === "pckt" ? [...new Set(input.tags.map(tag => tag.trim()).filter(Boolean))] : undefined,
     ...(host === "pckt" ? { langs: ["en"] } : {}),
-  }, previous);
+  }, previous, { signal });
   const cid = (await cidForLex(lexParse(JSON.stringify(record), { strict: true }))).toString();
   const writes: { $type: "com.atproto.repo.applyWrites#create" | "com.atproto.repo.applyWrites#update"; collection: string; rkey: string; value: ArticleRecord }[] = [{ $type: `com.atproto.repo.applyWrites#${input.existing ? "update" : "create"}`, collection: DOCUMENT, rkey, value: record }];
   let wrapperUri: string | undefined;
@@ -190,7 +190,7 @@ export async function publishArticle(session: OAuthSession, input: ArticlePublis
       const ref = previousWrapper.document as { uri?: string; cid?: string } | undefined;
       if (wrapper.data.cid !== input.existing.wrapperCid || ref?.uri !== uri || ref.cid !== input.existing.cid) throw new Error("The native article wrapper changed. Reload before publishing.");
     }
-    writes.push({ $type: `com.atproto.repo.applyWrites#${input.existing ? "update" : "create"}`, collection, rkey: wrapperKey, value: buildNativeDocumentWrapper(host, { uri, cid }, pcktSite, previousWrapper) });
+    writes.push({ $type: `com.atproto.repo.applyWrites#${input.existing ? "update" : "create"}`, collection, rkey: wrapperKey, value: await buildNativeDocumentWrapper(host, { uri, cid }, pcktSite, previousWrapper, { signal }) });
   }
   signal?.throwIfAborted();
   const wrapperCid = writes[1] ? (await cidForLex(lexParse(JSON.stringify(writes[1].value), { strict: true }))).toString() : undefined;

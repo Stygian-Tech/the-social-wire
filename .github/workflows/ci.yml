@@ -81,6 +81,11 @@ jobs:
           key: ${{ runner.os }}-bun-1.3.14-v2-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bash scripts/ci/install-bun.sh
+      # Publishing tests exercise the pinned Go preparation service with a mocked PDS.
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.6"
+          cache-dependency-path: bun.lock
       - name: Typecheck
         run: bunx turbo typecheck --filter=web
       - name: Lint
