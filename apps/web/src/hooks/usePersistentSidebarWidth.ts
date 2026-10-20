@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -21,46 +22,41 @@ function browserStorage(): Storage | null {
     return null;
   }
 }
+
+const subscribe = () => () => {};
+
 export function usePersistentSidebarWidth(
   defaultWidth: number,
   resizing: boolean,
 ): [number, Dispatch<SetStateAction<number>>] {
-  const [state, setState] = useState(() => ({
-    width: clampSidebarWidth(defaultWidth),
-    restored: false,
-    changed: false,
-  }));
-  const latest = useRef({
-    width: clampSidebarWidth(defaultWidth),
-    changed: false,
-  });
+  // Match server markup during hydration, but read the saved width immediately
+  // when a different section mounts its own sidebar provider in the browser.
+  const savedWidth = useSyncExternalStore(
+    subscribe,
+    () => {
+      const storage = browserStorage();
+      return (
+        (storage ? loadSidebarWidth(storage) : null) ??
+        clampSidebarWidth(defaultWidth)
+      );
+    },
+    () => clampSidebarWidth(defaultWidth),
+  );
+  const [changedWidth, setChangedWidth] = useState<number | null>(null);
+  const width = changedWidth ?? savedWidth;
+  const changed = changedWidth !== null;
+  const latest = useRef({ width, changed });
   useEffect(() => {
-    let cancelled = false;
-    const storage = browserStorage();
-    const width = storage ? loadSidebarWidth(storage) : null;
-    queueMicrotask(() => {
-      if (!cancelled)
-        setState((previous) =>
-          previous.restored
-            ? previous
-            : { ...previous, width: width ?? previous.width, restored: true },
-        );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    latest.current = { width, changed };
+  }, [width, changed]);
   useEffect(() => {
-    latest.current = { width: state.width, changed: state.changed };
-  }, [state.width, state.changed]);
-  useEffect(() => {
-    if (!state.restored || !state.changed || resizing) return;
+    if (!changed || resizing) return;
     const timer = window.setTimeout(() => {
       const storage = browserStorage();
-      if (storage) saveSidebarWidth(storage, state.width);
+      if (storage) saveSidebarWidth(storage, width);
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [state.width, state.restored, state.changed, resizing]);
+  }, [width, changed, resizing]);
   useEffect(() => {
     const flush = () => {
       const storage = browserStorage();
@@ -74,14 +70,15 @@ export function usePersistentSidebarWidth(
       flush();
     };
   }, []);
-  const setWidth = useCallback<Dispatch<SetStateAction<number>>>((update) => {
-    setState((previous) => ({
-      width: clampSidebarWidth(
-        typeof update === "function" ? update(previous.width) : update,
-      ),
-      restored: true,
-      changed: true,
-    }));
-  }, []);
-  return [state.width, setWidth];
+  const setWidth = useCallback<Dispatch<SetStateAction<number>>>(
+    (update) => {
+      setChangedWidth((previous) =>
+        clampSidebarWidth(
+          typeof update === "function" ? update(previous ?? savedWidth) : update,
+        ),
+      );
+    },
+    [savedWidth],
+  );
+  return [width, setWidth];
 }

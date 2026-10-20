@@ -1,19 +1,27 @@
-import { afterEach, beforeAll, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+import * as EntryCardActions from "@/components/EntryList/EntryCardActionMenu";
+import * as CachedImage from "@/hooks/useCachedImageUrl";
 
 import type { WireEditionPage } from "@/lib/wireEditionClient";
 
 let cachedImageFailureSrc: string | null = null;
 
-mock.module("@/components/EntryList/EntryCardActionMenu", () => ({
-  EntryCardActionMenu: () => <button type="button" aria-label="Story Actions" />,
-}));
-mock.module("@/hooks/useCachedImageUrl", () => ({
-  useCachedImageUrl: (src?: string | null) => ({
-    objectUrl: src?.trim() || undefined,
-    failed: Boolean(src && src === cachedImageFailureSrc),
-  }),
-}));
+const restores: (() => void)[] = [];
+
+beforeEach(() => {
+  const actions = spyOn(EntryCardActions, "EntryCardActionMenu").mockImplementation(
+    () => <button type="button" aria-label="Story Actions" />,
+  );
+  const images = spyOn(CachedImage, "useCachedImageUrl").mockImplementation(
+    (src?: string | null) => ({
+      objectUrl: src?.trim() || undefined,
+      failed: Boolean(src && src === cachedImageFailureSrc),
+    }),
+  );
+  restores.push(() => actions.mockRestore(), () => images.mockRestore());
+});
 beforeAll(() => {
   Object.defineProperty(globalThis, "Element", {
     configurable: true,
@@ -43,6 +51,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  restores.splice(0).reverse().forEach((restore) => restore());
   cachedImageFailureSrc = null;
   delete document.documentElement.dataset.font;
   delete document.documentElement.dataset.boldText;
