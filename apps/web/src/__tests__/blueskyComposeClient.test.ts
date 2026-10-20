@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { AppBskyFeedDefs } from "@atproto/api";
-import { createBlueskyPost, postTextLength } from "@/lib/blueskyComposeClient";
+import { createBlueskyPost, postTextLength, prepareBlueskyPost } from "@/lib/blueskyComposeClient";
+import { newThreadPublication } from "@/lib/blueskyThreadClient";
 import { AppBskyFeedPost } from "@atproto/api";
 
 const did = "did:plc:alice";
@@ -27,6 +28,54 @@ function sessionFor(respond: (request: Request) => unknown | Promise<unknown>): 
 
 describe("Bluesky post creation", () => {
   const linkPreview = { uri: "https://example.com/story", title: "A Story", description: "A summary" };
+  it("constructs a native external card when its URL is absent from imported text", async () => {
+    const session = sessionFor(() => { throw new Error("Unexpected request"); });
+    const record = await prepareBlueskyPost({ session, text: "Read this", linkPreview, nativeDraftPost: { text: "Read this", embedExternals: [{ uri: linkPreview.uri }] } });
+    expect(record.text).toBe("Read this");
+    expect(record.embed).toMatchObject({ $type: "app.bsky.embed.external", external: { uri: linkPreview.uri } });
+    expect(record.facets).toBeUndefined();
+    expect(AppBskyFeedPost.validateRecord(record).success).toBe(true);
+  });
+  it("omits explicitly removed native cards even when the URL remains in text", async () => {
+    const session = sessionFor(() => { throw new Error("Unexpected request"); });
+    for (const text of ["Read this", linkPreview.uri]) {
+      const record = await prepareBlueskyPost({ session, text, linkPreview, removedLinkUrl: linkPreview.uri, nativeDraftPost: { text, embedExternals: [{ uri: linkPreview.uri }] } });
+      expect(record).not.toHaveProperty("embed");
+    }
+  });
+  it("keeps unsupported and stale previews out of constructed records", async () => {
+    const session = sessionFor(() => { throw new Error("Unexpected request"); });
+    for (const uri of ["javascript:alert(1)", "ftp://example.com/story", "https://user:password@example.com/story"]) {
+      const record = await prepareBlueskyPost({ session, text: "Read this", linkPreview: { ...linkPreview, uri }, nativeDraftPost: { text: "Read this", embedExternals: [{ uri }] } });
+      expect(record).not.toHaveProperty("embed");
+    }
+    for (const nativeDraftPost of [undefined, { text: "Read this", embedExternals: [{ uri: "https://example.com/other" }] }]) {
+      for (const text of ["Read this", "https://example.com/replacement"]) {
+        const record = await prepareBlueskyPost({ session, text, linkPreview, nativeDraftPost });
+        expect(record).not.toHaveProperty("embed");
+      }
+    }
+  });
+  it("preserves imported cards through single and multi-post publication preparation", async () => {
+    for (const count of [1, 2]) {
+      const publication = newThreadPublication(did, Array.from({ length: count }, (_, index) => ({
+        id: String(index), text: "Read this", linkPreview, nativeDraftPost: { text: "Read this", embedExternals: [{ uri: linkPreview.uri }] },
+      })));
+      let writes = 0;
+      const session = sessionFor(request => {
+        expect(request.method).toBe("com.atproto.repo.createRecord");
+        const record = request.body!.record as AppBskyFeedPost.Record;
+        expect(record.embed).toMatchObject({ $type: "app.bsky.embed.external", external: { uri: linkPreview.uri } });
+        expect(AppBskyFeedPost.validateRecord(record).success).toBe(true);
+        if (writes) expect(record.reply?.parent.uri).toBe(result.uri);
+        writes++;
+        return result;
+      });
+      await createBlueskyPost({ session, text: "Read this", publication });
+      expect(writes).toBe(count);
+      for (const segment of publication.segments) expect(segment.record?.embed).toMatchObject({ external: { uri: linkPreview.uri } });
+    }
+  });
   it("publishes the example as linked label text with the card and UTF-8 offsets intact", async () => {
     const preview = { uri: "https://labs.xbox.com/", title: "XBOX Labs", description: "Explore" };
     let writes = 0;
