@@ -244,3 +244,22 @@ describe("direct PDS article publishing", () => {
     expect(calls.latest).not.toHaveBeenCalled();
   });
 });
+
+
+it("retains native wrapper extensions while replacing the exact canonical reference", async () => {
+  const pub = publication("offprint"), calls = agent(pub);
+  const rkey = await articleDraftRecordKey("existing", "2026-10-01T12:00:00Z");
+  const uri = `at://${did}/site.standard.document/${rkey}`, wrapperUri = `at://${did}/app.offprint.document.article/${rkey}`;
+  const record = { $type: "site.standard.document", site: pub.uri, publishedAt: "2026-10-01T07:00:00-05:00", custom: "canonical" };
+  const wrapper = { $type: "app.offprint.document.article", custom: { keep: true }, document: { uri, cid: "old-cid", customReference: true } };
+  calls.get.mockImplementation(async params => params.collection === "site.standard.publication"
+    ? { data: { uri: pub.uri, cid: pub.cid, value: pub.record } }
+    : params.collection === "site.standard.document"
+      ? { data: { uri, cid: "old-cid", value: record } }
+      : { data: { uri: wrapperUri, cid: "wrapper-cid", value: wrapper } });
+  const result = await publishArticle(session, { ...input(), existing: { uri, cid: "old-cid", record, wrapperUri, wrapperCid: "wrapper-cid" } });
+  const writes = calls.apply.mock.calls[0][0].writes;
+  expect(writes[0].value).toMatchObject({ publishedAt: record.publishedAt, custom: "canonical" });
+  expect(writes[1].value).toMatchObject({ custom: { keep: true }, document: { $type: "com.atproto.repo.strongRef", uri, cid: result.cid, customReference: true } });
+  expect(calls.apply.mock.calls[0][0].swapCommit).toBe("snapshot-cid");
+});
