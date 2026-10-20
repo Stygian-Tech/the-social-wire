@@ -1,13 +1,18 @@
 // Package socialdraftcore stores private cross-device draft attachments outside PDS.
 package socialdraftcore
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
-	ErrUnavailable   = errors.New("private draft storage unavailable")
-	ErrInvalid       = errors.New("invalid private draft input")
-	ErrNotFound      = errors.New("private draft not found")
-	ErrConflict      = errors.New("private draft revision conflict")
+	ErrUnavailable = errors.New("private draft storage unavailable")
+	ErrInvalid     = errors.New("invalid private draft input")
+	ErrNotFound    = errors.New("private draft not found")
+	ErrConflict    = errors.New("private draft revision conflict")
+	// ErrAssetRetired identifies immutable deleted/purged IDs; test it before ErrConflict.
+	ErrAssetRetired  = fmt.Errorf("private draft asset retired: %w", ErrConflict)
 	ErrQuota         = errors.New("private draft quota exceeded")
 	ErrUploadPending = errors.New("private draft upload pending")
 )

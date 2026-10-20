@@ -128,7 +128,7 @@ func (s *Service) Reserve(ctx context.Context, owner string, in ReserveInput) (A
 		return zero, e
 	}
 	if exists {
-		return zero, ErrConflict
+		return zero, ErrAssetRetired
 	}
 	var used, count int64
 	if e = tx.QueryRowContext(ctx, `SELECT COALESCE(sum(byte_length),0),count(*) FROM private_social_draft_assets WHERE owner=$1 AND state<>'purged'`, owner).Scan(&used, &count); e != nil {
