@@ -15,10 +15,11 @@ App View remains managed by `railway/appview.json`.
 
 Configure App View's server-only `SOCIAL_DRAFTS_ENABLED=true` and
 `SOCIAL_DRAFT_STORAGE_KEY` (32 random bytes, standard base64), plus
-`SOCIAL_DRAFT_S3_ENDPOINT`, `BUCKET`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, and
-`REGION` using the dedicated bucket's Railway reference variables. Never reuse
-podcast credentials or storage keys. Disabled or incomplete configuration fails
-closed. No public bucket hostname, anonymous download, or signed public URL is used.
+`SOCIAL_DRAFT_S3_ENDPOINT`, `SOCIAL_DRAFT_S3_BUCKET`,
+`SOCIAL_DRAFT_S3_ACCESS_KEY_ID`, `SOCIAL_DRAFT_S3_SECRET_ACCESS_KEY`, and
+`SOCIAL_DRAFT_S3_REGION` using the dedicated bucket's Railway reference variables. Never reuse
+podcast credentials or storage keys. Disabled storage returns unavailable; incomplete enabled configuration rejects
+startup so a deployment cannot silently claim the feature is ready. No public bucket hostname, anonymous download, or signed public URL is used.
 
 The Database Migrator owns migration `20261020233000_private_social_draft_assets.sql`.
 Deploy Gateway and App View with their existing migrator readiness dependency,
