@@ -18,6 +18,8 @@ export function useSocialDraftList() {
   const mounted = useRef(true);
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const cache = useQueryClient();
+  // Confirmed deletes remain hidden while the private service indexes them.
+  const deleted = useRef(new Set<string>());
   const queryKey = ["socialDrafts", did, sequence] as const;
 
   function requireActor() {
@@ -38,7 +40,10 @@ export function useSocialDraftList() {
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const actor = requireActor();
-      try { return await listSocialDrafts({ ...actor, cursor: pageParam, signal }); }
+      try {
+        const page = await listSocialDrafts({ ...actor, cursor: pageParam, signal });
+        return { ...page, drafts: page.drafts.filter(draft => !deleted.current.has(draft.id)) };
+      }
       finally { actor.assertCurrentActor(); }
     },
     getNextPageParam: (page, _pages, _last, pageParams) => page.cursor && !pageParams.includes(page.cursor) ? page.cursor : undefined,
@@ -53,6 +58,7 @@ export function useSocialDraftList() {
       const actor = requireActor();
       try { await deleteSocialDraft({ ...actor, id }); }
       finally { actor.assertCurrentActor(); }
+      deleted.current.add(id);
       // Remove only after a confirmed delete; leave the row intact on any failure.
       cache.setQueryData<InfiniteData<DraftPage>>(queryKey, data => data && ({ ...data, pages: data.pages.map(page => ({ ...page, drafts: page.drafts.filter(draft => draft.id !== id) })) }));
       void cache.invalidateQueries({ queryKey: ["socialDrafts", did] });
@@ -61,6 +67,7 @@ export function useSocialDraftList() {
   const byId = new Map<string, AppBskyDraftDefs.DraftView>();
   for (const page of list.data?.pages ?? []) {
     for (const draft of page.drafts) {
+      if (deleted.current.has(draft.id)) continue;
       const previous = byId.get(draft.id);
       if (!previous || Date.parse(draft.updatedAt) > Date.parse(previous.updatedAt)) byId.set(draft.id, draft);
     }

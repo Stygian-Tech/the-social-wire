@@ -87,6 +87,17 @@ it("requires confirmation, supports Cancel, and preserves the row and retry afte
   expect(remove.mock.calls[1][0]).toMatchObject({ viewerDid: a.did, id: "one" });
 });
 
+it("keeps a confirmed deletion hidden when the service returns its stale indexed row", async () => {
+  render(view());
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Draft" }));
+  const dialog = await screen.findByRole("dialog", { name: "Delete Draft?" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete Draft" }));
+  await screen.findByText("No Drafts Yet");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(client.listSocialDrafts).toHaveBeenCalledTimes(3));
+  expect(screen.queryByRole("button", { name: /Open Draft: Private draft/ })).toBeNull();
+});
+
 it("disables dismissal and duplicate deletion while pending", async () => {
   let finish!: () => void;
   spyOn(client, "deleteSocialDraft").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
