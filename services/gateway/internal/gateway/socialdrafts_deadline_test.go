@@ -3,6 +3,8 @@ package gateway
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -20,6 +22,7 @@ type stalledDraftWriter struct {
 	*httptest.ResponseRecorder
 	mu                    sync.Mutex
 	readAt, writeAt       []time.Time
+	attempted             int
 	expired, entered      chan struct{}
 	expireOnce, enterOnce sync.Once
 }
@@ -42,7 +45,10 @@ func (w *stalledDraftWriter) set(at time.Time, read bool) error {
 }
 func (w *stalledDraftWriter) SetWriteDeadline(at time.Time) error { return w.set(at, false) }
 func (w *stalledDraftWriter) SetReadDeadline(at time.Time) error  { return w.set(at, true) }
-func (w *stalledDraftWriter) Write([]byte) (int, error) {
+func (w *stalledDraftWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	w.attempted = len(b)
+	w.mu.Unlock()
 	w.enterOnce.Do(func() { close(w.entered) })
 	<-w.expired
 	return 0, os.ErrDeadlineExceeded
@@ -221,6 +227,9 @@ func TestSocialDraftStalledJSONSocketCannotBlockHandlerCleanup(t *testing.T) {
 	// post-handler drain must both retain the socket deadline.
 	io.WriteString(conn, "POST "+draftPrefix+"putManifest HTTP/1.1\r\nHost: gateway.invalid\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n")
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return
+	}
 	if err != nil {
 		t.Fatal("stalled JSON socket retained handler", err)
 	}
@@ -240,5 +249,59 @@ func TestSocialDraftUnavailableUpstreamStillBoundsJSONBody(t *testing.T) {
 	p.Handler(draftRoute("putManifest")).ServeHTTP(rw, draftRequest("putManifest", strings.NewReader("{}")))
 	if w.Code != 503 || len(w.readAt) != 1 || time.Until(w.readAt[0]) > time.Minute {
 		t.Fatal("unconfigured private route omitted read deadline", w.Code, w.readAt)
+	}
+}
+
+func TestSocialDraftLargeManifestResponsesHaveWriteDeadlineAndCancellation(t *testing.T) {
+	attachments := make([]map[string]string, 800)
+	for i := range attachments {
+		attachments[i] = map[string]string{"assetId": "a", "role": "original", "ref": strings.Repeat("r", 256)}
+	}
+	payload, _ := json.Marshal(map[string]any{"draftId": "d", "revision": 1, "deleted": false, "attachments": attachments})
+	for _, tc := range []struct{ method, name string }{{"POST", "putManifest"}, {"GET", "getManifest"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			body := &closeTrackedDraftBody{Reader: strings.NewReader(string(payload)), closed: make(chan struct{})}
+			var upstream context.Context
+			p := Proxy{Config: Config{AppViewURL: "https://appview.invalid"}, Internal: &http.Client{Transport: contractTransport(func(r *http.Request) (*http.Response, error) {
+				upstream = r.Context()
+				deadline, ok := upstream.Deadline()
+				if !ok || time.Until(deadline) > time.Minute || time.Until(deadline) < time.Minute-time.Second {
+					t.Error("manifest context not bounded to sixty seconds")
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: body}, nil
+			})}}
+			r := httptest.NewRequest(tc.method, draftPrefix+tc.name, strings.NewReader(`{"draftId":"d","expectedRevision":0,"attachments":[]}`))
+			r = r.WithContext(gatewaycore.ContextWithAuth(ctx, gatewaycore.AuthContext{DID: "did:plc:owner"}))
+			w := newStalledDraftWriter()
+			defer w.expire()
+			done := make(chan struct{})
+			go func() { defer close(done); p.Handler(draftRoute(tc.name)).ServeHTTP(w, r) }()
+			awaitDraftSignal(t, w.entered)
+			w.mu.Lock()
+			remaining := time.Until(w.writeAt[0])
+			w.mu.Unlock()
+			if remaining > time.Minute || remaining < time.Minute-time.Second {
+				t.Fatal("manifest write deadline not sixty seconds", remaining)
+			}
+			cancel()
+			awaitDraftSignal(t, done)
+			awaitDraftSignal(t, body.closed)
+			if upstream.Err() != context.Canceled {
+				t.Fatal("upstream manifest context not canceled")
+			}
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			if w.attempted < 64<<10 || len(w.writeAt) < 2 || w.writeAt[len(w.writeAt)-1].After(time.Now()) {
+				t.Fatal("large manifest output not interrupted", w.attempted, w.writeAt)
+			}
+			if tc.method == "POST" && (len(w.readAt) < 2 || w.readAt[len(w.readAt)-1].After(time.Now())) {
+				t.Fatal("POST cancellation did not expire read deadline", w.readAt)
+			}
+			if tc.method == "GET" && len(w.readAt) != 0 {
+				t.Fatal("GET unexpectedly installed a read deadline")
+			}
+		})
 	}
 }

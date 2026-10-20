@@ -3,6 +3,7 @@ package socialdrafts
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ type deadlineWriter struct {
 	*httptest.ResponseRecorder
 	mu                    sync.Mutex
 	reads, writes         []time.Time
+	attempted             int
 	expired, entered      chan struct{}
 	expireOnce, enterOnce sync.Once
 	blockWrite            bool
@@ -47,6 +49,9 @@ func (w *deadlineWriter) SetReadDeadline(at time.Time) error  { return w.set(at,
 func (w *deadlineWriter) SetWriteDeadline(at time.Time) error { return w.set(at, false) }
 func (w *deadlineWriter) Write(b []byte) (int, error) {
 	if w.blockWrite {
+		w.mu.Lock()
+		w.attempted = len(b)
+		w.mu.Unlock()
 		w.enterOnce.Do(func() { close(w.entered) })
 		<-w.expired
 		return 0, os.ErrDeadlineExceeded
@@ -76,6 +81,7 @@ type observedTransferService struct {
 	upload   func(context.Context, io.Reader) (socialdraftcore.Asset, error)
 	download func(context.Context) (io.ReadCloser, socialdraftcore.Asset, error)
 	reserve  func(context.Context) (socialdraftcore.Asset, error)
+	manifest func(context.Context) (socialdraftcore.Manifest, error)
 }
 
 func (s *observedTransferService) Upload(ctx context.Context, _ string, _ string, body io.Reader, _ int64) (socialdraftcore.Asset, error) {
@@ -89,6 +95,19 @@ func (s *observedTransferService) Reserve(ctx context.Context, owner string, in 
 		return s.reserve(ctx)
 	}
 	return s.fakeService.Reserve(ctx, owner, in)
+}
+
+func (s *observedTransferService) Manifest(ctx context.Context, owner, id string) (socialdraftcore.Manifest, error) {
+	if s.manifest != nil {
+		return s.manifest(ctx)
+	}
+	return s.fakeService.Manifest(ctx, owner, id)
+}
+func (s *observedTransferService) PutManifest(ctx context.Context, owner string, in socialdraftcore.PutManifestInput) (socialdraftcore.Manifest, error) {
+	if s.manifest != nil {
+		return s.manifest(ctx)
+	}
+	return s.fakeService.PutManifest(ctx, owner, in)
 }
 
 type observedReadCloser struct {
@@ -311,6 +330,9 @@ func TestDirectAppViewStalledJSONSocketCannotBlockCleanup(t *testing.T) {
 	conn.SetDeadline(time.Now().Add(2 * time.Second))
 	io.WriteString(conn, "POST "+prefix+"putManifest HTTP/1.1\r\nHost: appview.invalid\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n")
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return
+	}
 	if err != nil {
 		t.Fatal("direct AppView retained stalled JSON socket", err)
 	}
@@ -330,5 +352,55 @@ func TestDisabledPrivateStorageStillBoundsMutationReads(t *testing.T) {
 	mux.ServeHTTP(w, request("POST", "putManifest", "{}", "did:plc:owner"))
 	if w.Code != 503 || len(w.reads) != 1 || time.Until(w.reads[0]) > time.Minute {
 		t.Fatal("disabled private storage omitted read deadline", w.Code, w.reads)
+	}
+}
+
+func TestDirectAppViewLargeManifestResponsesAreBounded(t *testing.T) {
+	attachments := make([]socialdraftcore.AssetBinding, 800)
+	for i := range attachments {
+		attachments[i] = socialdraftcore.AssetBinding{AssetID: "a", Role: "original", Ref: "segment", Asset: socialdraftcore.Asset{AssetID: "a", Name: strings.Repeat("n", 256), ContentType: "image/jpeg", ByteLength: 1, Kind: "photo", State: "ready"}}
+	}
+	for _, tc := range []struct{ method, name, body string }{{"POST", "putManifest", `{"draftId":"d","expectedRevision":0,"attachments":[]}`}, {"GET", "getManifest?draftId=d", ""}} {
+		t.Run(tc.method, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var operation context.Context
+			s := &observedTransferService{fakeService: &fakeService{}, manifest: func(ctx context.Context) (socialdraftcore.Manifest, error) {
+				operation = ctx
+				checkBudget(t, ctx, time.Minute)
+				return socialdraftcore.Manifest{DraftID: "d", Revision: 1, Attachments: attachments}, nil
+			}}
+			mux := http.NewServeMux()
+			Routes{Service: s}.Register(mux)
+			r := request(tc.method, tc.name, tc.body, "did:plc:owner")
+			r = r.WithContext(gatewaycore.ContextWithAuth(ctx, gatewaycore.AuthContext{DID: "did:plc:owner"}))
+			w := newDeadlineWriter()
+			w.blockWrite = true
+			defer w.expire()
+			done := serveAsync(t, mux, w, r, false)
+			awaitIO(t, w.entered)
+			w.mu.Lock()
+			remaining := time.Until(w.writes[0])
+			w.mu.Unlock()
+			if remaining > time.Minute || remaining < time.Minute-time.Second {
+				t.Fatal("manifest write deadline not sixty seconds", remaining)
+			}
+			cancel()
+			awaitIO(t, done)
+			if operation.Err() != context.Canceled {
+				t.Fatal("manifest service context not canceled")
+			}
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			if w.attempted < 64<<10 || len(w.writes) < 2 || w.writes[len(w.writes)-1].After(time.Now()) {
+				t.Fatal("large manifest output not interrupted", w.attempted, w.writes)
+			}
+			if tc.method == "POST" && (len(w.reads) < 2 || w.reads[len(w.reads)-1].After(time.Now())) {
+				t.Fatal("POST cancellation did not expire read deadline", w.reads)
+			}
+			if tc.method == "GET" && len(w.reads) != 0 {
+				t.Fatal("GET unexpectedly installed a read deadline")
+			}
+		})
 	}
 }

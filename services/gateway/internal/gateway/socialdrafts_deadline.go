@@ -11,14 +11,16 @@ import (
 // upstream readers and transfer admission are released promptly on disconnect.
 func boundSocialDraftIO(ctx context.Context, w http.ResponseWriter, readBody bool) func() {
 	controller := http.NewResponseController(w)
-	setDeadline := controller.SetWriteDeadline
-	if readBody {
-		setDeadline = controller.SetReadDeadline
+	setDeadline := func(at time.Time) {
+		_ = controller.SetWriteDeadline(at)
+		if readBody {
+			_ = controller.SetReadDeadline(at)
+		}
 	}
 	deadline, _ := ctx.Deadline()
-	_ = setDeadline(deadline)
+	setDeadline(deadline)
 	done := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() { defer close(done); _ = setDeadline(time.Now()) })
+	stop := context.AfterFunc(ctx, func() { defer close(done); setDeadline(time.Now()) })
 	return func() {
 		if !stop() {
 			<-done
