@@ -158,3 +158,10 @@ it("does not resurrect deliberately removed local photos or GIFs", () => {
   expect(restoredGif[0].media?.kind).toBe("gif");
   expect(segmentsToSocialDraft([{ ...restoredGif[0], media: undefined }], device).posts[0].embedExternals).toBeUndefined();
 });
+it("keeps an explicitly removed imported external attachment out of the next native save", () => {
+  const original = { deviceId: device, posts: [{ text: "Read this", embedExternals: [{ uri: "https://example.com/article", future: "preserved unless removed" }] }] };
+  const segments = socialDraftToSegments(original);
+  expect(segments[0].linkPreview?.uri).toBe("https://example.com/article");
+  segments[0].removedLinkUrl = "https://example.com/article";
+  expect(segmentsToSocialDraft(segments, device, original).posts[0].embedExternals).toBeUndefined();
+});
