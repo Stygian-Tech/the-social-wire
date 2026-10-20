@@ -867,6 +867,48 @@
       "method": "GET",
       "path": "/v1/media/gifs/thumbnail",
       "classification": "media-proxy"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.socialDraft.reserveAttachment",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.socialDraft.reserveAttachment"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.socialDraft.uploadAttachment",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.socialDraft.uploadAttachment"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.socialDraft.getAttachment",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.socialDraft.getAttachment"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.socialDraft.getManifest",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.socialDraft.getManifest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.socialDraft.putManifest",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.socialDraft.putManifest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.socialDraft.deleteManifest",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.socialDraft.deleteManifest"
     }
   ]
 }

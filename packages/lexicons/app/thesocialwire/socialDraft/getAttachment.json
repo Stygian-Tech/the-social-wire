@@ -1,0 +1,50 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.socialDraft.getAttachment",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Owner-only private draft storage. Authentication required; disabled storage returns Unavailable. Never publishes attachments or exposes public URLs. Returns raw original Content-Type bytes with Cache-Control: private, no-store.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "assetId"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 36,
+            "description": "Canonical lowercase UUID."
+          }
+        }
+      },
+      "output": {
+        "encoding": "*/*"
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "Quota"
+        },
+        {
+          "name": "UploadPending"
+        },
+        {
+          "name": "Unavailable"
+        },
+        {
+          "name": "Unauthorized"
+        }
+      ]
+    }
+  }
+}
