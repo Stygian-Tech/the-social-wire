@@ -60,6 +60,22 @@ func serveHost(h *Host, method, path, did string) *httptest.ResponseRecorder {
 	h.Handler.ServeHTTP(w, r)
 	return w
 }
+
+func TestEnabledDraftStorageRejectsIncompleteConfiguration(t *testing.T) {
+	dsn := os.Getenv("SOCIALWIRE_GO_APPVIEW_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("canonical PostgreSQL not configured")
+	}
+	_, err := NewHost(context.Background(), map[string]string{
+		"APP_ENV": "dev", "DATABASE_URL": dsn, "SOCIAL_DRAFTS_ENABLED": "true",
+		"ENABLE_THIN_APPVIEW": "true",
+		"GATEWAY_APPVIEW_INTERNAL_SECRET": strings.Repeat("i", 32), "OPERATIONS_TELEMETRY_ENABLED": "false",
+	})
+	if err == nil || !strings.Contains(err.Error(), "private draft storage is enabled") {
+		t.Fatalf("incomplete enabled draft storage must fail startup: %v", err)
+	}
+}
+
 func TestAppViewHostAuthAndServingMatrix(t *testing.T) {
 	h := hostFixture(t, false, map[string]string{"WIRE_FEED_MODE": "visible", "FINANCE_FEED_MODE": "api", "SPORTS_FEED_MODE": "api", "CIRCLE_FEED_MODE": "visible", "WIRE_CURSOR_HMAC_SECRET": strings.Repeat("w", 32), "FINANCE_CURSOR_HMAC_SECRET": strings.Repeat("f", 32), "SPORTS_CURSOR_HMAC_SECRET": strings.Repeat("s", 32), "WIRE_ACTOR_HMAC_SECRET": strings.Repeat("a", 32), "CIRCLE_CURSOR_HMAC_SECRET": strings.Repeat("c", 32)})
 	for _, route := range []string{"GET /v1/appview/feed", "GET /v1/appview/entries", "GET /v1/appview/entry", "GET /v1/appview/unread-counts", "GET /v1/appview/bootstrap-stream", "GET /v1/publications/sidebar", "POST /v1/publications/refresh", "POST /v1/publications/resolve", "POST /v1/appview/enroll", "GET /v1/lists", "GET /v1/lists/search", "POST /v1/lists/resolve", "POST /v1/lists/refresh", "POST /v1/appview/read-marks", "DELETE /v1/appview/read-marks", "DELETE /v1/appview/privacy/purge", "POST /v1/appview/mark-all-read", "GET /xrpc/app.thesocialwire.appview.getReadAgeOptions", "POST /xrpc/app.thesocialwire.appview.markReadBefore", "GET /xrpc/app.thesocialwire.appview.getReadStateStatus", "POST /xrpc/app.thesocialwire.appview.prepareReadState", "POST /xrpc/app.thesocialwire.appview.exportReadState", "POST /xrpc/app.thesocialwire.appview.confirmReadState", "GET /xrpc/app.thesocialwire.discovery.getWire", "GET /xrpc/app.thesocialwire.discovery.getWireEdition", "GET /xrpc/app.thesocialwire.discovery.getWireItem", "GET /xrpc/app.thesocialwire.discovery.getFeedCatalog", "GET /xrpc/app.thesocialwire.discovery.getFinance", "GET /xrpc/app.thesocialwire.discovery.getFinanceCatalog", "GET /xrpc/app.thesocialwire.discovery.getFinanceSectors", "GET /xrpc/app.thesocialwire.discovery.searchFinanceInstruments", "POST /xrpc/app.thesocialwire.discovery.recordFinanceComposition", "GET /xrpc/app.thesocialwire.discovery.getSports", "GET /xrpc/app.thesocialwire.discovery.getSportsCatalog", "GET /xrpc/app.thesocialwire.discovery.getSportsEvents", "GET /xrpc/app.thesocialwire.discovery.searchSportsEntities", "GET /xrpc/app.thesocialwire.discovery.getCircleEdition", "GET /xrpc/app.thesocialwire.discovery.getCircleCatalog", "POST /xrpc/app.thesocialwire.discovery.setCircleItemHidden"} {

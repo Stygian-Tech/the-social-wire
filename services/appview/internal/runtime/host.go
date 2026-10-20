@@ -166,25 +166,26 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 	var draftService socialdrafts.Service
 	if draftConfig.Enabled {
 		service, e := socialdraftcore.New(db, draftConfig)
-		if e == nil {
-			draftService = service
-			h.wg.Add(1)
-			go func() {
-				defer h.wg.Done()
-				ticker := time.NewTicker(15 * time.Minute)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-process.Done():
-						return
-					case <-ticker.C:
-						cleanup, stop := context.WithTimeout(process, 30*time.Second)
-						_, _ = service.Cleanup(cleanup, 100)
-						stop()
-					}
-				}
-			}()
+		if e != nil {
+			return h, errors.New("private draft storage is enabled but its configuration is unavailable")
 		}
+		draftService = service
+		h.wg.Add(1)
+		go func() {
+			defer h.wg.Done()
+			ticker := time.NewTicker(15 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-process.Done():
+					return
+				case <-ticker.C:
+					cleanup, stop := context.WithTimeout(process, 30*time.Second)
+					_, _ = service.Cleanup(cleanup, 100)
+					stop()
+				}
+			}
+		}()
 	}
 	socialdrafts.Routes{Service: draftService}.Register(protectedMux)
 
