@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { POST } from "@/app/xrpc/tech.stygian.anypub.prepare/route";
 import { createPreparationProxy } from "@/lib/anypub/preparationProxy";
 function request(body = '{"operation":"document","input":{"title":"Private Draft"}}') {
   return new Request("https://thesocialwire.app/xrpc/tech.stygian.anypub.prepare", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer browser-token", DPoP: "browser-proof", Cookie: "session=private" }, body });
@@ -33,4 +34,11 @@ test("rejects invalid media types, oversized input, and invalid upstream respons
   expect(await failure.text()).not.toContain("private server details");
   const notJSON = createPreparationProxy({ upstream: "https://anypub.example", fetcher: (async () => new Response("html")) as unknown as typeof fetch });
   expect((await notJSON(request())).status).toBe(502);
+});
+
+test("the XRPC route reads only server configuration and reports a missing service", async () => {
+  const previous = process.env.ANYPUB_API_URL;
+  delete process.env.ANYPUB_API_URL;
+  try { expect((await POST(request())).status).toBe(503); }
+  finally { if (previous === undefined) delete process.env.ANYPUB_API_URL; else process.env.ANYPUB_API_URL = previous; }
 });
