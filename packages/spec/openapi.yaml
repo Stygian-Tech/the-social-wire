@@ -147,7 +147,7 @@ components:
           type: "array"
           items:
             "$ref": "#/components/schemas/SocialDraftAssetBinding"
-          maxItems: 100
+          maxItems: 800
       additionalProperties: false
     SocialDraftReserveInput:
       type: "object"
@@ -196,7 +196,7 @@ components:
           type: "array"
           items:
             "$ref": "#/components/schemas/SocialDraftManifestRef"
-          maxItems: 100
+          maxItems: 800
       additionalProperties: false
     SocialDraftDeleteManifestInput:
       type: "object"

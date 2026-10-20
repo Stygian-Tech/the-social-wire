@@ -17,6 +17,8 @@ var (
 	ErrUploadPending = errors.New("private draft upload pending")
 )
 
+const MaxManifestRefs = 800
+
 const MaxFileBytes int64 = 100 << 20
 const MaxAccountBytes int64 = 1 << 30
 
