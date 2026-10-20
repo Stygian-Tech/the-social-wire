@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { isAtprotoOauthScope, ScopePermissions } from "@atproto/oauth-scopes";
 import {
   AT_PROTO_OAUTH_SCOPES,
+  BLUESKY_DRAFT_RPC_SCOPES,
   BLUESKY_PODCAST_VIDEO_SCOPES,
   ARTICLE_PUBLISHING_SCOPES,
   BLUESKY_SOCIAL_REPO_SCOPES,
@@ -24,6 +25,18 @@ import {
 import { STANDARD_READER_LIST_SAVE_SCOPE, STANDARD_READER_LIST_WRITE_SCOPE } from "@/lib/standardReaderList";
 
 describe("atprotoOAuthScopes", () => {
+  it("grants exactly four private draft RPCs at the AppView audience", () => {
+    const expected = ["createDraft", "getDrafts", "updateDraft", "deleteDraft"].map(method => `rpc:app.bsky.draft.${method}?aud=did:web:api.bsky.app%23bsky_appview`);
+    expect([...BLUESKY_DRAFT_RPC_SCOPES] as string[]).toEqual(expected);
+    const scopes = AT_PROTO_OAUTH_SCOPES.split(" ");
+    expect(scopes.filter(scope => scope.includes("app.bsky.draft"))).toEqual(expected);
+    const permissions = new ScopePermissions(scopes.filter(isAtprotoOauthScope));
+    for (const method of ["createDraft", "getDrafts", "updateDraft", "deleteDraft"]) {
+      expect(permissions.allowsRpc({ aud: "did:web:api.bsky.app#bsky_appview", lxm: `app.bsky.draft.${method}` })).toBe(true);
+      expect(permissions.allowsRpc({ aud: "did:web:other.example#bsky_appview", lxm: `app.bsky.draft.${method}` })).toBe(false);
+    }
+    expect(scopes.some(scope => scope.startsWith("repo:app.bsky.draft"))).toBe(false);
+  });
   it("retains video permissions through provider validation and authorizes only the quota method", () => {
     const granted = AT_PROTO_OAUTH_SCOPES.split(" ").filter(isAtprotoOauthScope);
     for (const scope of BLUESKY_PODCAST_VIDEO_SCOPES) expect(granted).toContain(scope);
