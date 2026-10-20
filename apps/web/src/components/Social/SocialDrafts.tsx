@@ -18,7 +18,7 @@ export function SocialDrafts() {
 }
 
 function SocialDraftsViewer() {
-  const { did, list, drafts, deletion, onDraftChanged } = useSocialDraftList();
+  const { did, list, drafts, deletion, recovery, pendingDeletionIds, onDraftChanged } = useSocialDraftList();
   const [editor, setEditor] = useState<{ draft?: AppBskyDraftDefs.DraftView } | null>(null);
   const [deleting, setDeleting] = useState<AppBskyDraftDefs.DraftView | null>(null);
   const scopeError = (error: unknown) => isMissingOAuthScope(error) || (error instanceof Error && error.message === SCOPE_RECOVERY_MESSAGE);
@@ -30,9 +30,10 @@ function SocialDraftsViewer() {
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><section className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4" aria-label="Saved Drafts">
       {!did ? <p>Log in to view your private drafts.</p> : <>
         {list.isPending ? <p role="status">Loading drafts…</p> : null}
+        {recovery.error ? <div role="alert"><p>Pending draft deletions could not be restored.</p><Button variant="outline" onClick={() => { void recovery.refetch(); }}>Retry Recovery</Button></div> : null}
         {list.error ? <div role="alert"><p>{scopeError(list.error) ? SCOPE_RECOVERY_MESSAGE : "Drafts could not be loaded. Please retry."}</p>{scopeError(list.error) ? <SocialPermissionRecovery /> : <Button variant="outline" onClick={() => { void (list.isFetchNextPageError ? list.fetchNextPage() : list.refetch()); }}>Retry</Button>}</div> : null}
         {!list.isPending && !list.error && !drafts.length ? <div className="space-y-2 py-12 text-center"><h2 className="font-semibold">No Drafts Yet</h2><p className="text-sm text-muted-foreground">Your posts are autosaved as drafts while you write.</p><Button onClick={() => setEditor({})}>New Post</Button></div> : null}
-        {drafts.map(draft => <SocialDraftRow key={draft.id} draft={draft} disabled={deletion.isPending} onOpen={() => setEditor({ draft })} onDelete={() => { deletion.reset(); setDeleting(draft); }} />)}
+        {drafts.map(draft => <SocialDraftRow key={draft.id} draft={draft} disabled={deletion.isPending} deletionPending={pendingDeletionIds.has(draft.id)} onOpen={() => setEditor({ draft })} onDelete={() => { deletion.reset(); setDeleting(draft); }} />)}
         {list.hasNextPage ? <Button variant="outline" disabled={list.isFetching} onClick={() => { void list.fetchNextPage(); }}>{list.isFetchingNextPage ? "Loading More…" : "Load More"}</Button> : null}
       </>}
     </section></div>

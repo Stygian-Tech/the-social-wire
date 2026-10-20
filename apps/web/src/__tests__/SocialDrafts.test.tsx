@@ -10,6 +10,8 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { SocialDrafts } from "@/components/Social/SocialDrafts";
 import DraftsPage from "@/app/social/drafts/page";
 import { shouldPersistSocialQuery } from "@/lib/socialQueryPersist";
+import * as attachments from "@/lib/socialDraftAttachmentClient";
+import * as deletionStorage from "@/lib/socialDraftDeletionStorage";
 
 const a = { did: "did:plc:alice" } as unknown as OAuthSession;
 const b = { did: "did:plc:bob" } as unknown as OAuthSession;
@@ -32,6 +34,12 @@ beforeEach(() => {
   const listSpy = spyOn(client, "listSocialDrafts").mockResolvedValue({ drafts: [draft()] });
   const deleteSpy = spyOn(client, "deleteSocialDraft").mockResolvedValue(undefined);
   restores.push(() => authSpy.mockRestore(), () => composeSpy.mockRestore(), () => listSpy.mockRestore(), () => deleteSpy.mockRestore());
+  let pending: deletionStorage.PendingDraftDeletion[] = [];
+  const pendingSpy = spyOn(deletionStorage, "pendingDraftDeletions").mockImplementation(async ownerDid => pending.filter(item => item.ownerDid === ownerDid));
+  const saveSpy = spyOn(deletionStorage, "saveDraftDeletion").mockImplementation(async (ownerDid, draft, completed) => { pending = pending.filter(item => item.ownerDid !== ownerDid || item.draft.id !== draft.id); if (!completed) pending.push({ ownerDid, draft }); });
+  const manifestSpy = spyOn(attachments, "getDraftAttachmentManifest").mockImplementation(async (_actor, draftId) => ({ draftId, revision: 0, deleted: false, attachments: [] }));
+  const cleanupSpy = spyOn(attachments, "deleteDraftAttachmentManifest").mockImplementation(async (_actor, draftId) => ({ draftId, revision: 2, deleted: true, attachments: [] }));
+  restores.push(() => pendingSpy.mockRestore(), () => saveSpy.mockRestore(), () => manifestSpy.mockRestore(), () => cleanupSpy.mockRestore());
   for (const [name, value] of Object.entries({ matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
     const target = name === "matchMedia" ? window : globalThis;
     const previous = Object.getOwnPropertyDescriptor(target, name);
@@ -97,6 +105,26 @@ it("keeps a confirmed deletion hidden when the service returns its stale indexed
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(client.listSocialDrafts).toHaveBeenCalledTimes(3));
   expect(screen.queryByRole("button", { name: /Open Draft: Private draft/ })).toBeNull();
+});
+
+it("restores failed private-file deletion after remount even when the native draft is gone", async () => {
+  spyOn(attachments, "getDraftAttachmentManifest").mockResolvedValue({ draftId: "one", revision: 1, deleted: false, attachments: [] });
+  const removeFiles = spyOn(attachments, "deleteDraftAttachmentManifest").mockRejectedValueOnce(new Error("storage unavailable")).mockResolvedValue({ draftId: "one", revision: 2, deleted: true, attachments: [] });
+  const first = render(view());
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Draft" }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "Delete Draft?" })).getByRole("button", { name: "Delete Draft" }));
+  await screen.findByText("The draft could not be deleted. Please retry.");
+  expect((document.querySelector('button[aria-label="Open Draft: Private draft"]') as HTMLButtonElement).disabled).toBe(true);
+  expect(deletionStorage.saveDraftDeletion).toHaveBeenCalledWith(a.did, expect.objectContaining({ id: "one" }));
+  first.unmount();
+  cache.clear();
+  spyOn(client, "listSocialDrafts").mockResolvedValue({ drafts: [] });
+  render(view());
+  fireEvent.click(await screen.findByRole("button", { name: "Retry Delete" }));
+  fireEvent.click(within(await screen.findByRole("dialog", { name: "Delete Draft?" })).getByRole("button", { name: "Delete Draft" }));
+  await screen.findByText("No Drafts Yet");
+  expect(removeFiles).toHaveBeenCalledTimes(2);
+  expect(deletionStorage.saveDraftDeletion).toHaveBeenLastCalledWith(a.did, expect.objectContaining({ id: "one" }), true);
 });
 
 it("disables dismissal and duplicate deletion while pending", async () => {
