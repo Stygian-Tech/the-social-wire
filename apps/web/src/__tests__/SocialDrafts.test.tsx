@@ -8,6 +8,7 @@ import * as client from "@/lib/blueskyDraftClient";
 import * as composer from "@/components/Social/SocialComposeButton";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { SocialDrafts } from "@/components/Social/SocialDrafts";
+import DraftsPage from "@/app/social/drafts/page";
 import { shouldPersistSocialQuery } from "@/lib/socialQueryPersist";
 
 const a = { did: "did:plc:alice" } as unknown as OAuthSession;
@@ -195,4 +196,13 @@ it("shows loading, a persistent generic error, then recovers through Retry to an
   expect(screen.getByText("Your posts are autosaved as drafts while you write.")).toBeTruthy();
   fireEvent.click(screen.getAllByRole("button", { name: "New Post" })[1]);
   expect(opened).toMatchObject({ autoOpen: true, hideTrigger: true });
+});
+
+
+it("hands the Drafts route through to the private list and shared composer", async () => {
+  render(<QueryClientProvider client={cache}><SidebarProvider><DraftsPage /></SidebarProvider></QueryClientProvider>);
+  expect(screen.getByRole("heading", { name: "Drafts" })).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "Open Draft: Private draft" }));
+  expect(screen.getByRole("dialog", { name: "Shared Composer" })).toBeTruthy();
+  expect(opened).toMatchObject({ initialDraft: { id: "one" }, autoOpen: true, hideTrigger: true });
 });
