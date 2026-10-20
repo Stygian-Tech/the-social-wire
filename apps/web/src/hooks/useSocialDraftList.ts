@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { AppBskyDraftDefs } from "@atproto/api";
 import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +20,7 @@ export function useSocialDraftList() {
   const cache = useQueryClient();
   // Confirmed deletes remain hidden while the private service indexes them.
   const deleted = useRef(new Set<string>());
+  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(new Set());
   const queryKey = ["socialDrafts", did, sequence] as const;
 
   function requireActor() {
@@ -59,6 +60,7 @@ export function useSocialDraftList() {
       try { await deleteSocialDraft({ ...actor, id }); }
       finally { actor.assertCurrentActor(); }
       deleted.current.add(id);
+      setDeletedIds(new Set(deleted.current));
       // Remove only after a confirmed delete; leave the row intact on any failure.
       cache.setQueryData<InfiniteData<DraftPage>>(queryKey, data => data && ({ ...data, pages: data.pages.map(page => ({ ...page, drafts: page.drafts.filter(draft => draft.id !== id) })) }));
       void cache.invalidateQueries({ queryKey: ["socialDrafts", did] });
@@ -67,7 +69,7 @@ export function useSocialDraftList() {
   const byId = new Map<string, AppBskyDraftDefs.DraftView>();
   for (const page of list.data?.pages ?? []) {
     for (const draft of page.drafts) {
-      if (deleted.current.has(draft.id)) continue;
+      if (deletedIds.has(draft.id)) continue;
       const previous = byId.get(draft.id);
       if (!previous || Date.parse(draft.updatedAt) > Date.parse(previous.updatedAt)) byId.set(draft.id, draft);
     }
