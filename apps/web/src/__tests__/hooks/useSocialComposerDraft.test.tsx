@@ -19,11 +19,11 @@ const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localS
 const originalLocks = Object.getOwnPropertyDescriptor(navigator, "locks");
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 function view(id: string, draft: AppBskyDraftDefs.Draft): AppBskyDraftDefs.DraftView { return { id, draft: structuredClone(draft), createdAt: "2026-10-20T00:00:00Z", updatedAt: "2026-10-20T00:00:00Z" }; }
-function harness(initialDraft?: AppBskyDraftDefs.DraftView) {
+function harness(initialDraft?: AppBskyDraftDefs.DraftView, onChanged?: () => void) {
   return renderHook(({ enabled, actor = session }) => {
     const [segments, setSegments] = useState<ThreadSegment[]>([{ id: "initial", text: "" }]);
     const publicationRef = useRef<ThreadPublication | undefined>(undefined);
-    const draft = useSocialComposerDraft({ ownerDid: did, session: actor, enabled, initialDraft, segments, publicationRef, restore: setSegments });
+    const draft = useSocialComposerDraft({ ownerDid: did, session: actor, enabled, initialDraft, segments, publicationRef, restore: setSegments, onChanged });
     return { ...draft, segments, setSegments, publicationRef };
   }, { initialProps: { enabled: true, actor: session } });
 }
@@ -389,4 +389,130 @@ it("reconciles a pending acknowledged update after reload without treating its r
   expect(hook.result.current.hasConflict).toBe(false);
   await act(async () => hook.result.current.retry());
   expect(hook.result.current.status).toBe("Draft Saved"); expect(update).toHaveBeenCalledTimes(1);
+});
+
+it("preserves a local draft and exposes permission recovery from structured scope errors", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "private", text: "Retain across renewed authorization" }]));
+  const create = spyOn(Transport, "createSocialDraft").mockRejectedValue(Object.assign(new Error("Not allowed"), { error: "insufficient_scope" })); restores.push(() => create.mockRestore());
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Not allowed"); });
+  expect(hook.result.current.syncError).toBe("Please log in again to update your account permissions, then retry this action.");
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Retain across renewed authorization");
+  expect(Transport.deleteSocialDraft).not.toHaveBeenCalled();
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.createIntent).toBeUndefined();
+  create.mockResolvedValue({ id: "authorized" });
+  await act(async () => hook.result.current.retry());
+  expect(hook.result.current.cloudId).toBe("authorized");
+  expect(create).toHaveBeenCalledTimes(2);
+});
+it.each([
+  { error: "insufficient_scope" },
+  { status: 401 },
+  { statusCode: 403 },
+  { response: { status: 403 } },
+])("clears a definitively rejected update so renewed authorization can retry: %j", async failure => {
+  const initial = view("existing", { posts: [{ text: "Original" }] }); remote = [initial];
+  const update = spyOn(Transport, "updateSocialDraft").mockRejectedValue(Object.assign(new Error("Rejected update"), failure)); restores.push(() => update.mockRestore());
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(previous => [{ ...previous[0], text: "Keep this local edit" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Rejected update"); });
+  const recovery = await Storage.loadComposerDraft(did, "social-draft:existing");
+  expect(recovery?.cloud?.pendingUpdate).toBeUndefined();
+  expect(recovery?.cloud?.acknowledged?.posts[0].text).toBe("Original");
+  expect(recovery?.segments[0].text).toBe("Keep this local edit");
+  update.mockImplementation(async ({ id, draft }) => { remote = [view(id, draft)]; });
+  await act(async () => hook.result.current.retry());
+  expect(update).toHaveBeenCalledTimes(2); expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("reconciles unknown updates after reload and only resends on an explicit retry", async () => {
+  const initial = view("existing", { posts: [{ text: "Original" }] }); remote = [initial];
+  const update = spyOn(Transport, "updateSocialDraft").mockRejectedValue(new Error("Network failure")); restores.push(() => update.mockRestore());
+  let hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(previous => [{ ...previous[0], text: "Uncertain replacement" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Network failure"); });
+  const pending = (await Storage.loadComposerDraft(did, "social-draft:existing"))?.cloud?.pendingUpdate;
+  expect(pending?.draft.posts[0].text).toBe("Uncertain replacement");
+  hook.unmount(); hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  update.mockImplementation(async ({ id, draft }) => { expect(draft).toEqual(pending!.draft); remote = [view(id, draft)]; });
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Update Could Not Be Confirmed"); });
+  expect(update).toHaveBeenCalledTimes(1);
+  await act(async () => hook.result.current.retry());
+  expect(update).toHaveBeenCalledTimes(2); expect(hook.result.current.status).toBe("Draft Saved");
+  const recovery = await Storage.loadComposerDraft(did, "social-draft:existing");
+  expect(recovery?.cloud?.pendingUpdate).toBeUndefined();
+  expect(recovery?.cloud?.conflictCopyContext).toContain("social-conflict:");
+  expect((await Storage.loadComposerDraft(did, recovery!.cloud!.conflictCopyContext!))?.segments[0].text).toBe("Uncertain replacement");
+});
+it("acknowledges an applied unknown update without resending it", async () => {
+  const initial = view("existing", { posts: [{ text: "Original" }] }); remote = [initial];
+  const update = spyOn(Transport, "updateSocialDraft").mockImplementation(async ({ id, draft }) => { remote = [view(id, draft)]; throw new Error("Response lost"); }); restores.push(() => update.mockRestore());
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(previous => [{ ...previous[0], text: "Already applied" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Response lost"); });
+  await act(async () => hook.result.current.retry());
+  expect(update).toHaveBeenCalledTimes(1); expect(hook.result.current.status).toBe("Draft Saved");
+  expect((await Storage.loadComposerDraft(did, "social-draft:existing"))?.cloud?.pendingUpdate).toBeUndefined();
+});
+it("does not resend pending replacements when the remote draft is missing", async () => {
+  const initial = view("existing", { posts: [{ text: "Original" }] }); remote = [initial];
+  const update = spyOn(Transport, "updateSocialDraft").mockRejectedValue(new Error("Network failure")); restores.push(() => update.mockRestore());
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(previous => [{ ...previous[0], text: "Keep local" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Network failure"); });
+  remote = [];
+  await act(async () => { await expect(hook.result.current.retry()).rejects.toThrow("Update Could Not Be Confirmed"); });
+  expect(update).toHaveBeenCalledTimes(1); expect(hook.result.current.status).toBe("Draft Saved Locally");
+  expect((await Storage.loadComposerDraft(did, "social-draft:existing"))?.cloud?.pendingUpdate?.draft.posts[0].text).toBe("Keep local");
+});
+it("limits an explicit retry to one resend and retains pending state when replacement silently no-ops", async () => {
+  const initial = view("existing", { posts: [{ text: "Original" }] }); remote = [initial];
+  const update = spyOn(Transport, "updateSocialDraft").mockImplementation(async () => {}); restores.push(() => update.mockRestore());
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(previous => [{ ...previous[0], text: "Never acknowledged" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Update Could Not Be Confirmed"); });
+  await act(async () => { await expect(hook.result.current.retry()).rejects.toThrow("Update Could Not Be Confirmed"); });
+  expect(update).toHaveBeenCalledTimes(2); expect(hook.result.current.status).toBe("Draft Saved Locally");
+  const recovery = await Storage.loadComposerDraft(did, "social-draft:existing");
+  expect(recovery?.cloud?.acknowledged?.posts[0].text).toBe("Original"); expect(recovery?.cloud?.pendingUpdate?.draft.posts[0].text).toBe("Never acknowledged");
+}, 10_000);
+it("freshly checks the remote again after preserving the local copy before a resend", async () => {
+  const initial = view("existing", { posts: [{ text: "Original" }] }); remote = [initial];
+  const update = spyOn(Transport, "updateSocialDraft").mockRejectedValue(new Error("Network failure")); restores.push(() => update.mockRestore());
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(previous => [{ ...previous[0], text: "Private recovery" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Network failure"); });
+  const originalSave = Storage.saveComposerDraft;
+  const save = spyOn(Storage, "saveComposerDraft").mockImplementation(async (owner, context, draft) => {
+    await originalSave(owner, context, draft);
+    if (context.startsWith("social-conflict:")) remote = [view("existing", { posts: [{ text: "Concurrent remote change" }] })];
+  }); restores.push(() => save.mockRestore());
+  await act(async () => { await expect(hook.result.current.retry()).rejects.toThrow("Changed On Another Device"); });
+  expect(update).toHaveBeenCalledTimes(1); expect(hook.result.current.hasConflict).toBe(true);
+  const recovery = await Storage.loadComposerDraft(did, "social-draft:existing");
+  expect((await Storage.loadComposerDraft(did, recovery!.cloud!.conflictCopyContext!))?.segments[0].text).toBe("Private recovery");
+});
+it("waits for a created cloud ID to become visible before closing and notifying the draft list", async () => {
+  let created: AppBskyDraftDefs.Draft | undefined;
+  const create = spyOn(Transport, "createSocialDraft").mockImplementation(async ({ draft }) => { created = draft; return { id: "indexing" }; }); restores.push(() => create.mockRestore());
+  let notifications = 0;
+  const hook = harness(undefined, () => { notifications++; }); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Indexed shortly" }]));
+  await act(async () => hook.result.current.flush());
+  const priorNotifications = notifications;
+  const timer = setTimeout(() => { remote = [view("indexing", created!)]; }, 100); restores.push(() => clearTimeout(timer));
+  await act(async () => hook.result.current.close());
+  expect(notifications).toBeGreaterThan(priorNotifications); expect(remote[0].id).toBe("indexing");
+  expect(await Storage.loadComposerDraft(did, "new-post")).toBeUndefined();
+  expect((await Storage.loadComposerDraft(did, "social-draft:indexing"))?.segments[0].text).toBe("Indexed shortly");
+  expect(create).toHaveBeenCalledTimes(1);
+});
+it("retains local recovery and never recreates a known ID when close cannot confirm its visibility", async () => {
+  const create = spyOn(Transport, "createSocialDraft").mockResolvedValue({ id: "not-indexed" }); restores.push(() => create.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Keep until visible" }]));
+  await act(async () => hook.result.current.flush());
+  await act(async () => { await expect(hook.result.current.close()).rejects.toThrow("Saved Draft Is Not Visible Yet"); });
+  expect(hook.result.current.syncError).toContain("Saved Draft Is Not Visible Yet");
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.id).toBe("not-indexed");
+  expect(create).toHaveBeenCalledTimes(1); expect(Transport.deleteSocialDraft).not.toHaveBeenCalled();
 });

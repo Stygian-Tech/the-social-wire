@@ -6,6 +6,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ThreadPublication, ThreadSegment } from "@/lib/blueskyThreadClient";
 import { loadComposerDraft, saveComposerDraft, type ComposerDraft } from "@/lib/composerDraftStorage";
 import { createSocialDraft, deleteSocialDraft, listSocialDrafts, updateSocialDraft } from "@/lib/blueskyDraftClient";
+import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { segmentsToSocialDraft, socialDraftDeviceId, socialDraftFingerprint, socialDraftHasContent, socialDraftToSegments } from "@/lib/socialDraftConversion";
 
 type Options = {
@@ -43,6 +44,12 @@ const indexingMessage = "Draft Update Could Not Be Confirmed. Your Local Copy Is
 // Active editors are never queued here: a concurrent window still fails closed.
 const releasingEditors = new Map<string, Promise<void>>();
 const unsupportedSettings = (draft?: AppBskyDraftDefs.Draft) => !!draft && (draft.langs !== undefined || draft.threadgateAllow !== undefined || draft.postgateEmbeddingRules !== undefined || draft.posts.some(post => post.labels !== undefined || post.embedRecords !== undefined));
+const definiteUpdateRejection = (error: unknown): boolean => {
+  if (isMissingOAuthScope(error) || error instanceof Error && error.message === SCOPE_RECOVERY_MESSAGE) return true;
+  if (!error || typeof error !== "object") return false;
+  const response = error as { status?: unknown; statusCode?: unknown; response?: { status?: unknown } };
+  return [response.status, response.statusCode, response.response?.status].some(status => status === 401 || status === 403);
+};
 
 /** Local recovery and the publication journal are authoritative until explicitly cleared. */
 export function useSocialComposerDraft(options: Options) {
@@ -66,11 +73,11 @@ export function useSocialComposerDraft(options: Options) {
   }
   function actor(run: Composition) {
     guard(run);
-    if (!run.session) throw new Error("Sign In To Sync This Draft. Your Local Copy Is Safe.");
+    if (!run.session) throw new Error(SCOPE_RECOVERY_MESSAGE);
     return { session: run.session, viewerDid: run.ownerDid, signal: run.controller.signal, assertCurrentActor: () => guard(run) };
   }
   function report(run: Composition, error: unknown) {
-    if (current.current === run && !run.controller.signal.aborted) { setSyncError(error instanceof Error ? error.message : "Draft Could Not Be Synced."); setHasConflict(!!run.conflict); setStatus("Draft Saved Locally"); }
+    if (current.current === run && !run.controller.signal.aborted) { setSyncError(isMissingOAuthScope(error) ? SCOPE_RECOVERY_MESSAGE : error instanceof Error ? error.message : "Draft Could Not Be Synced."); setHasConflict(!!run.conflict); setStatus("Draft Saved Locally"); }
   }
   async function persist(run: Composition) {
     guard(run);
@@ -126,32 +133,87 @@ export function useSocialComposerDraft(options: Options) {
     });
     guard(run);
   }
-  async function confirmUpdate(run: Composition) {
+  async function sendPendingUpdate(run: Composition, pending: NonNullable<ComposerDraft["cloud"]>["pendingUpdate"]) {
+    if (!pending || !run.cloud.id) throw new Error(indexingMessage);
+    try {
+      await updateSocialDraft({ ...actor(run), id: run.cloud.id, draft: pending.draft });
+      guard(run);
+    } catch (error) {
+      // These responses prove the replacement was rejected. Transport failures
+      // remain uncertain, including across reloads and renewed authorization.
+      if (definiteUpdateRejection(error)) {
+        guard(run);
+        if (run.cloud.pendingUpdate === pending) delete run.cloud.pendingUpdate;
+        await persist(run);
+      }
+      throw error;
+    }
+  }
+  async function waitForReadback(run: Composition, attempt: number) {
+    if (attempt) await new Promise<void>((resolve, reject) => {
+      const signal = run.controller.signal;
+      signal.throwIfAborted();
+      const abort = () => { clearTimeout(timer); reject(signal.reason); };
+      const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, attempt === 1 ? 400 : 1200);
+      signal.addEventListener("abort", abort, { once: true });
+    });
+    guard(run);
+  }
+  async function confirmVisible(run: Composition) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await waitForReadback(run, attempt);
+      const remote = (await list(run)).find(view => view.id === run.cloud.id);
+      const fingerprint = remote && socialDraftFingerprint(remote.draft);
+      if (fingerprint && fingerprint === socialDraftFingerprint(run.cloud.acknowledged)) return;
+      if (fingerprint && !run.cloud.stalePayloads?.includes(fingerprint)) { run.conflict = conflictMessage; run.conflictingRemote = remote; throw new Error(conflictMessage); }
+    }
+    throw new Error("The Saved Draft Is Not Visible Yet. Your Local Copy Is Safe. Retry Before Closing.");
+  }
+  async function confirmUpdate(run: Composition, allowResend = false) {
     const pending = run.cloud.pendingUpdate;
     if (!pending) return;
     const expected = socialDraftFingerprint(pending.draft);
+    async function acknowledge() {
+      run.cloud.stalePayloads = [...(run.cloud.stalePayloads ?? []), socialDraftFingerprint(pending!.previous)];
+      run.cloud.acknowledged = pending!.draft;
+      run.cloud.nativeDraft = pending!.draft;
+      delete run.cloud.pendingUpdate;
+      await persist(run);
+    }
+    function rejectChanged(remote: AppBskyDraftDefs.DraftView | undefined) {
+      const fingerprint = remote && socialDraftFingerprint(remote.draft);
+      if (fingerprint && fingerprint !== socialDraftFingerprint(pending!.previous) && !run.cloud.stalePayloads?.includes(fingerprint)) { run.conflict = conflictMessage; run.conflictingRemote = remote; throw new Error(conflictMessage); }
+    }
     // Bounded reads never turn an eventually consistent old page into an ack.
     // Transport timeouts bound each request; this does not wait indefinitely.
     for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt) await new Promise<void>((resolve, reject) => {
-        const signal = run.controller.signal;
-        signal.throwIfAborted();
-        const abort = () => { clearTimeout(timer); reject(signal.reason); };
-        const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, attempt === 1 ? 400 : 1200);
-        signal.addEventListener("abort", abort, { once: true });
-      });
-      guard(run);
+      await waitForReadback(run, attempt);
       const remote = (await list(run)).find(view => view.id === run.cloud.id);
       if (remote && socialDraftFingerprint(remote.draft) === expected) {
-        run.cloud.stalePayloads = [...(run.cloud.stalePayloads ?? []), socialDraftFingerprint(pending.previous)];
-        run.cloud.acknowledged = pending.draft;
-        run.cloud.nativeDraft = pending.draft;
-        delete run.cloud.pendingUpdate;
-        await persist(run);
+        await acknowledge();
         return;
       }
-      const fingerprint = remote && socialDraftFingerprint(remote.draft);
-      if (fingerprint && fingerprint !== socialDraftFingerprint(pending.previous) && !run.cloud.stalePayloads?.includes(fingerprint)) { run.conflict = conflictMessage; run.conflictingRemote = remote; throw new Error(conflictMessage); }
+      rejectChanged(remote);
+    }
+    if (allowResend) {
+      // Only an explicit Retry may resend an uncertain replacement, and only
+      // against the exact previous payload. A stale ancestor is insufficient.
+      for (let check = 0; check < 2; check++) {
+        const remote = (await list(run)).find(view => view.id === run.cloud.id);
+        if (remote && socialDraftFingerprint(remote.draft) === expected) { await acknowledge(); return; }
+        rejectChanged(remote);
+        if (!remote || socialDraftFingerprint(remote.draft) !== socialDraftFingerprint(pending.previous)) throw new Error(indexingMessage);
+        if (check === 0) {
+          run.cloud.conflictCopyContext = await preserveConflictCopy(run);
+          await persist(run);
+        }
+      }
+      guard(run);
+      if (attempted(latest.current.publicationRef.current) || run.stopped) return;
+      await sendPendingUpdate(run, pending);
+      // One resend per invocation. Its result must pass bounded readback too.
+      await confirmUpdate(run);
+      return;
     }
     throw new Error(indexingMessage);
   }
@@ -184,7 +246,7 @@ export function useSocialComposerDraft(options: Options) {
     delete run.cloud.forkSource;
     await persist(run);
   }
-  async function saveRemote(run: Composition) {
+  async function saveRemote(run: Composition, allowResend = false) {
     guard(run);
     if (!run.loaded) throw new Error("Wait For Draft Recovery Before Continuing.");
     if (run.cloud.completed) throw new Error("This Composition Was Already Published. Retry Draft Cleanup.");
@@ -193,7 +255,7 @@ export function useSocialComposerDraft(options: Options) {
     if (attempted(latest.current.publicationRef.current)) return;
     if (run.conflict) throw new Error(run.conflict);
     if (run.cloud.createIntent && !run.cloud.id) await reconcileCreate(run);
-    if (run.cloud.pendingUpdate) await confirmUpdate(run);
+    if (run.cloud.pendingUpdate) await confirmUpdate(run, allowResend);
     if (run.cloud.forkSource && run.cloud.id) await finishFork(run);
     for (;;) {
       guard(run);
@@ -216,7 +278,17 @@ export function useSocialComposerDraft(options: Options) {
           await persist(run);
           return;
         }
-        const created = await createSocialDraft({ ...actor(run), draft: payload });
+        const created = await createSocialDraft({ ...actor(run), draft: payload }).catch(async error => {
+          // A rejected permission check cannot have created a stash operation.
+          // Retain uncertain intents for transport failures, but allow renewed
+          // authorization to retry a definitively rejected creation.
+          if (isMissingOAuthScope(error) || error instanceof Error && error.message === SCOPE_RECOVERY_MESSAGE) {
+            guard(run);
+            delete run.cloud.createIntent;
+            await persist(run);
+          }
+          throw error;
+        });
         guard(run);
         run.cloud.id = created.id;
         run.cloud.acknowledged = payload;
@@ -241,8 +313,7 @@ export function useSocialComposerDraft(options: Options) {
         if (attempted(latest.current.publicationRef.current) || run.stopped) return;
         run.cloud.pendingUpdate = { draft: payload, previous: run.cloud.acknowledged };
         await persist(run);
-        await updateSocialDraft({ ...actor(run), id: run.cloud.id, draft: payload });
-        guard(run);
+        await sendPendingUpdate(run, run.cloud.pendingUpdate);
         await confirmUpdate(run);
       }
       latest.current.onChanged?.();
@@ -250,10 +321,10 @@ export function useSocialComposerDraft(options: Options) {
       // Edits made during the request are coalesced into the next serialized save.
     }
   }
-  function flushRun(run: Composition): Promise<void> {
+  function flushRun(run: Composition, allowResend = false): Promise<void> {
     if (run.inFlight) return run.inFlight;
     setSaving(true);
-    const promise = saveRemote(run).catch(error => { report(run, error); throw error; }).finally(() => {
+    const promise = saveRemote(run, allowResend).catch(error => { report(run, error); throw error; }).finally(() => {
       if (run.inFlight === promise) run.inFlight = undefined;
       if (current.current === run) setSaving(false);
     });
@@ -400,6 +471,10 @@ export function useSocialComposerDraft(options: Options) {
     await flushRun(run);
     guard(run);
     if (attempted(latest.current.publicationRef.current)) return;
+    if (run.cloud.id) {
+      try { await confirmVisible(run); } catch (error) { report(run, error); throw error; }
+      latest.current.onChanged?.();
+    }
     const payload = segmentsToSocialDraft(segments.current, run.cloud.deviceId, run.cloud.nativeDraft);
     if (!run.cloud.id && !socialDraftHasContent(segments.current) || run.cloud.id && socialDraftFingerprint(payload) === socialDraftFingerprint(run.cloud.acknowledged)) {
       run.stopped = true;
@@ -414,7 +489,13 @@ export function useSocialComposerDraft(options: Options) {
     const run = active();
     if (run.cloud.completed) {
       try { await cleanupPublished(run); } catch (error) { report(run, error); throw error; }
-    } else await flushRun(run);
+    } else {
+      // A click during an automatic save must not turn that in-flight request
+      // into an automatic resend. Reconcile in a new, explicitly requested run.
+      await run.inFlight?.catch(() => {});
+      guard(run);
+      await flushRun(run, true);
+    }
   }
   async function preserveConflictCopy(run: Composition) {
     const context = `social-conflict:${run.cloud.id ?? "new"}:${crypto.randomUUID()}`;
