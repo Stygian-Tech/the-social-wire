@@ -77,6 +77,15 @@ describe("browser-wide sidebar width", () => {
     );
     expect(writes).not.toHaveBeenCalled();
   });
+  it("uses saved width on the initial client render of each section", async () => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, "352");
+    const first = mount();
+    expect(screen.getByLabelText("Current Sidebar Width").textContent).toBe("352");
+    first.unmount();
+    mount(300);
+    expect(screen.getByLabelText("Current Sidebar Width").textContent).toBe("352");
+    await act(async () => {});
+  });
   it("persists keyboard resizing and restores it in a different route's provider", async () => {
     const view = mount();
     await act(async () => {});
