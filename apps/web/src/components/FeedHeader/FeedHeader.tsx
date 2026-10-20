@@ -11,6 +11,7 @@ import { attachFeedHeaderScrollOverlay } from "./feedHeaderScrollOverlay";
 type FeedHeaderProps = {
   title: ReactNode;
   subtitle?: ReactNode;
+  mobileStatus?: ReactNode;
   children?: ReactNode;
   className?: string;
   leading?: ReactNode;
@@ -19,6 +20,7 @@ type FeedHeaderProps = {
 export function FeedHeader({
   title,
   subtitle,
+  mobileStatus,
   children,
   className,
   leading,
@@ -45,6 +47,7 @@ export function FeedHeader({
         </div>
         {children}
       </div>
+      {mobileStatus ? <div className="w-full px-1 pb-1 text-[11px] text-muted-foreground sm:hidden">{mobileStatus}</div> : null}
     </header>
   );
 }
