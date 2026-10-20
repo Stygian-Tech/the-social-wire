@@ -65,7 +65,7 @@ func (s *Service) Manifest(ctx context.Context, owner, draftID string) (Manifest
 	return m, tx.Commit()
 }
 func validRefs(refs []ManifestRef) bool {
-	if len(refs) > 100 {
+	if len(refs) > MaxManifestRefs {
 		return false
 	}
 	seen := map[ManifestRef]bool{}

@@ -5,6 +5,12 @@ const root = join(import.meta.dir, "../../..");
 const spec = Bun.YAML.parse(readFileSync(join(root, "packages/spec/openapi.yaml"), "utf8")) as any;
 const prefix = "/xrpc/app.thesocialwire.socialDraft.";
 
+test("manifest limits fit 100 native posts with four original and prepared photos", () => {
+  expect(spec.components.schemas.SocialDraftManifest.properties.attachments.maxItems).toBe(800);
+  const input = spec.paths[prefix + "putManifest"].post.requestBody.content["application/json"].schema.$ref.split("/").at(-1);
+  expect(spec.components.schemas[input].properties.attachments.maxItems).toBe(800);
+});
+
 test("private attachment HTTP routes retain binary headers and authenticated ownership", () => {
   const paths = Object.keys(spec.paths).filter((path) => path.startsWith(prefix));
   expect(paths).toHaveLength(7);

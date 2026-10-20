@@ -27,7 +27,7 @@
             },
             "attachments": {
               "type": "array",
-              "maxLength": 100,
+              "maxLength": 800,
               "items": {
                 "type": "ref",
                 "ref": "app.thesocialwire.socialDraft.defs#manifestRef"
