@@ -37,7 +37,7 @@ func (a Routes) handler(name string) http.HandlerFunc {
 			failure(w, 401, "Unauthorized", "Authentication required")
 			return
 		}
-		if r.Method == "POST" || name == "getAttachment" {
+		if r.Method == "POST" || name == "getAttachment" || name == "getManifest" {
 			timeout := mutationTimeout
 			if name == "uploadAttachment" || name == "getAttachment" {
 				timeout = transferTimeout

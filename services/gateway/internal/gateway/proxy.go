@@ -90,7 +90,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	draftMutation := privateDraft && method != "GET" && method != "HEAD"
-	if draftMutation || draftDownload {
+	if privateDraft {
 		defer boundSocialDraftIO(ctx, w, draftMutation)()
 	}
 	if base == "" {
