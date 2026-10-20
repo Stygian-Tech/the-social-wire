@@ -36,7 +36,7 @@ import {
 } from "@/lib/dummyReaderData";
 import { recordClientPerformance } from "@/lib/clientPerformanceTelemetry";
 import { useAuth } from "./useAuth";
-import { coalesceFeedFirstPage, readFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { coalesceFeedFirstPage, getFeedRefreshRevision, readFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { refreshPublicationFeedFirstPage } from "@/lib/feedRefresh";
 import { useFeedFirstContentTiming } from "./useFeedFirstContentTiming";
 
@@ -199,7 +199,7 @@ export function useEntries(
       !!session &&
       !!viewerDid,
     staleTime: ENTRIES_QUERY_STALE_MS,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     gcTime: 1000 * 60 * 60 * 24,
     retry: shouldRetryAppViewRequest,
@@ -441,7 +441,7 @@ export function useAggregateFeedEntries(
     getNextPageParam: entriesNextPageParam,
     enabled: !!feed && !!session,
     staleTime: ENTRIES_QUERY_STALE_MS,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     gcTime: 1000 * 60 * 60 * 24,
     retry: shouldRetryAppViewRequest,
@@ -520,6 +520,7 @@ export function useAggregateFeedEntries(
     const oauth = getOAuthSession();
     if (!oauth) return;
     const refreshStartedAt = performance.now();
+    const revision = getFeedRefreshRevision(queryClient, aggregateQueryKey);
     const readRevision = readFeedRefreshRevision(queryClient, oauth);
     void coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, () => listAggregateFeedFromAppView({
       feed,
@@ -527,7 +528,7 @@ export function useAggregateFeedEntries(
       oauthSession: oauth,
     }))
       .then((freshPage) => {
-        if (getOAuthSession() !== oauth || readFeedRefreshRevision(queryClient, oauth) !== readRevision) return;
+        if (getOAuthSession() !== oauth || getFeedRefreshRevision(queryClient, aggregateQueryKey) !== revision || readFeedRefreshRevision(queryClient, oauth) !== readRevision) return;
         queryClient.setQueryData<InfiniteData<EntriesPage>>(
           aggregateQueryKey,
           (current) => mergeFeedRefreshForFilter(current, freshPage, articleFilter)
@@ -585,9 +586,10 @@ export function useAggregateFeedEntries(
   return { ...query, refetch: async () => {
     const oauth = getOAuthSession();
     if (!oauth || !feed) return;
+    const revision = getFeedRefreshRevision(queryClient, aggregateQueryKey);
     const readRevision = readFeedRefreshRevision(queryClient, oauth);
     const fresh = await coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, () => listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: oauth }));
-    if (getOAuthSession() !== oauth || readFeedRefreshRevision(queryClient, oauth) !== readRevision) return;
+    if (getOAuthSession() !== oauth || getFeedRefreshRevision(queryClient, aggregateQueryKey) !== revision || readFeedRefreshRevision(queryClient, oauth) !== readRevision) return;
     queryClient.setQueryData<InfiniteData<EntriesPage>>(aggregateQueryKey, current => mergeFeedRefreshForFilter(current, fresh, articleFilter));
   } };
 }

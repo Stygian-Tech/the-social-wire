@@ -173,10 +173,9 @@ export function EntryList({
 
   useProactiveFeedRefresh(
     pubId ?? null,
-    "all",
+    effectiveFilter,
     !aggregateFeed &&
       !wireFeed &&
-      effectiveFilter === "all" &&
       !isLoading &&
       !scopePending &&
       (data?.pages.length ?? 0) > 0
