@@ -785,3 +785,31 @@ it("coalesces an edit and joined autosave made while an acknowledged draft's man
   expect(remote.find(item => item.id === hook.result.current.cloudId)?.draft.posts[0].text).toBe("Edited During Manifest Commit");
   expect(hook.result.current.status).toBe("Draft Saved"); expect(Transport.updateSocialDraft).toHaveBeenCalledTimes(1);
 });
+it.each([false, true])("converges retired shared GIF files to canonical IDs on Retry and Fork while keeping per-post descriptions: fork=%s", async fork => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  const first = privateGifSegments()[0];
+  if (first.media?.kind !== "gif") throw new Error("Missing GIF");
+  const second: ThreadSegment = { ...first, id: "second-gif-post", text: "Second GIF Post", media: { ...first.media, alt: "Second post description" } };
+  act(() => hook.result.current.setSegments([first, second]));
+  await act(async () => hook.result.current.flush());
+  const retired = new Set(files.keys()); expect(retired.size).toBe(4);
+  const upload = implementation(Attachments.uploadDraftAttachment);
+  const retire = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (actor, asset, blob) => {
+    if (retired.has(asset.assetId)) throw Object.assign(new Error("Expired"), { status: 409, error: "AssetRetired" });
+    const recovery = await Storage.loadComposerDraft(did, "new-post");
+    const rendition = asset.name.split(".").at(-1) as "gif" | "poster" | "mp4" | "webm";
+    for (const segment of recovery!.segments) {
+      if (segment.media?.kind !== "gif") throw new Error("Missing Durable GIF");
+      expect(segment.media.privateFiles?.files[rendition]?.asset.assetId).toBe(asset.assetId);
+    }
+    return upload(actor, asset, blob);
+  }); restores.push(() => retire.mockRestore());
+  if (fork) await act(async () => hook.result.current.forkLocal()); else await act(async () => hook.result.current.retry());
+  expect(hook.result.current.status).toBe("Draft Saved"); expect(hook.result.current.hasConflict).toBe(false);
+  expect(hook.result.current.segments.map(segment => segment.media?.kind === "gif" ? segment.media.alt : undefined)).toEqual(["A celebratory animation", "Second post description"]);
+  const manifest = manifests.get(hook.result.current.cloudId!)!;
+  expect(manifest.attachments).toHaveLength(4); expect(manifest.attachments.every(ref => !retired.has(ref.assetId))).toBe(true);
+  const { socialDraftToSegments } = await import("@/lib/socialDraftConversion");
+  const saved = remote.find(view => view.id === hook.result.current.cloudId)!;
+  expect(socialDraftToSegments(saved.draft).map(segment => segment.media?.kind === "gif" ? segment.media.alt : undefined)).toEqual(["A celebratory animation", "Second post description"]);
+});

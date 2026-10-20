@@ -41,6 +41,11 @@ function restoreGif(uri: string): ThreadSegment["media"] | undefined {
   } catch { return; }
 }
 
+function matchingGif(media: ComposerMedia | undefined, uri: string): boolean {
+  if (media?.kind !== "gif") return false;
+  try { return gifEmbedURI(media.asset) === uri; } catch { return false; }
+}
+
 /** Pure conversion matches exact references; authenticated byte recovery is separate. */
 export function socialDraftToSegments(draft: AppBskyDraftDefs.Draft, localSegments?: ThreadSegment[]): ThreadSegment[] {
   const photosByPath = new Map<string, ComposerPhoto | null>();
@@ -74,11 +79,22 @@ export function socialDraftToSegments(draft: AppBskyDraftDefs.Draft, localSegmen
       media = { kind: "photos", photos: images.map(image => ({ ...photosByPath.get(image.localRef.path)!, alt: image.alt ?? "" })) };
     } else if (!images.length && post.embedExternals?.length === 1) {
       const uri = post.embedExternals[0].uri;
-      const localGif = localSegments?.find(segment => {
-        if (segment.media?.kind !== "gif") return false;
-        try { return gifEmbedURI(segment.media.asset) === uri; } catch { return false; }
-      })?.media;
-      media = localGif ?? nativeGifMetadata(post.embedExternals[0]) ?? restoreGif(uri);
+      const native = nativeGifMetadata(post.embedExternals[0]) ?? restoreGif(uri);
+      const candidates = (localSegments ?? []).filter(segment => matchingGif(segment.media, uri));
+      // Only a matching post baseline can carry unsynced author metadata. A URI
+      // identifies shared bytes, not the particular post or its description.
+      const exact = candidates.filter(segment => segment.nativeDraftPost && socialDraftFingerprint(segment.nativeDraftPost) === socialDraftFingerprint(post));
+      const exactPost = local && exact.includes(local) ? local : exact.length === 1 ? exact[0] : undefined;
+      const positional = local && !local.nativeDraftPost && local.text === post.text && matchingGif(local.media, uri) && (native?.kind !== "gif" || !isGifCatalogId(native.asset.id) || local.media?.kind === "gif" && local.media.alt === native.alt) ? local : undefined;
+      const own = (exactPost ?? positional)?.media;
+      const metadata = own?.kind === "gif" ? own : native;
+      if (metadata?.kind === "gif") {
+        const donor = [own, ...candidates.map(segment => segment.media)].find(candidate => candidate?.kind === "gif" && candidate.privateFiles?.identity === uri && (!isGifCatalogId(metadata.asset.id) || candidate.asset.id === metadata.asset.id));
+        if (donor?.kind === "gif" && donor.privateFiles) {
+          const asset = isGifCatalogId(metadata.asset.id) ? metadata.asset : donor.asset;
+          media = { ...metadata, asset, privateFiles: donor.privateFiles, unavailable: !gifRenditions(asset).every(rendition => donor.privateFiles!.files[rendition]?.blob instanceof Blob) };
+        } else media = metadata;
+      }
     }
     // The current composer has no video editor; preserve all video/gallery data.
     const unavailableVideos = !!post.embedVideos?.length || !!(post as AppBskyDraftDefs.DraftPost & { embedGallery?: unknown }).embedGallery;
@@ -276,6 +292,7 @@ export function privateDraftGifRefs(segments: ThreadSegment[]): DraftAttachmentR
 /** Snapshot immutable provider metadata and all bytes locally before private uploads. */
 export async function preparePrivateDraftGifs(actor: DraftAttachmentActor, segments: ThreadSegment[], checkpoint: (prepared: ThreadSegment[]) => Promise<void>): Promise<void> {
   let prepared = segments;
+  const canonical = new Map<string, NonNullable<ComposerGif["privateFiles"]>>();
   for (const segment of segments) {
     const media = segment.media;
     if (media?.kind !== "gif") continue;
@@ -284,11 +301,14 @@ export async function preparePrivateDraftGifs(actor: DraftAttachmentActor, segme
     const identity = gifEmbedURI(media.asset);
     const referenceKey = await privateGifReferenceKey(media.asset);
     const shared = prepared.find(item => item.id !== segment.id && item.media?.kind === "gif" && item.media.privateFiles?.ownerDid === actor.viewerDid && item.media.privateFiles.identity === identity)?.media;
-    const previous = media.privateFiles?.ownerDid === actor.viewerDid && media.privateFiles.identity === identity ? media.privateFiles : shared?.kind === "gif" ? shared.privateFiles : undefined;
+    const previous = canonical.get(referenceKey) ?? (media.privateFiles?.ownerDid === actor.viewerDid && media.privateFiles.identity === identity ? media.privateFiles : shared?.kind === "gif" ? shared.privateFiles : undefined);
     let files = { ...previous?.files };
     const replace = async () => {
       const privateFiles = { ownerDid: actor.viewerDid, identity, referenceKey, files };
-      prepared = prepared.map(item => item.id === segment.id && item.media?.kind === "gif" ? { ...item, media: { ...item.media, privateFiles, unavailable: !gifRenditions(media.asset).every(rendition => !!files[rendition]?.blob) }, unavailableDraftMedia: false } : item);
+      canonical.set(referenceKey, privateFiles);
+      // Every occurrence must durably adopt a retired ID's replacement before
+      // its upload. Keep each post's metadata and settings independent.
+      prepared = prepared.map(item => item.media?.kind === "gif" && item.media.asset.id === media.asset.id && matchingGif(item.media, identity) ? { ...item, media: { ...item.media, privateFiles, unavailable: !gifRenditions(item.media.asset).every(rendition => !!files[rendition]?.blob) }, unavailableDraftMedia: false } : item);
       await checkpoint(prepared);
       assertDraftAttachmentActor(actor);
     };
