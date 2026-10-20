@@ -9,8 +9,11 @@ identity from attachment IDs. It does not publish PDS records or public URLs.
 Reserve a client UUID, upload its exact declared bytes, then bind ready assets to
 a native-TID draft using revision CAS (zero creates). Identical reservations and
 uploads are idempotent. An asset UUID is immutable within its owner namespace,
-including after deletion. Shared references across that owner's drafts are
-allowed. Missing manifests return `ErrNotFound`; deleted manifests remain readable
+including after deletion. Reserving a deleted or purged ID returns
+`ErrAssetRetired`, which wraps `ErrConflict` for `errors.Is` compatibility. Active
+metadata mismatches and manifest CAS failures remain `ErrConflict`. Route handlers
+must check `ErrAssetRetired` first and map it to `AssetRetired` (HTTP 409).
+Shared references across that owner's drafts are allowed. Missing manifests return `ErrNotFound`; deleted manifests remain readable
 as empty tombstones with a monotonically increasing revision. A caller can restore
 a tombstone only using its current revision.
 
@@ -51,7 +54,13 @@ remains an immutable tombstone. This bounds tiny-asset and failed-deletion backl
 time order, claiming owner and outbox rows with database locks and `SKIP LOCKED`.
 Failed deletes do not stop the bounded batch from processing other due jobs; it
 returns `ErrUnavailable` after retaining retries. Delete failures retain a durable
-outbox record with exponential retry (one minute to one hour). A crash after S3 deletion safely repeats that
+outbox record with exponential retry (one minute to one hour). Each object delete
+is bounded by five seconds, half the remaining sweep budget, and the job deadline
+minus a two-second persistence reserve, whichever is shortest. Transactions have
+an independent seven-second maximum lifetime; final state/backoff persistence has
+an independent two-second budget, including cancellation of a blocked commit.
+Sweep cancellation during S3 I/O therefore does not discard the retry update.
+Later due jobs proceed when sweep budget remains. A crash after S3 deletion safely repeats that
 idempotent deletion. Deleted identity rows remain to prevent UUID reuse.
 
 Run unit tests with `go test ./socialdraftcore`. PostgreSQL tests create and drop

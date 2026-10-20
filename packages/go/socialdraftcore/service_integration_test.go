@@ -312,7 +312,7 @@ func TestPostgresCleanupReplicasAndImmutableIDs(t *testing.T) {
 		t.Fatalf("replica cleanup count=%d remaining=%d", total, len(f.objects))
 	}
 	b := []byte("WEBVTT\n\n00:00.000 --> 00:01.000\nprivate\n")
-	if _, e := s.Reserve(ctx, ownerA, reserveInput(assetA, b)); e != ErrConflict {
+	if _, e := s.Reserve(ctx, ownerA, reserveInput(assetA, b)); e != ErrAssetRetired {
 		t.Fatalf("deleted ID reused: %v", e)
 	}
 }
