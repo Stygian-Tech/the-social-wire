@@ -10,7 +10,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 )
@@ -44,9 +43,7 @@ func (s *Server) socialDraftGIF(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), socialDraftUploadTimeout)
 	defer cancel()
-	controller := http.NewResponseController(w)
-	_ = controller.SetWriteDeadline(time.Now().Add(socialDraftUploadTimeout))
-	defer controller.SetWriteDeadline(time.Time{})
+	defer boundSocialDraftIO(ctx, w, false)()
 	assets, _, err := s.fetchGIFs(ctx, "posts", url.Values{"ids": {query.Get("id")}})
 	if err != nil {
 		writeError(w, 502, "GIF catalog unavailable")

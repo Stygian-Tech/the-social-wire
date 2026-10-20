@@ -42,7 +42,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	case "latr":
 		base, secret, client = c.LatrURL, "", p.Public
 	}
-	if base == "" {
+	if base == "" && !privateDraft {
 		writeError(w, 503, "Upstream service is not configured")
 		return
 	}
@@ -80,19 +80,19 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	}
 	draftUpload := path == "/xrpc/app.thesocialwire.socialDraft.uploadAttachment"
 	draftDownload := path == "/xrpc/app.thesocialwire.socialDraft.getAttachment"
-	if draftDownload {
-		timeout = 10 * time.Minute
-	}
-	if draftUpload {
+	if draftUpload || draftDownload {
 		timeout = socialDraftUploadTimeout
-		// Context cancellation bounds the upstream; a read deadline also interrupts
-		// a client that stalls while the upstream transport reads its upload body.
-		controller := http.NewResponseController(w)
-		_ = controller.SetReadDeadline(time.Now().Add(timeout))
-		defer controller.SetReadDeadline(time.Time{})
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
+	draftMutation := privateDraft && method != "GET" && method != "HEAD"
+	if draftMutation || draftDownload {
+		defer boundSocialDraftIO(ctx, w, draftMutation)()
+	}
+	if base == "" {
+		writeError(w, 503, "Upstream service is not configured")
+		return
+	}
 	var body io.Reader
 	if draftUpload {
 		if r.ContentLength < 0 {
