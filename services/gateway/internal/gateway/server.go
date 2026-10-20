@@ -50,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Limiter == nil {
 		s.Limiter = &RequestLimiter{}
 	}
+	draftAdmission := &socialDraftAdmission{redis: s.Limiter.Redis, namespace: s.Limiter.Namespace}
 	for _, route := range Routes {
 		if route.Service == "circle" && !s.Config.Serves("circle") {
 			continue
@@ -58,6 +59,9 @@ func (s *Server) Handler() http.Handler {
 			continue
 		}
 		h := proxy.Handler(route)
+		if strings.HasPrefix(route.Path, "/xrpc/app.thesocialwire.socialDraft.") {
+			h = draftAdmission.middleware(h)
+		}
 		if route.Service == "wire" || route.Service == "circle" {
 			h = s.Limiter.Middleware(h)
 		}

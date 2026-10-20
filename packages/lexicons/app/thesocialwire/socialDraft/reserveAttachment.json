@@ -1,0 +1,102 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.socialDraft.reserveAttachment",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Owner-only private draft storage. Authentication required; disabled storage returns Unavailable. Never publishes attachments or exposes public URLs.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "assetId",
+            "name",
+            "contentType",
+            "byteLength",
+            "sha256",
+            "kind"
+          ],
+          "properties": {
+            "assetId": {
+              "type": "string",
+              "minLength": 36,
+              "maxLength": 36,
+              "description": "Canonical lowercase UUID."
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "contentType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "byteLength": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 104857600
+            },
+            "sha256": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "knownValues": [
+                "photo",
+                "poster",
+                "gif",
+                "video",
+                "caption"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "attachment"
+          ],
+          "properties": {
+            "attachment": {
+              "type": "ref",
+              "ref": "app.thesocialwire.socialDraft.defs#asset"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "Quota"
+        },
+        {
+          "name": "UploadPending"
+        },
+        {
+          "name": "Unavailable"
+        },
+        {
+          "name": "Unauthorized"
+        }
+      ]
+    }
+  }
+}
