@@ -60,7 +60,7 @@ func TestTemporaryReaderCleanup(t *testing.T) {
 	if info.Mode().Perm() != 0600 {
 		t.Fatal(info.Mode())
 	}
-	r := &temporaryReader{f}
+	r := newTemporaryReader(context.Background(), f, nil)
 	r.Close()
 	if _, e = os.Stat(name); !os.IsNotExist(e) {
 		t.Fatal("temporary file remains")

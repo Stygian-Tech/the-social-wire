@@ -281,10 +281,22 @@ func (s *Service) Download(ctx context.Context, owner, id string) (io.ReadCloser
 	if e := s.available(); e != nil {
 		return nil, zero, e
 	}
-	if !uuidPattern.MatchString(id) {
+	if !uuidPattern.MatchString(id) || !validOwner(owner) {
 		return nil, zero, ErrInvalid
 	}
-	tx, e := s.begin(ctx, owner)
+	// Download admission belongs to the returned file, not the transaction.
+	// This bounds plaintext disk usage even while downstream clients stream slowly.
+	release, e := s.admit(ctx, owner)
+	if e != nil {
+		return nil, zero, e
+	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			release()
+		}
+	}()
+	tx, e := s.beginAdmitted(ctx, owner)
 	if e != nil {
 		return nil, zero, e
 	}
@@ -325,5 +337,6 @@ func (s *Service) Download(ctx context.Context, owner, id string) (io.ReadCloser
 		return nil, zero, e
 	}
 	ok = true
-	return &temporaryReader{f}, a, nil
+	transferred = true
+	return newTemporaryReader(ctx, f, release), a, nil
 }
