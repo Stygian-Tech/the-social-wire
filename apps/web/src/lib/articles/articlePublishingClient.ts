@@ -1,3 +1,5 @@
+import { buildDocumentRecord, buildNativeDocumentWrapper } from "@stygian/anypub-kit/records";
+import { prepareContentOffload, replaceContentOffload } from "@stygian/anypub-kit";
 import { cidForLex } from "@atproto/lex-cbor";
 import { lexParse } from "@atproto/lex-json";
 import { XRPCError } from "@atproto/api";
@@ -158,22 +160,20 @@ export async function publishArticle(session: OAuthSession, input: ArticlePublis
     const verification = await fetch(`${url}/.well-known/site.standard.publication`, { signal, credentials: "omit", redirect: "error" });
     if (!verification.ok || (await verification.text()).trim() !== input.publication.uri) throw new Error("The pckt site could not verify this publication.");
   }
-  const native = buildArticleNativeContent(host, input.markdown, input.bodyAssets ?? [], input.description), content = native.content;
-  if (host === "markpub" || host === "unknown") {
-    const text = content.text as ArticleRecord;
-    if (bytes(String(text.markdown)) > 100 * 1024) { text.textBlob = (await uploadBlob(session, new Blob([String(text.markdown)], { type: "text/markdown" }), signal)).blob; text.markdown = String(text.markdown).slice(0, 1000); }
-  } else if (host === "leaflet" && bytes(JSON.stringify(content.pages)) > 100 * 1024) {
-    content.blobPages = (await uploadBlob(session, new Blob([JSON.stringify(content.pages)], { type: "application/json" }), signal)).blob; content.pages = []; content.blobs = [];
-  } else if (host === "pckt" && bytes(JSON.stringify(content.items)) > 20_000) {
-    content.blob = (await uploadBlob(session, new Blob([JSON.stringify(content.items)], { type: "application/json" }), signal)).blob; delete content.items; content.references = [];
-  } else if (host === "offprint" && bytes(JSON.stringify(content)) >= 900_000) throw new Error("Offprint article content exceeds its record size limit.");
+  const native = buildArticleNativeContent(host, input.markdown, input.bodyAssets ?? [], input.description);
+  const prepared = prepareContentOffload(host, native.content);
+  const content = prepared.offload
+    ? replaceContentOffload(prepared, (await uploadBlob(session, new Blob([prepared.offload.body], { type: prepared.offload.mimeType }), signal)).blob)
+    : prepared.content;
   const now = new Date().toISOString(), path = articlePath(input, rkey);
-  const record: ArticleRecord = { ...previous, $type: DOCUMENT, site: input.publication.uri, title: input.title.trim(), publishedAt: previous.publishedAt ?? now, updatedAt: now, path, content, textContent: native.textContent };
-  delete record.description; delete record.coverImage; delete record.tags;
-  if (input.description?.trim()) record.description = input.description.trim();
-  if (input.cover) record.coverImage = input.cover.blob;
-  if (input.tags.length || host === "pckt") record.tags = [...new Set(input.tags.map(tag => tag.trim()).filter(Boolean))];
-  if (host === "pckt") record.langs = ["en"];
+  const record = buildDocumentRecord({
+    site: input.publication.uri, title: input.title.trim(), publishedAt: (previous.publishedAt as string | undefined) ?? now,
+    updatedAt: now, path, content, textContent: native.textContent,
+    description: input.description?.trim() || undefined,
+    coverImage: input.cover?.blob,
+    tags: input.tags.length || host === "pckt" ? [...new Set(input.tags.map(tag => tag.trim()).filter(Boolean))] : undefined,
+    ...(host === "pckt" ? { langs: ["en"] } : {}),
+  }, previous);
   const cid = (await cidForLex(lexParse(JSON.stringify(record), { strict: true }))).toString();
   const writes: { $type: "com.atproto.repo.applyWrites#create" | "com.atproto.repo.applyWrites#update"; collection: string; rkey: string; value: ArticleRecord }[] = [{ $type: `com.atproto.repo.applyWrites#${input.existing ? "update" : "create"}`, collection: DOCUMENT, rkey, value: record }];
   let wrapperUri: string | undefined;
@@ -183,12 +183,14 @@ export async function publishArticle(session: OAuthSession, input: ArticlePublis
     const wrapperKey = input.existing?.wrapperUri ? key(input.existing.wrapperUri, session.did, collection) : rkey;
     wrapperUri = `at://${session.did}/${collection}/${wrapperKey}`;
     if (host === "pckt" && wrapperKey !== rkey) throw new Error("The pckt wrapper must share the canonical document key.");
+    let previousWrapper: ArticleRecord = {};
     if (input.existing) {
       const wrapper = await agent.com.atproto.repo.getRecord({ repo: session.did, collection, rkey: wrapperKey }, { signal });
-      const ref = (wrapper.data.value as ArticleRecord).document as { uri?: string; cid?: string } | undefined;
+      previousWrapper = wrapper.data.value as ArticleRecord;
+      const ref = previousWrapper.document as { uri?: string; cid?: string } | undefined;
       if (wrapper.data.cid !== input.existing.wrapperCid || ref?.uri !== uri || ref.cid !== input.existing.cid) throw new Error("The native article wrapper changed. Reload before publishing.");
     }
-    writes.push({ $type: `com.atproto.repo.applyWrites#${input.existing ? "update" : "create"}`, collection, rkey: wrapperKey, value: { $type: collection, document: { ...(host === "offprint" ? { $type: "com.atproto.repo.strongRef" } : {}), uri, cid }, ...(pcktSite ? { site: pcktSite } : {}) } });
+    writes.push({ $type: `com.atproto.repo.applyWrites#${input.existing ? "update" : "create"}`, collection, rkey: wrapperKey, value: buildNativeDocumentWrapper(host, { uri, cid }, pcktSite, previousWrapper) });
   }
   signal?.throwIfAborted();
   const wrapperCid = writes[1] ? (await cidForLex(lexParse(JSON.stringify(writes[1].value), { strict: true }))).toString() : undefined;

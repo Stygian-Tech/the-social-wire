@@ -1,9 +1,7 @@
-export type ArticleHost = "leaflet" | "markpub" | "offprint" | "pckt" | "unknown";
-export type ArticleRecord = Record<string, unknown>;
-export type ArticleBlob = { $type: "blob"; ref: { $link: string }; mimeType: string; size: number };
+import type { ArticleHost, ArticleRecord, ArticleImageAsset } from "@stygian/anypub-kit/types";
+export type { ArticleHost, ArticleRecord, ArticleBlob, ArticleImageAsset } from "@stygian/anypub-kit/types";
 export type ArticlePublication = { uri: string; cid: string; name: string; url: string; host: ArticleHost; record: ArticleRecord };
 export type PublishedArticle = { uri: string; cid: string; record: ArticleRecord; wrapperUri?: string; wrapperCid?: string };
-export type ArticleImageAsset = { id: string; blob: ArticleBlob; alt: string; width: number; height: number; url: string };
 export type ArticlePublishInput = {
   publication: ArticlePublication;
   title: string;
