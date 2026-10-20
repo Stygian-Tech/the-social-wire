@@ -1,3 +1,5 @@
+import type { AppBskyDraftDefs } from "@atproto/api";
+import * as cloudDrafts from "@/lib/blueskyDraftClient";
 import * as draftStorage from "@/lib/composerDraftStorage";
 import * as gifs from "@/lib/klipyClient";
 import type { GifAsset } from "@/lib/composerMedia";
@@ -24,9 +26,47 @@ const restores: (() => void)[] = [];
 let cache: QueryClient;
 const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
 let isPro = true;
+let remoteDrafts: Map<string, AppBskyDraftDefs.DraftView>;
+let localDrafts: Map<string, draftStorage.ComposerDraft>;
+let draftNumber = 0;
+function clone<T>(value: T): T { return structuredClone(value); }
+function cloudView(id: string, draft: AppBskyDraftDefs.Draft): AppBskyDraftDefs.DraftView {
+  return { id, draft: clone(draft), createdAt: "2026-10-20T15:00:00Z", updatedAt: "2026-10-20T15:00:00Z" };
+}
 beforeEach(() => {
-  const load = spyOn(draftStorage, "loadComposerDraft").mockResolvedValue(undefined);
-  const save = spyOn(draftStorage, "saveComposerDraft").mockResolvedValue(undefined);
+  // Keep ownership until the asynchronous callback settles, just like Web Locks.
+  const heldLocks = new Map<string, Promise<void>>();
+  const request = async <T,>(name: string, options: LockOptions, callback: (lock: Lock | null) => T | PromiseLike<T>): Promise<T> => {
+    options.signal?.throwIfAborted();
+    if (options.mode && options.mode !== "exclusive") throw new Error("This test supports exclusive locks only");
+    if (options.ifAvailable && heldLocks.has(name)) return await callback(null);
+    while (heldLocks.has(name)) {
+      await new Promise<void>((resolve, reject) => {
+        const signal = options.signal;
+        const abort = () => reject(signal?.reason);
+        signal?.addEventListener("abort", abort, { once: true });
+        void heldLocks.get(name)!.then(() => { signal?.removeEventListener("abort", abort); resolve(); });
+      });
+      options.signal?.throwIfAborted();
+    }
+    let release!: () => void;
+    heldLocks.set(name, new Promise<void>(resolve => { release = resolve; }));
+    try {
+      // Aborting a granted request does not release it: its callback must finish.
+      return await callback({ name, mode: "exclusive" } as Lock);
+    } finally { heldLocks.delete(name); release(); }
+  };
+  const originalLocks = Object.getOwnPropertyDescriptor(navigator, "locks");
+  Object.defineProperty(navigator, "locks", { configurable: true, value: { request: request as LockManager["request"] } });
+  restores.push(() => { if (originalLocks) Object.defineProperty(navigator, "locks", originalLocks); else Reflect.deleteProperty(navigator, "locks"); });
+  remoteDrafts = new Map(); localDrafts = new Map(); draftNumber = 0;
+  const list = spyOn(cloudDrafts, "listSocialDrafts").mockImplementation(async () => ({ drafts: Array.from(remoteDrafts.values()).map(clone) }));
+  const create = spyOn(cloudDrafts, "createSocialDraft").mockImplementation(async ({ draft }) => { const id = `draft-${++draftNumber}`; remoteDrafts.set(id, cloudView(id, draft)); return { id }; });
+  const update = spyOn(cloudDrafts, "updateSocialDraft").mockImplementation(async ({ id, draft }) => { remoteDrafts.set(id, cloudView(id, draft)); });
+  const remove = spyOn(cloudDrafts, "deleteSocialDraft").mockImplementation(async ({ id }) => { remoteDrafts.delete(id); });
+  restores.push(() => list.mockRestore(), () => create.mockRestore(), () => update.mockRestore(), () => remove.mockRestore());
+  const load = spyOn(draftStorage, "loadComposerDraft").mockImplementation(async (did, context) => clone(localDrafts.get(`${did}:${context}`)));
+  const save = spyOn(draftStorage, "saveComposerDraft").mockImplementation(async (did, context, draft) => { const key = `${did}:${context}`; if (draft) localDrafts.set(key, clone(draft)); else localDrafts.delete(key); });
   restores.push(() => load.mockRestore(), () => save.mockRestore());
   isPro = true;
   const entitlement = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => entitlement.mockRestore());
@@ -37,7 +77,7 @@ beforeEach(() => {
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const spy = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession: () => oauth } as ReturnType<typeof auth.useAuth>);
   restores.push(() => spy.mockRestore());
-  const values = { DOMRect: window.DOMRect, Element: window.Element, HTMLElement: window.HTMLElement, Node: window.Node, MutationObserver: window.MutationObserver, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout };
+  const values = { localStorage: window.localStorage, DOMRect: window.DOMRect, Element: window.Element, HTMLElement: window.HTMLElement, Node: window.Node, MutationObserver: window.MutationObserver, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout };
   for (const [name, value] of Object.entries(values)) {
     const original = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, { configurable: true, value });
@@ -48,7 +88,20 @@ afterEach(async () => { await act(async () => { cleanup(); await new Promise(res
 async function open() {
   render(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
-  return await screen.findByRole("textbox", { name: "Post Text" });
+  return await loadedField();
+}
+
+async function loadedField() {
+  await screen.findByRole("textbox", { name: "Post Text" });
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Post Text" }).hasAttribute("disabled")).toBe(false));
+  return screen.getByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement;
+}
+async function resumeSavedDraft() {
+  const saved = Array.from(remoteDrafts.values())[0];
+  expect(saved).toBeDefined();
+  cleanup();
+  render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={clone(saved)} autoOpen hideTrigger /></QueryClientProvider>);
+  return await loadedField();
 }
 
 const gifAsset: GifAsset = { id: "123", title: "Celebrate", description: "A celebration", url: "https://static.klipy.com/ii/example/full.gif", poster: "https://static.klipy.com/ii/example/still.jpg", mp4: "https://static.klipy.com/ii/example/video.mp4", width: 280, height: 498, attribution: "Powered by KLIPY" };
@@ -84,7 +137,7 @@ it("keeps GIFs and edited alt text on their original segment when a thread is re
   const segments = publish.mock.calls[0][0].publication.segments;
   expect(segments[0].draft).toMatchObject({ text: "Second segment" });
   expect(segments[0].draft.media).toBeUndefined();
-  expect(segments[1].draft).toMatchObject({ id: "first", media: { kind: "gif", alt: "A person celebrates a win", asset: { id: "123" } } });
+  expect(segments[1].draft).toMatchObject({ media: { kind: "gif", alt: "A person celebrates a win", asset: { id: "123" } } });
 });
 
 it("opens from the floating button and publishes only on explicit submission", async () => {
@@ -106,7 +159,7 @@ it("opens from the floating button and publishes only on explicit submission", a
   expect(screen.getByRole("button", { name: "Post" }).hasAttribute("disabled")).toBe(true);
   fireEvent.change(field, { target: { value: "Hello #Bluesky" } });
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
-  await screen.findByRole("status");
+  await screen.findByText("Post Published");
   expect(publish).toHaveBeenCalledTimes(1);
   expect(publish.mock.calls[0][0].text).toBe("Hello #Bluesky");
   expect(publish.mock.calls[0][0].session).toBe(oauth);
@@ -136,7 +189,7 @@ it.each(["metaKey", "ctrlKey"] as const)("publishes with the %s Enter composer s
   expect(publish.mock.calls[0][0].session).toBe(oauth);
 });
 
-it("enforces grapheme limits and preserves cancelled content when reopened", async () => {
+it("enforces grapheme limits and saves cancelled content separately from a fresh new compose", async () => {
   const field = await open();
   fireEvent.change(field, { target: { value: "👨‍👩‍👧‍👦".repeat(300) } });
   // This also exceeds the native byte limit even though the visible character count is valid.
@@ -147,7 +200,8 @@ it("enforces grapheme limits and preserves cancelled content when reopened", asy
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
-  expect((await screen.findByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement).value).toBe("a".repeat(301));
+  expect((await loadedField()).value).toBe("");
+  expect(Array.from(remoteDrafts.values())[0].draft.posts[0].text).toBe("a".repeat(301));
 });
 
 it("preserves content on failure and allows retry", async () => {
@@ -224,7 +278,7 @@ it("isolates personal drafts and pending guards when the owner changes", async (
   const publish = spyOn(compose, "createBlueskyPost").mockImplementation(args => { captured = args; return new Promise(resolve => { finish = resolve; }); }); restores.push(() => publish.mockRestore());
   const view = render(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
-  fireEvent.change(await screen.findByRole("textbox", { name: "Post Text" }), { target: { value: "Private Old Draft" } });
+  fireEvent.change(await loadedField(), { target: { value: "Private Old Draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
   await waitFor(() => expect(captured).toBeDefined());
   const next = { did: "did:plc:next" } as unknown as OAuthSession;
@@ -399,8 +453,8 @@ it("preserves a thread on dismissal and retries its original publication after p
   fireEvent.change(screen.getByRole("textbox", { name: "Post 2 Text" }), { target: { value: "Thread Reply" } });
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
-  expect((await screen.findByRole("textbox", { name: "Post 2 Text" }) as HTMLTextAreaElement).value).toBe("Thread Reply");
+  await resumeSavedDraft();
+  expect((screen.getByRole("textbox", { name: "Post 2 Text" }) as HTMLTextAreaElement).value).toBe("Thread Reply");
   fireEvent.click(screen.getByRole("button", { name: "Post Thread" }));
   await screen.findByRole("alert");
   expect(screen.getByText("1 of 2 Posts Published. Retry Continues This Thread.")).toBeTruthy();
@@ -425,12 +479,107 @@ it("preserves removed segment cards across dismissal and unlocks a thread that f
   fireEvent.change(screen.getByRole("textbox", { name: "Post 2 Text" }), { target: { value: "Second Post" } });
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
-  await screen.findByRole("textbox", { name: "Post Text" });
+  await resumeSavedDraft();
   expect(screen.queryByText("Dismissed Card")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Post Thread" }));
   await screen.findByRole("alert");
   expect(publish.mock.calls[0][0].publication.segments[0].draft.linkPreview).toBeUndefined();
   expect(screen.getByRole("textbox", { name: "Post Text" }).hasAttribute("disabled")).toBe(false);
   expect(screen.getByRole("button", { name: "Add Post" }).hasAttribute("disabled")).toBe(false);
+});
+
+it("resumes a cloud draft, autosaves edits on close, and starts a separate blank post", async () => {
+  const initial = cloudView("resume", { posts: [{ text: "Saved cloud text" }] });
+  remoteDrafts.set(initial.id, initial);
+  const changed = mock(() => {});
+  const view = render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger onDraftChanged={changed} /></QueryClientProvider>);
+  fireEvent.change(await loadedField(), { target: { value: "Edited saved cloud text" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(remoteDrafts.get(initial.id)?.draft.posts[0].text).toBe("Edited saved cloud text");
+  expect(remoteDrafts.size).toBe(1);
+  expect(changed).toHaveBeenCalled();
+  view.rerender(<QueryClientProvider client={cache}><SocialComposeButton /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  expect((await loadedField()).value).toBe("");
+});
+
+it("blocks unavailable media from publishing until the user explicitly removes it", async () => {
+  const initial = cloudView("media", { posts: [{ text: "Text with device media", embedImages: [{ localRef: { path: "original-device/photo" }, alt: "Photo" }], embedVideos: [{ localRef: { path: "original-device/video" } }] }] });
+  remoteDrafts.set(initial.id, initial);
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: "at://did:plc:viewer/app.bsky.feed.post/media", cid: "cid" });
+  restores.push(() => publish.mockRestore());
+  render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger /></QueryClientProvider>);
+  await loadedField();
+  expect(screen.getByRole("button", { name: "Post" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  expect(publish).not.toHaveBeenCalled();
+  expect(remoteDrafts.get(initial.id)?.draft.posts[0].embedImages).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Remove Unavailable Attachments" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Post" }).hasAttribute("disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][0]).toMatchObject({ text: "Text with device media" });
+  expect(publish.mock.calls[0][0].media).toBeUndefined();
+});
+
+const unsupportedSettings: Partial<AppBskyDraftDefs.Draft>[] = [
+  { threadgateAllow: [] },
+  { postgateEmbeddingRules: [] },
+  { langs: ["fr"] },
+  { posts: [{ text: "Foreign labeled draft", labels: { $type: "com.atproto.label.defs#selfLabels", values: [{ val: "sexual" }] } }] },
+  { posts: [{ text: "Foreign quote", embedRecords: [{ record: { uri: "at://did:plc:other/app.bsky.feed.post/one", cid: "bafyreia" } }] }] },
+];
+it.each(unsupportedSettings)("preserves unsupported foreign draft settings and prevents publishing: %j", async settings => {
+  const initial = cloudView("foreign", { posts: [{ text: "Foreign draft" }], ...settings });
+  remoteDrafts.set(initial.id, initial);
+  const publish = spyOn(compose, "createBlueskyPost");
+  restores.push(() => publish.mockRestore());
+  render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger /></QueryClientProvider>);
+  const field = await loadedField();
+  expect(screen.getByText("This Draft Has Quote, Language, Content Label, or Audience Settings That This Composer Cannot Publish Yet. Continue in the Original App to Keep Those Settings.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Post" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  expect(publish).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(remoteDrafts.get(initial.id)?.draft).toMatchObject(initial.draft);
+});
+
+it("retries failed draft cleanup without publishing the successful post again", async () => {
+  const initial = cloudView("cleanup", { posts: [{ text: "Publish only once" }] });
+  remoteDrafts.set(initial.id, initial);
+  const remove = spyOn(cloudDrafts, "deleteSocialDraft").mockRejectedValue(new Error("Cleanup unavailable"));
+  const publish = spyOn(compose, "createBlueskyPost").mockImplementation(async args => {
+    const item = args.publication!.segments[0];
+    item.attempted = true;
+    item.result = { uri: "at://did:plc:viewer/app.bsky.feed.post/once", cid: "cid" };
+    await args.checkpoint?.();
+    return item.result;
+  });
+  restores.push(() => remove.mockRestore(), () => publish.mockRestore());
+  render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger /></QueryClientProvider>);
+  await loadedField();
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByRole("button", { name: "Finish Draft Cleanup" });
+  expect(publish).toHaveBeenCalledTimes(1);
+  const submit = screen.getByRole("button", { name: "Post" });
+  expect(submit.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(submit);
+  remove.mockResolvedValue(undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Finish Draft Cleanup" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(remove).toHaveBeenCalledTimes(2);
+  expect(publish).toHaveBeenCalledTimes(1);
+});
+
+it("holds the account's exclusive edit lock until unmount and permits the next composer afterward", async () => {
+  await open();
+  const name = `the-social-wire.social-composer:${oauth.did}`;
+  expect(await navigator.locks.request(name, { mode: "exclusive", ifAvailable: true }, lock => lock !== null)).toBe(false);
+  await act(async () => { cleanup(); await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(await navigator.locks.request(name, { mode: "exclusive", ifAvailable: true }, lock => lock !== null)).toBe(true);
+  expect((await open()).value).toBe("");
 });

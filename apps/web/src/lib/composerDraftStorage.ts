@@ -1,7 +1,21 @@
 import type { ThreadPublication, ThreadSegment } from "./blueskyThreadClient";
+import type { AppBskyDraftDefs } from "@atproto/api";
 import { jsonToLex, stringifyLex } from "@atproto/api";
 
-export type ComposerDraft = { version: 1; did: string; segments: ThreadSegment[]; publication?: ThreadPublication };
+export type ComposerDraft = { version: 1; did: string; segments: ThreadSegment[]; publication?: ThreadPublication; cloud?: {
+  id?: string;
+  deviceId: string;
+  updatedAt: number;
+  nativeDraft?: AppBskyDraftDefs.Draft;
+  acknowledged?: AppBskyDraftDefs.Draft;
+  stalePayloads?: string[];
+  createIntent?: { draft: AppBskyDraftDefs.Draft; baselineIds: string[] };
+  completed?: boolean;
+  cleaned?: boolean;
+  conflictCopyContext?: string;
+  pendingUpdate?: { draft: AppBskyDraftDefs.Draft; previous?: AppBskyDraftDefs.Draft };
+  forkSource?: { id: string; draft: AppBskyDraftDefs.Draft };
+} };
 let database: Promise<IDBDatabase> | undefined;
 const queues = new Map<string, Promise<unknown>>();
 
