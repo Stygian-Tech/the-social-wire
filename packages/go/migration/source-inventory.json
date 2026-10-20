@@ -11118,12 +11118,16 @@
           "sha256": "e2916a289590995e3f87180eaa1cad7a6504c9bcc50f0d452dde96493ea8e6c9"
         },
         {
+          "path": "packages/lexicons/__tests__/socialDraftLexicons.test.ts",
+          "sha256": "2d2fcff695da8d0b70cbd948588bd7861b149ee4f3b16475859e5c297bbe3692"
+        },
+        {
           "path": "packages/lexicons/__tests__/standardReaderListLexicons.test.ts",
           "sha256": "e6aac713d1aa05c821291b085dfe15c9541ece8fe443ac7353188d0aec6f05d9"
         },
         {
           "path": "packages/lexicons/__tests__/xrpcLexicons.test.ts",
-          "sha256": "124f2afe12425c3cea6adfe535dfc8e0d9b0d56099b0cdee187938a2d5787de4"
+          "sha256": "877adb058250eaca444beb25d54bb5a23be2e0ab6e4710d436d181492bd5022b"
         },
         {
           "path": "packages/lexicons/app/skyreader/feed/subscription.json",
@@ -11442,6 +11446,38 @@
           "sha256": "507b415e8b6c501bf8a044c9c8288da4dd0d02003c623855a7604e9869a2c8e8"
         },
         {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/defs.json",
+          "sha256": "f1e584c026b661a977288e6fa414d70472584bf5ccd5313f7b6e762c185f209c"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/deleteManifest.json",
+          "sha256": "ecd6d32a632bdbd1883a8bf8d626da83dd49a58fb9d011ec0658b343aa008569"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/getAttachment.json",
+          "sha256": "f0dc4f2dd8db11b50c2c0c8cc4094720b3da2edc50599bac5b26cc3dc7ce2954"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/getGifFile.json",
+          "sha256": "2e697ade222f5d9d267964dacb7131c4e45fbe3d5302980c9e20e604a300e1b7"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/getManifest.json",
+          "sha256": "49443528688f21a9a2b84e065f2830f99aad70d16632ccdfbee703e2dbe839f2"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/putManifest.json",
+          "sha256": "6c255286d5b490d3a79bf0b1f81fc143d25a9a9527274dca044e56ffb1b5c8a1"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/reserveAttachment.json",
+          "sha256": "90b703b646e46f964215f0039f4e95a8a75d513798e952338d9eee30a5558776"
+        },
+        {
+          "path": "packages/lexicons/app/thesocialwire/socialDraft/uploadAttachment.json",
+          "sha256": "48fa608447d1cc2fbfbca24f81fbdb14cd8f6460c62001061511a88d3ffe8246"
+        },
+        {
           "path": "packages/lexicons/app/thesocialwire/sports/selection.json",
           "sha256": "8d946218e4750755438ee1d15a6ba1b45f244c9d9dce9a894eb4dfb1497cc9f2"
         },
@@ -11733,7 +11769,7 @@
         },
         {
           "path": "packages/spec/__tests__/endpoint-manifest.test.ts",
-          "sha256": "9e29065892bae1eda832edfe9b7d92184525f7254a848bc6bd9413751e269f7d"
+          "sha256": "b4983208ca94f64e389b27f9d43b3cc5521135ebb076fe0c744a17dc954b92b3"
         },
         {
           "path": "packages/spec/__tests__/ingress-go-image-dependencies.test.ts",
@@ -11802,6 +11838,10 @@
         {
           "path": "packages/spec/__tests__/schema-readiness-deployment.test.ts",
           "sha256": "efea935dfd86fa150fc71ae51b8e457fdc0f9fde636b69aa7381cb3f970405bc"
+        },
+        {
+          "path": "packages/spec/__tests__/social-draft-contract.test.ts",
+          "sha256": "ad56ffb2d8a191f705e18998f0be80195a55120e849e5f83f4b726e84267c7f1"
         },
         {
           "path": "packages/spec/__tests__/sports-public-contract.test.ts",
@@ -11881,11 +11921,11 @@
         },
         {
           "path": "packages/spec/endpoint-manifest.json",
-          "sha256": "b1d27bc98b25f95d2eb3795762b7b80af83cef3267df1531d8c5aa1a350a9d75"
+          "sha256": "d38679c38b6e7f0deaaf496a15c3e6afec17d9b46c8580a1ce3f5081f88c0721"
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "cbf794a99918d196b0a1da30f739259691999bf9ce6805644572d02e1bae1823"
+          "sha256": "569140b141c4b780b9760e328d54dd8f0d3bdbf855c2d93307c72d9d814ffeac"
         },
         {
           "path": "packages/spec/package.json",
