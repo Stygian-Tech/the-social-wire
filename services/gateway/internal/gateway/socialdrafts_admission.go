@@ -77,7 +77,8 @@ func (a *socialDraftAdmission) middleware(next http.Handler) http.Handler {
 			writeError(w, 401, "Authentication required")
 			return
 		}
-		upload := r.URL.Path == "/xrpc/app.thesocialwire.socialDraft.uploadAttachment"
+		// Catalog file copies share the bounded transfer slots and upload budget.
+		upload := r.URL.Path == "/xrpc/app.thesocialwire.socialDraft.uploadAttachment" || r.URL.Path == socialDraftGIFPath
 		release, status := a.acquire(r.Context(), auth.DID, upload, time.Now())
 		if status != 0 {
 			// Do not let HTTP/1 drain a rejected, potentially stalled upload body

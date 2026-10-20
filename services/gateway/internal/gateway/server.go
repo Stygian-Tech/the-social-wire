@@ -51,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 		s.Limiter = &RequestLimiter{}
 	}
 	draftAdmission := &socialDraftAdmission{redis: s.Limiter.Redis, namespace: s.Limiter.Namespace}
+	mux.Handle("GET /xrpc/app.thesocialwire.socialDraft.getGifFile", auth(draftAdmission.middleware(http.HandlerFunc(s.socialDraftGIF))))
 	for _, route := range Routes {
 		if route.Service == "circle" && !s.Config.Serves("circle") {
 			continue

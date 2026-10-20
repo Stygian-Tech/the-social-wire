@@ -2094,6 +2094,48 @@ security:
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 paths:
+  /xrpc/app.thesocialwire.socialDraft.getGifFile:
+    get:
+      operationId: socialDraftGetGifFile
+      summary: Copy a Private Catalog GIF File
+      description: |
+        Gateway-local, authenticated exact catalog ID lookup. Requires the server's KLIPY key.
+        Accepts no input URL and never follows redirects or substitutes a missing rendition.
+        Uses the public client's pinned-DNS SSRF restrictions; provider credentials remain server-only.
+        Validates expected MIME, sniffed bytes and complete body length before returning any file bytes.
+        At most 104857600 bytes per gif/mp4/webm file and 1000000 bytes per poster.
+        Shares private draft rate limits and bounded transfer admission. Not implemented by AppView.
+      security: [{ATProtoOAuthDPoP: []}]
+      parameters:
+        - in: query
+          name: id
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]{1,128}$'}
+        - in: query
+          name: rendition
+          required: true
+          schema: {type: string, enum: [gif, poster, mp4, webm]}
+      responses:
+        '200':
+          description: Validated file bytes in the exact requested rendition
+          headers:
+            Cache-Control: {schema: {type: string, const: 'private, no-store'}}
+            X-Content-Type-Options: {schema: {type: string, const: nosniff}}
+            Content-Length: {schema: {type: integer, minimum: 1, maximum: 104857600}}
+          content:
+            image/gif: {schema: {type: string, format: binary, maxLength: 104857600}}
+            video/mp4: {schema: {type: string, format: binary, maxLength: 104857600}}
+            video/webm: {schema: {type: string, format: binary, maxLength: 104857600}}
+            image/jpeg: {schema: {type: string, format: binary, maxLength: 1000000}}
+            image/png: {schema: {type: string, format: binary, maxLength: 1000000}}
+            image/webp: {schema: {type: string, format: binary, maxLength: 1000000}}
+        '400': {description: InvalidRequest}
+        '401': {description: Unauthorized}
+        '404': {description: Exact catalog ID or requested rendition not found}
+        '413': {description: Quota - requested file exceeds its size limit}
+        '429': {description: Private draft rate or transfer capacity exceeded}
+        '502': {description: Provider unavailable or invalid response MIME, bytes or length}
+        '503': {description: Unavailable}
   /xrpc/app.thesocialwire.socialDraft.reserveAttachment:
     post:
       operationId: "socialDraftReserveAttachment"
@@ -2123,7 +2165,15 @@ paths:
         "404":
           description: "NotFound"
         "409":
-          description: "Conflict or UploadPending"
+          description: "Conflict, UploadPending, or AssetRetired. AssetRetired requires a fresh asset ID; ordinary Conflict does not indicate retirement."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: {type: string, enum: [Conflict, UploadPending, AssetRetired]}
+                  message: {type: string}
         "413":
           description: "Quota"
         "503":

@@ -42,7 +42,7 @@ describe("Social Wire XRPC lexicons", () => {
       expect(lexicon.defs.main.type, nsid).toBe(expectedType);
       if (expectedType === "query") expect(lexicon.defs.main.parameters?.type).toBe("params");
       else expect(lexicon.defs.main.input?.encoding).toBe(nsid === "app.thesocialwire.socialDraft.uploadAttachment" ? "application/octet-stream" : "application/json");
-      expect(lexicon.defs.main.output.encoding).toBe(nsid === "app.thesocialwire.socialDraft.getAttachment" ? "*/*" : "application/json");
+      expect(lexicon.defs.main.output.encoding).toBe(["app.thesocialwire.socialDraft.getAttachment", "app.thesocialwire.socialDraft.getGifFile"].includes(nsid) ? "*/*" : "application/json");
       expect(lexicon.defs.main.errors.length).toBeGreaterThan(0);
     }
   });
