@@ -113,6 +113,10 @@ export function segmentsToSocialDraft(segments: ThreadSegment[], deviceId: strin
       post.embedExternals = [{ ...post.embedExternals?.find(external => external.uri === uri), uri }];
     }
     if (segment.quoteTo && !post.embedRecords?.length) post.embedRecords = [{ record: { uri: segment.quoteTo.uri, cid: segment.quoteTo.cid } }];
+    if (segment.removedLinkUrl && post.embedExternals) {
+      post.embedExternals = post.embedExternals.filter(external => external.uri !== segment.removedLinkUrl);
+      if (!post.embedExternals.length) delete post.embedExternals;
+    }
     if (segment.linkPreview && !post.embedExternals?.length && segment.removedLinkUrl !== segment.linkPreview.uri) post.embedExternals = [{ uri: segment.linkPreview.uri }];
     return post;
   });

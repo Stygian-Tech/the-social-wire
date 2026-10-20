@@ -599,3 +599,46 @@ it("holds the account's exclusive edit lock until unmount and permits the next c
   expect(await navigator.locks.request(name, { mode: "exclusive", ifAvailable: true }, lock => lock !== null)).toBe(true);
   expect((await open()).value).toBe("");
 });
+
+it("publishes an imported external embed even when its URI is absent from the draft text", async () => {
+  const uri = "https://example.com/article";
+  const initial = cloudView("imported-external", { posts: [{ text: "Read this", embedExternals: [{ uri }] }] });
+  remoteDrafts.set(initial.id, initial);
+  const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockResolvedValue(null);
+  const publish = spyOn(compose, "createBlueskyPost").mockResolvedValue({ uri: "at://did:plc:viewer/app.bsky.feed.post/external", cid: "cid" });
+  restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
+  render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger /></QueryClientProvider>);
+  expect((await loadedField()).value).toBe("Read this");
+  expect(publish).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][0]).toMatchObject({ text: "Read this", linkPreview: { uri } });
+  expect(publish.mock.calls[0][0].publication?.segments[0].draft.linkPreview?.uri).toBe(uri);
+  expect(metadata).not.toHaveBeenCalled();
+});
+
+it("does not restore the imported external fallback after its visible preview is explicitly removed", async () => {
+  const uri = "https://example.com/article";
+  const initial = cloudView("removed-imported-external", { posts: [{ text: "Read this", embedExternals: [{ uri }] }] });
+  remoteDrafts.set(initial.id, initial);
+  const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockResolvedValue({ title: "Imported Article", excerpt: "Article summary" });
+  const publish = spyOn(compose, "createBlueskyPost").mockImplementation(async () => {
+    // Publish flushes autosave first; the native embed must already be gone.
+    expect(remoteDrafts.get(initial.id)?.draft.posts[0].embedExternals).toBeUndefined();
+    return { uri: "at://did:plc:viewer/app.bsky.feed.post/no-external", cid: "cid" };
+  });
+  restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
+  render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger /></QueryClientProvider>);
+  expect((await loadedField()).value).toBe("Read this");
+  expect(screen.getByRole("region", { name: "Link Preview" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: uri }).getAttribute("href")).toBe(uri);
+  fireEvent.click(screen.getByRole("button", { name: "Remove Link Preview" }));
+  expect(screen.queryByRole("region", { name: "Link Preview" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][0].text).toBe("Read this");
+  expect(publish.mock.calls[0][0].linkPreview).toBeUndefined();
+  expect(publish.mock.calls[0][0].publication?.segments[0].draft.linkPreview).toBeUndefined();
+});
