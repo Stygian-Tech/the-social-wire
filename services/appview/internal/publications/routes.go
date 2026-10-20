@@ -124,6 +124,10 @@ func (a Routes) enroll(w http.ResponseWriter, r *http.Request) {
 	if a.Service.Cache != nil {
 		_ = a.Service.Cache.InvalidateSidebar(r.Context(), viewer.DID)
 	}
+	if e := a.Service.RefreshEnrollmentCounters(r.Context(), viewer.DID, body.AuthorDIDs, body.FeedURLs); e != nil {
+		fail(w, 503, "Enrollment counters unavailable")
+		return
+	}
 	write(w, map[string]int{"indexed": n})
 }
 func (a Routes) bootstrap(w http.ResponseWriter, r *http.Request) {

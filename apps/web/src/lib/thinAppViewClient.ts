@@ -369,13 +369,15 @@ export async function writeThroughReadMarkDelete(
 export async function enrollAuthorsInAppView(
   oauthSession: OAuthSession,
   authorDids: string[],
-  feedUrls: string[] = []
+  feedUrls: string[] = [],
+  signal?: AbortSignal
 ): Promise<void> {
   if (authorDids.length === 0 && feedUrls.length === 0) return;
   const res = await gatewayFetch(oauthSession, socialWireXrpc.enrollSources, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ authorDids, feedUrls }),
+    signal,
   });
   if (!res.ok) {
     throw new Error(`Thin AppView enroll failed (${res.status})`);

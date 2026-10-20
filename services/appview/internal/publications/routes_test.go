@@ -2,6 +2,10 @@ package publications
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/publicationcore"
 	"net/http"
@@ -9,6 +13,49 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestExplicitEnrollmentWaitsForCounters(t *testing.T) {
+	for _, path := range []string{"/v1/appview/enroll", "/xrpc/app.thesocialwire.appview.enrollSources"} {
+		for _, unavailable := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/unavailable=%v", path, unavailable), func(t *testing.T) {
+				service := publicationcore.NewService(nil, nil, nil)
+				defer service.Close()
+				service.Enroller = &publicationcore.Enroller{}
+				body := `{}`
+				want := http.StatusOK
+				if unavailable {
+					db, err := sql.Open("pgx", "postgres://unused.invalid/unused")
+					if err != nil {
+						t.Fatal(err)
+					}
+					db.Close()
+					service.DB = db
+					body = `{"feedUrls":["https://feed.invalid/rss"]}`
+					want = http.StatusServiceUnavailable
+				}
+				mux := http.NewServeMux()
+				(Routes{Service: service}).Register(mux)
+				req := httptest.NewRequest("POST", path, strings.NewReader(body))
+				req = req.WithContext(gatewaycore.ContextWithAuth(req.Context(), gatewaycore.AuthContext{DID: "did:plc:viewer"}))
+				w := httptest.NewRecorder()
+				mux.ServeHTTP(w, req)
+				if w.Code != want {
+					t.Fatalf("status %d, want %d: %s", w.Code, want, w.Body.String())
+				}
+				if unavailable {
+					if !strings.Contains(w.Body.String(), "Enrollment counters unavailable") || strings.Contains(w.Body.String(), "indexed") {
+						t.Fatal(w.Body.String())
+					}
+				} else {
+					var response map[string]int
+					if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || len(response) != 1 || response["indexed"] != 0 {
+						t.Fatalf("public response changed: %s, %v", w.Body.String(), err)
+					}
+				}
+			})
+		}
+	}
+}
 
 func TestPublicationRoutesRequireVerifiedIdentity(t *testing.T) {
 	mux := http.NewServeMux()

@@ -93,17 +93,17 @@ func (e *Enroller) Enroll(ctx context.Context, auth gatewaycore.AuthContext, aut
 	if ctx.Err() != nil {
 		return count, ctx.Err()
 	}
-	if !recent && len(errs) > 0 {
-		return count, fmt.Errorf("PDS enrollment incomplete: %w", errors.Join(errs...))
+	if len(errs) > 0 {
+		errs = []error{fmt.Errorf("PDS enrollment incomplete: %w", errors.Join(errs...))}
 	}
 	if e.RSS != nil && len(feeds) > 0 {
 		n, err := e.IngestSubscriptions(ctx, auth, feeds)
 		count += n
 		if err != nil {
-			return count, err
+			errs = append(errs, err)
 		}
 	}
-	return count, nil
+	return count, errors.Join(errs...)
 }
 func (e *Enroller) IngestSubscriptions(ctx context.Context, auth gatewaycore.AuthContext, priority []string) (int, error) {
 	if e.RSS == nil {

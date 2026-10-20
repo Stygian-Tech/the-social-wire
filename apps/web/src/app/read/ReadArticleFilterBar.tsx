@@ -37,7 +37,7 @@ export function ReadArticleFilterBar() {
   } = useReadRoute();
   const isTabletPortrait = useIsTabletPortrait();
   const clientHydrated = useClientHydrated();
-  const { refresh } = useSidebarBootstrap();
+  const { refresh, refreshMessage } = useSidebarBootstrap();
   const editorialFeed = editorialFeedForReadRoute(
     pathname,
     searchParams.get("feed"),
@@ -129,8 +129,13 @@ export function ReadArticleFilterBar() {
     );
   }
 
+  const refreshStatus = refresh.isError ? "Refresh Incomplete — Try Again" : refreshMessage;
   return (
-    <FeedHeader title={feedTitle}>
+    <FeedHeader title={feedTitle} subtitle={
+      refreshStatus ? <span role="status" aria-live="polite" aria-atomic="true" className={cn("hidden sm:inline", refresh.isError && "text-destructive")}>{refreshStatus}</span> : undefined
+    } mobileStatus={
+      refreshStatus ? <span role="status" aria-live="polite" aria-atomic="true" className={refresh.isError ? "text-destructive" : undefined}>{refreshStatus}</span> : undefined
+    }>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {isTabletPortrait ? (
           <Button
@@ -203,8 +208,9 @@ export function ReadArticleFilterBar() {
           className="size-8 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 hover:text-foreground"
           onClick={() => refresh.mutate()}
           disabled={refresh.isPending}
-          aria-label="Refresh Publications"
-          title="Refresh Publications"
+          aria-label={refresh.isPending ? "Refreshing Publications" : refresh.isError ? "Retry Refresh Publications" : "Refresh Publications"}
+          aria-busy={refresh.isPending}
+          title={refresh.isError ? refresh.error.message : refreshMessage || "Refresh Publications"}
         >
           <RefreshCw
             aria-hidden="true"
