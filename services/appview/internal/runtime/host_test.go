@@ -68,7 +68,7 @@ func TestEnabledDraftStorageRejectsIncompleteConfiguration(t *testing.T) {
 	}
 	_, err := NewHost(context.Background(), map[string]string{
 		"APP_ENV": "dev", "DATABASE_URL": dsn, "SOCIAL_DRAFTS_ENABLED": "true",
-		"ENABLE_THIN_APPVIEW": "true",
+		"ENABLE_THIN_APPVIEW":             "true",
 		"GATEWAY_APPVIEW_INTERNAL_SECRET": strings.Repeat("i", 32), "OPERATIONS_TELEMETRY_ENABLED": "false",
 	})
 	if err == nil || !strings.Contains(err.Error(), "private draft storage is enabled") {
