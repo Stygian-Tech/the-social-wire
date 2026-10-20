@@ -1,9 +1,12 @@
 import type { AppBskyDraftDefs } from "@atproto/api";
 import type { ThreadSegment } from "./blueskyThreadClient";
-import { gifEmbedURI, klipyMediaURL, type ComposerPhoto } from "./composerMedia";
+import { gifEmbedURI, klipyMediaURL, type ComposerPhoto, type ComposerMedia, type ComposerGif, type GifAsset, isGifCatalogId, gifRenditions } from "./composerMedia";
 
-import { assertDraftAttachmentActor, describeDraftAttachment, downloadDraftAttachment, uploadDraftAttachment, type DraftAttachmentActor, type DraftAttachmentManifest, type DraftAttachmentRef } from "./socialDraftAttachmentClient";
+import { assertDraftAttachmentActor, describeDraftAttachment, downloadDraftAttachment, uploadDraftAttachment, draftAttachmentSHA256, isRetiredDraftAttachment, type DraftAttachmentActor, type DraftAttachmentManifest, type DraftAttachmentRef } from "./socialDraftAttachmentClient";
 
+import { getGifFile, validateGifFile } from "./klipyClient";
+
+const GIF_METADATA = "app.thesocialwire.socialDraft.gif";
 const DEVICE_KEY = "the-social-wire.social-draft-device.v1";
 
 /** Refuse cloud creation if a stable device identity cannot be persisted. */
@@ -34,7 +37,7 @@ function restoreGif(uri: string): ThreadSegment["media"] | undefined {
     };
     const asset = { id: uri, title: "GIF", description: "", attribution: "KLIPY", url: uri.split("?")[0], poster: uri.split("?")[0], width, height, mp4: rendition("mp4"), webm: rendition("webm") };
     if (gifEmbedURI(asset) !== uri) return;
-    return { kind: "gif", asset, alt: "" };
+    return { kind: "gif", asset, alt: "", unavailable: true };
   } catch { return; }
 }
 
@@ -75,7 +78,7 @@ export function socialDraftToSegments(draft: AppBskyDraftDefs.Draft, localSegmen
         if (segment.media?.kind !== "gif") return false;
         try { return gifEmbedURI(segment.media.asset) === uri; } catch { return false; }
       })?.media;
-      media = localGif ?? restoreGif(uri);
+      media = localGif ?? nativeGifMetadata(post.embedExternals[0]) ?? restoreGif(uri);
     }
     // The current composer has no video editor; preserve all video/gallery data.
     const unavailableVideos = !!post.embedVideos?.length || !!(post as AppBskyDraftDefs.DraftPost & { embedGallery?: unknown }).embedGallery;
@@ -85,7 +88,7 @@ export function socialDraftToSegments(draft: AppBskyDraftDefs.Draft, localSegmen
     });
     const external = post.embedExternals?.[0];
     const linkPreview = external && !unavailableExternal && !media ? { uri: external.uri, title: new URL(external.uri).hostname, description: "" } : undefined;
-    return { ...local, id: local?.id ?? crypto.randomUUID(), text: post.text, media, linkPreview, nativeDraftPost: structuredClone(post), unavailableDraftMedia: unavailableImages || unavailableVideos || unavailableExternal || mixedMedia };
+    return { ...local, id: local?.id ?? crypto.randomUUID(), text: post.text, media, linkPreview, nativeDraftPost: structuredClone(post), unavailableDraftMedia: unavailableImages || unavailableVideos || unavailableExternal || mixedMedia || !!(media?.kind === "gif" && media.unavailable) };
   });
 }
 
@@ -118,7 +121,9 @@ export function segmentsToSocialDraft(segments: ThreadSegment[], deviceId: strin
     });
     if (segment.media?.kind === "gif") {
       const uri = gifEmbedURI(segment.media.asset);
-      post.embedExternals = [{ ...post.embedExternals?.find(external => external.uri === uri), uri }];
+      const external = { ...post.embedExternals?.find(external => external.uri === uri), uri };
+      if (isGifCatalogId(segment.media.asset.id) && !segment.media.unavailable) Object.assign(external, { [GIF_METADATA]: { version: 1, asset: segment.media.asset, alt: segment.media.alt } });
+      post.embedExternals = [external];
     }
     if (segment.quoteTo && !post.embedRecords?.length) post.embedRecords = [{ record: { uri: segment.quoteTo.uri, cid: segment.quoteTo.cid } }];
     if (segment.removedLinkUrl && post.embedExternals) {
@@ -168,7 +173,12 @@ export async function preparePrivateDraftPhotos(actor: DraftAttachmentActor, seg
       assertDraftAttachmentActor(actor);
       if (photo.status !== "ready" || !photo.blob || !photo.width || !photo.height) throw new Error("Photo Preparation Is Incomplete. Retry Or Reattach The Photo Before Saving.");
       const previous = photo.privateAttachment?.ownerDid === actor.viewerDid ? photo.privateAttachment : undefined;
-      const original = await describeDraftAttachment(photo.original, photo.name, previous?.original);
+      const head = new Uint8Array(await photo.original.slice(0, 4).arrayBuffer());
+      const sniffedType = head[0] === 255 && head[1] === 216 && head[2] === 255 ? "image/jpeg" : head[0] === 137 && head[1] === 80 && head[2] === 78 && head[3] === 71 ? "image/png" : photo.original.type;
+      // Preserve the editor's original Blob identity; upload an exact-byte typed
+      // view when resuming photos prepared before MIME normalization existed.
+      const originalBlob = sniffedType === photo.original.type ? photo.original : photo.original.slice(0, photo.original.size, sniffedType);
+      const original = await describeDraftAttachment(originalBlob, photo.name, previous?.original);
       const output = await describeDraftAttachment(photo.blob, photo.name, previous?.prepared);
       assertDraftAttachmentActor(actor);
       const replace = (value: ComposerPhoto) => { prepared = prepared.map(item => item.media?.kind === "photos" ? { ...item, media: { ...item.media, photos: item.media.photos.map(candidate => candidate.id === photo.id && candidate.original === photo.original && candidate.blob === photo.blob ? value : candidate) } } : item); };
@@ -176,11 +186,23 @@ export async function preparePrivateDraftPhotos(actor: DraftAttachmentActor, seg
       replace(portable);
       await checkpoint(prepared);
       assertDraftAttachmentActor(actor);
-      const originalReady = await uploadDraftAttachment(actor, original, photo.original);
-      const preparedReady = await uploadDraftAttachment(actor, output, photo.blob);
-      portable = { ...portable, privateAttachment: { ownerDid: actor.viewerDid, original: originalReady, prepared: preparedReady } };
-      replace(portable);
-      await checkpoint(prepared);
+      for (const [which, blob] of [["original", originalBlob], ["prepared", photo.blob]] as const) {
+        let asset = portable.privateAttachment[which];
+        let ready;
+        try { ready = await uploadDraftAttachment(actor, asset, blob); }
+        catch (error) {
+          if (!isRetiredDraftAttachment(error)) throw error;
+          assertDraftAttachmentActor(actor);
+          asset = { ...asset, assetId: crypto.randomUUID(), state: "reserved" };
+          portable = { ...portable, privateAttachment: { ...portable.privateAttachment, [which]: asset } };
+          replace(portable);
+          await checkpoint(prepared);
+          ready = await uploadDraftAttachment(actor, asset, blob);
+        }
+        portable = { ...portable, privateAttachment: { ...portable.privateAttachment, [which]: ready } };
+        replace(portable);
+        await checkpoint(prepared);
+      }
     }
   }
 }
@@ -215,4 +237,134 @@ export async function restorePrivateDraftPhotos(actor: DraftAttachmentActor, dra
   // Recovered paths supersede local copies; retain unrelated device-bound bytes.
   const remaining = local?.map(segment => segment.media?.kind === "photos" ? { ...segment, media: { ...segment.media, photos: segment.media.photos.filter(photo => !photo.privateAttachment || !downloadedPaths.has(privatePhotoPath(photo))) } } : segment);
   return socialDraftToSegments(draft, [...(remaining ?? []), ...recovered]);
+}
+
+
+function nativeGifMetadata(external: { uri: string }): ComposerGif | undefined {
+  const metadata = (external as unknown as Record<string, unknown>)[GIF_METADATA] as { version?: number; asset?: GifAsset; alt?: string } | undefined;
+  try {
+    if (metadata?.version !== 1 || !metadata.asset || ["id", "title", "description", "url", "poster", "attribution"].some(key => typeof metadata.asset![key as keyof GifAsset] !== "string") || !isGifCatalogId(metadata.asset.id) || typeof metadata.alt !== "string" || metadata.alt.length > 2000 || gifEmbedURI(metadata.asset) !== external.uri) return;
+    klipyMediaURL(metadata.asset.poster);
+    return { kind: "gif", asset: structuredClone(metadata.asset), alt: metadata.alt, unavailable: true };
+  } catch { return; }
+}
+export function hasDraftGifs(draft?: AppBskyDraftDefs.Draft): boolean {
+  return !!draft?.posts.some(post => post.embedExternals?.some(external => !!restoreGif(external.uri)));
+}
+export async function privateGifReferenceKey(asset: GifAsset): Promise<string> {
+  if (!isGifCatalogId(asset.id)) throw new Error("Reselect This GIF To Privately Sync Its Files.");
+  return `socialwire-private://v1/gif/${asset.id}/${await draftAttachmentSHA256(new Blob([gifEmbedURI(asset)]))}`;
+}
+const gifRefPattern = /^socialwire-private:\/\/v1\/gif\/([A-Za-z0-9_-]{1,128})\/([0-9a-f]{64})\/(gif|poster|mp4|webm)$/;
+export function privateDraftGifRefs(segments: ThreadSegment[]): DraftAttachmentRef[] {
+  const refs = new Map<string, DraftAttachmentRef>();
+  for (const segment of segments) {
+    const media = segment.media;
+    if (media?.kind !== "gif") continue;
+    if (media.unavailable || !media.privateFiles || media.privateFiles.identity !== gifEmbedURI(media.asset)) throw new Error("GIF Files Are Unavailable. Retry Or Reselect The GIF.");
+    for (const rendition of gifRenditions(media.asset)) {
+      const file = media.privateFiles.files[rendition];
+      if (!file || file.asset.state !== "ready") throw new Error("Private GIF Upload Is Pending. Retry Before Closing.");
+      const ref: DraftAttachmentRef = { assetId: file.asset.assetId, role: rendition === "mp4" || rendition === "webm" ? "video" : rendition, ref: `${media.privateFiles.referenceKey}/${rendition}` };
+      const previous = refs.get(ref.ref);
+      if (previous && previous.assetId !== ref.assetId) throw new Error("Private GIF Files Have Conflicting References. Reselect The GIF.");
+      refs.set(ref.ref, ref);
+    }
+  }
+  return [...refs.values()];
+}
+/** Snapshot immutable provider metadata and all bytes locally before private uploads. */
+export async function preparePrivateDraftGifs(actor: DraftAttachmentActor, segments: ThreadSegment[], checkpoint: (prepared: ThreadSegment[]) => Promise<void>): Promise<void> {
+  let prepared = segments;
+  for (const segment of segments) {
+    const media = segment.media;
+    if (media?.kind !== "gif") continue;
+    if (!isGifCatalogId(media.asset.id)) throw new Error("Reselect This GIF To Privately Sync Its Files. Its Existing Draft Content Is Preserved.");
+    assertDraftAttachmentActor(actor);
+    const identity = gifEmbedURI(media.asset);
+    const referenceKey = await privateGifReferenceKey(media.asset);
+    const shared = prepared.find(item => item.id !== segment.id && item.media?.kind === "gif" && item.media.privateFiles?.ownerDid === actor.viewerDid && item.media.privateFiles.identity === identity)?.media;
+    const previous = media.privateFiles?.ownerDid === actor.viewerDid && media.privateFiles.identity === identity ? media.privateFiles : shared?.kind === "gif" ? shared.privateFiles : undefined;
+    let files = { ...previous?.files };
+    const replace = async () => {
+      const privateFiles = { ownerDid: actor.viewerDid, identity, referenceKey, files };
+      prepared = prepared.map(item => item.id === segment.id && item.media?.kind === "gif" ? { ...item, media: { ...item.media, privateFiles, unavailable: !gifRenditions(media.asset).every(rendition => !!files[rendition]?.blob) }, unavailableDraftMedia: false } : item);
+      await checkpoint(prepared);
+      assertDraftAttachmentActor(actor);
+    };
+    for (const rendition of gifRenditions(media.asset)) {
+      const existing = files[rendition];
+      const blob = existing?.blob ?? await getGifFile(actor, media.asset.id, rendition);
+      assertDraftAttachmentActor(actor);
+      validateGifFile(blob, rendition);
+      const asset = await describeDraftAttachment(blob, `${media.asset.id}.${rendition}`, existing?.asset, rendition === "mp4" || rendition === "webm" ? "video" : rendition);
+      files = { ...files, [rendition]: { asset, blob } };
+      // Interrupted retrieval resumes from these exact bytes and IDs too.
+      await replace();
+    }
+    for (const rendition of gifRenditions(media.asset)) {
+      const file = files[rendition]!;
+      let asset;
+      try { asset = await uploadDraftAttachment(actor, file.asset, file.blob); }
+      catch (error) {
+        if (!isRetiredDraftAttachment(error)) throw error;
+        assertDraftAttachmentActor(actor);
+        const replacement = { ...file.asset, assetId: crypto.randomUUID(), state: "reserved" as const };
+        files = { ...files, [rendition]: { ...file, asset: replacement } };
+        await replace();
+        asset = await uploadDraftAttachment(actor, replacement, file.blob);
+      }
+      files = { ...files, [rendition]: { ...file, asset } };
+      await replace();
+    }
+  }
+}
+
+export async function restorePrivateDraftGifs(actor: DraftAttachmentActor, draft: AppBskyDraftDefs.Draft, manifest: DraftAttachmentManifest, local?: ThreadSegment[]): Promise<ThreadSegment[]> {
+  let restored = socialDraftToSegments(draft, local);
+  for (const [index, post] of draft.posts.entries()) {
+    if (post.embedExternals?.length !== 1 || !restoreGif(post.embedExternals[0].uri)) continue;
+    const uri = post.embedExternals[0].uri;
+    const hash = await draftAttachmentSHA256(new Blob([uri]));
+    assertDraftAttachmentActor(actor);
+    const references = manifest.attachments.filter(item => gifRefPattern.exec(item.ref)?.[2] === hash);
+    const ids = new Set(references.map(item => gifRefPattern.exec(item.ref)![1]));
+    let media = restored[index].media;
+    if (media?.kind !== "gif") continue;
+    if (!references.length) {
+      // A catalog-backed local recovery can still finish an interrupted upload.
+      if (!isGifCatalogId(media.asset.id)) restored[index] = { ...restored[index], unavailableDraftMedia: true, media: { ...media, unavailable: true } };
+      continue;
+    }
+    if (manifest.deleted || ids.size !== 1) throw new Error("Private GIF Manifest Is Unavailable. Retry Or Reselect The GIF.");
+    const id = [...ids][0];
+    if (isGifCatalogId(media.asset.id) && media.asset.id !== id) throw new Error("Private GIF Identity Does Not Match Its Manifest. Reselect The GIF.");
+    media = { ...media, asset: { ...media.asset, id } };
+    const referenceKey = await privateGifReferenceKey(media.asset);
+    const previous = media.privateFiles?.ownerDid === actor.viewerDid && media.privateFiles.identity === uri ? media.privateFiles : undefined;
+    const files: NonNullable<ComposerGif["privateFiles"]>["files"] = {};
+    for (const rendition of gifRenditions(media.asset)) {
+      const role = rendition === "mp4" || rendition === "webm" ? "video" : rendition;
+      const matches = references.filter(item => item.ref === `${referenceKey}/${rendition}` && item.role === role);
+      const asset = matches[0]?.asset;
+      if (matches.length !== 1 || !asset || asset.kind !== role || asset.state !== "ready") throw new Error("Private GIF File Is Missing. Retry Or Reselect The GIF.");
+      const cached = previous?.files[rendition];
+      const blob = cached?.asset.assetId === asset.assetId && cached.asset.sha256 === asset.sha256 ? cached.blob : await downloadDraftAttachment(actor, asset);
+      assertDraftAttachmentActor(actor);
+      validateGifFile(blob, rendition);
+      files[rendition] = { asset, blob };
+    }
+    restored = restored.map((segment, currentIndex) => currentIndex === index ? { ...segment, unavailableDraftMedia: !!post.embedImages?.length || !!post.embedVideos?.length || !!(post as { embedGallery?: unknown }).embedGallery, media: { ...media as ComposerGif, unavailable: false, privateFiles: { ownerDid: actor.viewerDid, identity: uri, referenceKey, files } } } : segment);
+  }
+  return restored;
+}
+
+/** Explicitly replacing/removing a device-bound GIF must not resurrect its URI. */
+export function replaceSocialDraftMedia(segment: ThreadSegment, media?: ComposerMedia): ThreadSegment {
+  const post = segment.nativeDraftPost;
+  const onlyGif = segment.media?.kind === "gif" && !!segment.media.unavailable && !post?.embedImages?.length && !post?.embedVideos?.length && !(post as { embedGallery?: unknown } | undefined)?.embedGallery;
+  if (!onlyGif || media?.kind === "gif" && media.unavailable) return { ...segment, media };
+  const nativeDraftPost = post ? { ...post } : undefined;
+  if (nativeDraftPost) delete nativeDraftPost.embedExternals;
+  return { ...segment, media, unavailableDraftMedia: false, nativeDraftPost };
 }

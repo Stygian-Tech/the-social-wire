@@ -8,6 +8,7 @@ import { useSocialComposerDraft } from "@/hooks/useSocialComposerDraft";
 import type { ThreadPublication, ThreadSegment } from "@/lib/blueskyThreadClient";
 import * as Transport from "@/lib/blueskyDraftClient";
 import * as Attachments from "@/lib/socialDraftAttachmentClient";
+import * as Klipy from "@/lib/klipyClient";
 import * as Gateway from "@/lib/socialWireGatewayClient";
 import * as Storage from "@/lib/composerDraftStorage";
 
@@ -50,6 +51,7 @@ beforeEach(() => {
     },
   } });
   for (const mock of [
+    spyOn(Klipy, "getGifFile").mockImplementation(async (actor, id, rendition) => { Attachments.assertDraftAttachmentActor(actor); return new Blob([`${id}:${rendition}`], { type: rendition === "gif" ? "image/gif" : rendition === "poster" ? "image/jpeg" : `video/${rendition}` }); }),
     spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (actor, asset, blob) => { Attachments.assertDraftAttachmentActor(actor); const ready = { ...asset, state: "ready" as const }; files.set(asset.assetId, { asset: ready, blob }); return ready; }),
     spyOn(Attachments, "downloadDraftAttachment").mockImplementation(async (actor, asset) => { Attachments.assertDraftAttachmentActor(actor); const file = files.get(asset.assetId); if (!file) throw new Error("Private Photo Missing. Retry Or Reattach."); return file.blob; }),
     spyOn(Attachments, "getDraftAttachmentManifest").mockImplementation(async (actor, draftId) => { Attachments.assertDraftAttachmentActor(actor); return structuredClone(manifests.get(draftId) ?? { draftId, revision: 0, deleted: false, attachments: [] }); }),
@@ -628,7 +630,7 @@ it("keeps missing private files unavailable, blocks publication, and restores th
 it("never claims that external GIF or imported video bytes are privately synced", async () => {
   const gif = view("gif", { posts: [{ text: "", embedExternals: [{ uri: "https://static.klipy.com/ii/a/b.gif?ww=10&hh=20&mp4=b" }] }] });
   remote = [gif]; let hook = harness(gif); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
-  await act(async () => hook.result.current.flush()); expect(hook.result.current.status).toBe("GIF File Not Privately Synced"); hook.unmount();
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Reselect"); }); expect(hook.result.current.hasUnavailableMedia).toBe(true); hook.unmount();
   const video = view("video", { posts: [{ text: "video", embedVideos: [{ localRef: { path: "file:///private/movie.mp4" } }] }] });
   remote = [video]; hook = harness(video); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
   await act(async () => hook.result.current.flush()); expect(hook.result.current.status).toBe("Attachment Files Unavailable");
@@ -687,4 +689,99 @@ it("commits a new photo draft when the first real manifest response is HTTP 404"
   expect(Attachments.putDraftAttachmentManifest).toHaveBeenCalledWith(expect.anything(), hook.result.current.cloudId, 0, expect.any(Array));
   expect(manifests.get(hook.result.current.cloudId!)?.revision).toBe(1);
   expect(hook.result.current.status).toBe("Draft Saved");
+});
+
+function privateGifSegments(): ThreadSegment[] {
+  return [{ id: "gif-post", text: "Private animation", media: { kind: "gif", alt: "A celebratory animation", asset: { id: "catalog-123", title: "Celebration", description: "Dancing", attribution: "Powered by KLIPY", url: "https://static.klipy.com/ii/catalog/full.gif", poster: "https://static.klipy.com/ii/catalog/poster.jpg", mp4: "https://static.klipy.com/ii/catalog/video.mp4", webm: "https://static.klipy.com/ii/catalog/video.webm", width: 100, height: 200 } } }];
+}
+it("recovers all GIF bytes and catalog metadata on a fresh browser with no photo references", async () => {
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privateGifSegments())); await act(async () => hook.result.current.flush());
+  const id = hook.result.current.cloudId!; const native = remote.find(view => view.id === id)!;
+  expect(hook.result.current.status).toBe("Draft Saved"); expect(manifests.get(id)?.attachments.map(ref => ref.role).sort()).toEqual(["gif", "poster", "video", "video"]);
+  expect(manifests.get(id)?.attachments.every(ref => ref.ref.length <= 512)).toBe(true);
+  expect(new Set(manifests.get(id)?.attachments.map(ref => ref.ref.split("/").at(-1))).size).toBe(4);
+  expect(JSON.stringify(native)).not.toContain("blob:"); expect(native.draft.posts[0].embedImages).toBeUndefined(); hook.unmount();
+  await Storage.saveComposerDraft(did, "new-post"); await Storage.saveComposerDraft(did, `social-draft:${id}`);
+  const retrieval = spyOn(Klipy, "getGifFile").mockRejectedValue(new Error("Provider Must Not Be Needed")); retrieval.mockClear(); restores.push(() => retrieval.mockRestore());
+  hook = harness(native); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  const media = hook.result.current.segments[0].media;
+  if (media?.kind !== "gif") throw new Error("Missing GIF");
+  expect(media.asset).toEqual((privateGifSegments()[0].media as typeof media).asset); expect(media.alt).toBe("A celebratory animation");
+  for (const rendition of ["gif", "poster", "mp4", "webm"] as const) expect(await media.privateFiles?.files[rendition]?.blob.text()).toBe(`catalog-123:${rendition}`);
+  expect(retrieval).not.toHaveBeenCalled(); expect(hook.result.current.hasUnavailableMedia).toBe(false);
+});
+it("restores catalog identity from a GIF-only manifest even when native metadata contains just its URI", async () => {
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privateGifSegments())); await act(async () => hook.result.current.flush()); const id = hook.result.current.cloudId!;
+  const native = remote[0]; const uri = native.draft.posts[0].embedExternals![0].uri; hook.unmount();
+  await Storage.saveComposerDraft(did, "new-post"); await Storage.saveComposerDraft(did, `social-draft:${id}`);
+  const imported = view(id, { posts: [{ text: "Imported", embedExternals: [{ uri }] }] }); remote = [imported]; hook = harness(imported);
+  await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  const media = hook.result.current.segments[0].media;
+  if (media?.kind !== "gif") throw new Error("Missing GIF");
+  expect(media.asset.id).toBe("catalog-123"); expect(media.privateFiles?.files.gif?.blob).toBeInstanceOf(Blob); expect(hook.result.current.hasUnavailableMedia).toBe(false);
+});
+it("keeps every GIF byte and stable ID checkpoint when a rendition upload fails", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privateGifSegments())); const upload = implementation(Attachments.uploadDraftAttachment);
+  const fail = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (...args) => { if (args[1].kind === "video") throw new Error("Video Rendition Upload Failed"); return upload(...args); }); restores.push(() => fail.mockRestore());
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Video Rendition Upload Failed"); });
+  expect(hook.result.current.status).toBe("Draft Saved Locally"); expect(Transport.createSocialDraft).not.toHaveBeenCalled();
+  const recovery = (await Storage.loadComposerDraft(did, "new-post"))!.segments[0].media;
+  if (recovery?.kind !== "gif") throw new Error("Missing GIF Recovery");
+  const ids = Object.values(recovery.privateFiles!.files).map(file => file.asset.assetId).sort(); expect(ids).toHaveLength(4);
+  for (const file of Object.values(recovery.privateFiles!.files)) expect(file.blob).toBeInstanceOf(Blob);
+  fail.mockImplementation(upload); await act(async () => hook.result.current.retry());
+  expect([...files.keys()].sort()).toEqual(ids); expect(Klipy.getGifFile).toHaveBeenCalledTimes(4); expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("removes GIF manifest references only after the native embed removal is acknowledged", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privateGifSegments())); await act(async () => hook.result.current.flush()); const id = hook.result.current.cloudId!;
+  const put = implementation(Attachments.putDraftAttachmentManifest);
+  const commit = spyOn(Attachments, "putDraftAttachmentManifest").mockImplementation(async (...args) => { if (!args[3].length) expect(remote.find(item => item.id === id)?.draft.posts[0].embedExternals).toBeUndefined(); return put(...args); }); restores.push(() => commit.mockRestore());
+  act(() => hook.result.current.setSegments(previous => previous.map(segment => ({ ...segment, media: undefined }))));
+  await act(async () => hook.result.current.flush());
+  expect(manifests.get(id)?.attachments).toEqual([]); expect(Attachments.deleteDraftAttachmentManifest).not.toHaveBeenCalled(); expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("preserves an imported URI-only GIF and blocks publication and unsafe recopy until reselected", async () => {
+  const initial = view("imported-gif", { posts: [{ text: "Imported", embedExternals: [{ uri: "https://static.klipy.com/ii/catalog/full.gif?ww=100&hh=200&mp4=video" }] }] }); remote = [initial];
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  expect(hook.result.current.hasUnavailableMedia).toBe(true);
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Reselect"); });
+  expect(remote[0]).toEqual(initial); expect(Klipy.getGifFile).not.toHaveBeenCalled(); expect(Attachments.uploadDraftAttachment).not.toHaveBeenCalled();
+  const { replaceSocialDraftMedia } = await import("@/lib/socialDraftConversion");
+  act(() => hook.result.current.setSegments(previous => previous.map(segment => replaceSocialDraftMedia(segment, privateGifSegments()[0].media))));
+  await act(async () => hook.result.current.retry());
+  expect(hook.result.current.hasUnavailableMedia).toBe(false); expect(hook.result.current.status).toBe("Draft Saved"); expect(manifests.get(initial.id)?.attachments).toHaveLength(4);
+});
+it.each([false, true])("rotates explicitly retired photo IDs with durable checkpoints on Retry and Fork: fork=%s", async fork => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privatePhotoSegments())); await act(async () => hook.result.current.flush());
+  const oldIds = new Set(files.keys()); const upload = implementation(Attachments.uploadDraftAttachment);
+  const retire = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (actor, asset, blob) => {
+    if (oldIds.has(asset.assetId)) throw Object.assign(new Error("Expired"), { status: 409, error: "AssetRetired" });
+    const recovery = await Storage.loadComposerDraft(did, "new-post"); const media = recovery?.segments[0].media;
+    if (media?.kind !== "photos") throw new Error("Missing Durable Recovery");
+    expect([media.photos[0].privateAttachment?.original.assetId, media.photos[0].privateAttachment?.prepared.assetId]).toContain(asset.assetId);
+    return upload(actor, asset, blob);
+  }); restores.push(() => retire.mockRestore());
+  if (fork) await act(async () => hook.result.current.forkLocal()); else await act(async () => hook.result.current.retry());
+  const manifest = manifests.get(hook.result.current.cloudId!)!;
+  expect(manifest.attachments.every(ref => !oldIds.has(ref.assetId))).toBe(true); expect(hook.result.current.hasConflict).toBe(false); expect(hook.result.current.status).toBe("Draft Saved");
+});
+it("coalesces an edit and joined autosave made while an acknowledged draft's manifest commit is pending", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments(privateGifSegments())); const put = implementation(Attachments.putDraftAttachmentManifest);
+  const commit = spyOn(Attachments, "putDraftAttachmentManifest").mockRejectedValue(new Error("Store Unavailable")); restores.push(() => commit.mockRestore());
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Store Unavailable"); });
+  const gate = deferred<void>(); commit.mockImplementation(async (...args) => { await gate.promise; return put(...args); });
+  let saving!: Promise<void>; act(() => { saving = hook.result.current.retry(); });
+  await waitFor(() => expect(commit).toHaveBeenCalledTimes(2));
+  act(() => hook.result.current.setSegments(previous => previous.map(segment => ({ ...segment, text: "Edited During Manifest Commit" }))));
+  await act(async () => new Promise(resolve => setTimeout(resolve, 850)));
+  expect(hook.result.current.status).not.toBe("Draft Saved");
+  await act(async () => { gate.resolve(); await saving; });
+  expect(remote.find(item => item.id === hook.result.current.cloudId)?.draft.posts[0].text).toBe("Edited During Manifest Commit");
+  expect(hook.result.current.status).toBe("Draft Saved"); expect(Transport.updateSocialDraft).toHaveBeenCalledTimes(1);
 });

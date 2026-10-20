@@ -1,6 +1,7 @@
 import type { AppBskyDraftDefs } from "@atproto/api";
 import * as cloudDrafts from "@/lib/blueskyDraftClient";
 import * as draftStorage from "@/lib/composerDraftStorage";
+import * as attachments from "@/lib/socialDraftAttachmentClient";
 import * as gifs from "@/lib/klipyClient";
 import type { GifAsset } from "@/lib/composerMedia";
 import * as Pro from "@/hooks/useProEntitlements";
@@ -60,6 +61,15 @@ beforeEach(() => {
   Object.defineProperty(navigator, "locks", { configurable: true, value: { request: request as LockManager["request"] } });
   restores.push(() => { if (originalLocks) Object.defineProperty(navigator, "locks", originalLocks); else Reflect.deleteProperty(navigator, "locks"); });
   remoteDrafts = new Map(); localDrafts = new Map(); draftNumber = 0;
+  const gifFiles = new Map<string, { asset: attachments.DraftAttachment; blob: Blob }>();
+  const manifests = new Map<string, attachments.DraftAttachmentManifest>();
+  for (const mock of [
+    spyOn(gifs, "getGifFile").mockImplementation(async (_actor, id, rendition) => new Blob([`${id}:${rendition}`], { type: rendition === "gif" ? "image/gif" : rendition === "poster" ? "image/jpeg" : `video/${rendition}` })),
+    spyOn(attachments, "uploadDraftAttachment").mockImplementation(async (_actor, asset, blob) => { const ready = { ...asset, state: "ready" as const }; gifFiles.set(asset.assetId, { asset: ready, blob }); return ready; }),
+    spyOn(attachments, "getDraftAttachmentManifest").mockImplementation(async (_actor, draftId) => clone(manifests.get(draftId) ?? { draftId, revision: 0, deleted: false, attachments: [] })),
+    spyOn(attachments, "putDraftAttachmentManifest").mockImplementation(async (_actor, draftId, revision, refs) => { const manifest = { draftId, revision: revision + 1, deleted: false, attachments: refs.map(ref => ({ ...ref, asset: gifFiles.get(ref.assetId)!.asset })) }; manifests.set(draftId, manifest); return clone(manifest); }),
+    spyOn(attachments, "deleteDraftAttachmentManifest").mockImplementation(async (_actor, draftId, revision) => { const manifest = { draftId, revision: revision + 1, deleted: true, attachments: [] }; manifests.set(draftId, manifest); return manifest; }),
+  ]) restores.push(() => mock.mockRestore());
   const list = spyOn(cloudDrafts, "listSocialDrafts").mockImplementation(async () => ({ drafts: Array.from(remoteDrafts.values()).map(clone) }));
   const create = spyOn(cloudDrafts, "createSocialDraft").mockImplementation(async ({ draft }) => { const id = `draft-${++draftNumber}`; remoteDrafts.set(id, cloudView(id, draft)); return { id }; });
   const update = spyOn(cloudDrafts, "updateSocialDraft").mockImplementation(async ({ id, draft }) => { remoteDrafts.set(id, cloudView(id, draft)); });

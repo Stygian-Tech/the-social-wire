@@ -1,5 +1,5 @@
 import { afterEach, expect, it, spyOn } from "bun:test";
-import { segmentsToSocialDraft, socialDraftFingerprint, socialDraftToSegments, removeUnavailableDraftMedia, preparePrivateDraftPhotos, restorePrivateDraftPhotos, privatePhotoPath, privateDraftPhotoRefs } from "@/lib/socialDraftConversion";
+import { segmentsToSocialDraft, socialDraftFingerprint, socialDraftToSegments, removeUnavailableDraftMedia, preparePrivateDraftPhotos, restorePrivateDraftPhotos, privatePhotoPath, privateDraftPhotoRefs, replaceSocialDraftMedia } from "@/lib/socialDraftConversion";
 import { gifEmbedURI } from "@/lib/composerMedia";
 
 import * as Attachments from "@/lib/socialDraftAttachmentClient";
@@ -127,12 +127,12 @@ it("uses exact saved local references and refuses ambiguous or missing file reco
   const missingBytes = { ...local, media: { kind: "photos" as const, photos: [{ ...segment.media.photos[0], original: undefined as unknown as Blob }] } };
   expect(socialDraftToSegments(remote, [missingBytes])[0].unavailableDraftMedia).toBe(true);
 });
-it("reconstructs only safe compatible GIF URLs and preserves inaccessible externals", () => {
+it("preserves compatible imported GIF metadata as unavailable until files are recovered or reselected", () => {
   const asset = { id: "gif", title: "GIF", description: "", attribution: "KLIPY", url: "https://static.klipy.com/ii/abc/a.gif", poster: "https://static.klipy.com/ii/abc/a.gif", mp4: "https://static.klipy.com/ii/abc/a.mp4", width: 100, height: 200 };
   const original = { posts: [{ text: "", embedExternals: [{ uri: gifEmbedURI(asset) }] }] };
   const restored = socialDraftToSegments(original);
   expect(restored[0].media?.kind).toBe("gif");
-  expect(restored[0].unavailableDraftMedia).toBe(false);
+  expect(restored[0].unavailableDraftMedia).toBe(true);
   expect(segmentsToSocialDraft(restored, device).posts).toEqual(original.posts);
   const broken = { posts: [{ text: "", embedExternals: [{ uri: "https://static.klipy.com/ii/abc/a.gif" }] }] };
   expect(socialDraftToSegments(broken)[0].unavailableDraftMedia).toBe(true);
@@ -163,7 +163,7 @@ it("does not resurrect deliberately removed local photos or GIFs", () => {
   const gif = { posts: [{ text: "", embedExternals: [{ uri: "https://static.klipy.com/ii/abc/a.gif?ww=100&hh=100&mp4=a" }] }] };
   const restoredGif = socialDraftToSegments(gif);
   expect(restoredGif[0].media?.kind).toBe("gif");
-  expect(segmentsToSocialDraft([{ ...restoredGif[0], media: undefined }], device).posts[0].embedExternals).toBeUndefined();
+  expect(segmentsToSocialDraft([replaceSocialDraftMedia(restoredGif[0], undefined)], device).posts[0].embedExternals).toBeUndefined();
 });
 it("keeps an explicitly removed imported external attachment out of the next native save", () => {
   const original = { deviceId: device, posts: [{ text: "Read this", embedExternals: [{ uri: "https://example.com/article", future: "preserved unless removed" }] }] };
@@ -224,4 +224,27 @@ it("allocates owner-specific IDs instead of reusing portable metadata from a dif
   expect(media.photos[0].privateAttachment?.ownerDid).toBe(actor.viewerDid);
   expect(media.photos[0].privateAttachment?.original.assetId).not.toBe(original.assetId);
   expect(media.photos[0].privateAttachment?.prepared.assetId).not.toBe(prepared.assetId);
+});
+it("retains immutable GIF metadata privately without serializing file bytes or Blob URLs into native drafts", async () => {
+  const { lexicons } = await import("@atproto/api");
+  const asset = { id: "catalog", title: "GIF Title", description: "Provider description", attribution: "KLIPY", url: "https://static.klipy.com/ii/a/a.gif", poster: "https://static.klipy.com/ii/a/p.jpg", mp4: "https://static.klipy.com/ii/a/v.mp4", width: 10, height: 20 };
+  const native = segmentsToSocialDraft([{ id: "s", text: "", media: { kind: "gif", asset, alt: "Author description" } }], device);
+  expect(() => lexicons.assertValidXrpcInput("app.bsky.draft.createDraft", { draft: native })).not.toThrow();
+  const media = socialDraftToSegments(native)[0].media;
+  if (media?.kind !== "gif") throw new Error("Missing GIF Metadata");
+  expect(media.asset).toEqual(asset); expect(media.alt).toBe("Author description"); expect(media.unavailable).toBe(true);
+  expect(JSON.stringify(native)).not.toContain("blob:"); expect(JSON.stringify(native)).not.toContain("privateFiles");
+});
+it.each(["", "application/octet-stream"])("privately uploads legacy ready photos with sniffed original MIME without changing bytes or Blob identity: %s", async mime => {
+  const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]); const original = new Blob([bytes], { type: mime });
+  const photo = { ...localPhotoSegment("legacy").media.photos[0], original, blob: new Blob(["prepared"], { type: "image/jpeg" }) };
+  const upload = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (_actor, asset, blob) => {
+    if (asset.contentType === "image/png") { expect(blob.type).toBe("image/png"); expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes); }
+    return { ...asset, state: "ready" };
+  }); restores.push(() => upload.mockRestore());
+  let recovered: ThreadSegment[] = [];
+  await preparePrivateDraftPhotos(actor, [{ id: "s", text: "", media: { kind: "photos", photos: [photo] } }], async segments => { recovered = segments; });
+  const media = recovered[0].media;
+  if (media?.kind !== "photos") throw new Error("Missing Legacy Photo");
+  expect(media.photos[0].original).toBe(original); expect(media.photos[0].id).toBe("legacy"); expect(media.photos[0].privateAttachment?.original.contentType).toBe("image/png");
 });
