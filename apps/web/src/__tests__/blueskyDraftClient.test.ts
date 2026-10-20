@@ -67,9 +67,25 @@ describe("private Bluesky draft client", () => {
     for (const call of calls) {
       expect(call.url.origin).toBe("https://alice.pds.example");
       expect(new Headers(call.init.headers).get("atproto-proxy")).toBe("did:web:api.bsky.app#bsky_appview");
-      expect(call.init.signal).toBe(controller.signal);
+      expect(call.init.signal).toBeInstanceOf(AbortSignal);
+      expect(call.init.signal?.aborted).toBe(false);
     }
     expect(directFetch).not.toHaveBeenCalled();
+  });
+
+  it("bounds a stalled create even when the transport ignores cancellation", async () => {
+    let expire!: () => void;
+    const original = globalThis.setTimeout;
+    const timer = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay: number) => {
+      if (delay === 20_000) { expire = callback; return original(() => {}, 60_000); }
+      return original(callback, delay);
+    }) as typeof setTimeout);
+    restores.push(() => timer.mockRestore());
+    const { session, calls } = sessionFor(() => new Promise(() => {}));
+    const pending = createSocialDraft({ session, viewerDid, draft });
+    expire();
+    await expect(pending).rejects.toThrow("Draft Sync Timed Out");
+    expect(calls).toHaveLength(1);
   });
 
   it("respects isolated network proxy routing without reaching the public AppView", async () => {
