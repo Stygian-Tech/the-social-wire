@@ -1,7 +1,8 @@
 import { afterEach, expect, it, spyOn } from "bun:test";
-import { segmentsToSocialDraft, socialDraftFingerprint, socialDraftToSegments, removeUnavailableDraftMedia, preparePrivateDraftPhotos, restorePrivateDraftPhotos, privatePhotoPath, privateDraftPhotoRefs, replaceSocialDraftMedia } from "@/lib/socialDraftConversion";
+import { segmentsToSocialDraft, socialDraftFingerprint, socialDraftToSegments, removeUnavailableDraftMedia, preparePrivateDraftPhotos, restorePrivateDraftPhotos, privatePhotoPath, privateDraftPhotoRefs, replaceSocialDraftMedia, preparePrivateDraftGifs, restorePrivateDraftGifs, privateDraftGifRefs } from "@/lib/socialDraftConversion";
 import { gifEmbedURI } from "@/lib/composerMedia";
 
+import * as Klipy from "@/lib/klipyClient";
 import * as Attachments from "@/lib/socialDraftAttachmentClient";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ThreadSegment } from "@/lib/blueskyThreadClient";
@@ -247,4 +248,80 @@ it.each(["", "application/octet-stream"])("privately uploads legacy ready photos
   const media = recovered[0].media;
   if (media?.kind !== "photos") throw new Error("Missing Legacy Photo");
   expect(media.photos[0].original).toBe(original); expect(media.photos[0].id).toBe("legacy"); expect(media.photos[0].privateAttachment?.original.contentType).toBe("image/png");
+});
+
+
+function repeatedGifSegments(): ThreadSegment[] {
+  const asset = { id: "same-gif", title: "GIF", description: "Provider description", attribution: "KLIPY", url: "https://static.klipy.com/ii/shared/full.gif", poster: "https://static.klipy.com/ii/shared/poster.jpg", mp4: "https://static.klipy.com/ii/shared/video.mp4", webm: "https://static.klipy.com/ii/shared/video.webm", width: 10, height: 20 };
+  return ["First", "Second"].map(label => ({ id: label.toLowerCase(), text: `${label} Post`, nativeDraftPost: { text: `${label} Post`, future: { setting: label } }, media: { kind: "gif", asset, alt: `${label} Description` } }));
+}
+function gifFileServer() {
+  const files = new Map<string, { asset: Attachments.DraftAttachment; blob: Blob }>();
+  const fetch = spyOn(Klipy, "getGifFile").mockImplementation(async (_actor, _id, rendition) => new Blob([rendition], { type: rendition === "gif" ? "image/gif" : rendition === "poster" ? "image/jpeg" : `video/${rendition}` }));
+  const upload = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (_actor, asset, blob) => {
+    const ready = { ...asset, state: "ready" as const }; files.set(asset.assetId, { asset: ready, blob }); return ready;
+  });
+  const download = spyOn(Attachments, "downloadDraftAttachment").mockImplementation(async (_actor, asset) => files.get(asset.assetId)!.blob);
+  restores.push(() => fetch.mockRestore(), () => upload.mockRestore(), () => download.mockRestore());
+  return { files, fetch, upload, download };
+}
+function gifDescriptions(segments: ThreadSegment[]) { return segments.map(segment => segment.media?.kind === "gif" ? segment.media.alt : undefined); }
+it("restores each repeated GIF post's own description while reusing shared local bytes", async () => {
+  gifFileServer(); let local = repeatedGifSegments();
+  await preparePrivateDraftGifs(actor, local, async prepared => { local = prepared; });
+  const native = segmentsToSocialDraft(local, device);
+  const restored = socialDraftToSegments(native, local);
+  expect(gifDescriptions(restored)).toEqual(["First Description", "Second Description"]);
+  expect(segmentsToSocialDraft(restored, device, native)).toEqual(native);
+  if (restored[0].media?.kind !== "gif" || restored[1].media?.kind !== "gif") throw new Error("Missing GIFs");
+  expect(restored[0].media.privateFiles?.files.gif?.blob).toBe(restored[1].media.privateFiles?.files.gif?.blob);
+});
+it("uses each current native post's metadata when a repeated GIF moves or changes remotely", () => {
+  const local = socialDraftToSegments(segmentsToSocialDraft(repeatedGifSegments(), device));
+  const native = segmentsToSocialDraft(repeatedGifSegments(), device);
+  const reordered = { ...native, posts: [...native.posts].reverse() };
+  expect(gifDescriptions(socialDraftToSegments(reordered, local))).toEqual(["Second Description", "First Description"]);
+  const newer = repeatedGifSegments();
+  if (newer[1].media?.kind !== "gif") throw new Error("Missing GIF");
+  newer[1].media.alt = "Remotely Edited Second Description";
+  expect(gifDescriptions(socialDraftToSegments(segmentsToSocialDraft(newer, device), local))).toEqual(["First Description", "Remotely Edited Second Description"]);
+});
+it("preserves an unsynced local description only on the repeated GIF post matching its native baseline", () => {
+  const native = segmentsToSocialDraft(repeatedGifSegments(), device);
+  const local = socialDraftToSegments(native);
+  if (local[1].media?.kind !== "gif") throw new Error("Missing GIF");
+  local[1].media.alt = "Unsynced Second Description";
+  const restored = socialDraftToSegments(native, local);
+  expect(gifDescriptions(restored)).toEqual(["First Description", "Unsynced Second Description"]);
+  expect(restored.map(segment => (segment.nativeDraftPost as { future?: unknown }).future)).toEqual([{ setting: "First" }, { setting: "Second" }]);
+});
+it("retains distinct repeated-GIF descriptions across fresh-device downloads and the second conversion pass", async () => {
+  const server = gifFileServer(); let local = repeatedGifSegments();
+  await preparePrivateDraftGifs(actor, local, async prepared => { local = prepared; });
+  const native = segmentsToSocialDraft(local, device);
+  const manifest = { draftId: "draft", revision: 1, deleted: false, attachments: privateDraftGifRefs(local).map(ref => ({ ...ref, asset: server.files.get(ref.assetId)!.asset })) };
+  const fresh = await restorePrivateDraftGifs(actor, native, manifest);
+  expect(gifDescriptions(fresh)).toEqual(["First Description", "Second Description"]);
+  const secondPass = socialDraftToSegments(native, fresh);
+  expect(gifDescriptions(secondPass)).toEqual(["First Description", "Second Description"]);
+  expect(segmentsToSocialDraft(secondPass, device, native)).toEqual(native);
+  expect(privateDraftGifRefs(secondPass)).toHaveLength(4);
+});
+it("checkpoints one canonical replacement across repeated GIFs before uploading a retired asset's new ID", async () => {
+  const server = gifFileServer(); let local = repeatedGifSegments();
+  await preparePrivateDraftGifs(actor, local, async prepared => { local = prepared; });
+  const retired = new Set(server.files.keys());
+  server.upload.mockImplementation(async (_actor, asset, blob) => {
+    if (retired.has(asset.assetId)) throw Object.assign(new Error("Retired"), { status: 409, error: "AssetRetired" });
+    const rendition = asset.name.split(".").at(-1) as "gif" | "poster" | "mp4" | "webm";
+    for (const segment of local) {
+      if (segment.media?.kind !== "gif") throw new Error("Missing GIF");
+      expect(segment.media.privateFiles?.files[rendition]?.asset.assetId).toBe(asset.assetId);
+    }
+    const ready = { ...asset, state: "ready" as const }; server.files.set(asset.assetId, { asset: ready, blob }); return ready;
+  });
+  await preparePrivateDraftGifs(actor, local, async prepared => { local = prepared; });
+  const refs = privateDraftGifRefs(local);
+  expect(refs).toHaveLength(4); expect(refs.every(ref => !retired.has(ref.assetId))).toBe(true);
+  expect(gifDescriptions(local)).toEqual(["First Description", "Second Description"]);
 });
