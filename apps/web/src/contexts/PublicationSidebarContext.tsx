@@ -48,6 +48,10 @@ import {
   sidebarListShowsSkeleton,
   type SidebarProjectionState,
 } from "@/lib/sidebarProjectionState";
+import { awaitWithAbort } from "@/lib/awaitWithAbort";
+import { refreshReaderUnreadCounts } from "@/lib/refreshReaderUnreadCounts";
+import { refreshReaderFeeds } from "@/lib/refreshReaderFeeds";
+import { readerRefreshRows, refreshPublicationSources } from "@/lib/refreshPublicationSources";
 import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 
 export type SidebarBootstrapState = {
@@ -62,6 +66,7 @@ export type SidebarBootstrapState = {
   followingPublicationsLoading: boolean;
   folderPublicationsListLoading: boolean;
   projectionError: Error | null;
+  refreshMessage: string;
   refresh: ReturnType<typeof useMutation<void, Error, void>>;
   refreshUnreadCountsFromAppView: () => Promise<void>;
   viewerDid: string | undefined;
@@ -122,6 +127,10 @@ function PublicationSidebarProviderInner({
     did: string;
     completedAt: number;
   } | null>(null);
+  const [refreshMessage, setRefreshMessage] = useState("");
+  const manualRefreshRef = useRef<{ controller: AbortController; task: Promise<void> } | null>(null);
+  useEffect(() => () => manualRefreshRef.current?.controller.abort(), [oauthSessionReloadSeq]);
+
   const unreadRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -201,13 +210,17 @@ function PublicationSidebarProviderInner({
       setProjectionError(null);
       setFolderPublicationsLoading(!hadSidebarSnapshot);
 
+      let streamFailure: Error | null = null;
+      let sawDone = false;
       try {
         await consumeBootstrapStream({
           oauthSession: oauth,
           signal: controller.signal,
           handlers: {
             onEvent: (event) => {
-              if (generation !== streamGenerationRef.current) return;
+              if (generation !== streamGenerationRef.current || controller.signal.aborted) return;
+              if (event.kind === "error" || event.kind === "warning") streamFailure = new Error(event.payload.message);
+              if (event.kind === "done") sawDone = true;
               if (event.kind === "lists") {
                 const listsKey = standardReaderListsQueryKey(did, oauthSessionReloadSeq);
                 qc.setQueryData(listsKey, mergeStandardReaderListsPage(qc.getQueryData(listsKey), event.payload));
@@ -244,13 +257,13 @@ function PublicationSidebarProviderInner({
               if (event.kind === "sidebarFolders") {
                 setFolderPublicationsLoading(false);
               }
-              if (event.kind === "selectedPublication") {
+              if (event.kind === "selectedPublication" && !options.force) {
                 pendingAutoSelectPublicationIdRef.current =
                   event.payload.publicationId;
                 bootstrapFeedPublicationIdRef.current =
                   event.payload.publicationId;
               }
-              if (event.kind === "entriesPage") {
+              if (event.kind === "entriesPage" && !options.force) {
                 writeStreamedEntriesPage(qc, did, event.payload);
                 bootstrapFeedPublicationIdRef.current =
                   event.payload.publicationId;
@@ -337,10 +350,16 @@ function PublicationSidebarProviderInner({
             },
             onError: (error) => {
               if (generation !== streamGenerationRef.current) return;
+              streamFailure = error;
               setProjectionError(error);
             },
           },
         });
+        if (options.force) {
+          controller.signal.throwIfAborted();
+          if (streamFailure) throw streamFailure;
+          if (!sawDone) throw new Error("Publication refresh ended before completion. Try Refresh again.");
+        }
       } catch (error) {
         if (generation !== streamGenerationRef.current) return;
         if (!(error instanceof DOMException && error.name === "AbortError")) {
@@ -348,6 +367,7 @@ function PublicationSidebarProviderInner({
             error instanceof Error ? error : new Error(String(error))
           );
         }
+        if (options.force) throw error;
       } finally {
         if (generation === streamGenerationRef.current) {
           setSidebarFetching(false);
@@ -432,19 +452,64 @@ function PublicationSidebarProviderInner({
     !isRestoring &&
     folderPublicationsLoading;
 
-  const refresh = useMutation({
-    mutationFn: async () => {
-      if (dummyReaderDataEnabled) return;
-      const oauth = getOAuthSession();
-      if (!oauth) throw new Error("OAuth session required");
-      // The POST only drops the viewer's server-side caches now; the bootstrap stream that follows
-      // is what produces the content, painting priority rows first and filling folders as they
-      // land. Applying the POST's own payload here as well would rebuild the same projection twice
-      // and stall every other gateway request behind it for the duration.
-      await refreshPublicationSidebar(oauth);
-      setStreamProjection(undefined);
+  const refresh = useMutation<void, Error, void>({
+    mutationFn: () => {
+      if (manualRefreshRef.current) return manualRefreshRef.current.task;
       const controller = new AbortController();
-      await runBootstrapStream(controller, { force: true });
+      const task = (async () => {
+        if (dummyReaderDataEnabled) {
+          setRefreshMessage("Refresh Complete");
+          return;
+        }
+        const oauth = getOAuthSession();
+        if (!oauth) throw new Error("OAuth session required");
+        const signal = controller.signal;
+        setRefreshMessage("Checking Publications…");
+        const sidebarSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+        await awaitWithAbort(refreshPublicationSidebar(oauth, sidebarSignal), sidebarSignal);
+        signal.throwIfAborted();
+        setStreamProjection(undefined);
+        const streamTimeout = setTimeout(() => controller.abort(new Error("Publication refresh timed out. Try Refresh again.")), 60_000);
+        try {
+          await awaitWithAbort(runBootstrapStream(controller, { force: true }), signal);
+        } finally {
+          clearTimeout(streamTimeout);
+        }
+        signal.throwIfAborted();
+        const projection = qc.getQueryData<PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did));
+        if (!projection) throw new Error("Publication details are unavailable. Try Refresh again.");
+        let newArticleCount = 0;
+        const updateArticles = async () => {
+          signal.throwIfAborted();
+          const result = await refreshReaderFeeds({ queryClient: qc, viewerDid: did, oauthSession: oauth, signal });
+          newArticleCount += result.newArticleCount;
+        };
+        const rows = readerRefreshRows(qc, did, projection);
+        let sourceFailure: unknown;
+        try {
+          await refreshPublicationSources({
+            oauthSession: oauth,
+            rows,
+            signal,
+            onProgress: (completed, total) => setRefreshMessage(total ? `Checking for New Articles… ${completed} of ${total}` : "Updating Articles…"),
+            onBatch: updateArticles,
+          });
+        } catch (error) {
+          signal.throwIfAborted();
+          sourceFailure = error;
+        }
+        setRefreshMessage("Updating Articles…");
+        await updateArticles();
+        setRefreshMessage("Updating Unread Counts…");
+        await refreshReaderUnreadCounts({ queryClient: qc, viewerDid: did, oauthSession: oauth, publicationIds: rows.map(row => row.publicationId), signal });
+        signal.throwIfAborted();
+        if (sourceFailure) throw sourceFailure;
+        setRefreshMessage(newArticleCount > 0 ? `${newArticleCount} New ${newArticleCount === 1 ? "Article" : "Articles"} Loaded` : "Refresh Complete");
+      })().finally(() => {
+        if (manualRefreshRef.current?.controller === controller) manualRefreshRef.current = null;
+      });
+      manualRefreshRef.current = { controller, task };
+      return task;
     },
   });
 
@@ -524,6 +589,7 @@ function PublicationSidebarProviderInner({
       folderPublicationsListLoading,
       projectionError,
       refresh,
+      refreshMessage,
       refreshUnreadCountsFromAppView,
       viewerDid: session?.did,
     }),
@@ -540,6 +606,7 @@ function PublicationSidebarProviderInner({
       folderPublicationsListLoading,
       projectionError,
       refresh,
+      refreshMessage,
       refreshUnreadCountsFromAppView,
       session?.did,
     ]

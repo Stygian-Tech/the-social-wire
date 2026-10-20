@@ -2,6 +2,7 @@ package publicationcore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/stygian-tech/the-social-wire/packages/go/appviewworkercore"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
@@ -75,7 +76,96 @@ func TestEnrollUsesPublicBoundedForwardPaginationAndFullFailure(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("recent pagination blocked/expanded %d %v", n, err)
 	}
+	enroll.MaximumRecords = 1
+	n, err = enroll.Enroll(ctx, gatewaycore.AuthContext{DID: did}, []string{did}, nil, true)
+	if err == nil || n != 1 || !strings.Contains(err.Error(), "record cap reached") {
+		t.Fatalf("recent cap concealed incomplete count=%d err=%v", n, err)
+	}
 }
+
+func TestRecentEnrollPropagatesAuthorFailures(t *testing.T) {
+	for _, failure := range []string{"resolution", "fetch", "none"} {
+		t.Run(failure, func(t *testing.T) {
+			did := "did:web:recent-" + failure + ".publisher.social"
+			upstreamErr := errors.New("upstream unavailable")
+			pages := 0
+			getter := getterFunc(func(_ context.Context, target string, _ http.Header, _, _ int) (int, http.Header, []byte, error) {
+				if strings.Contains(target, "/.well-known/did.json") {
+					if failure == "resolution" {
+						return 0, nil, nil, upstreamErr
+					}
+					return 200, nil, []byte(fmt.Sprintf(`{"id":%q,"service":[{"id":"#atproto_pds","type":"AtprotoPersonalDataServer","serviceEndpoint":"https://pds.publisher.social"}]}`, did)), nil
+				}
+				pages++
+				if failure == "fetch" {
+					return 0, nil, nil, upstreamErr
+				}
+				return 200, nil, []byte(`{"records":[]}`), nil
+			})
+			enroll := Enroller{PDS: &thinappviewcore.PDSClient{HTTP: getter}, HTTP: getter, Concurrency: 1}
+			n, err := enroll.Enroll(context.Background(), gatewaycore.AuthContext{}, []string{did}, nil, true)
+			if n != 0 {
+				t.Fatalf("indexed %d empty records", n)
+			}
+			if failure == "none" {
+				if err != nil || pages != 2 {
+					t.Fatalf("happy path pages=%d err=%v", pages, err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "PDS enrollment incomplete") {
+				t.Fatalf("concealed %s failure: %v", failure, err)
+			} else if failure == "fetch" && !errors.Is(err, upstreamErr) {
+				t.Fatalf("lost upstream error: %v", err)
+			}
+		})
+	}
+}
+
+type enrollerSubscriptionRepo struct {
+	repoFixture
+	err   error
+	calls int
+}
+
+func (r *enrollerSubscriptionRepo) ListRecords(_ context.Context, _ string, collection, _ string, _ int, _ bool) (gatewaycore.RepoPage, error) {
+	if collection != thinappviewcore.RSSSubscriptionCollection {
+		return gatewaycore.RepoPage{}, fmt.Errorf("unexpected collection %s", collection)
+	}
+	r.calls++
+	return gatewaycore.RepoPage{}, r.err
+}
+
+func TestEnrollAttemptsRSSAfterAuthorFailure(t *testing.T) {
+	for _, recent := range []bool{true, false} {
+		t.Run(fmt.Sprintf("recent=%t", recent), func(t *testing.T) {
+			rssErr := errors.New("RSS subscriptions unavailable")
+			repo := &enrollerSubscriptionRepo{err: rssErr}
+			enroll := Enroller{Repo: repo, RSS: &thinappviewcore.RSSIngestion{}}
+			n, err := enroll.Enroll(context.Background(), gatewaycore.AuthContext{DID: "did:plc:viewer"}, []string{"invalid-author"}, []string{"https://publisher.social/feed"}, recent)
+			if n != 0 || repo.calls != 1 {
+				t.Fatalf("RSS not attempted: indexed=%d calls=%d err=%v", n, repo.calls, err)
+			}
+			if !errors.Is(err, rssErr) || !strings.Contains(err.Error(), "PDS enrollment incomplete") || !strings.Contains(err.Error(), "invalid enrollment author") {
+				t.Fatalf("lost aggregated source errors: %v", err)
+			}
+		})
+	}
+}
+
+func TestRecentEnrollPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	did := "did:web:recent-cancel.publisher.social"
+	getter := getterFunc(func(_ context.Context, _ string, _ http.Header, _, _ int) (int, http.Header, []byte, error) {
+		cancel()
+		return 0, nil, nil, ctx.Err()
+	})
+	repo := &enrollerSubscriptionRepo{}
+	enroll := Enroller{PDS: &thinappviewcore.PDSClient{HTTP: getter}, Repo: repo, RSS: &thinappviewcore.RSSIngestion{}}
+	n, err := enroll.Enroll(ctx, gatewaycore.AuthContext{}, []string{did}, []string{"https://publisher.social/feed"}, true)
+	if n != 0 || !errors.Is(err, context.Canceled) || repo.calls != 0 {
+		t.Fatalf("cancellation indexed=%d RSS calls=%d err=%v", n, repo.calls, err)
+	}
+}
+
 func TestRetryDelayPolicy(t *testing.T) {
 	at := time.Now()
 	for _, tt := range []struct {
