@@ -77,13 +77,13 @@ func (a *socialDraftAdmission) middleware(next http.Handler) http.Handler {
 			writeError(w, 401, "Authentication required")
 			return
 		}
-		// Catalog file copies share the bounded transfer slots and upload budget.
-		upload := r.URL.Path == "/xrpc/app.thesocialwire.socialDraft.uploadAttachment" || r.URL.Path == socialDraftGIFPath
-		release, status := a.acquire(r.Context(), auth.DID, upload, time.Now())
+		// Every private byte transfer shares the bounded slots and transfer budget.
+		transfer := r.URL.Path == "/xrpc/app.thesocialwire.socialDraft.uploadAttachment" || r.URL.Path == socialDraftGIFPath || r.URL.Path == "/xrpc/app.thesocialwire.socialDraft.getAttachment"
+		release, status := a.acquire(r.Context(), auth.DID, transfer, time.Now())
 		if status != 0 {
 			// Do not let HTTP/1 drain a rejected, potentially stalled upload body
 			// after admission has returned. HTTP/2 closes the request stream itself.
-			if upload {
+			if transfer {
 				w.Header().Set("Connection", "close")
 			}
 			w.Header().Set("Retry-After", "1")

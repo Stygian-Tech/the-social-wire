@@ -289,7 +289,7 @@ func TestSocialDraftUploadHasScopedReadAndUpstreamDeadline(t *testing.T) {
 	r.Header.Set("X-Social-Draft-Upload-Id", "asset")
 	w := &draftDeadlineWriter{ResponseRecorder: httptest.NewRecorder()}
 	p.Handler(draftRoute("uploadAttachment")).ServeHTTP(w, r)
-	if w.Code != 200 || len(w.deadlines) != 2 || w.deadlines[0].Before(now.Add(socialDraftUploadTimeout)) || !w.deadlines[1].IsZero() {
+	if w.Code != 200 || len(w.deadlines) != 1 || w.deadlines[0].Before(now.Add(socialDraftUploadTimeout)) {
 		t.Fatal(w.Code, w.deadlines)
 	}
 }
@@ -398,6 +398,71 @@ func TestSocialDraftFourPhotoBatchAdmittedThenUploadAbuseCapped(t *testing.T) {
 			}
 			if status := call("putManifest"); status != 204 {
 				t.Fatal("upload cap turned autosave into an error", status)
+			}
+		})
+	}
+}
+
+func TestSocialDraftDownloadsShareTransferConcurrencyAndRelease(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		t.Run(fmt.Sprint(shared), func(t *testing.T) {
+			a := &socialDraftAdmission{}
+			if shared {
+				_, a = draftRedisAdmission(t)
+			}
+			gate := make(chan struct{})
+			defer func() {
+				select {
+				case <-gate:
+				default:
+					close(gate)
+				}
+			}()
+			entered := make(chan struct{}, 8)
+			var workers sync.WaitGroup
+			handler := a.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { entered <- struct{}{}; <-gate; w.WriteHeader(204) }))
+			start := func(owner, name string) {
+				workers.Add(1)
+				go func() {
+					defer workers.Done()
+					r := httptest.NewRequest("GET", draftPrefix+name, nil)
+					r = r.WithContext(gatewaycore.ContextWithAuth(r.Context(), gatewaycore.AuthContext{DID: owner}))
+					handler.ServeHTTP(httptest.NewRecorder(), r)
+				}()
+				awaitDraftSignal(t, entered)
+			}
+			rejected := func(owner string) {
+				r := httptest.NewRequest("GET", draftPrefix+"getAttachment", nil)
+				r = r.WithContext(gatewaycore.ContextWithAuth(r.Context(), gatewaycore.AuthContext{DID: owner}))
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, r)
+				if w.Code != 429 {
+					t.Fatal("download bypassed transfer limit", w.Code)
+				}
+			}
+			start("did:plc:owner", "getAttachment")
+			start("did:plc:owner", "getAttachment")
+			rejected("did:plc:owner")
+			names := []string{"uploadAttachment", "getGifFile", "getAttachment"}
+			for i := 0; i < 6; i++ {
+				start(fmt.Sprintf("did:plc:other%d", i/2), names[i%len(names)])
+			}
+			a.mu.Lock()
+			active := a.active
+			a.mu.Unlock()
+			if active != 8 {
+				t.Fatal("mixed transfers did not share global slots", active)
+			}
+			rejected("did:plc:overflow")
+			close(gate)
+			done := make(chan struct{})
+			go func() { workers.Wait(); close(done) }()
+			awaitDraftSignal(t, done)
+			a.mu.Lock()
+			active = a.active
+			a.mu.Unlock()
+			if active != 0 {
+				t.Fatal("finished transfers retained slots", active)
 			}
 		})
 	}

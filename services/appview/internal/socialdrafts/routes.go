@@ -1,6 +1,7 @@
 package socialdrafts
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -35,6 +36,16 @@ func (a Routes) handler(name string) http.HandlerFunc {
 		if !ok || strings.TrimSpace(auth.DID) == "" || auth.DID == gatewaycore.AnonymousDiscoveryDID {
 			failure(w, 401, "Unauthorized", "Authentication required")
 			return
+		}
+		if r.Method == "POST" || name == "getAttachment" {
+			timeout := mutationTimeout
+			if name == "uploadAttachment" || name == "getAttachment" {
+				timeout = transferTimeout
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+			r = r.WithContext(ctx)
+			defer boundTransferIO(ctx, w, r.Method == "POST")()
 		}
 		if a.Service == nil {
 			failure(w, 503, "Unavailable", "Private draft storage unavailable")
