@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 const root = join(import.meta.dir, "../../..");
 const spec = Bun.YAML.parse(readFileSync(join(root, "packages/spec/openapi.yaml"), "utf8")) as any;
@@ -7,7 +7,7 @@ const prefix = "/xrpc/app.thesocialwire.socialDraft.";
 
 test("private attachment HTTP routes retain binary headers and authenticated ownership", () => {
   const paths = Object.keys(spec.paths).filter((path) => path.startsWith(prefix));
-  expect(paths).toHaveLength(6);
+  expect(paths).toHaveLength(7);
   for (const path of paths) {
     const operation = Object.values(spec.paths[path])[0] as any;
     expect(operation.security).toEqual([{ ATProtoOAuthDPoP: [] }]);
@@ -29,4 +29,28 @@ test("private attachment HTTP routes retain binary headers and authenticated own
     expect(bruno).toContain("Content-Length:");
     expect(bruno).toContain("DPoP:");
   }
+});
+
+
+test("catalog GIF copies are Gateway-only binary queries with no URL input", () => {
+  const operation = spec.paths[prefix + "getGifFile"].get;
+  expect(operation.parameters.map((param: any) => param.name)).toEqual(["id", "rendition"]);
+  expect(operation.parameters.every((param: any) => param.required)).toBe(true);
+  expect(operation.parameters[1].schema.enum).toEqual(["gif", "poster", "mp4", "webm"]);
+  expect(operation.responses["200"].content["image/gif"].schema.maxLength).toBe(104857600);
+  expect(operation.responses["200"].content["image/png"].schema.maxLength).toBe(1000000);
+  expect(operation.description).toContain("Not implemented by AppView");
+  const gateway = readFileSync(join(root, "services/gateway/bruno/XRPC/app.thesocialwire.socialDraft.getGifFile.bru"), "utf8");
+  expect(gateway).toContain("rendition={{gifRendition}}");
+  expect(gateway).toContain("DPoP:");
+  // This is a Gateway-owned file-copy surface; deliberately absent from AppView.
+  expect(existsSync(join(root, "services/appview/bruno/XRPC/app.thesocialwire.socialDraft.getGifFile.bru"))).toBe(false);
+});
+
+
+test("retired reservations expose a typed 409 without changing manifest CAS", () => {
+  const conflict = spec.paths[prefix + "reserveAttachment"].post.responses["409"];
+  expect(conflict.content["application/json"].schema.properties.error.enum).toEqual(["Conflict", "UploadPending", "AssetRetired"]);
+  expect(conflict.description).toContain("ordinary Conflict does not indicate retirement");
+  expect(spec.paths[prefix + "putManifest"].post.responses["409"].description).not.toContain("AssetRetired");
 });

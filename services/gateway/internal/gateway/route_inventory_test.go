@@ -17,6 +17,7 @@ func TestCanonicalPublicContractsRemainRegistered(t *testing.T) {
 		"GET /v1/sync/preferences", "GET /xrpc/app.thesocialwire.sync.getPreferences", "POST /v1/sync/migrate-lexicons", "GET /v1/pds/cache/record", "POST /v1/telemetry/client-performance",
 		"GET /v1/subscription/entitlements",
 		"GET /v1/media/gifs", "GET /v1/media/gifs/thumbnail",
+		"GET /xrpc/app.thesocialwire.socialDraft.getGifFile",
 	} {
 		seen[pattern] = true
 	}

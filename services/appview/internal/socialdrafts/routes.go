@@ -157,6 +157,8 @@ func decode(w http.ResponseWriter, r *http.Request, out any, required ...string)
 func serviceFailure(w http.ResponseWriter, err error) {
 	status, code, message := 503, "Unavailable", "Private draft storage unavailable"
 	switch {
+	case errors.Is(err, socialdraftcore.ErrAssetRetired):
+		status, code, message = 409, "AssetRetired", "Private draft attachment identifier retired"
 	case errors.Is(err, socialdraftcore.ErrInvalid):
 		status, code, message = 400, "InvalidRequest", "Invalid private draft request"
 	case errors.Is(err, socialdraftcore.ErrNotFound):

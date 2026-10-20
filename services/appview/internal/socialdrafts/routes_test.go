@@ -2,6 +2,7 @@ package socialdrafts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -134,5 +135,34 @@ func TestErrorsAreTypedAndSafe(t *testing.T) {
 		if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.code) || strings.Contains(w.Body.String(), "secret") {
 			t.Fatal(w)
 		}
+	}
+}
+
+func TestRetiredReservationIDIsDistinctFromOrdinaryConflicts(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want string
+		err              error
+	}{
+		{"reserveAttachment", `{"assetId":"a","name":"photo.jpg","contentType":"image/jpeg","byteLength":3,"sha256":"hash","kind":"photo"}`, "AssetRetired", errors.Join(socialdraftcore.ErrAssetRetired, socialdraftcore.ErrConflict)},
+		{"reserveAttachment", `{"assetId":"a","name":"photo.jpg","contentType":"image/jpeg","byteLength":3,"sha256":"hash","kind":"photo"}`, "Conflict", socialdraftcore.ErrConflict},
+		{"putManifest", `{"draftId":"d","expectedRevision":1,"attachments":[]}`, "Conflict", socialdraftcore.ErrConflict},
+	} {
+		mux := http.NewServeMux()
+		Routes{Service: &fakeService{err: fmt.Errorf("private storage detail: %w", tc.err)}}.Register(mux)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, request("POST", tc.name, tc.body, "did:plc:owner"))
+		var payload struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(w.Body.Bytes(), &payload) != nil || w.Code != 409 || payload.Error != tc.want || strings.Contains(w.Body.String(), "private storage detail") {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+}
+func TestGatewayGIFQueryIsNotAnAppViewStorageRoute(t *testing.T) {
+	mux := http.NewServeMux()
+	Routes{}.Register(mux)
+	if _, pattern := mux.Handler(httptest.NewRequest("GET", prefix+"getGifFile?id=123&rendition=gif", nil)); pattern != "" {
+		t.Fatal("Gateway GIF file copy registered in AppView", pattern)
 	}
 }

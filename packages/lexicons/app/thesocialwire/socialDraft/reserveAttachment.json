@@ -95,6 +95,10 @@
         },
         {
           "name": "Unauthorized"
+        },
+        {
+          "name": "AssetRetired",
+          "description": "This attachment identifier was retired. Reserve a fresh asset ID; do not treat ordinary Conflict as retirement."
         }
       ]
     }
