@@ -42,10 +42,6 @@ func unseal(g cipher.AEAD, b, additional []byte) ([]byte, error) {
 func tempFile() (*os.File, error) { return os.CreateTemp("", "social-draft-*") }
 func discard(f *os.File)          { f.Close(); os.Remove(f.Name()) }
 
-type temporaryReader struct{ *os.File }
-
-func (r *temporaryReader) Close() error { e := r.File.Close(); os.Remove(r.Name()); return e }
-
 // Each frame has an independent random nonce. The authenticated terminal frame
 // prevents truncation at a chunk boundary; AAD prevents reordering or substitution.
 func (s *Service) encrypt(dst io.Writer, src io.Reader, owner, id string) error {
