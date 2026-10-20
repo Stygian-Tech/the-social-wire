@@ -21,6 +21,7 @@
     "@atproto/oauth-types": "^0.6.3",
     "@atproto/repo": "0.10.11",
     "@base-ui/react": "^1.4.1",
+    "@stygian/anypub-kit": "github:Stygian-Tech/anypub-kit#797c62a3d5b04c2d0e03b81215e6d18c57794354",
     "@stygian/markdown-editor": "file:../../packages/vendor/markdown-editor-0.1.1-socialwire.3.tgz",
     "@tanstack/query-sync-storage-persister": "^5.100.10",
     "@tanstack/react-query": "^5.100.10",
