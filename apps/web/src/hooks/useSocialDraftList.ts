@@ -2,10 +2,12 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { AppBskyDraftDefs } from "@atproto/api";
-import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { deleteSocialDraft, listSocialDrafts } from "@/lib/blueskyDraftClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { deleteDraftAttachmentManifest, getDraftAttachmentManifest } from "@/lib/socialDraftAttachmentClient";
+import { pendingDraftDeletions, saveDraftDeletion, type PendingDraftDeletion } from "@/lib/socialDraftDeletionStorage";
 
 type DraftPage = { drafts: AppBskyDraftDefs.DraftView[]; cursor?: string };
 
@@ -22,6 +24,8 @@ export function useSocialDraftList() {
   const deleted = useRef(new Set<string>());
   const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(new Set());
   const queryKey = ["socialDrafts", did, sequence] as const;
+  const recoveryKey = ["socialDraftDeletionRecovery", did, sequence] as const;
+  const recovery = useQuery({ queryKey: recoveryKey, enabled: !!did, queryFn: () => pendingDraftDeletions(did), retry: false, gcTime: 0 });
 
   function requireActor() {
     const oauth = getOAuthSession();
@@ -57,8 +61,24 @@ export function useSocialDraftList() {
     gcTime: 0,
     mutationFn: async (id: string) => {
       const actor = requireActor();
-      try { await deleteSocialDraft({ ...actor, id }); }
+      const pending = await cache.ensureQueryData({ queryKey: recoveryKey, queryFn: () => pendingDraftDeletions(did) });
+      actor.assertCurrentActor();
+      const draft = pending.find(item => item.draft.id === id)?.draft
+        ?? list.data?.pages.flatMap(page => page.drafts).find(draft => draft.id === id);
+      if (!draft) throw new Error("Reload Your Drafts Before Deleting.");
+      // Persist before the first destructive write. A failed attachment cleanup
+      // remains visible even after the native service stops returning the draft.
+      await saveDraftDeletion(did, draft);
+      actor.assertCurrentActor();
+      cache.setQueryData<PendingDraftDeletion[]>(recoveryKey, data => [...(data ?? []).filter(item => item.draft.id !== id), { ownerDid: did, draft }]);
+      try {
+        await deleteSocialDraft({ ...actor, id });
+        const manifest = await getDraftAttachmentManifest(actor, id);
+        if (!manifest.deleted && manifest.revision > 0) await deleteDraftAttachmentManifest(actor, id, manifest.revision);
+        await saveDraftDeletion(did, draft, true);
+      }
       finally { actor.assertCurrentActor(); }
+      cache.setQueryData<PendingDraftDeletion[]>(recoveryKey, data => data?.filter(item => item.draft.id !== id));
       deleted.current.add(id);
       setDeletedIds(new Set(deleted.current));
       // Remove only after a confirmed delete; leave the row intact on any failure.
@@ -74,6 +94,8 @@ export function useSocialDraftList() {
       if (!previous || Date.parse(draft.updatedAt) > Date.parse(previous.updatedAt)) byId.set(draft.id, draft);
     }
   }
+  const pendingDeletionIds = new Set(recovery.data?.map(item => item.draft.id));
+  for (const item of recovery.data ?? []) byId.set(item.draft.id, item.draft);
   const drafts = Array.from(byId.values()).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-  return { did, sequence, list, drafts, deletion, onDraftChanged: () => { void cache.invalidateQueries({ queryKey: ["socialDrafts", did] }); } };
+  return { did, sequence, list, drafts, deletion, recovery, pendingDeletionIds, onDraftChanged: () => { void cache.invalidateQueries({ queryKey: ["socialDrafts", did] }); } };
 }
