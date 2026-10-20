@@ -7,7 +7,7 @@ import type { ThreadPublication, ThreadSegment } from "@/lib/blueskyThreadClient
 import { loadComposerDraft, saveComposerDraft, type ComposerDraft } from "@/lib/composerDraftStorage";
 import { createSocialDraft, deleteSocialDraft, listSocialDrafts, updateSocialDraft } from "@/lib/blueskyDraftClient";
 import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
-import { segmentsToSocialDraft, socialDraftDeviceId, socialDraftFingerprint, socialDraftHasContent, socialDraftToSegments, preparePrivateDraftPhotos, privateDraftPhotoRefs, hasPrivateDraftPhotos, restorePrivateDraftPhotos } from "@/lib/socialDraftConversion";
+import { segmentsToSocialDraft, socialDraftDeviceId, socialDraftFingerprint, socialDraftHasContent, socialDraftToSegments, preparePrivateDraftPhotos, privateDraftPhotoRefs, hasPrivateDraftPhotos, restorePrivateDraftPhotos, hasDraftGifs, restorePrivateDraftGifs, preparePrivateDraftGifs, privateDraftGifRefs } from "@/lib/socialDraftConversion";
 
 import { getDraftAttachmentManifest, putDraftAttachmentManifest, deleteDraftAttachmentManifest } from "@/lib/socialDraftAttachmentClient";
 
@@ -79,7 +79,7 @@ export function useSocialComposerDraft(options: Options) {
     return { session: run.session, viewerDid: run.ownerDid, signal: run.controller.signal, assertCurrentActor: () => guard(run) };
   }
   function report(run: Composition, error: unknown) {
-    if (error && typeof error === "object" && "status" in error && error.status === 409) run.conflict = "Private Draft Attachments Changed On Another Device. Your Local Copy Is Safe. Reopen The Remote Draft Or Save A Copy.";
+    if (error && typeof error === "object" && "status" in error && error.status === 409 && !("error" in error && error.error === "AssetRetired")) run.conflict = "Private Draft Attachments Changed On Another Device. Your Local Copy Is Safe. Reopen The Remote Draft Or Save A Copy.";
     if (current.current === run && !run.controller.signal.aborted) { setSyncError(isMissingOAuthScope(error) ? SCOPE_RECOVERY_MESSAGE : error instanceof Error ? error.message : "Draft Could Not Be Synced."); setHasConflict(!!run.conflict); setStatus(run.cloud.completed ? "Published Draft Cleanup Pending" : "Draft Saved Locally"); }
   }
   async function persist(run: Composition) {
@@ -250,14 +250,16 @@ export function useSocialComposerDraft(options: Options) {
     await persist(run);
   }
   async function restoreAttachments(run: Composition, draft: AppBskyDraftDefs.Draft, local?: ThreadSegment[]) {
-    if (!hasPrivateDraftPhotos(draft)) return socialDraftToSegments(draft, local);
+    if (!hasPrivateDraftPhotos(draft) && !hasDraftGifs(draft)) return socialDraftToSegments(draft, local);
     const manifest = await getDraftAttachmentManifest(actor(run), run.cloud.id!);
     guard(run);
     run.cloud.attachmentManifest = manifest;
-    return restorePrivateDraftPhotos(actor(run), draft, manifest, local);
+    const recovered = hasPrivateDraftPhotos(draft) ? await restorePrivateDraftPhotos(actor(run), draft, manifest, local) : socialDraftToSegments(draft, local);
+    guard(run);
+    return restorePrivateDraftGifs(actor(run), draft, manifest, recovered);
   }
-  async function commitAttachments(run: Composition, payload: AppBskyDraftDefs.Draft) {
-    const attachments = privateDraftPhotoRefs(payload);
+  async function commitAttachments(run: Composition, payload: AppBskyDraftDefs.Draft, attachmentSegments: ThreadSegment[]) {
+    const attachments = [...privateDraftPhotoRefs(payload), ...privateDraftGifRefs(attachmentSegments)];
     if (!attachments.length && !run.cloud.attachmentManifest && !run.cloud.pendingManifest) return;
     if (!run.cloud.id) throw new Error("Wait For Draft Creation Before Saving Attachments.");
     const equalRefs = (a: typeof attachments, b: typeof attachments) => socialDraftFingerprint(a.map(({ assetId, role, ref }) => ({ assetId, role, ref })).sort((a, b) => `${a.ref}:${a.role}`.localeCompare(`${b.ref}:${b.role}`))) === socialDraftFingerprint(b.map(({ assetId, role, ref }) => ({ assetId, role, ref })).sort((a, b) => `${a.ref}:${a.role}`.localeCompare(`${b.ref}:${b.role}`)));
@@ -311,20 +313,43 @@ export function useSocialComposerDraft(options: Options) {
         if (changed) latest.current.restore(segments.current);
         await persist(run);
       });
+      await preparePrivateDraftGifs(actor(run), segments.current, async prepared => {
+        guard(run);
+        let changed = false;
+        segments.current = segments.current.map(segment => {
+          if (segment.media?.kind !== "gif") return segment;
+          const media = segment.media;
+          const saved = prepared.find(item => item.id === segment.id && item.media?.kind === "gif" && item.media.asset.id === media.asset.id)?.media;
+          if (saved?.kind !== "gif" || socialDraftFingerprint(saved.asset) !== socialDraftFingerprint(media.asset) || socialDraftFingerprint(saved.privateFiles) === socialDraftFingerprint(media.privateFiles) && saved.unavailable === media.unavailable) return segment;
+          changed = true;
+          const unsupported = !!segment.nativeDraftPost?.embedImages?.length || !!segment.nativeDraftPost?.embedVideos?.length || !!(segment.nativeDraftPost as { embedGallery?: unknown } | undefined)?.embedGallery;
+          return { ...segment, unavailableDraftMedia: unsupported || !!saved.unavailable, media: { ...media, privateFiles: saved.privateFiles, unavailable: saved.unavailable } };
+        });
+        if (changed) latest.current.restore(segments.current);
+        await persist(run);
+      });
       guard(run);
       if (segments.current.some(segment => segment.media?.kind === "photos" && segment.media.photos.some(photo => photo.privateAttachment?.ownerDid !== run.ownerDid || photo.privateAttachment.original.state !== "ready" || photo.privateAttachment.prepared.state !== "ready"))) continue;
-      const payload = segmentsToSocialDraft(segments.current, run.cloud.deviceId, run.cloud.nativeDraft);
-      if (run.cloud.id && !run.cloud.attachmentManifest && hasPrivateDraftPhotos(payload)) {
+      if (segments.current.some(segment => segment.media?.kind === "gif" && (!segment.media.privateFiles || segment.media.privateFiles.ownerDid !== run.ownerDid || segment.media.unavailable))) continue;
+      const payloadSegments = segments.current;
+      const payload = segmentsToSocialDraft(payloadSegments, run.cloud.deviceId, run.cloud.nativeDraft);
+      if (run.cloud.id && !run.cloud.attachmentManifest && (hasPrivateDraftPhotos(payload) || hasDraftGifs(payload))) {
         run.cloud.attachmentManifest = await getDraftAttachmentManifest(actor(run), run.cloud.id);
         guard(run);
         await persist(run);
       }
       const fingerprint = socialDraftFingerprint(payload);
       if (fingerprint === socialDraftFingerprint(run.cloud.acknowledged)) {
-        await commitAttachments(run, payload);
+        const snapshot = payloadSegments;
+        await commitAttachments(run, payload, payloadSegments);
+        guard(run);
+        // A joined autosave may contain newer text or file edits. A completed
+        // manifest only acknowledges this snapshot, never subsequent edits.
+        const latestPayload = segmentsToSocialDraft(segments.current, run.cloud.deviceId, run.cloud.nativeDraft);
+        if (socialDraftFingerprint(latestPayload) !== fingerprint || segments.current.length !== snapshot.length || segments.current.some((segment, index) => segment.media !== snapshot[index]?.media)) continue;
         if (run.cloud.forkSource && run.cloud.id) await finishFork(run);
         setSyncError(undefined);
-        setStatus(segments.current.some(segment => segment.media?.kind === "gif") ? "GIF File Not Privately Synced" : segments.current.some(segment => segment.unavailableDraftMedia) ? "Attachment Files Unavailable" : "Draft Saved");
+        setStatus(segments.current.some(segment => segment.unavailableDraftMedia) ? "Attachment Files Unavailable" : "Draft Saved");
         return;
       }
       await persist(run);
@@ -380,7 +405,7 @@ export function useSocialComposerDraft(options: Options) {
         await confirmUpdate(run);
       }
       latest.current.onChanged?.();
-      await commitAttachments(run, payload);
+      await commitAttachments(run, payload, payloadSegments);
       // Edits made during the request are coalesced into the next serialized save.
     }
   }
@@ -437,9 +462,13 @@ export function useSocialComposerDraft(options: Options) {
         run.cloud.acknowledged = structuredClone(initial.draft);
         restored = socialDraftToSegments(initial.draft);
       }
-      if (!run.cloud.completed && !run.conflict && run.cloud.id && hasPrivateDraftPhotos(run.cloud.nativeDraft)) {
+      if (!run.cloud.completed && !run.conflict && run.cloud.id && (hasPrivateDraftPhotos(run.cloud.nativeDraft) || hasDraftGifs(run.cloud.nativeDraft))) {
         try { restored = await restoreAttachments(run, segmentsToSocialDraft(restored, run.cloud.deviceId, run.cloud.nativeDraft), restored); }
-        catch (error) { guard(run); setSyncError(error instanceof Error ? error.message : "Private Photos Could Not Be Restored. Retry Or Reattach Them."); }
+        catch (error) {
+          guard(run);
+          restored = restored.map(segment => segment.media?.kind === "gif" ? { ...segment, media: { ...segment.media, unavailable: true }, unavailableDraftMedia: true } : segment);
+          setSyncError(error instanceof Error ? error.message : "Private Files Could Not Be Restored. Retry Or Reattach Them.");
+        }
       }
       segments.current = restored;
       latest.current.restore(restored);
@@ -506,7 +535,7 @@ export function useSocialComposerDraft(options: Options) {
       run.cloud.nativeDeleted = true;
       await persist(run);
     }
-    if (run.cloud.id && (run.cloud.attachmentManifest || run.cloud.pendingManifest || hasPrivateDraftPhotos(run.cloud.nativeDraft))) {
+    if (run.cloud.id && (run.cloud.attachmentManifest || run.cloud.pendingManifest || hasPrivateDraftPhotos(run.cloud.nativeDraft) || hasDraftGifs(run.cloud.nativeDraft))) {
       // Native deletion is confirmed. Refresh CAS state so a lost manifest
       // response or another cleanup can be reconciled without replaying publish.
       const manifest = await getDraftAttachmentManifest(actor(run), run.cloud.id);
@@ -575,7 +604,7 @@ export function useSocialComposerDraft(options: Options) {
       // into an automatic resend. Reconcile in a new, explicitly requested run.
       await run.inFlight?.catch(() => {});
       guard(run);
-      if (segments.current.some(segment => segment.unavailableDraftMedia) && run.cloud.id && hasPrivateDraftPhotos(run.cloud.nativeDraft)) {
+      if (segments.current.some(segment => segment.unavailableDraftMedia) && run.cloud.id && (hasPrivateDraftPhotos(run.cloud.nativeDraft) || hasDraftGifs(run.cloud.nativeDraft))) {
         try {
           const restored = await restoreAttachments(run, segmentsToSocialDraft(segments.current, run.cloud.deviceId, run.cloud.nativeDraft), segments.current);
           guard(run);
@@ -642,9 +671,9 @@ export function useSocialComposerDraft(options: Options) {
       segments.current = restored;
       await persist(run);
       latest.current.restore(restored);
-      setCloudId(remote.id); setSyncError(undefined); setHasConflict(false); setStatus(restored.some(segment => segment.media?.kind === "gif") ? "GIF File Not Privately Synced" : restored.some(segment => segment.unavailableDraftMedia) ? "Attachment Files Unavailable" : "Draft Saved");
+      setCloudId(remote.id); setSyncError(undefined); setHasConflict(false); setStatus(restored.some(segment => segment.unavailableDraftMedia) ? "Attachment Files Unavailable" : "Draft Saved");
     } catch (error) { report(run, error); throw error; }
     finally { run.resolving = false; if (current.current === run) setSaving(false); }
   }
-  return { loaded: options.enabled && loaded, saving, status, storageError, syncError, cloudId, completed, cleanupPending, hasConflict, unsupportedPublishSettings, checkpoint, flush, clear, close, retry, forkLocal, openRemote, hasUnavailableMedia: options.segments.some(segment => !!segment.unavailableDraftMedia) };
+  return { loaded: options.enabled && loaded, saving, status, storageError, syncError, cloudId, completed, cleanupPending, hasConflict, unsupportedPublishSettings, checkpoint, flush, clear, close, retry, forkLocal, openRemote, hasUnavailableMedia: options.segments.some(segment => !!segment.unavailableDraftMedia || segment.media?.kind === "gif" && !!segment.media.unavailable) };
 }

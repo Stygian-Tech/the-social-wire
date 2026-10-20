@@ -12,6 +12,16 @@ function transport(send: (path: string, init?: RequestInit) => Promise<Response>
   return mock;
 }
 const file = () => new Blob(["private bytes"], { type: "image/jpeg" });
+it("allows a full native thread manifest and rejects anything beyond its 800 references", async () => {
+  const refs = Array.from({ length: 800 }, (_, i) => ({ assetId: "12345678-1234-1234-1234-123456789abc", role: "original" as const, ref: `photo-${i}` }));
+  const mock = transport(async (_path, init) => {
+    expect(JSON.parse(String(init?.body)).attachments).toHaveLength(800);
+    return Response.json({ draftId: "draft", revision: 1, deleted: false, attachments: [] });
+  });
+  await expect(putDraftAttachmentManifest(actor, "draft", 0, refs)).resolves.toMatchObject({ revision: 1 });
+  await expect(putDraftAttachmentManifest(actor, "draft", 0, [...refs, { ...refs[0], ref: "extra" }])).rejects.toThrow("Invalid Private Draft Attachment Reference");
+  expect(mock).toHaveBeenCalledTimes(1);
+});
 it("reserves metadata and uploads a Blob to the fixed authenticated gateway, with no browser Content-Length override", async () => {
   const blob = file(); const asset = await describeDraftAttachment(blob, "photo.jpg");
   const mock = transport(async (path, init) => {
@@ -100,4 +110,13 @@ it("maps only getManifest 404 to a first-write revision-zero manifest and preser
   await expect(putDraftAttachmentManifest(actor, "new-draft", 0, [])).rejects.toMatchObject({ status: 404 });
   mock.mockImplementation(async () => new Response(null, { status: 503 }));
   await expect(getDraftAttachmentManifest(actor, "new-draft")).rejects.toMatchObject({ status: 503 });
+});
+it("distinguishes retired asset responses from ordinary CAS conflicts without changing identity in the transport", async () => {
+  const asset = await describeDraftAttachment(file(), "p.jpg");
+  const mock = transport(async () => Response.json({ error: "AssetRetired" }, { status: 409 }));
+  await expect(uploadDraftAttachment(actor, asset, file())).rejects.toMatchObject({ status: 409, error: "AssetRetired" });
+  expect(mock).toHaveBeenCalledTimes(1);
+  mock.mockImplementation(async () => Response.json({ error: "Conflict" }, { status: 409 }));
+  await expect(uploadDraftAttachment(actor, asset, file())).rejects.toMatchObject({ status: 409, error: "Conflict" });
+  expect((await describeDraftAttachment(file(), "p.jpg", asset)).assetId).toBe(asset.assetId);
 });

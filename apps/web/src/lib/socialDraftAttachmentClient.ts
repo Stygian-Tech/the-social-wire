@@ -28,7 +28,7 @@ function validateRevision(revision: number) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Invalid Private Draft Manifest Revision.");
 }
 function validateRefs(refs: DraftAttachmentRef[]) {
-  if (!Array.isArray(refs) || refs.some(ref => !uuid.test(ref.assetId) || typeof ref.ref !== "string" || !ref.ref || ref.ref.length > 512 || !["original", "prepared", "video", "poster", "caption", "gif"].includes(ref.role))) throw new Error("Invalid Private Draft Attachment Reference.");
+  if (!Array.isArray(refs) || refs.length > 800 || refs.some(ref => !uuid.test(ref.assetId) || typeof ref.ref !== "string" || !ref.ref || ref.ref.length > 512 || !["original", "prepared", "video", "poster", "caption", "gif"].includes(ref.role))) throw new Error("Invalid Private Draft Attachment Reference.");
 }
 function validateManifest(value: DraftAttachmentManifest, draftId: string) {
   if (!value || value.draftId !== draftId || !Number.isSafeInteger(value.revision) || value.revision < 0 || typeof value.deleted !== "boolean") throw new Error("Invalid Private Draft Manifest.");
@@ -45,7 +45,11 @@ async function request<T>(actor: DraftAttachmentActor, method: string, init: Req
     return await awaitWithAbort((async () => {
       const response = await gatewayFetch(actor.session, `${prefix}${method}`, { ...init, signal, cache: "no-store", redirect: "error" });
       assertDraftAttachmentActor(actor);
-      if (!response.ok && !(acceptNotFound && response.status === 404)) throw Object.assign(new Error(response.status === 409 ? "Private Draft Attachments Changed On Another Device. Reopen The Remote Draft Or Save A Copy." : "Private Draft Attachment Sync Failed. Your Local Copy Is Safe. Retry."), { status: response.status });
+      if (!response.ok && !(acceptNotFound && response.status === 404)) {
+        const body = await response.json().catch(() => undefined) as { error?: unknown } | undefined;
+        const error = typeof body?.error === "string" ? body.error : undefined;
+        throw Object.assign(new Error(error === "AssetRetired" ? "Private Draft Attachment Expired. Retry To Copy Your Local File." : response.status === 409 ? "Private Draft Attachments Changed On Another Device. Reopen The Remote Draft Or Save A Copy." : "Private Draft Attachment Sync Failed. Your Local Copy Is Safe. Retry."), { status: response.status, error });
+      }
       const result = await decode(response);
       assertDraftAttachmentActor(actor);
       return result;
@@ -56,8 +60,8 @@ const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "Cont
 export async function draftAttachmentSHA256(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer())), byte => byte.toString(16).padStart(2, "0")).join("");
 }
-export async function describeDraftAttachment(blob: Blob, name: string, previous?: DraftAttachment): Promise<DraftAttachment> {
-  const metadata = { assetId: previous?.assetId ?? "", name, contentType: blob.type, byteLength: blob.size, sha256: await draftAttachmentSHA256(blob), kind: "photo" as const, state: "reserved" as const };
+export async function describeDraftAttachment(blob: Blob, name: string, previous?: DraftAttachment, kind: DraftAttachment["kind"] = "photo"): Promise<DraftAttachment> {
+  const metadata = { assetId: previous?.assetId ?? "", name, contentType: blob.type, byteLength: blob.size, sha256: await draftAttachmentSHA256(blob), kind, state: "reserved" as const };
   const matches = previous && ["name", "contentType", "byteLength", "sha256", "kind"].every(key => previous[key as keyof DraftAttachment] === metadata[key as keyof DraftAttachment]);
   return validateAsset(matches ? previous : { ...metadata, assetId: crypto.randomUUID() });
 }
@@ -108,3 +112,5 @@ export async function downloadDraftAttachment(actor: DraftAttachmentActor, asset
     return blob;
   });
 }
+
+export const isRetiredDraftAttachment = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 409 && "error" in error && error.error === "AssetRetired";
