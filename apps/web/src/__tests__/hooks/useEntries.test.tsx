@@ -2,7 +2,7 @@
  * Tests for useEntries and useEntry hooks (Thin AppView gateway path).
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { onlineManager, QueryClient, QueryClientProvider, useQuery, type InfiniteData } from "@tanstack/react-query";
 import React from "react";
@@ -17,6 +17,7 @@ import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestat
 
 import { ReadStateProvider, useReadState } from "@/contexts/ReadStateContext";
 import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
+import * as appviewClient from "@/lib/thinAppViewClient";
 import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 
 const ORIG_ENV = { ...process.env };
@@ -364,7 +365,8 @@ describe("reader lifecycle refreshes", () => {
   type Filter = "all" | "unread";
   let client: QueryClient;
   let requests: (string | null)[];
-  let respond: () => Promise<Response>;
+  let respond: (signal?: AbortSignal | null) => Promise<Response>;
+  const lifecycleRestores: (() => void)[] = [];
   const row = (id: string) => ({ ...MOCK_ENTRIES[0], entryId: id, title: id, isRead: false });
   const json = (entries: EntriesPage["entries"], cursor?: string) =>
     new Response(JSON.stringify({ entries, cursor }), { headers: { "Content-Type": "application/json" } });
@@ -410,17 +412,18 @@ describe("reader lifecycle refreshes", () => {
     requests = [];
     respond = async () => json([]);
     onlineManager.setOnline(true);
-    globalThis.fetch = (async (input: string | URL | Request) => {
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       if (url.pathname.endsWith("/app.thesocialwire.appview.getFeed")) {
         requests.push(url.searchParams.get("cursor"));
-        return respond();
+        return respond(init?.signal ?? (input instanceof Request ? input.signal : undefined));
       }
       return new Response("{}", { headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
   });
   afterEach(() => {
     cleanup();
+    lifecycleRestores.splice(0).reverse().forEach(restore => restore());
     window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
     client.clear();
     onlineManager.setOnline(true);
@@ -467,6 +470,60 @@ describe("reader lifecycle refreshes", () => {
       }
     }
 
+    for (const settlement of ["before", "after"] as const) {
+      it(`${scope} remount starts fresh before aborted fetch settles ${settlement} replacement resolution`, async () => {
+        seed(scope);
+        // Hold the feed client response after real Query cancellation. The
+        // Gateway nonce lane itself serializes raw transport settlement.
+        const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementation(async ({ signal }) => {
+          requests.push(null);
+          return (await respond(signal)).json();
+        });
+        lifecycleRestores.push(() => feed.mockRestore());
+        let oldSignal: AbortSignal | null | undefined;
+        let newSignal: AbortSignal | null | undefined;
+        let failOld!: (error: Error) => void;
+        let finishNew!: (response: Response) => void;
+        respond = signal => {
+          if (requests.length === 1) {
+            oldSignal = signal;
+            return new Promise((_resolve, reject) => { failOld = reject; });
+          }
+          newSignal = signal;
+          return new Promise(resolve => { finishNew = resolve; });
+        };
+        const first = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        expect(oldSignal?.aborted).toBe(false);
+        first.unmount();
+        expect(oldSignal?.aborted).toBe(true);
+        // Leave the transport abort rejection pending until a new observer has
+        // mounted and begun a separate request.
+        const second = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(2));
+        expect(newSignal).not.toBe(oldSignal);
+        expect(newSignal?.aborted).toBe(false);
+        expect(ids(second.result.current.data)).toEqual(["cached-head", "cached-tail"]);
+        if (settlement === "before") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+          await settle();
+          expect(second.result.current.isFetching).toBe(true);
+        }
+        await act(async () => { finishNew(json([row("fresh-remount")])); });
+        await waitFor(() => expect(ids(second.result.current.data)).toEqual(["fresh-remount", "cached-head", "cached-tail"]));
+        if (settlement === "after") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+        }
+        await settle();
+        expect(second.result.current.isError).toBe(false);
+        expect(second.result.current.isFetching).toBe(false);
+        expect(newSignal?.aborted).toBe(false);
+        expect(requests).toEqual([null, null]);
+        expect(second.result.current.data?.pageParams).toEqual([undefined, "page-two"]);
+        second.unmount();
+      });
+    }
+
     it(`${scope} keeps Unread authoritative on stale mount`, async () => {
       seed(scope, "unread");
       const { result, unmount } = renderHook(() => useFeed(scope, "unread"), { wrapper: Wrapper });
@@ -502,6 +559,78 @@ describe("reader lifecycle refreshes", () => {
     }
 
     for (const action of ["markEntryRead", "markEntryUnread", "markEntriesRead", "markEntriesUnread"] as const) {
+      it(`${scope} restarts a blocked cold initial load after ReadStateProvider ${action} without cancelling another viewer`, async () => {
+        if (action.endsWith("Unread")) {
+          window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify({ "action-entry": "2026-01-01T00:00:00.000Z" }));
+        }
+        let finishOld!: (response: Response) => void;
+        let finishReplacement!: (response: Response) => void;
+        respond = () => new Promise(resolve => {
+          if (requests.length === 1) finishOld = resolve;
+          else finishReplacement = resolve;
+        });
+        // Real fetch rejects on abort, releasing the Gateway's serialized request
+        // queue even if the server finishes producing the cancelled response later.
+        const fetchBeforeAbort = globalThis.fetch;
+        globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+          const response = fetchBeforeAbort(input, init);
+          if (!init?.signal) return response;
+          const signal = init.signal;
+          return new Promise<Response>((resolve, reject) => {
+            const abort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+            signal.addEventListener("abort", abort, { once: true });
+            if (signal.aborted) abort();
+            response.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+          });
+        }) as typeof fetch;
+        const otherViewer = "did:plc:other";
+        let finishOther!: (data: InfiniteData<EntriesPage>) => void;
+        const otherRequest = mock(() => new Promise<InfiniteData<EntriesPage>>(resolve => { finishOther = resolve; }));
+        const { result } = renderHook(() => ({
+          feed: useFeed(scope),
+          readState: useReadState(),
+          otherFeed: useQuery({ queryKey: keyFor(scope, "all", otherViewer), queryFn: otherRequest }),
+        }), { wrapper: ReadStateWrapper });
+        await waitFor(() => expect(requests).toEqual([null]));
+        await waitFor(() => expect(otherRequest).toHaveBeenCalledTimes(1));
+        expect(result.current.feed.data).toBeUndefined();
+        expect(result.current.feed.fetchStatus).toBe("fetching");
+        if (action.endsWith("Unread")) {
+          await waitFor(() => expect(result.current.readState.isEntryRead("action-entry")).toBe(true));
+        }
+        await act(async () => {
+          if (action === "markEntryRead" || action === "markEntryUnread") {
+            result.current.readState[action]("action-entry");
+          } else result.current.readState[action](["action-entry", "second-action-entry"]);
+        });
+        await waitFor(() => expect(result.current.readState.isEntryRead("action-entry")).toBe(!action.endsWith("Unread")));
+        await waitFor(() => expect(requests).toEqual([null, null]));
+        expect(result.current.feed.data).toBeUndefined();
+        expect(result.current.feed.fetchStatus).toBe("fetching");
+        expect(otherRequest).toHaveBeenCalledTimes(1);
+        expect(result.current.otherFeed.data).toBeUndefined();
+        expect(result.current.otherFeed.fetchStatus).toBe("fetching");
+
+        await act(async () => {
+          finishReplacement(json([row("replacement-content")]));
+          finishOther({ pages: [{ entries: [row("other-viewer-content")] }], pageParams: [undefined] });
+        });
+        await waitFor(() => expect(ids(result.current.feed.data)).toEqual(["replacement-content"]));
+        await waitFor(() => expect(result.current.feed.fetchStatus).toBe("idle"));
+        await waitFor(() => expect(ids(result.current.otherFeed.data)).toEqual(["other-viewer-content"]));
+        expect(result.current.feed.isSuccess).toBe(true);
+        const completed = client.getQueryState(keyFor(scope))!;
+        await act(async () => { finishOld(json([row("cancelled-initial-content")])); });
+        await settle();
+        expect(ids(result.current.feed.data)).toEqual(["replacement-content"]);
+        expect(client.getQueryState(keyFor(scope))?.dataUpdatedAt).toBe(completed.dataUpdatedAt);
+        expect(result.current.feed.fetchStatus).toBe("idle");
+        expect(result.current.feed.isError).toBe(false);
+        expect(ids(result.current.otherFeed.data)).toEqual(["other-viewer-content"]);
+        expect(otherRequest).toHaveBeenCalledTimes(1);
+        expect(requests).toEqual([null, null]);
+      });
+
       it(`${scope} rejects a blocked lifecycle response after ReadStateProvider ${action}`, async () => {
         seed(scope);
         // Unread actions undo persisted read intent instead of exercising a no-op.

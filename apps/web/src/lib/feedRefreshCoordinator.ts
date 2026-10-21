@@ -29,11 +29,19 @@ export function cancelViewerFeedRefreshes(client: QueryClient, viewerDid: string
   // newer optimistic data; reporting cancellation as an error would flash Retry.
   const cancelled = client.cancelQueries(filters, { revert: false, silent: true });
   for (const query of queries) query.setState({ fetchStatus: "idle" });
-  return cancelled;
+  return cancelled.then(() => {
+    // A read action can happen in another pane during an initial feed load.
+    // Cached feeds keep their data; cold active feeds need a replacement request.
+    void client.refetchQueries({
+      predicate: query => filters.predicate(query) && query.isActive() &&
+        query.state.data === undefined && query.state.fetchStatus === "idle",
+    });
+  });
 }
 
 const publicSession = {};
-const pendingByClient = new WeakMap<QueryClient, WeakMap<object, Map<string, Promise<unknown>>>>();
+type PendingFirstPage = { promise: Promise<unknown>; signal?: AbortSignal };
+const pendingByClient = new WeakMap<QueryClient, WeakMap<object, Map<string, PendingFirstPage>>>();
 
 /** Share only page-one work for the same OAuth session and complete feed scope. */
 export function coalesceFeedFirstPage<T>(
@@ -41,6 +49,7 @@ export function coalesceFeedFirstPage<T>(
   session: object | null,
   queryKey: readonly unknown[],
   fetchPage: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
   let sessions = pendingByClient.get(client);
   if (!sessions) { sessions = new WeakMap(); pendingByClient.set(client, sessions); }
@@ -49,10 +58,18 @@ export function coalesceFeedFirstPage<T>(
   if (!pending) { pending = new Map(); sessions.set(owner, pending); }
   const key = hashKey([queryKey, getFeedRefreshRevision(client, queryKey)]);
   const existing = pending.get(key);
-  if (existing) return existing as Promise<T>;
+  if (existing && !existing.signal?.aborted) return existing.promise as Promise<T>;
+  const retire = () => {
+    // Abort precedes transport settlement. Late cleanup must preserve a replacement.
+    if (pending.get(key) === entry) pending.delete(key);
+  };
   const task = fetchPage().finally(() => {
-    if (pending.get(key) === task) pending.delete(key);
+    signal?.removeEventListener("abort", retire);
+    retire();
   });
-  pending.set(key, task);
+  const entry = { promise: task, signal };
+  pending.set(key, entry);
+  signal?.addEventListener("abort", retire, { once: true });
+  if (signal?.aborted) retire();
   return task;
 }

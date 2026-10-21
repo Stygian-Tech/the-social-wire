@@ -90,3 +90,50 @@ it("retires only viewer reader work synchronously without reverting optimism or 
   expect(client.getQueryState(key)).toMatchObject({ data: "optimistic", dataUpdatedAt: 2, isInvalidated: true, status: "success", fetchStatus: "idle" });
   client.clear();
 });
+
+for (const oldOutcome of ["reject", "resolve"] as const) {
+  it(`retires aborted work before settlement and preserves its replacement after late ${oldOutcome}`, async () => {
+    const client = new QueryClient();
+    const session = {};
+    const key = ["entries", "alice", "pub", "all"];
+    const oldController = new AbortController();
+    const currentController = new AbortController();
+    let finishOld!: (value: string) => void, failOld!: (error: Error) => void;
+    const old = coalesceFeedFirstPage(client, session, key, () => new Promise<string>((resolve, reject) => {
+      finishOld = resolve;
+      failOld = reject;
+    }), oldController.signal);
+    const oldResult = old.catch(error => error);
+    oldController.abort();
+    let finishCurrent!: (value: string) => void;
+    const current = coalesceFeedFirstPage(client, session, key, () => new Promise<string>(resolve => {
+      finishCurrent = resolve;
+    }), currentController.signal);
+    expect(current).not.toBe(old);
+    expect(currentController.signal.aborted).toBe(false);
+    if (oldOutcome === "reject") failOld(new DOMException("aborted", "AbortError"));
+    else finishOld("retired");
+    await oldResult;
+    // Old finally cleanup cannot erase the still-active replacement.
+    expect(coalesceFeedFirstPage(client, session, key, async () => "unexpected")).toBe(current);
+    finishCurrent("fresh");
+    expect(await current).toBe("fresh");
+    expect(await coalesceFeedFirstPage(client, session, key, async () => "next")).toBe("next");
+    client.clear();
+  });
+}
+
+it("does not retain work whose owner signal was already aborted", async () => {
+  const client = new QueryClient();
+  const session = {};
+  const controller = new AbortController();
+  controller.abort();
+  let finish!: (value: string) => void;
+  const retired = coalesceFeedFirstPage(client, session, ["feed"], () => new Promise<string>(resolve => {
+    finish = resolve;
+  }), controller.signal);
+  expect(await coalesceFeedFirstPage(client, session, ["feed"], async () => "fresh")).toBe("fresh");
+  finish("retired");
+  await retired;
+  client.clear();
+});

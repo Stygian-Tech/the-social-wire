@@ -188,7 +188,7 @@ describe("useFeedReadAgeActions", () => {
     await marking;
     expect(getFeedRefreshRevision(queryClient, key)).toBe(2);
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(queryClient.getQueryState(key)?.status).toBe("success"));
     expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(refreshed);
     staleRequest.resolve(entries());
