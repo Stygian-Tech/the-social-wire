@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 	"net/url"
 	"sync"
 )
@@ -172,7 +173,7 @@ func (e *Enroller) ingestFeeds(ctx context.Context, feeds []string, explicit boo
 			key := rssEnrollmentKey{db: e.RSS.DB, feed: feed, explicit: explicit}
 			call, owner, err := sharedRSSAdmission.tryStart(key)
 			if err != nil {
-				errs = append(errs, err)
+				errs = append(errs, thinappviewcore.WrapEnrollmentFailure("rss_admission", feed, 0, err))
 			} else if call == nil {
 				i++
 				continue
