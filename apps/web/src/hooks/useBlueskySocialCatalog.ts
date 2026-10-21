@@ -41,10 +41,6 @@ export function useBlueskySocialCatalog({ enabled = true }: { enabled?: boolean 
   const refetchSafety = () => new Promise<BlueskySocialCatalog>((resolve, reject) => {
     const oauth = getOAuthSession();
     const pending = safetyByClient.get(client)?.get(JSON.stringify(key));
-    if (client.getQueryState(key)?.fetchStatus === "fetching" && pending?.oauth === oauth && pending.ready) {
-      resolve(pending.ready);
-      return;
-    }
     const unsubscribe = client.getQueryCache().subscribe(event => {
       if (event.type !== "updated" || event.action.type !== "success" || !event.action.manual) return;
       if (JSON.stringify(event.query.queryKey) !== JSON.stringify(key) || getOAuthSession() !== oauth) return;
@@ -53,7 +49,10 @@ export function useBlueskySocialCatalog({ enabled = true }: { enabled?: boolean 
       unsubscribe();
       resolve(catalog);
     });
-    void query.refetch({ cancelRefetch: false }).then(result => {
+    // A completed safety phase belongs to the preceding gesture. Retire its
+    // optional metadata tail so this gesture gets fresh preferences; only an
+    // unfinished safety phase can be shared by concurrent refresh callers.
+    void query.refetch({ cancelRefetch: !!pending && (pending.ready !== undefined || pending.oauth !== oauth) }).then(result => {
       unsubscribe();
       if (result.isError) reject(result.error);
       else if (result.data && getOAuthSession() === oauth) resolve(result.data);
