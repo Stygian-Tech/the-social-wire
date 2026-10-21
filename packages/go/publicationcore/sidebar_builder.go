@@ -18,7 +18,7 @@ func uniqueRows(rows []DiscoveredRow) []DiscoveredRow {
 	sort.Slice(out, func(i, j int) bool { return out[i].PublicationID < out[j].PublicationID })
 	return out
 }
-func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, phase string) (Sidebar, error) {
+func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, phase string, preserveFollowing ...bool) (Sidebar, error) {
 	priority := uniqueRows(append(append(append([]DiscoveredRow{}, discovery.MyPublications...), discovery.Unfoldered...), discovery.Following...))
 	folderRows := []DiscoveredRow{}
 	for _, folder := range discovery.Folders {
@@ -114,8 +114,10 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 			result.AllPublicationRows = append(result.AllPublicationRows, section.Publications...)
 		}
 	}
-	// Source returns sidebar even when durable scope persistence is unavailable; read paths
-	// still enforce their own database readiness and never substitute client scopes.
-	_ = (ProjectionStore{DB: s.DB}).Persist(ctx, result, phase == "full")
+	// Ordinary source reads remain available during persistence outages. Manual
+	// refresh must report failure if its authoritative replacement did not persist.
+	if err := (ProjectionStore{DB: s.DB}).Persist(ctx, result, phase == "full", preserveFollowing...); err != nil && len(preserveFollowing) > 0 && preserveFollowing[0] {
+		return Sidebar{}, err
+	}
 	return result, nil
 }
