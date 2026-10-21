@@ -83,6 +83,10 @@ func (s *Service) ResolveIDs(ctx context.Context, auth gatewaycore.AuthContext, 
 	return out, nil
 }
 func (s *Service) Discover(ctx context.Context, viewer string, includeFollows bool, includeOwn ...bool) (DiscoveryContext, error) {
+	return s.discover(ctx, viewer, includeFollows, nil, includeOwn...)
+}
+
+func (s *Service) discover(ctx context.Context, viewer string, includeFollows bool, refresh *refreshMetadata, includeOwn ...bool) (DiscoveryContext, error) {
 	s.mu.Lock()
 	cached := s.discoveries[viewer]
 	s.mu.Unlock()
@@ -90,13 +94,19 @@ func (s *Service) Discover(ctx context.Context, viewer string, includeFollows bo
 	if cached.expires.After(s.Now()) {
 		prior = cached.value.Following
 	}
-	discovery, e := Discover(ctx, s.Repo, s.Client, viewer, includeFollows, prior, s.Now(), includeOwn...)
+	repo := s.Repo
+	if refresh != nil {
+		repo = refresh
+	}
+	discovery, e := Discover(ctx, repo, s.Client, viewer, includeFollows, prior, s.Now(), includeOwn...)
 	if e == nil {
 		s.mu.Lock()
 		discovery.cacheToken = new(byte)
 		s.discoveries[viewer] = discoveryEntry{discovery, s.Now().Add(10 * time.Minute)}
 		s.mu.Unlock()
 	}
+	// Fresh repository metadata belongs only to this refresh, never the discovery cache.
+	discovery.refresh = refresh
 	return discovery, e
 }
 func (s *Service) Sidebar(ctx context.Context, auth gatewaycore.AuthContext, phase string) (Sidebar, error) {
@@ -180,7 +190,7 @@ func (s *Service) Refresh(ctx context.Context, auth gatewaycore.AuthContext) (Si
 	}
 	delete(s.rows, auth.DID)
 	s.mu.Unlock()
-	discovery, e := s.Discover(ctx, auth.DID, false, true)
+	discovery, e := s.discover(ctx, auth.DID, false, newRefreshMetadata(s.Repo), true)
 	if e != nil {
 		return Sidebar{}, e
 	}

@@ -3,12 +3,18 @@ package publicationcore
 import (
 	"context"
 	"encoding/base64"
+	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 	"sort"
 	"strings"
 )
 
 func BuildScope(ctx context.Context, repo Repository, id, author string) AppViewScope {
+	return buildScope(ctx, repo, id, author, nil)
+}
+
+// fresh is supplied only by the current refresh discovery, never a persistent CID cache.
+func buildScope(ctx context.Context, repo Repository, id, author string, fresh *gatewaycore.RepoRecord) AppViewScope {
 	id = NormalizeATRepoParam(id)
 	result := AppViewScope{AuthorDID: author, PublicationScopeATURIs: []string{}, PublicationSiteURLs: []string{}}
 	if strings.HasPrefix(id, "rss:") {
@@ -43,8 +49,13 @@ func BuildScope(ctx context.Context, repo Repository, id, author string) AppView
 		}
 	}
 	merge(id, nil)
-	if record, e := repo.GetRecord(ctx, did, col, key, ""); e == nil && record != nil {
-		value := recordValue(*record)
+	if fresh == nil {
+		if record, err := repo.GetRecord(ctx, did, col, key, ""); err == nil {
+			fresh = record
+		}
+	}
+	if fresh != nil {
+		value := recordValue(*fresh)
 		merge(id, value)
 		if site := thinappviewcore.NormalizePublicationSiteURL(text(value, "site")); site != "" {
 			for _, collection := range []string{"site.standard.publication", "com.standard.publication", "app.offprint.publication"} {
