@@ -12,12 +12,14 @@ import * as projectionClient from "@/lib/publicationProjectionClient";
 import * as readerFeeds from "@/lib/refreshReaderFeeds";
 import * as publicationSources from "@/lib/refreshPublicationSources";
 import * as readerUnread from "@/lib/refreshReaderUnreadCounts";
+import * as appview from "@/lib/thinAppViewClient";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 
 function deferred() {
   let resolve!: () => void;
-  const promise = new Promise<void>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 let viewerSequence = 0;
@@ -58,7 +60,19 @@ function mountProvider(options: { initialError?: boolean; initialGate?: ReturnTy
   return { ...renderHook(() => useSidebarBootstrap(), { wrapper }), did, projection, queryClient, stream, post, sources, feeds, unread };
 }
 
-afterEach(() => { cleanup(); mock.restore(); });
+const observers: (() => void)[] = [];
+function sourceRow(id: string, author = id): projectionClient.SidebarPublicationRow {
+  return { publicationId: id, authorDid: author, authorHandle: author, title: id, discoveredAt: "", appViewScope: { authorDid: author, publicationAtUri: null, publicationScopeAtUris: [], publicationSiteUrls: [] } };
+}
+function cacheActiveSources(mounted: ReturnType<typeof mountProvider>, rows = [sourceRow("did:plc:source")], viewerDid = mounted.did) {
+  const projection = { ...mounted.projection, viewerDid, subscribedUnfoldered: rows, allPublicationRows: rows };
+  mounted.queryClient.setQueryData(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(mounted.did), projection);
+  const observer = new InfiniteQueryObserver(mounted.queryClient, { queryKey: ["aggregateEntries", mounted.did, "subscribed", "", "all"], queryFn: async () => ({ entries: [{ entryId: "existing" }], cursor: "tail" }), initialPageParam: undefined, getNextPageParam: () => undefined, staleTime: Infinity, initialData: { pages: [{ entries: [{ entryId: "existing" }], cursor: "tail" }], pageParams: [undefined] } });
+  observers.push(observer.subscribe(() => {}));
+  return projection;
+}
+
+afterEach(() => { while (observers.length) observers.pop()!(); cleanup(); mock.restore(); });
 
 describe("PublicationSidebarProvider", () => {
   it("starts a single bootstrap stream per provider mount", async () => {
@@ -104,6 +118,194 @@ describe("PublicationSidebarProvider", () => {
     expect(feeds).toHaveBeenCalledTimes(1);
     expect(feeds.mock.calls[0]?.[0].signal).toBe(sources.mock.calls[0]?.[0].signal);
   });
+
+  it("starts cached ingestion while POST is pending, gates paints on authority, and waits for seed and counts", async () => {
+    const mounted = mountProvider();
+    const { result, post, sources, feeds, unread, queryClient, did } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted);
+    const posted = deferred(), ingested = deferred(), counted = deferred(), paintRequested = deferred();
+    post.mockImplementation(async () => { await posted.promise; return { ...cached, refreshedAt: "authoritative" }; });
+    sources.mockImplementation(async ({ onBatch, onProgress }) => {
+      onProgress(0, 1); paintRequested.resolve(); await onBatch();
+      await ingested.promise; onProgress(1, 1); await onBatch();
+    });
+    feeds.mockImplementation(async ({ onNewArticleIds }) => {
+      expect(queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did))?.refreshedAt).toBe("authoritative");
+      onNewArticleIds?.(["existing", "new"]);
+      return { newArticleCount: 2 };
+    });
+    unread.mockImplementation(() => counted.promise);
+    let first!: Promise<void>, duplicate!: Promise<void>;
+    act(() => { first = result.current.refresh.mutateAsync(); duplicate = result.current.refresh.mutateAsync(); });
+    await paintRequested.promise;
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(sources).toHaveBeenCalledTimes(1); expect(feeds).not.toHaveBeenCalled();
+    expect(result.current.refresh.isPending).toBe(true); expect(unread).not.toHaveBeenCalled();
+    expect(result.current.refreshMessage).toBe("Checking 1 Publications…");
+    await act(async () => { posted.resolve(); });
+    await waitFor(() => expect(feeds).toHaveBeenCalledTimes(1));
+    expect(result.current.refresh.isPending).toBe(true); expect(unread).not.toHaveBeenCalled();
+    await act(async () => { ingested.resolve(); });
+    await waitFor(() => expect(unread).toHaveBeenCalledTimes(1));
+    expect(feeds).toHaveBeenCalledTimes(2); expect(sources).toHaveBeenCalledTimes(1);
+    expect(result.current.refresh.isPending).toBe(true);
+    await act(async () => { counted.resolve(); await Promise.all([first, duplicate]); });
+    expect(result.current.refreshMessage).toBe("1 New Article Loaded");
+  });
+
+  it("runs real ingestion alongside POST and releases an early paint only after authority while ingestion remains pending", async () => {
+    const mounted = mountProvider();
+    const { result, post, sources, feeds, unread } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted), posted = deferred(), ingested = deferred();
+    sources.mockRestore();
+    const enroll = spyOn(appview, "enrollAuthorsInAppView").mockImplementation(() => ingested.promise);
+    post.mockImplementation(async () => { await posted.promise; return cached; });
+    let task!: Promise<void>;
+    act(() => { task = result.current.refresh.mutateAsync(); });
+    await waitFor(() => expect(enroll).toHaveBeenCalledTimes(1));
+    expect(enroll.mock.calls[0]?.[1]).toEqual(["did:plc:source"]);
+    expect(post).toHaveBeenCalledTimes(1);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+    expect(feeds).not.toHaveBeenCalled(); expect(unread).not.toHaveBeenCalled();
+    await act(async () => { posted.resolve(); });
+    await waitFor(() => expect(feeds).toHaveBeenCalledTimes(1));
+    expect(result.current.refresh.isPending).toBe(true); expect(unread).not.toHaveBeenCalled();
+    await act(async () => { ingested.resolve(); await task; });
+    expect(feeds).toHaveBeenCalledTimes(2); expect(unread).toHaveBeenCalledTimes(1);
+    expect(result.current.refreshMessage).toBe("Refresh Complete");
+  });
+
+  for (const invalid of ["missing", "other-viewer", "no-usable-sources"] as const) {
+    it(`awaits authoritative POST before ingestion with ${invalid} cache`, async () => {
+      const mounted = mountProvider();
+      const { result, post, sources } = mounted;
+      await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+      const fresh = cacheActiveSources(mounted);
+      if (invalid === "missing") mounted.queryClient.removeQueries({ queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(mounted.did), exact: true });
+      else cacheActiveSources(mounted, invalid === "no-usable-sources" ? [sourceRow("empty", "")] : fresh.allPublicationRows, invalid === "other-viewer" ? "other" : mounted.did);
+      const posted = deferred();
+      post.mockImplementation(async () => { await posted.promise; return fresh; });
+      let task!: Promise<void>;
+      act(() => { task = result.current.refresh.mutateAsync(); });
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+      expect(sources).not.toHaveBeenCalled();
+      await act(async () => { posted.resolve(); await task; });
+      expect(sources).toHaveBeenCalledTimes(1);
+      expect(sources.mock.calls[0]?.[0].rows).toEqual(fresh.allPublicationRows);
+    });
+  }
+
+  for (const change of ["membership", "sources"] as const) {
+    it(`settles failed seed before checking changed authoritative ${change} and ignores removed-source errors only after recheck`, async () => {
+      const mounted = mountProvider();
+      const { result, post, sources, feeds, unread } = mounted;
+      await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+      const cached = cacheActiveSources(mounted);
+      const freshRows = [sourceRow(change === "membership" ? "new-publication" : cached.allPublicationRows[0]!.publicationId, change === "membership" ? "did:plc:source" : "did:plc:new-source")];
+      const fresh = { ...cached, allPublicationRows: freshRows, subscribedUnfoldered: freshRows };
+      const posted = deferred(), seed = deferred(), checked = deferred(), paint = deferred();
+      post.mockImplementation(async () => { await posted.promise; return fresh; });
+      let calls = 0;
+      sources.mockImplementation(async ({ onBatch }) => {
+        if (++calls === 1) { await seed.promise; await onBatch(); throw new Error("Removed source failed"); }
+        await checked.promise; await onBatch();
+      });
+      let paints = 0;
+      feeds.mockImplementation(async () => { if (++paints === 1) await paint.promise; return { newArticleCount: 0 }; });
+      let task!: Promise<void>;
+      act(() => { task = result.current.refresh.mutateAsync(); });
+      await waitFor(() => expect(sources).toHaveBeenCalledTimes(1));
+      await act(async () => { posted.resolve(); seed.resolve(); });
+      await waitFor(() => expect(feeds).toHaveBeenCalledTimes(1));
+      expect(sources).toHaveBeenCalledTimes(1); expect(unread).not.toHaveBeenCalled();
+      await act(async () => { paint.resolve(); });
+      await waitFor(() => expect(sources).toHaveBeenCalledTimes(2));
+      expect(sources.mock.calls[1]?.[0].rows).toEqual(freshRows);
+      expect(result.current.refresh.isPending).toBe(true); expect(unread).not.toHaveBeenCalled();
+      await act(async () => { checked.resolve(); await task; });
+      expect(result.current.refreshMessage).toBe("Refresh Complete");
+      expect(unread.mock.calls[0]?.[0].publicationIds).toEqual(freshRows.map(row => row.publicationId));
+    });
+  }
+
+  it("uses current active scope after authoritative membership applies while the seed drains", async () => {
+    const mounted = mountProvider();
+    const { result, queryClient, did, post, sources, unread } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted), following = sourceRow("did:plc:following");
+    const fresh = { ...cached, followingTabPublications: [following], allPublicationRows: [...cached.allPublicationRows, following], refreshedAt: "authoritative" };
+    const posted = deferred(), seed = deferred();
+    post.mockImplementation(async () => { await posted.promise; return fresh; });
+    let calls = 0;
+    sources.mockImplementation(async ({ onBatch }) => { if (++calls === 1) await seed.promise; await onBatch(); });
+    let task!: Promise<void>;
+    act(() => { task = result.current.refresh.mutateAsync(); });
+    await waitFor(() => expect(sources).toHaveBeenCalledTimes(1));
+    expect(sources.mock.calls[0]?.[0].rows).toEqual(cached.subscribedUnfoldered);
+    await act(async () => { posted.resolve(); });
+    await waitFor(() => expect(queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did))?.refreshedAt).toBe("authoritative"));
+    observers.pop()!();
+    const observer = new InfiniteQueryObserver(queryClient, { queryKey: ["aggregateEntries", did, "following", "", "all"], queryFn: async () => ({ entries: [] }), initialPageParam: undefined, getNextPageParam: () => undefined, staleTime: Infinity, initialData: { pages: [{ entries: [] }], pageParams: [undefined] } });
+    observers.push(observer.subscribe(() => {}));
+    await act(async () => { seed.resolve(); await task; });
+    expect(sources.mock.calls[1]?.[0].rows).toEqual([following]);
+    expect(unread.mock.calls[0]?.[0].publicationIds).toEqual([following.publicationId]);
+    expect(result.current.refreshMessage).toBe("Refresh Complete");
+  });
+
+  it("retains an early seed failure for unchanged authoritative sources and fresh counts", async () => {
+    const mounted = mountProvider();
+    const { result, post, sources, unread } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted), posted = deferred();
+    post.mockImplementation(async () => { await posted.promise; return cached; });
+    sources.mockRejectedValue(new Error("RSS backoff"));
+    let outcome!: Promise<unknown>;
+    act(() => { outcome = result.current.refresh.mutateAsync().catch(error => error); });
+    await waitFor(() => expect(sources).toHaveBeenCalledTimes(1));
+    expect(result.current.refresh.isPending).toBe(true); expect(unread).not.toHaveBeenCalled();
+    let error: unknown;
+    await act(async () => { posted.resolve(); error = await outcome; });
+    expect((error as Error).message).toBe("RSS backoff");
+    expect(unread).toHaveBeenCalledTimes(1); expect(sources).toHaveBeenCalledTimes(1);
+    expect(result.current.refreshMessage).not.toBe("Refresh Complete");
+  });
+
+  for (const failure of ["post", "session", "account", "unmount"] as const) {
+    it(`aborts and settles a seed waiting for authority on ${failure} without painting`, async () => {
+      const mounted = mountProvider();
+      const { result, post, sources, feeds, unread, rerender, unmount, queryClient, did } = mounted;
+      await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+      const cached = cacheActiveSources(mounted), posted = deferred(), paintRequested = deferred();
+      post.mockImplementation(async () => { await posted.promise; return cached; });
+      let seedSettled = false;
+      sources.mockImplementation(async ({ onBatch }) => {
+        try { paintRequested.resolve(); await onBatch(); } finally { seedSettled = true; }
+      });
+      let outcome!: Promise<unknown>;
+      act(() => { outcome = result.current.refresh.mutateAsync().catch(error => error); });
+      await paintRequested.promise;
+      expect(seedSettled).toBe(false); expect(feeds).not.toHaveBeenCalled();
+      const snapshot = queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did));
+      await act(async () => {
+        if (failure === "post") posted.reject(new Error("POST failed"));
+        else if (failure === "unmount") unmount();
+        else {
+          spyOn(auth, "useAuth").mockReturnValue({ ...auth.useAuth(), ...(failure === "account" ? { session: { did: "other-account" }, getOAuthSession: () => null } : { oauthSessionReloadSeq: 1 }) } as ReturnType<typeof auth.useAuth>);
+          rerender();
+        }
+      });
+      let error: unknown;
+      await act(async () => { error = await outcome; });
+      expect(error).toBeInstanceOf(Error); expect(seedSettled).toBe(true);
+      expect(sources.mock.calls[0]?.[0].signal.aborted).toBe(true);
+      await act(async () => { posted.resolve(); });
+      expect(feeds).not.toHaveBeenCalled(); expect(unread).not.toHaveBeenCalled();
+      expect(queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did))).toBe(snapshot);
+    });
+  }
 
   it("preserves selection, history, and cached unread counts while replacing authoritative membership", async () => {
     const { result, post, stream, queryClient, did, projection } = mountProvider();
@@ -155,8 +357,22 @@ describe("PublicationSidebarProvider", () => {
       const next = queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did))!;
       expect(next.followingTabPublications).toEqual([freshWinner, added, keep]);
       expect(next.allPublicationRows).toEqual([freshWinner, added, keep]);
-      expect(sources.mock.calls[0]?.[0].rows).toEqual([freshWinner, added, keep]);
+      expect(sources.mock.calls.map(call => call[0].rows)).toEqual([[keep, winner, hidden, removed, alias], [freshWinner, added, keep]]);
     } finally { stop(); }
+  });
+
+  it("never carries another viewer's cached Following or unread state into the authoritative snapshot", async () => {
+    const mounted = mountProvider();
+    const { result, post, queryClient, did, projection, sources } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const other = sourceRow("did:plc:other-source");
+    queryClient.setQueryData(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did), { ...projection, viewerDid: "another-viewer", followingTabPublications: [other], allPublicationRows: [other], unreadCountsByPublicationId: { [other.publicationId]: 12 } });
+    post.mockResolvedValue({ ...projection, retainedFollowingPublicationIds: [other.publicationId] });
+    await act(async () => { await result.current.refresh.mutateAsync(); });
+    const current = queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did));
+    expect(current?.followingTabPublications).toEqual([]);
+    expect(current?.unreadCountsByPublicationId).toBeUndefined();
+    expect(sources.mock.calls[0]?.[0].rows).toEqual([]);
   });
 
   it("does not retain cached Following rows when the server supplies no retained IDs", async () => {

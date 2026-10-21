@@ -32,6 +32,36 @@ export function readerRefreshRows(client: QueryClient, did: string, projection: 
   return [...selected.values()];
 }
 
+/** Compare source work independently of row order and duplicate scope aliases. */
+export function readerRefreshSourcesKey(rows: SidebarPublicationRow[]): { membership: string[]; sources: string[]; scopes: string[] } {
+  const normalizeSite = (site: string) => {
+    try { return new URL(site).href; } catch { return site; }
+  };
+  const normalizedSet = (values: string[]) => [...new Set(values)].sort();
+  const sources = new Set<string>();
+  for (const { appViewScope: scope } of rows) {
+    if (scope.authorDid === "did:web:skyreader.rss") {
+      for (const feed of scope.publicationSiteUrls) {
+        if (!feed.trim()) continue;
+        sources.add(`feed:${normalizeSite(feed)}`);
+      }
+    } else if (scope.authorDid) sources.add(`author:${normalizeAtRepoParam(scope.authorDid)}`);
+  }
+  return {
+    membership: [...new Set(rows.map(row => normalizeAtRepoParam(row.publicationId)))].sort(),
+    sources: [...sources].sort(),
+    // Enrollment can stay author-scoped while the server changes which of that
+    // author's publications/URLs belong to a row. Such changes need seed cleanup.
+    scopes: normalizedSet(rows.map(row => JSON.stringify([
+      normalizeAtRepoParam(row.publicationId),
+      normalizeAtRepoParam(row.appViewScope.authorDid ?? ""),
+      row.appViewScope.publicationAtUri ? normalizeAtRepoParam(row.appViewScope.publicationAtUri) : null,
+      normalizedSet(row.appViewScope.publicationScopeAtUris.map(normalizeAtRepoParam)),
+      normalizedSet(row.appViewScope.publicationSiteUrls.map(normalizeSite)),
+    ]))),
+  };
+}
+
 /** Poll mounted feeds while scoped enrollment requests ingest and recount. */
 export async function refreshPublicationSources(args: {
   oauthSession: OAuthSession;
