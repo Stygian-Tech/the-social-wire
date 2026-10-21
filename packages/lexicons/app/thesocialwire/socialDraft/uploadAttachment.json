@@ -1,0 +1,54 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.socialDraft.uploadAttachment",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Owner-only private draft storage. Authentication required; disabled storage returns Unavailable. Never publishes attachments or exposes public URLs. Requires X-Social-Draft-Upload-Id header containing the reserved assetId and known Content-Length from 1 to 104857600 bytes. Unknown length returns 411; oversize returns 413.",
+      "input": {
+        "encoding": "application/octet-stream"
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "attachment"
+          ],
+          "properties": {
+            "attachment": {
+              "type": "ref",
+              "ref": "app.thesocialwire.socialDraft.defs#asset"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "Quota"
+        },
+        {
+          "name": "UploadPending"
+        },
+        {
+          "name": "Unavailable"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "LengthRequired"
+        }
+      ]
+    }
+  }
+}

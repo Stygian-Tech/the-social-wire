@@ -1,0 +1,34 @@
+meta {
+  name: XRPC app.thesocialwire.socialDraft.reserveAttachment
+  type: http
+  seq: 90
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.socialDraft.reserveAttachment
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+{
+  "assetId": "{{draftAssetId}}",
+  "name": "photo.jpg",
+  "contentType": "image/jpeg",
+  "byteLength": 1234,
+  "sha256": "{{draftAssetSHA256}}",
+  "kind": "photo"
+}
+}
+
+docs {
+  Private owner-only attachment storage. Never publishes or returns a public URL.
+  Disabled by default (503). Upload requires a known byte length from 1 to 104857600.
+  Downloads return original Content-Type with Cache-Control: private, no-store.
+}

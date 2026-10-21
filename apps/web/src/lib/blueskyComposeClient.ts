@@ -1,4 +1,4 @@
-import { AppBskyFeedPost, ComAtprotoRepoStrongRef, RichText, type AppBskyEmbedRecord, type AppBskyFeedDefs } from "@atproto/api";
+import { AppBskyFeedPost, ComAtprotoRepoStrongRef, RichText, type AppBskyDraftDefs, type AppBskyEmbedRecord, type AppBskyFeedDefs } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
@@ -17,6 +17,8 @@ export type BlueskyPostInput = {
   session: OAuthSession;
   text: string;
   linkPreview?: ComposeLinkPreview;
+  removedLinkUrl?: string;
+  nativeDraftPost?: AppBskyDraftDefs.DraftPost;
   media?: ComposerMedia;
   onMediaProgress?: (message: string) => void;
   publication?: ThreadPublication;
@@ -50,7 +52,10 @@ export async function prepareBlueskyPost(args: BlueskyPostInput): Promise<AppBsk
   args.assertCurrentAccount?.();
   const { text, facets } = await resolvePostText(args.text, createAuthenticatedAppViewAgent(args.session));
   args.assertCurrentAccount?.();
-  const external = args.media ? await composeMediaEmbed(args.session, args.media, args.assertCurrentAccount, args.onMediaProgress) : await composeExternalEmbed(args.session, args.text, args.linkPreview, args.assertCurrentAccount);
+  const linkPreview = args.linkPreview?.uri === args.removedLinkUrl ? undefined : args.linkPreview;
+  // Imported native cards can be attached independently of links in the post text.
+  const attachedURI = args.nativeDraftPost?.embedExternals?.find(external => external.uri === linkPreview?.uri)?.uri;
+  const external = args.media ? await composeMediaEmbed(args.session, args.media, args.assertCurrentAccount, args.onMediaProgress) : await composeExternalEmbed(args.session, args.text, linkPreview, args.assertCurrentAccount, attachedURI);
   const embed = quote && external ? { $type: "app.bsky.embed.recordWithMedia" as const, record: quote, media: external } : quote ?? external;
   args.assertCurrentAccount?.();
   return { $type: "app.bsky.feed.post", createdAt: new Date().toISOString(), text, ...(facets?.length ? { facets } : {}), ...(reply ? { reply } : {}), ...(embed ? { embed } : {}) };

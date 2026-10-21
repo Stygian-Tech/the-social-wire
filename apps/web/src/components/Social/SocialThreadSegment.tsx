@@ -12,7 +12,8 @@ import type { ComposerMedia } from "@/lib/composerMedia";
 import { SocialMediaControls } from "./SocialMediaControls";
 import { Button } from "@/components/ui/button";
 
-export function SocialThreadSegment({ text, index, total, disabled, session, open, onChange, onMove, onDelete, registerPreview, removedUrl, rememberRemovedUrl, media, updateMedia, mediaDisabled }: {
+export function SocialThreadSegment({ text, index, total, disabled, session, open, onChange, onMove, onDelete, registerPreview, removedUrl, rememberRemovedUrl, media, updateMedia, mediaDisabled, savedPreview }: {
+  savedPreview?: ComposeLinkPreview;
   media?: ComposerMedia; updateMedia?: (change: (previous?: ComposerMedia) => ComposerMedia | undefined) => void; mediaDisabled?: boolean;
   text: string; index: number; total: number; disabled: boolean; session: OAuthSession | null | undefined; open: boolean;
   onChange: (text: string) => void; onMove: (direction: -1 | 1) => void; onDelete: () => void;
@@ -22,8 +23,11 @@ export function SocialThreadSegment({ text, index, total, disabled, session, ope
   const id = useId();
   const intake = useRef<((files: File[]) => void) | undefined>(undefined);
   const link = useComposeLinkPreview(text, session, open && !media, removedUrl);
+  const saved = !media && savedPreview?.uri !== removedUrl ? savedPreview : undefined;
+  const preview = link.preview ?? saved;
+  const removeLink = () => { link.remove(); rememberRemovedUrl(preview?.uri ?? composeLinkUrl(text)); };
   useLayoutEffect(() => {
-    registerPreview(async () => link.needsResolution ? await link.resolve() : link.preview);
+    registerPreview(async () => (link.needsResolution ? await link.resolve() : link.preview) ?? saved);
     return () => registerPreview(undefined);
   });
   const { graphemes, bytes } = postTextLength(text);
@@ -36,8 +40,8 @@ export function SocialThreadSegment({ text, index, total, disabled, session, ope
     <label htmlFor={id} className="sr-only">{index === 0 ? "Post Text" : `Post ${index + 1} Text`}</label>
     <SocialPeopleTextField id={id} autoFocus={index === 0} value={text} disabled={disabled} onValueChange={onChange} rows={total > 1 ? 4 : 6} placeholder={index === 0 ? "What's Happening?" : "Continue Your Thread…"} className="w-full resize-y rounded-xl border bg-background p-3 text-base leading-relaxed" />
     <SocialComposePreview text={text} />
-    {updateMedia ? <SocialMediaControls media={media} update={updateMedia} session={session} disabled={disabled || !!mediaDisabled} hasLink={!!link.preview || link.loading} removeLink={() => { link.remove(); rememberRemovedUrl(composeLinkUrl(text)); }} registerIntake={intake} /> : null}
-    <SocialComposeLinkCard {...link} remove={() => { link.remove(); rememberRemovedUrl(composeLinkUrl(text)); }} disabled={disabled} />
+    {updateMedia ? <SocialMediaControls media={media} update={updateMedia} session={session} disabled={disabled || !!mediaDisabled} hasLink={!!preview || link.loading} removeLink={removeLink} registerIntake={intake} /> : null}
+    <SocialComposeLinkCard preview={preview} loading={!saved && link.loading} unavailable={!saved && link.unavailable} remove={removeLink} disabled={disabled} />
     <p aria-live="polite" className={`text-right text-sm ${graphemes > 300 ? "text-destructive" : "text-muted-foreground"}`}>{graphemes}/300</p>
     {bytes > 3000 ? <p className="text-sm text-destructive">Post Text Exceeds the Size Limit</p> : null}
   </section>;

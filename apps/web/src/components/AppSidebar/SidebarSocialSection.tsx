@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Bookmark, Compass, House, List, MessagesSquare, Rss } from "lucide-react";
+import { Bell, Bookmark, Compass, FilePenLine, House, List, MessagesSquare, Rss } from "lucide-react";
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 
 import { UnreadSidebarBadge } from "./UnreadSidebarBadge";
@@ -12,6 +12,7 @@ export const SOCIAL_DESTINATIONS = [
   { name: "Notifications", section: "notifications", icon: Bell, href: "/social/notifications" },
   { name: "Messages", section: "messages", icon: MessagesSquare, href: "/social/messages" },
   { name: "Bookmarks", section: "bookmarks", icon: Bookmark, href: "/social/bookmarks" },
+  { name: "Drafts", section: "drafts", icon: FilePenLine, href: "/social/drafts" },
   { name: "Lists", section: "lists", icon: List, href: "/social/lists" },
   { name: "Feeds", section: "feeds", icon: Rss, href: "/social/feeds" },
 ] as const;

@@ -9,6 +9,10 @@ export async function prepareComposerPhoto(photo: ComposerPhoto): Promise<Compos
   const jpeg = head[0] === 255 && head[1] === 216 && head[2] === 255;
   const png = head[0] === 137 && head[1] === 80 && head[2] === 78 && head[3] === 71;
   if (!jpeg && !png) throw new Error("Choose A JPEG Or PNG Photo. Use The GIF Picker For Animation.");
+  // File.type can be empty or incorrect. Preserve the exact original bytes with
+  // their verified type so private storage can validate and restore them.
+  const contentType = png ? "image/png" : "image/jpeg";
+  const original = photo.original.type === contentType ? photo.original : photo.original.slice(0, photo.original.size, contentType);
   if (!photo.original.size || photo.original.size > MAX_INPUT) throw new Error("Photo Must Be Smaller Than 20 MB");
   if (png) {
     const bytes = new Uint8Array(await photo.original.arrayBuffer());
@@ -33,7 +37,7 @@ export async function prepareComposerPhoto(photo: ComposerPhoto): Promise<Compos
       if (!context) throw new Error("Photo Preparation Is Unavailable");
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, png ? "image/png" : "image/jpeg", 0.88 - attempt * 0.08));
-      if (blob && blob.size > 0 && blob.size <= MAX_BYTES) return { ...photo, blob, width: canvas.width, height: canvas.height, status: "ready", error: undefined };
+      if (blob && blob.size > 0 && blob.size <= MAX_BYTES) return { ...photo, original, blob, width: canvas.width, height: canvas.height, status: "ready", error: undefined };
       scale *= 0.75;
     }
     throw new Error("Photo Could Not Be Compressed To The Upload Limit");

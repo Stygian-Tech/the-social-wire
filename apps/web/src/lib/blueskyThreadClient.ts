@@ -9,10 +9,10 @@ import { postTextLength, prepareBlueskyPost } from "./blueskyComposeClient";
 import type { ComposeLinkPreview } from "./blueskyExternalEmbed";
 import type { ComposerMedia } from "./composerMedia";
 import { mediaHasContent, mediaReady } from "./composerMedia";
-import type { AppBskyFeedDefs } from "@atproto/api";
+import type { AppBskyDraftDefs, AppBskyFeedDefs } from "@atproto/api";
 
 type Reference = { uri: string; cid: string };
-export type ThreadSegment = { id: string; text: string; removedLinkUrl?: string; linkPreview?: ComposeLinkPreview; media?: ComposerMedia; replyTo?: AppBskyFeedDefs.PostView; quoteTo?: AppBskyFeedDefs.PostView };
+export type ThreadSegment = { id: string; text: string; removedLinkUrl?: string; linkPreview?: ComposeLinkPreview; media?: ComposerMedia; replyTo?: AppBskyFeedDefs.PostView; quoteTo?: AppBskyFeedDefs.PostView; nativeDraftPost?: AppBskyDraftDefs.DraftPost; unavailableDraftMedia?: boolean };
 export type ThreadPublication = { did: string; segments: { draft: ThreadSegment; rkey: string; record?: AppBskyFeedPost.Record; attempted?: boolean; result?: Reference }[] };
 
 export function validThreadText(text: string, media?: ComposerMedia) {

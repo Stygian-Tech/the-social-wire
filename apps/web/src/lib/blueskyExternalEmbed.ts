@@ -24,8 +24,8 @@ export function publicLinkUrl(value: string): string | undefined {
 }
 
 /** Media failures omit the thumbnail; identity checks still prevent a stale-account write. */
-export async function composeExternalEmbed(session: OAuthSession, text: string, preview: ComposeLinkPreview | undefined, assertCurrentAccount?: () => void) {
-  if (!preview || preview.uri !== composeLinkUrl(text) || !publicLinkUrl(preview.uri)) return;
+export async function composeExternalEmbed(session: OAuthSession, text: string, preview: ComposeLinkPreview | undefined, assertCurrentAccount?: () => void, attachedURI?: string) {
+  if (!preview || (preview.uri !== attachedURI && preview.uri !== composeLinkUrl(text)) || !publicLinkUrl(preview.uri)) return;
   const external: AppBskyEmbedExternal.External = {
     uri: preview.uri,
     title: Array.from(preview.title || new URL(preview.uri).hostname).slice(0, 300).join(""),

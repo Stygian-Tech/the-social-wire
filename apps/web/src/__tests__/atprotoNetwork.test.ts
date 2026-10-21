@@ -1,7 +1,9 @@
 import { compactLoopbackClientId } from "@/lib/atprotoNetwork";
 import { skejScopesForEnvironment } from "@/lib/skej/skejEnvironment";
 import { afterEach, describe, expect, it } from "bun:test";
-import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
+import { atprotoLoopbackClientMetadata, buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
+import { isAtprotoOauthScope, RepoPermission, RpcPermission, ScopePermissions } from "@atproto/oauth-scopes";
+import { BRAND_ACCOUNT_OAUTH_SCOPES } from "@/lib/brandAccounts/brandAccountScopes";
 import { Agent } from "@atproto/api";
 import { resolveAtprotoNetwork, atprotoScopesForNetwork, localLoopbackOAuthScopes, authorizationScopesForClient } from "@/lib/atprotoNetwork";
 import { AT_PROTO_OAUTH_SCOPES, BLUESKY_PODCAST_VIDEO_SCOPES } from "@/lib/atprotoOAuthScopes";
@@ -48,7 +50,7 @@ describe("local ATProto network", () => {
     expect(scopes.split(" ").filter(s => s.startsWith("repo:"))).toEqual(AT_PROTO_OAUTH_SCOPES.split(" ").filter(s => s.startsWith("repo:")));
     expect(atprotoScopesForNetwork(AT_PROTO_OAUTH_SCOPES, resolveAtprotoNetwork("prod"))).toBe(skejScopesForEnvironment(AT_PROTO_OAUTH_SCOPES));
   });
-  it("compacts only full repo actions in the explicit local loopback client ID", () => {
+  it("keeps the local loopback client within the URL budget with identical metadata and PAR scopes", () => {
     const scopes = "repo:app.example.full?action=create&action=update&action=delete repo:app.example.partial?action=create&action=delete rpc:app.example.method?aud=did:web:app.example include:app.example.authFull";
     const compact = localLoopbackOAuthScopes(scopes, "local");
     expect(compact).toBe("repo:app.example.full repo:app.example.partial?action=create&action=delete rpc:app.example.method?aud=did:web:app.example include:app.example.authFull");
@@ -58,7 +60,8 @@ describe("local ATProto network", () => {
     const authorize = new URL("https://pds1.atmosbox.test/oauth/authorize");
     const declared = new URL(clientId).searchParams.get("scope")!.split(" ");
     const requested = authorizationScopesForClient(aligned, clientId, "local").split(" ");
-    expect(requested.every(scope => declared.includes(scope))).toBe(true);
+    expect(requested).toEqual(declared);
+    expect(requested.join(" ")).toBe(atprotoLoopbackClientMetadata(clientId).scope);
     expect(authorizationScopesForClient(aligned, "https://socialwire.atmosbox.internal/oauth-client-metadata.json", "local")).toBe(aligned);
     authorize.searchParams.set("client_id", clientId);
     authorize.searchParams.set("request_uri", `urn:ietf:params:oauth:request_uri:${"x".repeat(64)}`);
@@ -66,6 +69,58 @@ describe("local ATProto network", () => {
     expect(aligned).toContain("repo:app.bsky.graph.block?action=create&action=delete");
     expect(authorize.href.length).toBeLessThan(4096);
     expect(encodeURIComponent(aligned).length - encodeURIComponent(localLoopbackOAuthScopes(aligned, "local")).length).toBeGreaterThan(1000);
+  });
+
+  it("groups only identical repo action sets when the encoding is smaller", () => {
+    const scopes = [
+      "repo:app.example.first?action=create&action=update",
+      "repo:app.example.second?action=update&action=create",
+      "repo:app.example.first?action=create&action=update",
+      "repo:app.example.single?action=create",
+      "repo:app.example.delete?action=delete",
+      "repo:app.example.full?action=create&action=update&action=delete",
+      "repo:app.example.future?action=create&action=update&future=restriction",
+      "repo:app.example.unknown?action=unknown",
+    ];
+    const compact = localLoopbackOAuthScopes(scopes.join(" "), "local");
+    expect(compact).toContain("repo?collection=app.example.first&collection=app.example.second&action=create&action=update");
+    for (const scope of [scopes[3], scopes[4], scopes[6], scopes[7]]) expect(compact.split(" ")).toContain(scope);
+    expect(compact.split(" ")).toContain("repo:app.example.full");
+    expect(localLoopbackOAuthScopes(compact, "local")).toBe(compact);
+    const permissions = new ScopePermissions(compact);
+    expect(permissions.allowsRepo({ collection: "app.example.first", action: "update" })).toBe(true);
+    expect(permissions.allowsRepo({ collection: "app.example.first", action: "delete" })).toBe(false);
+    expect(permissions.allowsRepo({ collection: "app.example.single", action: "update" })).toBe(false);
+    expect(permissions.allowsRepo({ collection: "app.example.delete", action: "create" })).toBe(false);
+  });
+
+  it("preserves the complete permission matrix for Web and brand loopback clients", () => {
+    for (const network of [resolveAtprotoNetwork("local", local), resolveAtprotoNetwork("local")]) {
+      for (const scopes of [AT_PROTO_OAUTH_SCOPES, BRAND_ACCOUNT_OAUTH_SCOPES]) {
+        const input = atprotoScopesForNetwork(scopes, network).split(" ");
+        const output = localLoopbackOAuthScopes(input.join(" "), "local").split(" ");
+        expect(output.every(isAtprotoOauthScope)).toBe(true);
+        const before = new ScopePermissions(input);
+        const after = new ScopePermissions(output);
+        const repo = [...input, ...output].flatMap(scope => RepoPermission.fromString(scope)?.collection ?? []);
+        for (const collection of [...new Set(repo), "app.example.ungranted"]) {
+          for (const action of ["create", "update", "delete"] as const) {
+            expect(after.allowsRepo({ collection, action })).toBe(before.allowsRepo({ collection, action }));
+          }
+        }
+        const rpc = [...input, ...output].flatMap(scope => {
+          const permission = RpcPermission.fromString(scope);
+          return permission ? [{ aud: permission.aud, methods: permission.lxm }] : [];
+        });
+        const audiences = new Set([...rpc.map(permission => permission.aud), "did:web:ungranted.example#service"]);
+        const methods = new Set([...rpc.flatMap(permission => permission.methods), "app.example.ungranted"]);
+        for (const aud of audiences) {
+          for (const lxm of methods) expect(after.allowsRpc({ aud, lxm })).toBe(before.allowsRpc({ aud, lxm }));
+        }
+        const other = (scope: string) => !scope.startsWith("repo") && !scope.startsWith("rpc");
+        expect(output.filter(other)).toEqual(input.filter(other));
+      }
+    }
   });
 
   it("groups exact RPC permissions without wildcard access or cross-service methods", () => {

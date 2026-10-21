@@ -6,7 +6,7 @@ const restores: (() => void)[] = [];
 afterEach(() => restores.splice(0).reverse().forEach(restore => restore()));
 const photo = (original: Blob): ComposerPhoto => ({ id: "stable-photo", name: "photo.jpg", original, alt: "Original description", status: "preparing" });
 
-it("normalizes JPEG orientation, constrains dimensions, and preserves attachment identity and alt text", async () => {
+it.each(["image/jpeg", "", "image/png"])("normalizes JPEG orientation and original MIME %s while preserving bytes, identity and alt text", async type => {
   let closed = false;
   const original = Object.getOwnPropertyDescriptor(globalThis, "createImageBitmap");
   Object.defineProperty(globalThis, "createImageBitmap", { configurable: true, value: async (_blob: Blob, options: ImageBitmapOptions) => { expect(options.imageOrientation).toBe("from-image"); return { width: 8000, height: 4000, close: () => { closed = true; } }; } });
@@ -14,9 +14,12 @@ it("normalizes JPEG orientation, constrains dimensions, and preserves attachment
   const draw = spyOn(window.HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: () => {} } as unknown as CanvasRenderingContext2D);
   const encode = spyOn(window.HTMLCanvasElement.prototype, "toBlob").mockImplementation(function(callback, type) { callback(new Blob(["prepared"], { type })); });
   restores.push(() => draw.mockRestore(), () => encode.mockRestore());
-  const ready = await prepareComposerPhoto(photo(new Blob([new Uint8Array([255, 216, 255, 0])], { type: "image/jpeg" })));
+  const bytes = new Uint8Array([255, 216, 255, 0]);
+  const ready = await prepareComposerPhoto(photo(new Blob([bytes], { type })));
   expect(ready).toMatchObject({ id: "stable-photo", width: 4000, height: 2000, alt: "Original description", status: "ready" });
   expect(ready.blob?.type).toBe("image/jpeg");
+  expect(ready.original.type).toBe("image/jpeg");
+  expect(new Uint8Array(await ready.original.arrayBuffer())).toEqual(bytes);
   expect(closed).toBe(true);
 });
 

@@ -1,0 +1,172 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.socialDraft.defs",
+  "defs": {
+    "asset": {
+      "type": "object",
+      "required": [
+        "assetId",
+        "name",
+        "contentType",
+        "byteLength",
+        "sha256",
+        "kind",
+        "state"
+      ],
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36,
+          "description": "Canonical lowercase UUID."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "contentType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 104857600
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "knownValues": [
+            "photo",
+            "poster",
+            "gif",
+            "video",
+            "caption"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "knownValues": [
+            "reserved",
+            "ready"
+          ]
+        }
+      }
+    },
+    "manifestRef": {
+      "type": "object",
+      "required": [
+        "assetId",
+        "role",
+        "ref"
+      ],
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36,
+          "description": "Canonical lowercase UUID."
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "knownValues": [
+            "original",
+            "prepared",
+            "video",
+            "poster",
+            "caption",
+            "gif"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512
+        }
+      }
+    },
+    "assetBinding": {
+      "type": "object",
+      "required": [
+        "assetId",
+        "role",
+        "ref",
+        "asset"
+      ],
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36,
+          "description": "Canonical lowercase UUID."
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "knownValues": [
+            "original",
+            "prepared",
+            "video",
+            "poster",
+            "caption",
+            "gif"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512
+        },
+        "asset": {
+          "type": "ref",
+          "ref": "app.thesocialwire.socialDraft.defs#asset"
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "required": [
+        "draftId",
+        "revision",
+        "deleted",
+        "attachments"
+      ],
+      "properties": {
+        "draftId": {
+          "type": "string",
+          "minLength": 13,
+          "maxLength": 13,
+          "description": "AT Protocol TID identifying the draft."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "attachments": {
+          "type": "array",
+          "maxLength": 800,
+          "items": {
+            "type": "ref",
+            "ref": "app.thesocialwire.socialDraft.defs#assetBinding"
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@ import { AppBskyEmbedExternal, AppBskyEmbedImages } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "./atprotoClient";
 import { gifEmbedURI, mediaReady, type ComposerMedia } from "./composerMedia";
-import { getComposerGifs, getGifPoster } from "./klipyClient";
+import { getComposerGifs, getGifPoster, validateGifFile } from "./klipyClient";
 import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "./oauthScopeRecovery";
 
 export async function composeMediaEmbed(session: OAuthSession, media: ComposerMedia, assertCurrentAccount?: () => void, onProgress?: (message: string) => void) {
@@ -33,7 +33,9 @@ export async function composeMediaEmbed(session: OAuthSession, media: ComposerMe
   assertCurrentAccount?.();
   const asset = resolved.results.find(item => item.id === media.asset.id);
   if (!asset) throw new Error("This GIF Is No Longer Available. Replace Or Remove It.");
-  const poster = await getGifPoster(session, asset.id);
+  const privatePoster = media.privateFiles?.ownerDid === session.did && media.privateFiles.identity === gifEmbedURI(asset) ? media.privateFiles.files.poster?.blob : undefined;
+  const poster = privatePoster ?? await getGifPoster(session, asset.id);
+  validateGifFile(poster, "poster");
   assertCurrentAccount?.();
   onProgress?.("Uploading GIF Preview…");
   const uploaded = await agent.uploadBlob(poster).catch(error => {

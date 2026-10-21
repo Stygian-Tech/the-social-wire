@@ -1,16 +1,24 @@
+import type { DraftAttachment } from "./socialDraftAttachmentClient";
+
 export type GifAsset = {
   id: string; title: string; description: string; url: string; poster: string;
   mp4?: string; webm?: string; width: number; height: number; attribution: string;
 };
 export type ComposerPhoto = {
   id: string; name: string; original: Blob; blob?: Blob; width?: number; height?: number;
+  privateAttachment?: { ownerDid: string; original: DraftAttachment; prepared: DraftAttachment };
   alt: string; status: "preparing" | "ready" | "failed"; error?: string;
 };
-export type ComposerMedia = { kind: "photos"; photos: ComposerPhoto[] } | { kind: "gif"; asset: GifAsset; alt: string };
+export type GifRendition = "gif" | "poster" | "mp4" | "webm";
+export type PrivateGifFiles = { ownerDid: string; identity: string; referenceKey: string; files: Partial<Record<GifRendition, { asset: DraftAttachment; blob: Blob }>> };
+export type ComposerGif = { kind: "gif"; asset: GifAsset; alt: string; privateFiles?: PrivateGifFiles; unavailable?: boolean };
+export const isGifCatalogId = (id: string) => /^[A-Za-z0-9_-]{1,128}$/.test(id);
+export function gifRenditions(asset: GifAsset): GifRendition[] { return ["gif", "poster", ...(asset.mp4 ? ["mp4" as const] : []), ...(asset.webm ? ["webm" as const] : [])]; }
+export type ComposerMedia = { kind: "photos"; photos: ComposerPhoto[] } | ComposerGif;
 
 export function mediaReady(media?: ComposerMedia): boolean {
   if (!media) return true;
-  if (media.kind === "gif") { try { gifEmbedURI(media.asset); return media.alt.length <= 2000; } catch { return false; } }
+  if (media.kind === "gif") { if (media.unavailable) return false; try { gifEmbedURI(media.asset); return media.alt.length <= 2000; } catch { return false; } }
   return media.photos.length > 0 && media.photos.length <= 4 && media.photos.every(photo => photo.status === "ready" && !!photo.blob && !!photo.width && !!photo.height && photo.alt.length <= 2000);
 }
 

@@ -1,0 +1,25 @@
+meta {
+  name: XRPC app.thesocialwire.socialDraft.getGifFile
+  type: http
+  seq: 96
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.socialDraft.getGifFile?id={{catalogGifId}}&rendition={{gifRendition}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Gateway-only authenticated private file copy; not an AppView endpoint.
+  Exact catalog GIF id and explicit rendition: gif, poster, mp4, or webm.
+  No caller URL, provider credentials, redirect following, or missing-rendition fallback.
+  Returns MIME/sniff/length-validated bytes with Cache-Control: private, no-store.
+  Files are bounded to 100 MiB; poster images are bounded to 1000000 bytes.
+  Shares private draft rate limits and transfer admission; never publishes a file.
+}
