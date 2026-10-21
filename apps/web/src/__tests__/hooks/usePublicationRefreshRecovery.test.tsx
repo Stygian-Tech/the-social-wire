@@ -40,52 +40,43 @@ function fixture() {
   const rows = { pages: [{ entries: [{ entryId: "cached", title: "Cached story" }] }], pageParams: [undefined] };
   client.setQueryData(sidebarKey, projection);
   client.setQueryData(entriesKey, rows);
-  let expire: (() => void) | undefined;
-  const realTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = ((callback: () => void, ms?: number, ...args: unknown[]) => {
-    if (ms === MANUAL_SIDEBAR_REFRESH_TIMEOUT_MS) { expire = callback; return 987654; }
-    return realTimeout(callback, ms, ...args);
-  }) as typeof setTimeout;
-  restores.push(() => { globalThis.setTimeout = realTimeout; });
+  const deadline = new AbortController();
+  const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(ms => ms === MANUAL_SIDEBAR_REFRESH_TIMEOUT_MS ? deadline.signal : realTimeout(ms));
+  restores.push(() => timeout.mockRestore());
   const hook = renderHook(useSidebarBootstrap, { wrapper: ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client }, createElement(PublicationSidebarProvider, null, children)) });
   return { ...hook, client, projection, sidebarKey, entriesKey, rows,
-    expire: () => { if (!expire) throw new Error("No refresh deadline"); expire(); },
+    expire: () => deadline.abort(new DOMException("Refresh timed out", "TimeoutError")),
     renew: () => { oauth = { did: viewer } as OAuthSession; reload++; hook.rerender(); },
     switchAccount: () => { activeViewer = `${viewer}-other`; oauth = { did: activeViewer } as OAuthSession; hook.rerender(); } };
 }
 
-it("bounds the whole manual POST and stream, restores retry, and preserves cached stories", async () => {
-  let calls = 0;
-  let streamSignal: AbortSignal | undefined;
-  let postSignal: AbortSignal | undefined;
-  const stream = spyOn(Bootstrap, "consumeBootstrapStream").mockImplementation(async args => {
-    calls++;
-    if (calls === 1) return;
-    streamSignal = args.signal;
-    await aborted(args.signal!);
-  });
-  const post = spyOn(Projection, "refreshPublicationSidebar").mockImplementation(async (_oauth, signal) => {
-    postSignal = signal;
-    return {} as Projection.PublicationSidebarProjection;
-  });
+it("bounds a stalled manual POST, restores retry, and preserves cached stories", async () => {
+  const stream = spyOn(Bootstrap, "consumeBootstrapStream").mockResolvedValue(undefined);
+  const post = spyOn(Projection, "refreshPublicationSidebar").mockImplementation(async (_oauth, signal) => aborted(signal!));
   restores.push(() => { stream.mockRestore(); post.mockRestore(); });
   const f = fixture();
-  await waitFor(() => expect(calls).toBe(1));
+  await waitFor(() => expect(stream).toHaveBeenCalledTimes(1));
   let failure: unknown;
   act(() => { void f.result.current.refresh.mutateAsync().catch(error => { failure = error; }); });
-  await waitFor(() => expect(streamSignal).toBeDefined());
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(f.result.current.refresh.isPending).toBe(true);
-  expect(streamSignal).toBe(postSignal);
   await act(async () => f.expire());
   await waitFor(() => expect(f.result.current.refresh.isPending).toBe(false));
   expect((failure as Error).name).toBe("TimeoutError");
-  expect(f.result.current.projectionError?.message).toContain("Try Refresh again");
+  expect(f.result.current.refresh.isError).toBe(true);
   expect(f.client.getQueryData<Projection.PublicationSidebarProjection>(f.sidebarKey)).toEqual(f.projection);
   expect(f.client.getQueryData<typeof f.rows>(f.entriesKey)).toEqual(f.rows);
-  stream.mockResolvedValue(undefined);
-  await act(async () => { await f.result.current.refresh.mutateAsync(); });
-  expect(f.result.current.projectionError).toBeNull();
+  post.mockResolvedValue(f.projection);
+  // A retry receives its own deadline rather than reusing the expired signal.
+  const freshTimeout = spyOn(AbortSignal, "timeout").mockImplementation(() => new AbortController().signal);
+  try {
+    await act(async () => { await f.result.current.refresh.mutateAsync(); });
+    expect(f.result.current.refresh.isError).toBe(false);
+    expect(f.result.current.refreshMessage).toBe("Refresh Complete");
+    expect(stream).toHaveBeenCalledTimes(1);
+  } finally { freshTimeout.mockRestore(); }
 });
 
 it("expires a stalled POST before starting another bootstrap", async () => {
@@ -125,18 +116,17 @@ it.each(["renew", "switchAccount"] as const)("aborts %s work and never starts a 
   expect(f.client.getQueryData<typeof f.rows>(f.entriesKey)).toEqual(f.rows);
 });
 
-it("cancels a pending manual stream when its provider unmounts", async () => {
-  let calls = 0;
+it("cancels a pending manual POST when its provider unmounts", async () => {
   let signal: AbortSignal | undefined;
-  const stream = spyOn(Bootstrap, "consumeBootstrapStream").mockImplementation(async args => {
-    if (++calls === 1) return;
-    signal = args.signal;
+  const stream = spyOn(Bootstrap, "consumeBootstrapStream").mockResolvedValue(undefined);
+  const post = spyOn(Projection, "refreshPublicationSidebar").mockImplementation(async (_oauth, requestSignal) => {
+    signal = requestSignal;
     await aborted(signal!);
+    throw new Error("unreachable");
   });
-  const post = spyOn(Projection, "refreshPublicationSidebar").mockResolvedValue({} as Projection.PublicationSidebarProjection);
   restores.push(() => { stream.mockRestore(); post.mockRestore(); });
   const f = fixture();
-  await waitFor(() => expect(calls).toBe(1));
+  await waitFor(() => expect(stream).toHaveBeenCalledTimes(1));
   let result: Promise<unknown> | undefined;
   act(() => { result = f.result.current.refresh.mutateAsync().catch(error => error); });
   await waitFor(() => expect(signal).toBeDefined());
@@ -163,30 +153,25 @@ it("settles the deadline even if POST ignores abort, then discards its late comp
   expect(f.client.getQueryData<typeof f.rows>(f.entriesKey)).toEqual(f.rows);
 });
 
-it("settles stalled auth/stream work that ignores abort and rejects its late cache events", async () => {
+it("rejects late initial bootstrap cache events after an account session is renewed", async () => {
   let calls = 0;
   let handlers: Bootstrap.BootstrapStreamHandlers | undefined;
   let finish!: () => void;
   const stream = spyOn(Bootstrap, "consumeBootstrapStream").mockImplementation(async args => {
-    if (++calls === 1) return;
+    if (++calls > 1) return;
     handlers = args.handlers;
     await new Promise<void>(resolve => { finish = resolve; });
   });
-  const post = spyOn(Projection, "refreshPublicationSidebar").mockResolvedValue({} as Projection.PublicationSidebarProjection);
-  restores.push(() => { stream.mockRestore(); post.mockRestore(); });
+  restores.push(() => stream.mockRestore());
   const f = fixture();
-  await waitFor(() => expect(calls).toBe(1));
-  act(() => { void f.result.current.refresh.mutateAsync().catch(() => undefined); });
   await waitFor(() => expect(handlers).toBeDefined());
-  await act(async () => f.expire());
-  await waitFor(() => expect(f.result.current.refresh.isPending).toBe(false));
-  expect(f.result.current.sidebarFetching).toBe(false);
+  act(() => f.renew());
+  await waitFor(() => expect(calls).toBe(2));
   await act(async () => {
     handlers!.onEvent({ kind: "entriesPage", payload: { publicationId: "publication", entries: [{ entryId: "late", title: "Late stale story", publishedAt: "2026-10-16T00:00:00Z" }], source: "live_projection" } });
     handlers!.onEvent({ kind: "done", payload: { refreshedAt: "2026-10-16T00:00:00Z" } });
     finish();
   });
   expect(f.client.getQueryData<typeof f.rows>(f.entriesKey)).toEqual(f.rows);
-  expect(f.result.current.bootstrapStreamComplete).toBe(false);
-  expect(f.result.current.projectionError?.name).toBe("TimeoutError");
+  expect(f.client.getQueryData<Projection.PublicationSidebarProjection>(f.sidebarKey)).toEqual(f.projection);
 });
