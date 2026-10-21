@@ -63,6 +63,52 @@ it("sends 77 deduplicated sources in one RPC and flushes once after the counter 
   expect(clock.timers.every(timer => timer.cleared)).toBe(true);
 });
 
+it("scales enrollment deadlines by four-source work allowances with a five-minute cap", async () => {
+  const budgets: number[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(ms => { budgets.push(ms); return new AbortController().signal; });
+  const enroll = spyOn(appview, "enrollAuthorsInAppView").mockResolvedValue(undefined);
+  restores.push(() => timeout.mockRestore(), () => enroll.mockRestore());
+  paintClock();
+  for (const count of [1, 4, 5, 77, 500]) {
+    await refresh(async () => {}, undefined, Array.from({ length: count }, (_, i) => row(`did:plc:${i}`)));
+  }
+  expect(budgets).toEqual([30_000, 30_000, 60_000, 300_000, 300_000]);
+  expect(enroll.mock.calls.map(call => call[1].length)).toEqual([1, 4, 5, 77, 500]);
+});
+
+it("aborts a large enrollment immediately on caller cancellation despite its longer deadline", async () => {
+  const caller = new AbortController();
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => new AbortController().signal);
+  const enroll = spyOn(appview, "enrollAuthorsInAppView").mockImplementation(() => new Promise<never>(() => {}));
+  restores.push(() => timeout.mockRestore(), () => enroll.mockRestore());
+  const clock = paintClock();
+  let paints = 0;
+  const task = refresh(async () => { paints++; }, caller.signal, Array.from({ length: 77 }, (_, i) => row(`did:plc:${i}`)));
+  const outcome = task.catch(error => error);
+  expect(timeout).toHaveBeenCalledWith(300_000);
+  caller.abort();
+  expect(await outcome).toBe(caller.signal.reason);
+  expect(enroll.mock.calls[0]?.[3]?.aborted).toBe(true);
+  expect(paints).toBe(0);
+  expect(clock.timers.every(timer => timer.cleared)).toBe(true);
+});
+
+it("settles a stalled large enrollment at its bounded deadline even if transport ignores abort", async () => {
+  const deadline = new AbortController();
+  const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+  const enroll = spyOn(appview, "enrollAuthorsInAppView").mockImplementation(() => new Promise<never>(() => {}));
+  restores.push(() => timeout.mockRestore(), () => enroll.mockRestore());
+  const clock = paintClock();
+  let paints = 0;
+  const task = refresh(async () => { paints++; }, undefined, Array.from({ length: 77 }, (_, i) => row(`did:plc:${i}`)));
+  const outcome = task.catch(error => error);
+  deadline.abort(new DOMException("Enrollment deadline exceeded", "TimeoutError"));
+  expect((await outcome).message).toContain("Some publications");
+  expect(enroll.mock.calls[0]?.[3]?.aborted).toBe(true);
+  expect(paints).toBe(1);
+  expect(clock.timers.every(timer => timer.cleared)).toBe(true);
+});
+
 it("paints early without claiming checked sources while ingestion remains pending", async () => {
   const gate = deferred();
   const progress: number[] = [];

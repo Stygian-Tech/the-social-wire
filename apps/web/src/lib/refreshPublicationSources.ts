@@ -93,7 +93,11 @@ export async function refreshPublicationSources(args: {
       for (const request of requests) {
         args.signal.throwIfAborted();
         try {
-          const signal = AbortSignal.any([args.signal, AbortSignal.timeout(30_000)]);
+          // Preserve the former 30-second allowance per four sources without
+          // letting one large request wait indefinitely. Caller abort stays independent.
+          const sourceCount = request.authorDids.length + request.feedUrls.length;
+          const deadlineMs = Math.min(300_000, 30_000 * Math.ceil(sourceCount / 4));
+          const signal = AbortSignal.any([args.signal, AbortSignal.timeout(deadlineMs)]);
           await awaitWithAbort(enrollAuthorsInAppView(args.oauthSession, request.authorDids, request.feedUrls, signal), signal);
         } catch (error) {
           args.signal.throwIfAborted();
