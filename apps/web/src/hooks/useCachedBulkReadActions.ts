@@ -7,6 +7,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 
+import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
 import { pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 import { useAuth } from "@/hooks/useAuth";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
@@ -49,6 +50,7 @@ export function useCachedBulkReadActions(
     (options?.gatewayScopes?.length ?? 0) === 0;
 
   const applyMarkAllRead = useCallback(() => {
+    if (viewerDid) void cancelViewerFeedRefreshes(queryClient, viewerDid);
     const deferOptimism = pdsReadStateEnabled();
     const entryWasRead = isEntryRead ?? (() => false);
     const previouslyRead = cachedEntryIds.filter(entryWasRead);
@@ -87,6 +89,7 @@ export function useCachedBulkReadActions(
         ? markAllReadOnGateway(oauth, scope, cachedEntryIds.slice(0, 1000)) : markAllReadOnGateway(oauth, scope)))
         .then((confirmations) => {
           if (!viewerDid || confirmations.some(confirmation => confirmation.pendingSync)) return;
+          void cancelViewerFeedRefreshes(queryClient, viewerDid);
           const confirmedCounts = Object.assign(
             {},
             ...confirmations.map((confirmation) => confirmation.unreadCounts ?? {})

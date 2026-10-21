@@ -13,6 +13,8 @@ import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys
 import type { EntriesPage } from "@/hooks/useEntries";
 import type { InfiniteData } from "@tanstack/react-query";
 
+import { getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+
 const viewerDid = "did:plc:viewer";
 const before = "2026-09-02T05:00:00Z";
 const scope: GatewayMarkAllReadScope = { kind: "publication", publicationId: "publication" };
@@ -181,7 +183,10 @@ describe("useFeedReadAgeActions", () => {
     restores.push(unsubscribe);
     expect(queryClient.getQueryState(key)?.fetchStatus).toBe("fetching");
 
-    await result.current.markBefore(before);
+    const marking = result.current.markBefore(before);
+    expect(getFeedRefreshRevision(queryClient, key)).toBe(1);
+    await marking;
+    expect(getFeedRefreshRevision(queryClient, key)).toBe(2);
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(queryClient.getQueryState(key)?.status).toBe("success"));

@@ -17,6 +17,21 @@ export function advanceFeedRefreshRevision(client: QueryClient, queryKey: readon
   return revision;
 }
 
+/** Retire viewer feed reads before changing read state, preserving optimistic data. */
+export function cancelViewerFeedRefreshes(client: QueryClient, viewerDid: string): Promise<void> {
+  const filters = {
+    predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[1] === viewerDid &&
+      (query.queryKey[0] === "entries" || query.queryKey[0] === "aggregateEntries"),
+  };
+  const queries = client.getQueryCache().findAll(filters);
+  for (const query of queries) advanceFeedRefreshRevision(client, query.queryKey);
+  // Silent cancellation must settle fetchStatus explicitly. Reverting would undo
+  // newer optimistic data; reporting cancellation as an error would flash Retry.
+  const cancelled = client.cancelQueries(filters, { revert: false, silent: true });
+  for (const query of queries) query.setState({ fetchStatus: "idle" });
+  return cancelled;
+}
+
 const publicSession = {};
 const pendingByClient = new WeakMap<QueryClient, WeakMap<object, Map<string, Promise<unknown>>>>();
 

@@ -67,3 +67,26 @@ it("allows a new revision to fetch while an older revision remains in flight", a
   releaseNew("new");
   expect(await current).toBe("new");
 });
+
+it("retires only viewer reader work synchronously without reverting optimism or freshness", async () => {
+  const { cancelViewerFeedRefreshes } = await import("@/lib/feedRefreshCoordinator");
+  const client = new QueryClient();
+  const key = ["entries", "did:plc:viewer", "pub", "all"];
+  const aggregate = ["aggregateEntries", "did:plc:viewer", "folder", "folder", "unread"];
+  const other = ["entries", "did:plc:other", "pub", "all"];
+  const social = ["blueskySocial", "did:plc:viewer", "feed"];
+  for (const scope of [key, aggregate, other, social]) client.setQueryData(scope, "baseline", { updatedAt: 1 });
+  let finish!: (value: string) => void;
+  const stale = client.fetchQuery({ queryKey: key, queryFn: () => new Promise<string>(resolve => { finish = resolve; }) }).catch(() => undefined);
+  const retired = cancelViewerFeedRefreshes(client, "did:plc:viewer");
+  expect(getFeedRefreshRevision(client, key)).toBe(1);
+  expect(getFeedRefreshRevision(client, aggregate)).toBe(1);
+  expect(getFeedRefreshRevision(client, other)).toBe(0);
+  expect(getFeedRefreshRevision(client, social)).toBe(0);
+  client.setQueryData(key, "optimistic", { updatedAt: 2 });
+  await client.invalidateQueries({ queryKey: key, exact: true, refetchType: "none" });
+  finish("stale");
+  await Promise.all([retired, stale]);
+  expect(client.getQueryState(key)).toMatchObject({ data: "optimistic", dataUpdatedAt: 2, isInvalidated: true, status: "success", fetchStatus: "idle" });
+  client.clear();
+});
