@@ -17,6 +17,15 @@ function fetchImage(response: () => Promise<Response>) {
 }
 
 describe("composer external cards", () => {
+  it("permits only the explicitly attached URI to bypass the text-link guard", async () => {
+    const session = sessionFor(() => { throw new Error("Unexpected upload"); });
+    const card = { uri: preview.uri, title: preview.title, description: preview.description };
+    expect(await composeExternalEmbed(session, "Read this", card)).toBeUndefined();
+    expect(await composeExternalEmbed(session, "Read this", card, undefined, "https://example.com/other")).toBeUndefined();
+    const embed = await composeExternalEmbed(session, "Read this", card, undefined, card.uri);
+    expect(embed?.external.uri).toBe(card.uri);
+    expect(AppBskyEmbedExternal.validateMain(embed).success).toBe(true);
+  });
   it("shares native facet detection for HTTP(S), punctuation and Unicode", () => {
     expect(composeLinkUrl("é Read (https://example.com/story).")).toBe(preview.uri);
     expect(composeLinkUrl("http://example.com/story")).toBe("http://example.com/story");

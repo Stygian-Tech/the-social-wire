@@ -50,6 +50,8 @@ func (s *Server) Handler() http.Handler {
 	if s.Limiter == nil {
 		s.Limiter = &RequestLimiter{}
 	}
+	draftAdmission := &socialDraftAdmission{redis: s.Limiter.Redis, namespace: s.Limiter.Namespace}
+	mux.Handle("GET /xrpc/app.thesocialwire.socialDraft.getGifFile", auth(draftAdmission.middleware(http.HandlerFunc(s.socialDraftGIF))))
 	for _, route := range Routes {
 		if strings.HasPrefix(route.Target, "/v1/analytics/") && !s.Config.ToolsEnabled {
 			continue
@@ -61,6 +63,9 @@ func (s *Server) Handler() http.Handler {
 			continue
 		}
 		h := proxy.Handler(route)
+		if strings.HasPrefix(route.Path, "/xrpc/app.thesocialwire.socialDraft.") {
+			h = draftAdmission.middleware(h)
+		}
 		if route.Service == "wire" || route.Service == "circle" {
 			h = s.Limiter.Middleware(h)
 		}

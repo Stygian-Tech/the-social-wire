@@ -44,6 +44,8 @@ export type PublicationSidebarProjection = {
   myPublications: SidebarPublicationRow[];
   subscribedUnfoldered: SidebarPublicationRow[];
   followingTabPublications: SidebarPublicationRow[];
+  /** Manual refresh only: server-approved durable Following IDs whose cached display rows may be retained. */
+  retainedFollowingPublicationIds?: string[];
   enrollAuthorDids: string[];
   refreshedAt: string;
   unreadCountsByPublicationId?: Record<string, number>;
@@ -94,14 +96,7 @@ export async function fetchPublicationSidebar(
   return (await res.json()) as PublicationSidebarProjection;
 }
 
-/**
- * Drops the viewer's server-side projection caches and returns the rebuilt **priority tier**.
- *
- * Folder sections come back without their publications, and the Following tab may be a carried-over
- * snapshot, because the server pushes full follow-graph discovery into a background pass. Merge the
- * result into the existing projection with `applySidebarPriorityEvent` — replacing a cached
- * projection with this payload wholesale empties every folder in the sidebar.
- */
+/** Rebuild the complete subscribed sidebar and preserve server-approved durable Following membership. */
 export async function refreshPublicationSidebar(
   oauthSession: OAuthSession,
   signal?: AbortSignal

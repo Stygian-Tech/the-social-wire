@@ -1,0 +1,22 @@
+meta {
+  name: XRPC app.thesocialwire.socialDraft.getManifest
+  type: http
+  seq: 93
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.socialDraft.getManifest?draftId={{draftId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Private owner-only attachment storage. Never publishes or returns a public URL.
+  Disabled by default (503). Upload requires a known byte length from 1 to 104857600.
+  Downloads return original Content-Type with Cache-Control: private, no-store.
+}

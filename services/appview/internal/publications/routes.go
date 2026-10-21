@@ -2,10 +2,13 @@ package publications
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/publicationcore"
+	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
 	"io"
 	"net/http"
+	"time"
 )
 
 type Routes struct {
@@ -112,17 +115,36 @@ func (a Routes) enroll(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
+	started := time.Now()
 	if a.Service.Enroller == nil {
+		logEnrollmentFailure("enroll", started, len(body.AuthorDIDs), len(body.FeedURLs), 0, thinappviewcore.WrapEnrollmentFailure("unavailable", "", 0, errors.New("enroller unavailable")), r.Context().Err())
 		fail(w, 503, "Enrollment unavailable")
 		return
 	}
 	n, e := a.Service.Enroller.Enroll(r.Context(), viewer, body.AuthorDIDs, body.FeedURLs, true)
-	if e != nil {
+	enrollmentErr := e
+	if enrollmentErr == nil {
+		enrollmentErr = r.Context().Err()
+	}
+	logEnrollmentFailure("enroll", started, len(body.AuthorDIDs), len(body.FeedURLs), n, enrollmentErr, r.Context().Err())
+	if r.Context().Err() != nil {
 		fail(w, 503, "Enrollment unavailable")
 		return
 	}
 	if a.Service.Cache != nil {
 		_ = a.Service.Cache.InvalidateSidebar(r.Context(), viewer.DID)
+	}
+	started = time.Now()
+	if e := a.Service.RefreshEnrollmentCounters(r.Context(), viewer.DID, body.AuthorDIDs, body.FeedURLs); e != nil {
+		logEnrollmentFailure("counters", started, len(body.AuthorDIDs), len(body.FeedURLs), n, e, r.Context().Err())
+		fail(w, 503, "Enrollment counters unavailable")
+		return
+	}
+	// A failed source can leave other sources committed. Publish their fresh counts
+	// before reporting partial failure so the reader can reconcile those articles.
+	if e != nil {
+		fail(w, 503, "Enrollment unavailable")
+		return
 	}
 	write(w, map[string]int{"indexed": n})
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,6 +27,10 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 		http.NotFound(w, r)
 		return
 	}
+	privateDraft := strings.HasPrefix(route.Target, "/xrpc/app.thesocialwire.socialDraft.")
+	if privateDraft {
+		w.Header().Set("Cache-Control", "private, no-store")
+	}
 	if route.Target == "/v1/analytics/summary" || route.Target == "/v1/analytics/refresh" {
 		if !requirePro(w, r, c) {
 			return
@@ -41,12 +46,12 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	case "latr":
 		base, secret, client = c.LatrURL, "", p.Public
 	}
-	if base == "" {
+	if base == "" && !privateDraft {
 		writeError(w, 503, "Upstream service is not configured")
 		return
 	}
 	auth, authenticated := gatewaycore.AuthContextFrom(r.Context())
-	if !authenticated && !route.Public && !route.Optional {
+	if (!authenticated && !route.Public && !route.Optional) || (privateDraft && (!authenticated || auth.DID == "" || auth.DID == gatewaycore.AnonymousDiscoveryDID)) {
 		writeError(w, 401, "Authentication required")
 		return
 	}
@@ -77,10 +82,38 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	if media {
 		timeout = 6 * time.Hour
 	}
+	draftUpload := path == "/xrpc/app.thesocialwire.socialDraft.uploadAttachment"
+	draftDownload := path == "/xrpc/app.thesocialwire.socialDraft.getAttachment"
+	if draftUpload || draftDownload {
+		timeout = socialDraftUploadTimeout
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
+	draftMutation := privateDraft && method != "GET" && method != "HEAD"
+	if privateDraft {
+		defer boundSocialDraftIO(ctx, w, draftMutation)()
+	}
+	if base == "" {
+		writeError(w, 503, "Upstream service is not configured")
+		return
+	}
 	var body io.Reader
-	if method != "GET" && method != "HEAD" {
+	if draftUpload {
+		if r.ContentLength < 0 {
+			writeError(w, 411, "Content-Length required")
+			return
+		}
+		if r.ContentLength > 100<<20 {
+			writeError(w, 413, "Attachment exceeds allowed size")
+			return
+		}
+		mediaType, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if r.ContentLength == 0 || e != nil || mediaType != "application/octet-stream" || strings.TrimSpace(r.Header.Get("X-Social-Draft-Upload-Id")) == "" {
+			writeError(w, 400, "Invalid attachment upload")
+			return
+		}
+		body = http.MaxBytesReader(w, r.Body, r.ContentLength)
+	} else if method != "GET" && method != "HEAD" {
 		limit := int64(4 << 20)
 		if route.Service == "wire" {
 			limit = 4096
@@ -108,10 +141,10 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 		return
 	}
 	out.Header.Set("Accept", "application/json")
-	if route.Streaming && !media && (!strings.HasSuffix(path, "getReadAgeOptions") || strings.Contains(r.Header.Get("Accept"), "application/x-ndjson")) {
+	if route.Streaming && !media && !draftDownload && (!strings.HasSuffix(path, "getReadAgeOptions") || strings.Contains(r.Header.Get("Accept"), "application/x-ndjson")) {
 		out.Header.Set("Accept", "application/x-ndjson")
 	}
-	if media {
+	if media || draftDownload {
 		out.Header.Del("Accept")
 	}
 	if path == "/v1/operations/events/stream" {
@@ -119,6 +152,11 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	}
 	if body != nil {
 		out.Header.Set("Content-Type", "application/json")
+	}
+	if draftUpload {
+		out.ContentLength = r.ContentLength
+		out.Header.Set("Content-Type", r.Header.Get("Content-Type"))
+		out.Header.Set("X-Social-Draft-Upload-Id", r.Header.Get("X-Social-Draft-Upload-Id"))
 	}
 	if route.Service == "latr" {
 		for _, h := range []string{"Accept", "Content-Type"} {
@@ -197,7 +235,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 			}
 		}
 	}
-	if media {
+	if media || draftDownload {
 		if value := reply.Header.Get("Content-Length"); value != "" {
 			w.Header().Set("Content-Length", value)
 		}
@@ -205,8 +243,8 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	if path == "/v1/operations/events/stream" {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
-	streaming := media || strings.Contains(path, "events/stream") || strings.Contains(path, "bootstrap-stream") || (strings.HasSuffix(path, "getReadAgeOptions") && strings.Contains(r.Header.Get("Accept"), "application/x-ndjson"))
-	if media || path == "/v1/podcasts/search" {
+	streaming := draftDownload || media || strings.Contains(path, "events/stream") || strings.Contains(path, "bootstrap-stream") || (strings.HasSuffix(path, "getReadAgeOptions") && strings.Contains(r.Header.Get("Accept"), "application/x-ndjson"))
+	if privateDraft || media || path == "/v1/podcasts/search" {
 		w.Header().Set("Cache-Control", "private, no-store")
 	}
 	if route.Service == "wire" || route.Service == "circle" {

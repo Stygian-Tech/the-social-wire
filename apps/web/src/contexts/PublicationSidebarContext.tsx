@@ -49,6 +49,10 @@ import {
   sidebarListShowsSkeleton,
   type SidebarProjectionState,
 } from "@/lib/sidebarProjectionState";
+import { awaitWithAbort } from "@/lib/awaitWithAbort";
+import { refreshReaderUnreadCounts } from "@/lib/refreshReaderUnreadCounts";
+import { refreshReaderFeeds } from "@/lib/refreshReaderFeeds";
+import { readerRefreshRows, readerRefreshSourcesKey, refreshPublicationSources } from "@/lib/refreshPublicationSources";
 import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 
 export type SidebarBootstrapState = {
@@ -63,6 +67,7 @@ export type SidebarBootstrapState = {
   followingPublicationsLoading: boolean;
   folderPublicationsListLoading: boolean;
   projectionError: Error | null;
+  refreshMessage: string;
   refresh: ReturnType<typeof useMutation<void, Error, void>>;
   refreshUnreadCountsFromAppView: () => Promise<void>;
   viewerDid: string | undefined;
@@ -117,7 +122,6 @@ function PublicationSidebarProviderInner({
     useState(false);
   const [projectionError, setProjectionError] = useState<Error | null>(null);
   const streamGenerationRef = useRef(0);
-  const manualRefreshControllerRef = useRef<AbortController | null>(null);
   const streamSawSidebarSectionRef = useRef(false);
   const pendingAutoSelectPublicationIdRef = useRef<string | null>(null);
   const bootstrapFeedPublicationIdRef = useRef<string | null>(null);
@@ -125,6 +129,10 @@ function PublicationSidebarProviderInner({
     did: string;
     completedAt: number;
   } | null>(null);
+  const [refreshMessage, setRefreshMessage] = useState("");
+  const manualRefreshRef = useRef<{ controller: AbortController; task: Promise<void> } | null>(null);
+  useEffect(() => () => manualRefreshRef.current?.controller.abort(), [did, oauthSessionReloadSeq]);
+
   const unreadRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -206,13 +214,17 @@ function PublicationSidebarProviderInner({
       setProjectionError(null);
       setFolderPublicationsLoading(!hadSidebarSnapshot);
 
+      let streamFailure: Error | null = null;
+      let sawDone = false;
       try {
         await consumeBootstrapStream({
           oauthSession: oauth,
           signal: controller.signal,
           handlers: {
             onEvent: (event) => {
-              if (controller.signal.aborted || generation !== streamGenerationRef.current || getOAuthSession() !== oauth) return;
+              if (generation !== streamGenerationRef.current || controller.signal.aborted || getOAuthSession() !== oauth) return;
+              if (event.kind === "error" || event.kind === "warning") streamFailure = new Error(event.payload.message);
+              if (event.kind === "done") sawDone = true;
               if (event.kind === "lists") {
                 const listsKey = standardReaderListsQueryKey(did, oauthSessionReloadSeq);
                 qc.setQueryData(listsKey, mergeStandardReaderListsPage(qc.getQueryData(listsKey), event.payload));
@@ -249,16 +261,14 @@ function PublicationSidebarProviderInner({
               if (event.kind === "sidebarFolders") {
                 setFolderPublicationsLoading(false);
               }
-              if (event.kind === "selectedPublication") {
+              if (event.kind === "selectedPublication" && !options.force) {
                 pendingAutoSelectPublicationIdRef.current =
                   event.payload.publicationId;
                 bootstrapFeedPublicationIdRef.current =
                   event.payload.publicationId;
               }
-              if (event.kind === "entriesPage") {
-                writeStreamedEntriesPage(qc, did, event.payload, "all", {
-                  session: oauth, revision: readRevision,
-                });
+              if (event.kind === "entriesPage" && !options.force) {
+                writeStreamedEntriesPage(qc, did, event.payload, "all", { session: oauth, revision: readRevision });
                 bootstrapFeedPublicationIdRef.current =
                   event.payload.publicationId;
                 if (
@@ -345,12 +355,18 @@ function PublicationSidebarProviderInner({
             },
             onError: (error) => {
               if (controller.signal.aborted || generation !== streamGenerationRef.current || getOAuthSession() !== oauth) return;
+              streamFailure = error;
               setProjectionError(error);
             },
           },
         });
+        if (options.force) {
+          controller.signal.throwIfAborted();
+          if (streamFailure) throw streamFailure;
+          if (!sawDone) throw new Error("Publication refresh ended before completion. Try Refresh again.");
+        }
       } catch (error) {
-        if (generation !== streamGenerationRef.current) return;
+        if (controller.signal.aborted || generation !== streamGenerationRef.current || getOAuthSession() !== oauth) return;
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setProjectionError(
             error instanceof Error ? error : new Error(String(error))
@@ -441,56 +457,150 @@ function PublicationSidebarProviderInner({
     !isRestoring &&
     folderPublicationsLoading;
 
-  const refresh = useMutation({
-    mutationFn: async () => {
-      if (dummyReaderDataEnabled) return;
-      const oauth = getOAuthSession();
-      if (!oauth) throw new Error("OAuth session required");
-      // The POST only drops the viewer's server-side caches now; the bootstrap stream that follows
-      // is what produces the content, painting priority rows first and filling folders as they
-      // land. Applying the POST's own payload here as well would rebuild the same projection twice
-      // and stall every other gateway request behind it for the duration.
+  const refresh = useMutation<void, Error, void>({
+    mutationFn: () => {
+      if (manualRefreshRef.current) return manualRefreshRef.current.task;
       const controller = new AbortController();
-      manualRefreshControllerRef.current = controller;
-      const timeout = setTimeout(() => controller.abort(new DOMException(
-        "Refresh took too long. Previously loaded stories are still available. Try Refresh again.", "TimeoutError",
-      )), MANUAL_SIDEBAR_REFRESH_TIMEOUT_MS);
-      let rejectAbort!: (reason: unknown) => void;
-      const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
-      const onAbort = () => rejectAbort(controller.signal.reason);
-      controller.signal.addEventListener("abort", onAbort, { once: true });
-      setProjectionError(null);
-      try {
-        const work = async () => {
-          await refreshPublicationSidebar(oauth, controller.signal);
-          controller.signal.throwIfAborted();
+      const task = (async () => {
+        if (dummyReaderDataEnabled) {
+          setRefreshMessage("Refresh Complete");
+          return;
+        }
+        const oauth = getOAuthSession();
+        if (!oauth) throw new Error("OAuth session required");
+        const signal = controller.signal;
+        const assertSession = () => {
+          signal.throwIfAborted();
           if (getOAuthSession() !== oauth) throw new DOMException("Account changed", "AbortError");
-          setStreamProjection(undefined);
-          await runBootstrapStream(controller, { force: true });
         };
-        // OAuth proof creation can precede fetch and need not support AbortSignal.
-        // Race the whole operation; Promise.race also observes any late rejection.
-        await Promise.race([work(), aborted]);
-      } catch (error) {
-        if (getOAuthSession() === oauth && manualRefreshControllerRef.current === controller) {
+        const readRevision = readFeedRefreshRevision(qc, oauth);
+        setRefreshMessage("Checking Publications…");
+        // Remember the operation's starting rows too: an old Unread row can
+        // disappear during one paint and resurface later without being new.
+        const startingArticleIds = new Set(qc.getQueryCache().findAll({
+          predicate: query => query.queryKey[1] === did && (query.queryKey[0] === "entries" || query.queryKey[0] === "aggregateEntries"),
+        }).flatMap(query => (query.state.data as InfiniteData<EntriesPage> | undefined)?.pages.flatMap(page => page.entries.map(entry => entry.entryId)) ?? []));
+        const newArticleIds = new Set<string>();
+        const updateArticles = async () => {
+          assertSession();
+          await refreshReaderFeeds({
+            queryClient: qc, viewerDid: did, oauthSession: oauth, signal,
+            isCurrentSession: () => getOAuthSession() === oauth,
+            onNewArticleIds: ids => {
+              assertSession();
+              for (const id of ids) if (!startingArticleIds.has(id)) newArticleIds.add(id);
+            },
+          });
+          assertSession();
+        };
+        const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
+        const cached = qc.getQueryData<PublicationSidebarProjection>(queryKey);
+        const cachedRows = cached?.viewerDid === did ? readerRefreshRows(qc, did, cached) : [];
+        const seedRows = cachedRows.length && readerRefreshSourcesKey(cachedRows).sources.length ? cachedRows : undefined;
+        let authoritativeApplied = false;
+        let releaseAuthority!: () => void;
+        const authorityReady = new Promise<void>(resolve => { releaseAuthority = resolve; });
+        const checkSources = (rows: typeof cachedRows) => refreshPublicationSources({
+          oauthSession: oauth, rows, signal,
+          onProgress: (completed, total) => {
+            assertSession();
+            setRefreshMessage(authoritativeApplied && completed === total ? "Updating Articles…" : `Checking ${total} Publications…`);
+          },
+          onBatch: async () => {
+            // Ingestion may start from cached sources, but every paint must read
+            // only after the POST has applied authoritative membership/scopes.
+            await awaitWithAbort(authorityReady, signal);
+            await updateArticles();
+          },
+        });
+        // Observe errors immediately while the POST is pending. Only the
+        // authoritative source set can decide whether a seed failure is relevant.
+        const seed = seedRows ? checkSources(seedRows).then(
+          () => ({ error: undefined as unknown }), error => ({ error })
+        ) : undefined;
+        try {
+          const sidebarSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+          const response = await awaitWithAbort(refreshPublicationSidebar(oauth, sidebarSignal), sidebarSignal);
+          assertSession();
+          if (response.viewerDid !== did) throw new Error("Publication details are unavailable. Try Refresh again.");
+          // The POST returns the complete authoritative sidebar. Supersede any
+          // older initial stream without selecting an article or replacing history.
+          streamGenerationRef.current += 1;
+          const previousSnapshot = qc.getQueryData<PublicationSidebarProjection>(queryKey);
+          const previous = previousSnapshot?.viewerDid === did ? previousSnapshot : undefined;
+          const retainedFollowingIds = new Set(response.retainedFollowingPublicationIds ?? []);
+          const following = new Map(response.followingTabPublications.map(row => [row.publicationId, row]));
+          for (const row of previous?.followingTabPublications ?? []) {
+            if (retainedFollowingIds.has(row.publicationId) && !following.has(row.publicationId)) following.set(row.publicationId, row);
+          }
+          const allRows = new Map(response.allPublicationRows.map(row => [row.publicationId, row]));
+          for (const row of following.values()) if (!allRows.has(row.publicationId)) allRows.set(row.publicationId, row);
+          const projection = { ...response, followingTabPublications: [...following.values()], allPublicationRows: [...allRows.values()] };
+          const readChanged = readFeedRefreshRevision(qc, oauth) !== readRevision;
+          if (readChanged) {
+            projection.unreadCountsByPublicationId = previous?.unreadCountsByPublicationId;
+            projection.unreadCountsGeneration = previous?.unreadCountsGeneration;
+            projection.unreadCountsAccuracy = previous?.unreadCountsAccuracy;
+            projection.unreadCountsCountedAt = previous?.unreadCountsCountedAt;
+          }
+          qc.setQueryData(queryKey, previous?.unreadCountsByPublicationId && !projection.unreadCountsByPublicationId
+            ? applyUnreadCountsEvent(projection, previous.unreadCountsByPublicationId ?? {}, {
+                generation: previous.unreadCountsGeneration,
+                accuracy: previous.unreadCountsAccuracy,
+                countedAt: previous.unreadCountsCountedAt,
+              })
+            : projection);
+          setStreamProjection(undefined);
+          setProjectionError(null);
           setSidebarFetching(false);
           setFolderPublicationsLoading(false);
-          if (!(error instanceof DOMException && error.name === "AbortError")) {
-            setProjectionError(error instanceof Error ? error : new Error(String(error)));
+          setBootstrapStreamComplete(true);
+          authoritativeApplied = true;
+          releaseAuthority();
+          const outcome = await seed;
+          assertSession();
+          const currentRows = () => readerRefreshRows(qc, did, qc.getQueryData<PublicationSidebarProjection>(queryKey) ?? projection);
+          const rows = currentRows();
+          let sourceFailure: unknown;
+          if (seed) {
+            const cachedKey = readerRefreshSourcesKey(seedRows!);
+            const authoritativeKey = readerRefreshSourcesKey(rows);
+            if (JSON.stringify(cachedKey) === JSON.stringify(authoritativeKey)) {
+              sourceFailure = outcome?.error;
+            } else {
+              // Removed sources cannot fail the current scope. Every seed worker
+              // has settled before rechecking the authoritative source set.
+              try { await checkSources(rows); } catch (error) {
+                assertSession();
+                sourceFailure = error;
+              }
+            }
+          } else {
+            try { await checkSources(rows); } catch (error) {
+              assertSession();
+              sourceFailure = error;
+            }
           }
+          assertSession();
+          setRefreshMessage("Updating Unread Counts…");
+          await refreshReaderUnreadCounts({ queryClient: qc, viewerDid: did, oauthSession: oauth, publicationIds: currentRows().map(row => row.publicationId), signal, isCurrentSession: () => getOAuthSession() === oauth });
+          assertSession();
+          if (sourceFailure) throw sourceFailure;
+          const newArticleCount = newArticleIds.size;
+          setRefreshMessage(newArticleCount > 0 ? `${newArticleCount} New ${newArticleCount === 1 ? "Article" : "Articles"} Loaded` : "Refresh Complete");
+        } finally {
+          // POST failure, cancellation, and account changes own the seed too.
+          // Its helper drains any in-flight paint before this refresh settles.
+          controller.abort();
+          await seed;
         }
-        throw error;
-      } finally {
-        clearTimeout(timeout);
-        controller.signal.removeEventListener("abort", onAbort);
-        if (manualRefreshControllerRef.current === controller) manualRefreshControllerRef.current = null;
-      }
+      })().finally(() => {
+        if (manualRefreshRef.current?.controller === controller) manualRefreshRef.current = null;
+      });
+      manualRefreshRef.current = { controller, task };
+      return task;
     },
   });
-
-  useEffect(() => () => {
-    manualRefreshControllerRef.current?.abort();
-  }, [did, oauthSessionReloadSeq]);
 
   const refreshUnreadCountsFromAppViewImpl = useCallback(async () => {
     if (dummyReaderDataEnabled) return;
@@ -568,6 +678,7 @@ function PublicationSidebarProviderInner({
       folderPublicationsListLoading,
       projectionError,
       refresh,
+      refreshMessage,
       refreshUnreadCountsFromAppView,
       viewerDid: session?.did,
     }),
@@ -584,6 +695,7 @@ function PublicationSidebarProviderInner({
       folderPublicationsListLoading,
       projectionError,
       refresh,
+      refreshMessage,
       refreshUnreadCountsFromAppView,
       session?.did,
     ]

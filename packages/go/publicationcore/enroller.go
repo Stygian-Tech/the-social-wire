@@ -27,6 +27,7 @@ type Enroller struct {
 	Projection                                  *appviewworkercore.EventProjectorRuntime
 	RSS                                         *thinappviewcore.RSSIngestion
 	MaximumAuthors, MaximumRecords, Concurrency int
+	RSSConcurrency                              int
 	Wait                                        func(context.Context, time.Duration) error
 	Now                                         func() time.Time
 }
@@ -42,6 +43,24 @@ func waitContext(ctx context.Context, delay time.Duration) error {
 	}
 }
 func (e *Enroller) Enroll(ctx context.Context, auth gatewaycore.AuthContext, authors, feeds []string, recent bool) (int, error) {
+	type result struct {
+		count int
+		err   error
+	}
+	authorsDone := make(chan result, 1)
+	go func() {
+		n, err := e.enrollAuthors(ctx, authors, recent)
+		authorsDone <- result{n, err}
+	}()
+	rssCount, rssErr := 0, error(nil)
+	if e.RSS != nil && len(feeds) > 0 && ctx.Err() == nil {
+		rssCount, rssErr = e.ingestSubscriptions(ctx, auth, feeds, true)
+	}
+	authorResult := <-authorsDone
+	return authorResult.count + rssCount, errors.Join(authorResult.err, rssErr, ctx.Err())
+}
+
+func (e *Enroller) enrollAuthors(ctx context.Context, authors []string, recent bool) (int, error) {
 	maxAuthors, concurrency := e.MaximumAuthors, e.Concurrency
 	if maxAuthors <= 0 {
 		maxAuthors = 500
@@ -74,7 +93,7 @@ func (e *Enroller) Enroll(ctx context.Context, auth gatewaycore.AuthContext, aut
 		case slots <- struct{}{}:
 		case <-ctx.Done():
 			wg.Wait()
-			return count, ctx.Err()
+			return count, errors.Join(append(errs, ctx.Err())...)
 		}
 		wg.Add(1)
 		go func(author string) {
@@ -91,27 +110,27 @@ func (e *Enroller) Enroll(ctx context.Context, auth gatewaycore.AuthContext, aut
 	}
 	wg.Wait()
 	if ctx.Err() != nil {
-		return count, ctx.Err()
+		return count, errors.Join(append(errs, ctx.Err())...)
 	}
-	if !recent && len(errs) > 0 {
-		return count, fmt.Errorf("PDS enrollment incomplete: %w", errors.Join(errs...))
+	if len(errs) > 0 {
+		errs = []error{fmt.Errorf("PDS enrollment incomplete: %w", errors.Join(errs...))}
 	}
-	if e.RSS != nil && len(feeds) > 0 {
-		n, err := e.IngestSubscriptions(ctx, auth, feeds)
-		count += n
-		if err != nil {
-			return count, err
-		}
-	}
-	return count, nil
+	return count, errors.Join(errs...)
 }
 func (e *Enroller) IngestSubscriptions(ctx context.Context, auth gatewaycore.AuthContext, priority []string) (int, error) {
+	return e.ingestSubscriptions(ctx, auth, priority, false)
+}
+
+func (e *Enroller) ingestSubscriptions(ctx context.Context, auth gatewaycore.AuthContext, priority []string, explicit bool) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	if e.RSS == nil {
 		return 0, errors.New("RSS ingestion unavailable")
 	}
 	records, err := listAll(ctx, e.Repo, auth.DID, thinappviewcore.RSSSubscriptionCollection, 20)
 	if err != nil {
-		return 0, err
+		return 0, thinappviewcore.WrapEnrollmentFailure("pds_subscriptions", "", 0, err)
 	}
 	allowed := map[string]bool{}
 	for _, r := range records {
@@ -127,36 +146,33 @@ func (e *Enroller) IngestSubscriptions(ctx context.Context, auth gatewaycore.Aut
 			allowed[*feed] = true
 		}
 	}
-	feeds := []string{}
+	selected := map[string]bool{}
 	if len(priority) == 0 {
 		for feed := range allowed {
-			feeds = append(feeds, feed)
+			selected[feed] = true
 		}
 	} else {
 		for _, raw := range priority {
 			if feed := thinappviewcore.NormalizeFeedURL(raw); feed != nil && allowed[*feed] {
-				feeds = append(feeds, *feed)
+				selected[*feed] = true
 			}
 		}
 	}
-	sort.Strings(feeds)
-	total := 0
-	for _, feed := range feeds {
-		n, err := e.RSS.Ingest(ctx, feed)
-		total += n
-		if err != nil {
-			return total, err
-		}
+	feeds := make([]string, 0, len(selected))
+	for feed := range selected {
+		feeds = append(feeds, feed)
 	}
-	return total, nil
+	sort.Strings(feeds)
+	return e.ingestFeeds(ctx, feeds, explicit)
 }
+
 func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-chan time.Time) (int, error) {
 	if !strings.HasPrefix(did, "did:plc:") && !strings.HasPrefix(did, "did:web:") || did == thinappviewcore.RSSAuthorDID {
-		return 0, errors.New("invalid enrollment author")
+		return 0, thinappviewcore.WrapEnrollmentFailure("pds_author", "", 0, errors.New("invalid enrollment author"))
 	}
 	base, err := e.PDS.Resolve(ctx, did)
 	if err != nil || base == "" {
-		return 0, errors.New("PDS resolution unavailable")
+		return 0, thinappviewcore.WrapEnrollmentFailure("pds_resolve", "", 0, errors.Join(errors.New("PDS resolution unavailable"), err))
 	}
 	budget := e.MaximumRecords
 	if budget <= 0 {
@@ -173,7 +189,7 @@ func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-c
 		} // Hosted PDS currently caps documents at one; match verified Go recovery policy.
 		for {
 			if budget <= 0 {
-				return indexed, errors.New("record cap reached")
+				return indexed, thinappviewcore.WrapEnrollmentFailure("pds_limit", base, 0, errors.New("record cap reached"))
 			}
 			select {
 			case <-ctx.Done():
@@ -200,31 +216,31 @@ func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-c
 				Cursor json.RawMessage
 			}
 			if json.Unmarshal(body, &page) != nil || page.Records == nil {
-				return indexed, errors.New("malformed PDS page")
+				return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("malformed PDS page"))
 			}
 			for _, row := range page.Records {
 				if budget <= 0 {
-					return indexed, errors.New("record cap reached")
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_limit", base, 0, errors.New("record cap reached"))
 				}
 				budget--
 				prefix := "at://" + did + "/" + collection + "/"
 				key := strings.TrimPrefix(row.URI, prefix)
 				if !strings.HasPrefix(row.URI, prefix) || key == "" || strings.Contains(key, "/") || row.CID == "" {
-					return indexed, errors.New("malformed PDS record")
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("malformed PDS record"))
 				}
 				if err = e.Projection.Commit(ctx, did, collection, key, row.CID, "create", "", row.Value, time.Time{}, base); err != nil {
-					return indexed, err
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_store", base, 0, err)
 				}
 				indexed++
 			}
 			next := ""
 			if len(page.Cursor) > 0 && string(page.Cursor) != "null" {
 				if json.Unmarshal(page.Cursor, &next) != nil || strings.TrimSpace(next) == "" || len(next) > 4096 {
-					return indexed, errors.New("malformed PDS cursor")
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("malformed PDS cursor"))
 				}
 			}
 			if next != "" && (next == cursor || seen[next] || len(page.Records) == 0) {
-				return indexed, errors.New("PDS cursor did not advance")
+				return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("PDS cursor did not advance"))
 			}
 			if recent || next == "" {
 				break
@@ -249,7 +265,7 @@ func (e *Enroller) page(ctx context.Context, base string, params url.Values, rev
 		status, headers, body, err := getter.Get(request, strings.TrimRight(base, "/")+"/xrpc/com.atproto.repo.listRecords?"+params.Encode(), http.Header{"Accept": {"application/json"}}, 8*1024*1024, 0)
 		cancel()
 		if err != nil {
-			return nil, reverse, err
+			return nil, reverse, thinappviewcore.WrapEnrollmentFailure("pds_fetch", base, status, err)
 		}
 		if status == 400 && reverse {
 			var reason struct{ Error, Message string }
@@ -265,12 +281,12 @@ func (e *Enroller) page(ctx context.Context, base string, params url.Values, rev
 			attempt++
 			delay := retryDelay(headers.Get("Retry-After"), attempt, time.Now(), .1+rand.Float64()*.15)
 			if err = wait(ctx, delay); err != nil {
-				return nil, reverse, err
+				return nil, reverse, thinappviewcore.WrapEnrollmentFailure("pds_fetch", base, status, err)
 			}
 			continue
 		}
 		if status != 200 {
-			return nil, reverse, fmt.Errorf("PDS listRecords status %d", status)
+			return nil, reverse, thinappviewcore.WrapEnrollmentFailure("pds_fetch", base, status, fmt.Errorf("PDS listRecords status %d", status))
 		}
 		return body, reverse, nil
 	}
@@ -299,5 +315,5 @@ func NewEnroller(db *sql.DB, repo Repository, pds *thinappviewcore.PDSClient, ge
 	retention := time.Duration(integer("THIN_APPVIEW_CONTENT_TTL_SECONDS", 30*86400)) * time.Second
 	rss := &thinappviewcore.RSSIngestion{DB: db, HTTP: getter, Cache: cache, MaximumItems: integer("THIN_APPVIEW_MAX_RSS_ITEMS_PER_FEED", 200), Retention: retention}
 	projector := &appviewworkercore.EventProjectorRuntime{DB: db, PDS: pds, Cache: cache, RSS: rss, Counters: thinappviewcore.CounterStore{DB: db}, Retention: retention}
-	return &Enroller{DB: db, Repo: repo, PDS: pds, HTTP: getter, Projection: projector, RSS: rss, MaximumAuthors: integer("THIN_APPVIEW_MAX_ENROLL_AUTHORS", 500), MaximumRecords: integer("THIN_APPVIEW_MAX_ENROLL_RECORDS_PER_AUTHOR", 2000), Concurrency: integer("THIN_APPVIEW_MAX_ENROLL_CONCURRENCY", 4)}
+	return &Enroller{DB: db, Repo: repo, PDS: pds, HTTP: getter, Projection: projector, RSS: rss, MaximumAuthors: integer("THIN_APPVIEW_MAX_ENROLL_AUTHORS", 500), MaximumRecords: integer("THIN_APPVIEW_MAX_ENROLL_RECORDS_PER_AUTHOR", 2000), Concurrency: integer("THIN_APPVIEW_MAX_ENROLL_CONCURRENCY", 4), RSSConcurrency: min(integer("THIN_APPVIEW_MAX_RSS_ENROLL_CONCURRENCY", maximumRSSConcurrency), maximumRSSConcurrency)}
 }

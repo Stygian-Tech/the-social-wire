@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 )
 
 func uniqueRows(rows []DiscoveredRow) []DiscoveredRow {
@@ -18,7 +19,7 @@ func uniqueRows(rows []DiscoveredRow) []DiscoveredRow {
 	sort.Slice(out, func(i, j int) bool { return out[i].PublicationID < out[j].PublicationID })
 	return out
 }
-func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, phase string) (Sidebar, error) {
+func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, phase string, preserveFollowing ...bool) (Sidebar, error) {
 	priority := uniqueRows(append(append(append([]DiscoveredRow{}, discovery.MyPublications...), discovery.Unfoldered...), discovery.Following...))
 	folderRows := []DiscoveredRow{}
 	for _, folder := range discovery.Folders {
@@ -50,7 +51,17 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 		go func(row DiscoveredRow) {
 			defer wg.Done()
 			defer func() { <-slots }()
-			scope := s.Scope(ctx, row.PublicationID, row.AuthorDID)
+			var scope AppViewScope
+			if discovery.refresh != nil {
+				// Manual refresh bypasses persistent scopes, including retained rows.
+				// Missing fresh records use the normal repository fallback.
+				scope = buildScope(ctx, discovery.refresh, row.PublicationID, row.AuthorDID, discovery.refresh.record(row.PublicationID))
+				s.mu.Lock()
+				s.scopes[NormalizeATRepoParam(row.PublicationID)] = scopeEntry{scope, s.Now().Add(5 * time.Minute)}
+				s.mu.Unlock()
+			} else {
+				scope = s.Scope(ctx, row.PublicationID, row.AuthorDID)
+			}
 			r := SidebarRow{PublicationID: row.PublicationID, SubscriptionPublicationID: row.SubscriptionPublicationID, AuthorDID: row.AuthorDID, AuthorHandle: row.AuthorHandle, Title: row.Title, IconURL: row.IconURL, AvatarURL: row.AvatarURL, DiscoveredAt: row.DiscoveredAt, AppViewScope: scope}
 			mu.Lock()
 			built[row.PublicationID] = r
@@ -84,7 +95,7 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 		}
 		return out
 	}
-	result := Sidebar{ViewerDID: discovery.ViewerDID, Folders: discovery.Folders, PublicationPrefs: discovery.Prefs, FolderSections: []FolderSection{}, AllPublicationRows: convert(discovery.UniqueRows), MyPublications: convert(discovery.MyPublications), SubscribedUnfoldered: convert(discovery.Unfoldered), FollowingTabPublications: convert(discovery.Following), EnrollAuthorDIDs: discovery.EnrollAuthorDIDs, RefreshedAt: s.Now()}
+	result := Sidebar{subscriptionPublicationIDs: discovery.SubscriptionPublicationIDs, ViewerDID: discovery.ViewerDID, Folders: discovery.Folders, PublicationPrefs: discovery.Prefs, FolderSections: []FolderSection{}, AllPublicationRows: convert(discovery.UniqueRows), MyPublications: convert(discovery.MyPublications), SubscribedUnfoldered: convert(discovery.Unfoldered), FollowingTabPublications: convert(discovery.Following), EnrollAuthorDIDs: discovery.EnrollAuthorDIDs, RefreshedAt: s.Now()}
 	for _, folder := range discovery.Folders {
 		section := FolderSection{FolderURI: folder.URI, FolderRKey: folder.RKey, Name: text(folder.Value, "name"), Publications: []SidebarRow{}}
 		if section.Name == "" {
@@ -114,8 +125,41 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 			result.AllPublicationRows = append(result.AllPublicationRows, section.Publications...)
 		}
 	}
-	// Source returns sidebar even when durable scope persistence is unavailable; read paths
-	// still enforce their own database readiness and never substitute client scopes.
-	_ = (ProjectionStore{DB: s.DB}).Persist(ctx, result, phase == "full")
+	// Ordinary source reads remain available during persistence outages. Manual
+	// refresh must report failure if its authoritative replacement did not persist.
+	if err := (ProjectionStore{DB: s.DB}).persist(ctx, &result, phase == "full", preserveFollowing...); err != nil && len(preserveFollowing) > 0 && preserveFollowing[0] {
+		return Sidebar{}, err
+	}
+	if len(preserveFollowing) > 0 && preserveFollowing[0] {
+		keep := map[string]bool{}
+		for _, row := range allSidebarRows(result) {
+			keep[row.PublicationID] = true
+		}
+		s.mu.Lock()
+		// Prune only the discovery used by this build. A newer concurrent
+		// discovery owns its own cache token and must not be overwritten here.
+		entry := s.discoveries[discovery.ViewerDID]
+		if discovery.cacheToken != nil && entry.value.cacheToken == discovery.cacheToken {
+			prune := func(rows []DiscoveredRow) []DiscoveredRow {
+				out := []DiscoveredRow{}
+				for _, row := range rows {
+					if keep[row.PublicationID] {
+						out = append(out, row)
+					}
+				}
+				return out
+			}
+			entry.value.Following = prune(entry.value.Following)
+			entry.value.UniqueRows = prune(entry.value.UniqueRows)
+			s.discoveries[discovery.ViewerDID] = entry
+		}
+		for key, row := range s.rows[discovery.ViewerDID] {
+			if !keep[row.PublicationID] {
+				delete(s.rows[discovery.ViewerDID], key)
+				delete(s.scopes, NormalizeATRepoParam(key))
+			}
+		}
+		s.mu.Unlock()
+	}
 	return result, nil
 }
