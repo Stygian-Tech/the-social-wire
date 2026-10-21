@@ -1,6 +1,8 @@
 package publicationcore
 
 type DiscoveryContext struct {
+	cacheToken *byte
+
 	SubscriptionPublicationIDs                                    []string
 	ViewerDID                                                     string
 	Folders                                                       []FolderRecord

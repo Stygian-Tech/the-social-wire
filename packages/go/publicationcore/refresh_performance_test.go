@@ -417,6 +417,14 @@ func TestRefreshCannotResurrectFollowingRemovedByAnotherReplica(t *testing.T) {
 			if len(result.FollowingTabPublications) != 0 || len(result.AllPublicationRows) != 0 || len(result.RetainedFollowingPublicationIDs) != 0 || len(s.SidebarRows(viewer, []string{row.PublicationID})) != 0 {
 				t.Fatalf("stale follow resurrected: %+v", result)
 			}
+			cached := s.discoveries[viewer].value
+			if len(cached.Following) != 0 || len(cached.UniqueRows) != 0 {
+				t.Fatalf("stale discovery survived refresh: %+v", cached)
+			}
+			priority, reused, err := s.Priority(ctx, gatewaycore.AuthContext{DID: viewer}, false)
+			if err != nil || len(priority.FollowingTabPublications) != 0 || len(priority.AllPublicationRows) != 0 || reused.cacheToken != cached.cacheToken {
+				t.Fatalf("cached Priority resurrected removed follow: %+v err=%v", priority, err)
+			}
 			if scope, err := store.Scope(ctx, viewer, row.PublicationID); err != nil || scope != nil {
 				t.Fatalf("removed durable scope resurrected: %+v %v", scope, err)
 			}
@@ -480,5 +488,44 @@ func TestRefreshMovesFollowingToSubscribed(t *testing.T) {
 				t.Fatalf("durable subscribed count=%d want=%d err=%v", count, want, err)
 			}
 		})
+	}
+}
+
+func TestOlderSidebarBuildDoesNotPruneNewerDiscovery(t *testing.T) {
+	db := fixtureDB(t)
+	ctx := context.Background()
+	at := time.Now().UTC()
+	viewer := fmt.Sprintf("did:plc:discovery-token%d", at.UnixNano())
+	s := NewService(db, repoFixture{}, nil)
+	defer s.Close()
+	s.Now = func() time.Time { return at }
+	t.Cleanup(func() {
+		for _, table := range []string{"appview_feed_publications", "appview_viewer_feeds", "appview_publication_scopes"} {
+			db.ExecContext(ctx, "DELETE FROM "+table+" WHERE viewer_did=$1", viewer)
+		}
+	})
+	s.discoveries[viewer] = discoveryEntry{value: DiscoveryContext{Following: []DiscoveredRow{{PublicationID: "did:plc:retained", AuthorDID: "did:plc:retained"}}}, expires: at.Add(time.Minute)}
+	older, err := s.Discover(ctx, viewer, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, err := s.Discover(ctx, viewer, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if older.cacheToken == nil || newer.cacheToken == older.cacheToken {
+		t.Fatal("discoveries did not receive distinct cache tokens")
+	}
+	// The older build finishes after another discovery has replaced the cache.
+	result, err := s.BuildSidebar(ctx, older, "full", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.FollowingTabPublications) != 0 {
+		t.Fatal("older build did not prune absent durable Following")
+	}
+	cached := s.discoveries[viewer].value
+	if cached.cacheToken != newer.cacheToken || len(cached.Following) != 1 || len(cached.UniqueRows) != 1 {
+		t.Fatalf("older build overwrote newer discovery: %+v", cached)
 	}
 }
