@@ -162,6 +162,62 @@ func TestRSSAdmissionCanceledJoinDoesNotCompleteOrCancelOwner(t *testing.T) {
 	<-ownerDone
 }
 
+func TestRSSAdmissionLiveJoinerRetriesCanceledOwner(t *testing.T) {
+	a := newRSSEnrollmentAdmission()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ownerCtx, abortOwner := context.WithCancel(ctx)
+	defer abortOwner()
+	key := rssEnrollmentKey{feed: "https://owner-abort.invalid/rss", explicit: true}
+	started, unwinding, release, ownerDone := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(ownerDone)
+		_, err := a.ingest(ownerCtx, key, func() (int, error) {
+			close(started)
+			<-ownerCtx.Done()
+			close(unwinding)
+			<-release
+			return 2, ownerCtx.Err()
+		})
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("owner error %v", err)
+		}
+	}()
+	<-started
+	joined := &observedDoneContext{Context: ctx, observed: make(chan struct{})}
+	done := make(chan struct{})
+	var attempts atomic.Int32
+	go func() {
+		defer close(done)
+		n, err := a.ingest(joined, key, func() (int, error) { attempts.Add(1); return 5, nil })
+		if n != 5 || err != nil {
+			t.Errorf("live joiner result %d %v", n, err)
+		}
+	}()
+	<-joined.observed
+	abortOwner()
+	<-unwinding
+	select {
+	case <-done:
+		t.Error("joiner did not await owner cleanup")
+	default:
+	}
+	if attempts.Load() != 0 {
+		t.Error("replacement overlapped canceled owner")
+	}
+	close(release)
+	<-ownerDone
+	<-done
+	if attempts.Load() != 1 {
+		t.Fatalf("replacement attempts %d", attempts.Load())
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.active != 0 || len(a.calls) != 0 || len(a.hosts) != 0 {
+		t.Fatal("admission leaked after ownership transfer")
+	}
+}
+
 func TestRSSExplicitAdmissionCannotJoinBackgroundZero(t *testing.T) {
 	a := newRSSEnrollmentAdmission()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

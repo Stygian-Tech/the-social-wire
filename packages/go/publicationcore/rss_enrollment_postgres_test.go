@@ -157,12 +157,14 @@ func TestRSSWorkersDoNotQueueIndependentHostBehindSlowHost(t *testing.T) {
 	db, repo, _ := rssEnrollmentFixture(t, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	release, independent := make(chan struct{}), make(chan struct{})
-	feeds := make([]string, 0, 33)
+	release, independent := make(chan struct{}), make(chan struct{}, 32)
+	feeds := make([]string, 0, 64)
 	for i := 0; i < 32; i++ {
 		feeds = append(feeds, fmt.Sprintf("https://a-slow.invalid/%d", i))
 	}
-	feeds = append(feeds, "https://z-independent.invalid/rss")
+	for i := 0; i < 32; i++ {
+		feeds = append(feeds, fmt.Sprintf("https://z-independent.invalid/%d", i))
+	}
 	getter := getterFunc(func(ctx context.Context, target string, _ http.Header, _, _ int) (int, http.Header, []byte, error) {
 		parsed, _ := url.Parse(target)
 		if parsed.Hostname() == "a-slow.invalid" {
@@ -172,7 +174,7 @@ func TestRSSWorkersDoNotQueueIndependentHostBehindSlowHost(t *testing.T) {
 				return 0, nil, nil, ctx.Err()
 			}
 		} else {
-			close(independent)
+			independent <- struct{}{}
 		}
 		return 304, nil, nil, nil
 	})
@@ -185,10 +187,12 @@ func TestRSSWorkersDoNotQueueIndependentHostBehindSlowHost(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	select {
-	case <-independent:
-	case <-ctx.Done():
-		t.Fatal("independent host waited behind blocked host")
+	for i := 0; i < 32; i++ {
+		select {
+		case <-independent:
+		case <-ctx.Done():
+			t.Fatalf("independent host starved after %d/32 feeds while slow host was blocked", i)
+		}
 	}
 	select {
 	case <-done:
@@ -341,59 +345,82 @@ type joinedEnrollmentContext struct {
 }
 
 func (c *joinedEnrollmentContext) Done() <-chan struct{} {
-	// The first Done is the worker enqueue; the second is the shared-call wait.
-	if c.calls.Add(1) == 2 {
+	// A joined call waits on this context before its owner is released.
+	if c.calls.Add(1) == 1 {
 		close(c.joined)
 	}
 	return c.Context.Done()
 }
 
 func TestRSSSameFeedAcrossEnrollersJoinsCompletedCount(t *testing.T) {
-	db, repo, feeds := rssEnrollmentFixture(t, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	started, release := make(chan struct{}), make(chan struct{})
-	var calls atomic.Int32
-	getter := getterFunc(func(ctx context.Context, _ string, _ http.Header, _, _ int) (int, http.Header, []byte, error) {
-		if calls.Add(1) == 1 {
-			close(started)
-		} else {
-			t.Error("same-feed ingestion duplicated")
-		}
-		select {
-		case <-release:
-		case <-ctx.Done():
-			return 0, nil, nil, ctx.Err()
-		}
-		return 200, nil, enrollmentRSSBody, nil
-	})
-	done := make(chan struct{}, 2)
-	run := func(ctx context.Context) {
-		defer func() { done <- struct{}{} }()
-		e := Enroller{Repo: repo, RSS: &thinappviewcore.RSSIngestion{DB: db, HTTP: getter}}
-		if n, err := e.Enroll(ctx, gatewaycore.AuthContext{DID: "viewer"}, nil, feeds, true); n != 1 || err != nil {
-			t.Errorf("joined enrollment %d %v", n, err)
-		}
-	}
-	go run(ctx)
-	<-started
-	joined := &joinedEnrollmentContext{Context: ctx, joined: make(chan struct{})}
-	go run(joined)
-	select {
-	case <-joined.joined:
-	case <-ctx.Done():
-		t.Fatal("join did not start")
-	}
-	select {
-	case <-done:
-		t.Error("join returned before owner")
-	default:
-	}
-	close(release)
-	<-done
-	<-done
-	if calls.Load() != 1 {
-		t.Fatalf("HTTP calls %d", calls.Load())
+	for _, abort := range []bool{false, true} {
+		t.Run(fmt.Sprintf("abortOwner=%t", abort), func(t *testing.T) {
+			db, repo, feeds := rssEnrollmentFixture(t, 1)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			ownerCtx, abortOwner := context.WithCancel(ctx)
+			defer abortOwner()
+			started, release := make(chan struct{}), make(chan struct{})
+			var calls atomic.Int32
+			getter := getterFunc(func(ctx context.Context, _ string, _ http.Header, _, _ int) (int, http.Header, []byte, error) {
+				if calls.Add(1) == 1 {
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return 0, nil, nil, ctx.Err()
+					}
+				} else if !abort {
+					t.Error("same-feed ingestion duplicated")
+				}
+				return 200, nil, enrollmentRSSBody, nil
+			})
+			done := make(chan struct{}, 2)
+			run := func(ctx context.Context, expectCanceled bool) {
+				defer func() { done <- struct{}{} }()
+				e := Enroller{Repo: repo, RSS: &thinappviewcore.RSSIngestion{DB: db, HTTP: getter}}
+				n, err := e.Enroll(ctx, gatewaycore.AuthContext{DID: "viewer"}, nil, feeds, true)
+				if expectCanceled {
+					if n != 0 || !errors.Is(err, context.Canceled) {
+						t.Errorf("aborted owner %d %v", n, err)
+					}
+				} else if n != 1 || err != nil {
+					t.Errorf("live enrollment %d %v", n, err)
+				}
+			}
+			go run(ownerCtx, abort)
+			<-started
+			joined := &joinedEnrollmentContext{Context: ctx, joined: make(chan struct{})}
+			go run(joined, false)
+			select {
+			case <-joined.joined:
+			case <-ctx.Done():
+				t.Fatal("join did not start")
+			}
+			select {
+			case <-done:
+				t.Error("join returned before owner")
+			default:
+			}
+			if abort {
+				abortOwner()
+			} else {
+				close(release)
+			}
+			<-done
+			<-done
+			want := int32(1)
+			if abort {
+				want = 2
+			}
+			if calls.Load() != want {
+				t.Fatalf("HTTP calls %d want %d", calls.Load(), want)
+			}
+			var persisted int
+			if err := db.QueryRow("SELECT COUNT(*) FROM content_items WHERE publication_site=$1", feeds[0]).Scan(&persisted); err != nil || persisted != 1 {
+				t.Fatalf("persisted=%d err=%v", persisted, err)
+			}
+		})
 	}
 }
 
