@@ -89,6 +89,28 @@ describe("refreshReaderFeeds", () => {
     expect(fetchPage.mock.calls.every(([args]) => args.cursor === undefined)).toBe(true);
   });
 
+  it("reports only actual fresh IDs when navigation activates cached articles during a paint", async () => {
+    const original = publication("original");
+    const navigated = publication("navigated");
+    seed(original, [page("original-cached")]);
+    seed(navigated, [page("navigated-cached")]);
+    activate(original);
+    const started = deferred<void>(), response = deferred<EntriesPage>();
+    fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+    const reported: string[][] = [];
+    const task = refreshReaderFeeds({ queryClient: client, viewerDid, oauthSession, onNewArticleIds: ids => reported.push([...ids]) });
+    await started.promise;
+    // Navigation paints pre-existing rows. They are not results of this read.
+    activate(navigated);
+    response.resolve(page("new", "original-cached"));
+    expect(await task).toEqual({ newArticleCount: 1 });
+    expect(reported).toEqual([["new"]]);
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    fetchPage.mockImplementation(async ({ feed }) => feed.id === "navigated" ? page("navigated-cached") : page("new", "original-cached"));
+    await refreshReaderFeeds({ queryClient: client, viewerDid, oauthSession, onNewArticleIds: ids => reported.push([...ids]) });
+    expect(reported).toEqual([["new"], []]);
+  });
+
   it("marks inactive feeds stale without issuing reads and allows their next mount to refetch", async () => {
     const key = publication("inactive");
     seed(key);
@@ -203,6 +225,32 @@ describe("refreshReaderFeeds", () => {
     } finally {
       cancel.mockRestore();
     }
+  });
+
+  it("settles sibling workers before rejecting and stops dispatching after one fails", async () => {
+    for (let index = 0; index < 4; index++) { const key = publication(`pub-${index}`); seed(key); activate(key); }
+    const started = deferred<void>(), fail = deferred<void>(), release = deferred<void>();
+    let running = 0;
+    fetchPage.mockImplementation(async ({ feed }) => {
+      if (++running === 3) started.resolve();
+      if (feed.id === "pub-0") { await fail.promise; throw new Error("feed failed"); }
+      await release.promise;
+      return page("partial");
+    });
+    let settled = false, reported = false;
+    const outcome = refreshReaderFeeds({ queryClient: client, viewerDid, oauthSession, onNewArticleIds: () => { reported = true; } }).catch(error => { settled = true; return error; });
+    await started.promise;
+    fail.resolve();
+    for (let index = 0; index < 12; index++) await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(fetchPage).toHaveBeenCalledTimes(3);
+    release.resolve();
+    expect((await outcome).message).toBe("feed failed");
+    expect(reported).toBe(false);
+    expect(fetchPage).toHaveBeenCalledTimes(3);
+    const snapshot = client.getQueryData<InfiniteData<EntriesPage>>(publication("pub-1"));
+    await Promise.resolve();
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(publication("pub-1"))).toBe(snapshot);
   });
 
   it("bounds active first-page refreshes to three concurrent requests", async () => {
