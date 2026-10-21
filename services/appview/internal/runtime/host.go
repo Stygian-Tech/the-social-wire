@@ -15,6 +15,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/packages/go/podcastcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/publicationcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/semblecore"
+	"github.com/stygian-tech/the-social-wire/packages/go/socialdraftcore"
 	"github.com/stygian-tech/the-social-wire/packages/go/socialwireredis"
 	"github.com/stygian-tech/the-social-wire/packages/go/telemetrycore"
 	"github.com/stygian-tech/the-social-wire/packages/go/thinappviewcore"
@@ -29,6 +30,7 @@ import (
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/readstate"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/repocache"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/semble"
+	"github.com/stygian-tech/the-social-wire/services/appview/internal/socialdrafts"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/topics"
 	"github.com/stygian-tech/the-social-wire/services/appview/internal/unreadcounts"
 	"net/http"
@@ -160,6 +162,33 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 	}
 	publicMux, protectedMux, discoveryMux := http.NewServeMux(), http.NewServeMux(), http.NewServeMux()
 	h.registerHealth(publicMux)
+	draftConfig := socialdraftcore.Config{Enabled: strings.EqualFold(c.EnvironmentValues["SOCIAL_DRAFTS_ENABLED"], "true"), Endpoint: c.EnvironmentValues["SOCIAL_DRAFT_S3_ENDPOINT"], Bucket: c.EnvironmentValues["SOCIAL_DRAFT_S3_BUCKET"], AccessKeyID: c.EnvironmentValues["SOCIAL_DRAFT_S3_ACCESS_KEY_ID"], SecretAccessKey: c.EnvironmentValues["SOCIAL_DRAFT_S3_SECRET_ACCESS_KEY"], Region: c.EnvironmentValues["SOCIAL_DRAFT_S3_REGION"], StorageKey: c.EnvironmentValues["SOCIAL_DRAFT_STORAGE_KEY"]}
+	var draftService socialdrafts.Service
+	if draftConfig.Enabled {
+		service, e := socialdraftcore.New(db, draftConfig)
+		if e != nil {
+			return h, errors.New("private draft storage is enabled but its configuration is unavailable")
+		}
+		draftService = service
+		h.wg.Add(1)
+		go func() {
+			defer h.wg.Done()
+			ticker := time.NewTicker(15 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-process.Done():
+					return
+				case <-ticker.C:
+					cleanup, stop := context.WithTimeout(process, 30*time.Second)
+					_, _ = service.Cleanup(cleanup, 100)
+					stop()
+				}
+			}
+		}()
+	}
+	socialdrafts.Routes{Service: draftService}.Register(protectedMux)
+
 	analytics.Routes{Store: analyticscore.Store{DB: db, Secret: c.InternalSecret}, Provider: &analytics.CachedProvider{Base: analyticscore.Provider{Repo: repo, HTTP: h.publicHTTP, AppView: repo.AppViewBase()}}, Now: time.Now, Limits: &analytics.Limits{}}.Register(protectedMux)
 	publications.Routes{Service: h.Publications, Resolver: publicationcore.Resolver{Repo: repo, HTTP: getter}}.Register(protectedMux)
 	lists.Routes{Runtime: h.Lists}.Register(protectedMux)

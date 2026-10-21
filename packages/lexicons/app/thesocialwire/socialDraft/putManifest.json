@@ -1,0 +1,71 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.socialDraft.putManifest",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Owner-only private draft storage. Authentication required; disabled storage returns Unavailable. Never publishes attachments or exposes public URLs.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "draftId",
+            "expectedRevision",
+            "attachments"
+          ],
+          "properties": {
+            "draftId": {
+              "type": "string",
+              "minLength": 13,
+              "maxLength": 13,
+              "description": "AT Protocol TID identifying the draft."
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "attachments": {
+              "type": "array",
+              "maxLength": 800,
+              "items": {
+                "type": "ref",
+                "ref": "app.thesocialwire.socialDraft.defs#manifestRef"
+              }
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "ref",
+          "ref": "app.thesocialwire.socialDraft.defs#manifest"
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "Quota"
+        },
+        {
+          "name": "UploadPending"
+        },
+        {
+          "name": "Unavailable"
+        },
+        {
+          "name": "Unauthorized"
+        }
+      ]
+    }
+  }
+}

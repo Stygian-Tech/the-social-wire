@@ -7,6 +7,12 @@ type Route struct {
 
 // Routes preserves REST compatibility and canonical XRPC aliases.
 var Routes = []Route{
+	{Method: "POST", Path: "/xrpc/app.thesocialwire.socialDraft.reserveAttachment", Target: "/xrpc/app.thesocialwire.socialDraft.reserveAttachment", UpstreamMethod: "POST", Service: "appview", Streaming: false},
+	{Method: "POST", Path: "/xrpc/app.thesocialwire.socialDraft.uploadAttachment", Target: "/xrpc/app.thesocialwire.socialDraft.uploadAttachment", UpstreamMethod: "POST", Service: "appview", Streaming: false},
+	{Method: "GET", Path: "/xrpc/app.thesocialwire.socialDraft.getAttachment", Target: "/xrpc/app.thesocialwire.socialDraft.getAttachment", UpstreamMethod: "GET", Service: "appview", Streaming: true},
+	{Method: "GET", Path: "/xrpc/app.thesocialwire.socialDraft.getManifest", Target: "/xrpc/app.thesocialwire.socialDraft.getManifest", UpstreamMethod: "GET", Service: "appview", Streaming: false},
+	{Method: "POST", Path: "/xrpc/app.thesocialwire.socialDraft.putManifest", Target: "/xrpc/app.thesocialwire.socialDraft.putManifest", UpstreamMethod: "POST", Service: "appview", Streaming: false},
+	{Method: "POST", Path: "/xrpc/app.thesocialwire.socialDraft.deleteManifest", Target: "/xrpc/app.thesocialwire.socialDraft.deleteManifest", UpstreamMethod: "POST", Service: "appview", Streaming: false},
 	{Method: "GET", Path: "/v1/publications/sidebar", Target: "/xrpc/app.thesocialwire.publication.getSidebar", UpstreamMethod: "GET", Service: "appview", Public: false, Optional: false, Streaming: false},
 	{Method: "GET", Path: "/xrpc/app.thesocialwire.publication.getSidebar", Target: "/xrpc/app.thesocialwire.publication.getSidebar", UpstreamMethod: "GET", Service: "appview", Public: false, Optional: false, Streaming: false},
 	{Method: "POST", Path: "/v1/publications/refresh", Target: "/xrpc/app.thesocialwire.publication.refreshSidebar", UpstreamMethod: "POST", Service: "appview", Public: false, Optional: false, Streaming: false},

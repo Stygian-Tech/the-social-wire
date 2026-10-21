@@ -28,7 +28,7 @@ describe("Social Wire XRPC lexicons", () => {
   });
 
   it("loads through the AT Protocol Lexicon validator", () => {
-    const documents = ["app.thesocialwire.defs", "app.thesocialwire.discovery.defs", ...nsids].map((nsid) =>
+    const documents = ["app.thesocialwire.defs", "app.thesocialwire.discovery.defs", "app.thesocialwire.socialDraft.defs", ...nsids].map((nsid) =>
       JSON.parse(readFileSync(fileForNsid(nsid), "utf8"))
     );
     expect(() => new Lexicons(documents)).not.toThrow();
@@ -41,8 +41,8 @@ describe("Social Wire XRPC lexicons", () => {
       const expectedType = /^(get|list|search)/.test(method) ? "query" : "procedure";
       expect(lexicon.defs.main.type, nsid).toBe(expectedType);
       if (expectedType === "query") expect(lexicon.defs.main.parameters?.type).toBe("params");
-      else expect(lexicon.defs.main.input?.encoding).toBe("application/json");
-      expect(lexicon.defs.main.output.encoding).toBe("application/json");
+      else expect(lexicon.defs.main.input?.encoding).toBe(nsid === "app.thesocialwire.socialDraft.uploadAttachment" ? "application/octet-stream" : "application/json");
+      expect(lexicon.defs.main.output.encoding).toBe(["app.thesocialwire.socialDraft.getAttachment", "app.thesocialwire.socialDraft.getGifFile"].includes(nsid) ? "*/*" : "application/json");
       expect(lexicon.defs.main.errors.length).toBeGreaterThan(0);
     }
   });

@@ -65,3 +65,14 @@ it("requires a durable attempted-write checkpoint before sending a record", asyn
   await expect(publishBlueskyThread({ session, publication, assertCurrentAccount: () => {}, checkpoint: async () => { if (publication.segments[0].attempted) throw new Error("Storage Full"); } })).rejects.toThrow("Storage Full");
   expect(writes).toBe(0);
 });
+it("publishes a privately restored GIF with its local poster while keeping the KLIPY external URI", async () => {
+  const mocks = provider(); let uploads = 0; const session = sessionFor(() => uploads++);
+  const posterBlob = new Blob(["restored private poster"], { type: "image/jpeg" });
+  const { describeDraftAttachment } = await import("@/lib/socialDraftAttachmentClient");
+  const poster = { blob: posterBlob, asset: { ...await describeDraftAttachment(posterBlob, "poster", undefined, "poster"), state: "ready" as const } };
+  const media: ComposerMedia = { kind: "gif", asset, alt: "Restored author description", privateFiles: { ownerDid: session.did, identity: gifEmbedURI(asset), referenceKey: "private-manifest-key", files: { poster } } };
+  const record = await prepareBlueskyPost({ session, text: "", media });
+  expect(record).toMatchObject({ embed: { $type: "app.bsky.embed.external", external: { uri: gifEmbedURI(asset), description: "Alt: Restored author description", thumb: { mimeType: "image/jpeg", size: posterBlob.size } } } });
+  expect(mocks.resolve).toHaveBeenCalled(); expect(mocks.poster).not.toHaveBeenCalled(); expect(uploads).toBe(1);
+  expect(JSON.stringify(record)).not.toContain("private-manifest-key"); expect(JSON.stringify(record)).not.toContain("blob:");
+});

@@ -1,0 +1,60 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.socialDraft.getGifFile",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Gateway-only private catalog GIF file copy. Authentication required. Never publishes files or exposes provider credentials. Resolves only the exact catalog id and requested rendition; no input URLs, redirects, or alternate-file fallback. Responses use Cache-Control: private, no-store. Limits: 104857600 bytes per file; poster 1000000 bytes.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "id",
+          "rendition"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Exact catalog GIF ID (ASCII letters, digits, underscore or hyphen); never a URL."
+          },
+          "rendition": {
+            "type": "string",
+            "enum": [
+              "gif",
+              "poster",
+              "mp4",
+              "webm"
+            ]
+          }
+        }
+      },
+      "output": {
+        "encoding": "*/*"
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Unauthorized"
+        },
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "Quota"
+        },
+        {
+          "name": "TooManyRequests"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        },
+        {
+          "name": "Unavailable"
+        }
+      ]
+    }
+  }
+}
