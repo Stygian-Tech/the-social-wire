@@ -144,10 +144,10 @@ export async function refreshPublicationSources(args: {
   args.signal.throwIfAborted();
   // Completion may commit articles after the last poll started. Flush this dirty
   // interval once, including partial ingestion on failure; the caller must not
-  // issue an additional unconditional feed refresh.
+  // issue an additional unconditional feed refresh. This authoritative flush
+  // supersedes any intermediate paint failure if it succeeds.
   if (!sourceFailure) args.onProgress(total, total);
   await args.onBatch();
   args.signal.throwIfAborted();
   if (sourceFailure) throw new Error("Some publications could not be checked. Articles received so far are available. Try Refresh again.", { cause: sourceFailure });
-  if (paintFailure) throw paintFailure;
 }

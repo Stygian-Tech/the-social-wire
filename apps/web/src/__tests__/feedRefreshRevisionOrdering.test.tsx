@@ -5,11 +5,11 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ReactNode } from "react";
 
 import * as Auth from "@/hooks/useAuth";
-import { ENTRIES_QUERY_KEY, useAggregateFeedEntries, type EntriesPage } from "@/hooks/useEntries";
+import { ENTRIES_QUERY_KEY, useEntries, useAggregateFeedEntries, type EntriesPage } from "@/hooks/useEntries";
 import * as AppView from "@/lib/thinAppViewClient";
 import * as Telemetry from "@/lib/clientPerformanceTelemetry";
 import { refreshPublicationFeedFirstPage } from "@/lib/feedRefresh";
-import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { advanceFeedRefreshRevision, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -124,4 +124,47 @@ it("guards the aggregate restored-cache write after cancelling the normal query"
   });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(data("manual"));
+});
+
+it("rejects a background Unread join when its hook owner unmounts before an abort-ignoring transport resolves", async () => {
+  client.setQueryData(queryKey, data("cached"), { updatedAt: Date.now() - 60_000 });
+  const { response, fetch, counts } = mockFeed();
+  const original = renderHook(() => useEntries(publicationKey, "unread"), { wrapper });
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  const ownerSignal = fetch.mock.calls[0][0].signal;
+  expect(ownerSignal?.aborted).toBe(false);
+  const cached = client.getQueryData<InfiniteData<EntriesPage>>(queryKey);
+  const revision = getFeedRefreshRevision(client, queryKey);
+  const background = refreshPublicationFeedFirstPage({
+    queryClient: client, publicationKey, viewerDid, oauthSession: oauth, articleFilter: "unread",
+  });
+  // Attach rejection handling immediately, before unmount cancels the owner.
+  const backgroundResult = background.catch(error => error);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(client.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toBe(cached);
+  original.unmount();
+  expect(ownerSignal?.aborted).toBe(true);
+
+  const replacementResponse = deferred<EntriesPage>();
+  fetch.mockImplementation(() => replacementResponse.promise);
+  const replacement = renderHook(() => useEntries(publicationKey, "unread"), { wrapper });
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  const replacementSignal = fetch.mock.calls[1][0].signal;
+  expect(replacementSignal).not.toBe(ownerSignal);
+  expect(replacementSignal?.aborted).toBe(false);
+  await act(async () => { replacementResponse.resolve(page("fresh-remount")); });
+  await waitFor(() => expect(client.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual(data("fresh-remount")));
+  await waitFor(() => expect(counts.mock.calls.length).toBeGreaterThan(0));
+  const freshCountRequests = counts.mock.calls.length;
+  // The old transport ignores abort and succeeds after the replacement, without
+  // a read/query revision advance to mask an unsafe background cache write.
+  await act(async () => { response.resolve(page("late-old-unread")); await response.promise; });
+  const error = await backgroundResult;
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(client.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual(data("fresh-remount"));
+  expect(counts).toHaveBeenCalledTimes(freshCountRequests);
+  expect(getFeedRefreshRevision(client, queryKey)).toBe(revision);
+  expect(error).toBe(ownerSignal?.reason);
+  expect(replacement.result.current.isError).toBe(false);
+  replacement.unmount();
 });

@@ -13,6 +13,7 @@ import {
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
+import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
 import { invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
 import { usePendingPDSReadState } from "@/hooks/usePendingPDSReadState";
 import { useAuth } from "@/hooks/useAuth";
@@ -145,6 +146,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
 
   const markEntryRead = useCallback(
     (entryId: string, options?: MarkEntryReadOptions) => {
+      if (viewerDid) void cancelViewerFeedRefreshes(queryClient, viewerDid);
       setReadMap((prev) => {
         if (prev[entryId]) return prev;
         const readAt = new Date().toISOString();
@@ -178,6 +180,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
 
   const markEntryUnread = useCallback(
     (entryId: string, options?: MarkEntryReadOptions) => {
+      if (viewerDid) void cancelViewerFeedRefreshes(queryClient, viewerDid);
       syncUnreadMarkToAppView(entryId);
       if (viewerDid) {
         queryClient.setQueriesData<InfiniteData<EntriesPage>>(
@@ -236,6 +239,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
   const markEntriesRead = useCallback(
     (entryIds: string[], options?: MarkEntriesReadOptions) => {
       if (entryIds.length === 0) return;
+      if (viewerDid) void cancelViewerFeedRefreshes(queryClient, viewerDid);
       const unique = [...new Set(entryIds)];
       let didMarkAny = false;
       setReadMap((prev) => {
@@ -277,6 +281,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
   const markEntriesUnread = useCallback(
     (entryIds: string[], options?: MarkEntriesReadOptions) => {
       if (entryIds.length === 0) return;
+      if (viewerDid) void cancelViewerFeedRefreshes(queryClient, viewerDid);
       const unique = [...new Set(entryIds)];
       const unreadIds = new Set(unique);
       for (const id of unique) syncUnreadMarkToAppView(id);

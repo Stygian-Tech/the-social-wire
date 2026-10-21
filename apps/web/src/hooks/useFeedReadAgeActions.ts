@@ -1,5 +1,6 @@
 "use client";
 
+import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
 import { pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useQueryClient, type InfiniteData, type QueryKey } from "@tanstack/react-query";
@@ -66,6 +67,7 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
 
   const markBefore = useCallback(async (before: string) => {
     const action = beginAction();
+    void cancelViewerFeedRefreshes(queryClient, action.viewerDid);
     const selectedCalendar = calendarSnapshot.current;
     const confirmation = pdsReadStateEnabled() && selectedCalendar?.context === context
       ? await markReadBefore(action.oauth, action.scope, before, selectedCalendar)
@@ -76,7 +78,7 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
       queryKey[1] === action.viewerDid;
 
     // A pre-mutation request must not overwrite the confirmed read flags.
-    await queryClient.cancelQueries({ predicate: isViewerFeedQuery });
+    await cancelViewerFeedRefreshes(queryClient, action.viewerDid);
     action.assertCurrent();
     const confirmedIds = new Set(confirmation.entryIds);
     if (confirmedIds.size > 0) {

@@ -2,22 +2,35 @@
  * Tests for useEntries and useEntry hooks (Thin AppView gateway path).
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { onlineManager, QueryClient, QueryClientProvider, useQuery, type InfiniteData } from "@tanstack/react-query";
 import React from "react";
-import { useEntries, useEntry, useAggregateFeedEntries } from "@/hooks/useEntries";
+import { useEntries, useEntry, useAggregateFeedEntries, type EntriesPage } from "@/hooks/useEntries";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
 import {
   MOCK_ENTRIES,
   MOCK_ENTRY_DETAIL,
 } from "../mocks/handlers/service";
 import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
+import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestation";
+
+import { ReadStateProvider, useReadState } from "@/contexts/ReadStateContext";
+import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
+import * as appviewClient from "@/lib/thinAppViewClient";
+import * as readStateRuntime from "@/lib/pdsReadStateRuntime";
+import { invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
+import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 
 const ORIG_ENV = { ...process.env };
 const ORIG_FETCH = globalThis.fetch;
 
 const mockFetchHandler = mock(async (url: string) => {
+  if (url.includes("/xrpc/app.thesocialwire.appview.listEntries")) {
+    expect(new URL(url).searchParams.get("authorDid")).toBe("did:plc:testuser");
+    expect(new URL(url).searchParams.get("limit")).toBe("1");
+    return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "viewer-receipt" } });
+  }
   if (url.includes("/xrpc/app.thesocialwire.appview.getFeed")) {
     return new Response(
       JSON.stringify({ entries: MOCK_ENTRIES, cursor: undefined }),
@@ -74,13 +87,17 @@ const mockOAuthSession = {
   },
 } as never;
 
+let activeOAuthSession = mockOAuthSession;
+let activeViewerDid = "did:plc:testuser";
+let activeReloadSeq = 0;
+
 mock.module("@/hooks/useAuth", () => ({
   useAuth: () => ({
-    session: { did: "did:plc:testuser" },
+    session: { did: activeViewerDid },
     isLoading: false,
-    oauthSessionReloadSeq: 0,
+    oauthSessionReloadSeq: activeReloadSeq,
     applyOAuthSession: () => {},
-    getOAuthSession: () => mockOAuthSession,
+    getOAuthSession: () => activeOAuthSession,
     getAuthFetch: () => null,
     reconcileOAuthSession: async () => false,
     signIn: async () => {},
@@ -339,4 +356,597 @@ describe("useEntry", () => {
     client.clear();
   });
 
+});
+
+
+describe("reader lifecycle refreshes", () => {
+  const viewer = "did:plc:testuser";
+  const publication = "did:plc:alice";
+  type Scope = "publication" | "subscribed" | "following" | "folder" | "list";
+  const scopeId = (scope: Scope) => scope === "folder" ? "at://did:plc:testuser/app.thesocialwire.folder/folder"
+    : scope === "list" ? "at://did:plc:testuser/site.standard.graph.list/list" : "";
+  type Filter = "all" | "unread";
+  let client: QueryClient;
+  let requests: (string | null)[];
+  let respond: (signal?: AbortSignal | null) => Promise<Response>;
+  const lifecycleRestores: (() => void)[] = [];
+  const row = (id: string) => ({ ...MOCK_ENTRIES[0], entryId: id, title: id, isRead: false });
+  const json = (entries: EntriesPage["entries"], cursor?: string) =>
+    new Response(JSON.stringify({ entries, cursor }), { headers: { "Content-Type": "application/json" } });
+  const keyFor = (scope: Scope, filter: Filter = "all", did = viewer) => scope === "publication"
+    ? ["entries", did, publication, filter]
+    : ["aggregateEntries", did, scope, scopeId(scope), filter];
+  const seed = (scope: Scope, filter: Filter = "all", did = viewer) => {
+    const data = {
+      pages: [{ entries: [row("cached-head")], cursor: "page-two" }, { entries: [row("cached-tail")], cursor: "page-three" }],
+      pageParams: [undefined, "page-two"],
+    };
+    client.setQueryData(keyFor(scope, filter, did), data, { updatedAt: Date.now() - 60_000 });
+    return data;
+  };
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  }
+  function ReadStateWrapper({ children }: { children: React.ReactNode }) {
+    return <Wrapper><ReadStateProvider>{children}</ReadStateProvider></Wrapper>;
+  }
+  function useFeed(scope: Scope, filter: Filter = "all") {
+    // Each test keeps the hook kind fixed; props only change the filter/account.
+    const publicationFeed = useEntries(scope === "publication" ? publication : null, filter);
+    const aggregateFeed = useAggregateFeedEntries(scope === "publication" ? null : { kind: scope, id: scopeId(scope) }, filter);
+    return scope === "publication" ? publicationFeed : aggregateFeed;
+  }
+  const ids = (data: InfiniteData<EntriesPage> | undefined) => data?.pages.flatMap(page => page.entries.map(entry => entry.entryId));
+  const settle = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)); }); };
+  const reconnect = async () => {
+    await act(async () => { onlineManager.setOnline(false); });
+    await act(async () => { onlineManager.setOnline(true); });
+  };
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_APP_ENV = "production";
+    process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "false";
+    process.env.NEXT_PUBLIC_USE_THIN_APPVIEW = "true";
+    activeViewerDid = viewer;
+    activeOAuthSession = mockOAuthSession;
+    activeReloadSeq = 0;
+    process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = "false";
+    window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 1 } } });
+    requests = [];
+    respond = async () => json([]);
+    onlineManager.setOnline(true);
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.pathname.endsWith("/app.thesocialwire.appview.getFeed")) {
+        requests.push(url.searchParams.get("cursor"));
+        return respond(init?.signal ?? (input instanceof Request ? input.signal : undefined));
+      }
+      return new Response("{}", { headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+  });
+  afterEach(() => {
+    cleanup();
+    lifecycleRestores.splice(0).reverse().forEach(restore => restore());
+    window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
+    client.clear();
+    onlineManager.setOnline(true);
+    activeViewerDid = viewer;
+    activeOAuthSession = mockOAuthSession;
+    activeReloadSeq = 0;
+    process.env = { ...ORIG_ENV };
+    globalThis.fetch = ORIG_FETCH;
+  });
+
+  for (const scope of ["publication", "subscribed", "following"] as const) {
+    for (const filter of ["all", "unread"] as const) {
+      for (const settlement of ["success", "failure"] as const) {
+        it(`${scope} cold same-DID OAuth replacement ignores late old ${settlement} (${filter})`, async () => {
+          let finishOld!: (page: EntriesPage) => void;
+          let failOld!: (error: Error) => void;
+          let finishNew!: (page: EntriesPage) => void;
+          // Mock at the client boundary so late transport settlement cannot hold
+          // the Gateway's serialized nonce lane after cancellation.
+          const feed = spyOn(appviewClient, "listAggregateFeedFromAppView")
+            .mockImplementationOnce(() => new Promise((resolve, reject) => {
+              finishOld = resolve;
+              failOld = reject;
+            }))
+            .mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve; }))
+            .mockResolvedValue({ entries: [row("replacement-tail")] });
+          lifecycleRestores.push(() => feed.mockRestore());
+          const { result, rerender } = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+          await waitFor(() => expect(feed).toHaveBeenCalledTimes(1));
+          const oldSignal = feed.mock.calls[0][0].signal;
+          expect(feed.mock.calls[0][0].oauthSession).toBe(mockOAuthSession);
+          expect(oldSignal).toBeDefined();
+          expect(oldSignal?.aborted).toBe(false);
+          expect(result.current.data).toBeUndefined();
+          expect<string>(result.current.status).toBe("pending");
+          expect<boolean>(result.current.isLoading).toBe(true);
+          expect(result.current.fetchStatus).toBe("fetching");
+
+          activeOAuthSession = { ...mockOAuthSession as object, did: viewer } as never;
+          activeReloadSeq += 1;
+          rerender();
+          await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+          expect(oldSignal?.aborted).toBe(true);
+          expect(feed.mock.calls[1][0].oauthSession).toBe(activeOAuthSession);
+          expect(feed.mock.calls[1][0].signal).toBeDefined();
+          expect(feed.mock.calls[1][0].signal?.aborted).toBe(false);
+          expect(result.current.data).toBeUndefined();
+          expect<string>(result.current.status).toBe("pending");
+          expect<boolean>(result.current.isLoading).toBe(true);
+          expect(result.current.fetchStatus).toBe("fetching");
+          expect(result.current.error).toBeNull();
+
+          await act(async () => {
+            finishNew({ entries: [row("replacement-head")], cursor: "replacement-next" });
+          });
+          await waitFor(() => expect(ids(result.current.data)).toEqual(["replacement-head"]));
+          await waitFor(() => expect(result.current.fetchStatus).toBe("idle"));
+          expect(result.current.status).toBe("success");
+          expect(result.current.isLoading).toBe(false);
+          expect(result.current.hasNextPage).toBe(true);
+          const completed = client.getQueryState(keyFor(scope, filter))!;
+          expect(completed.isInvalidated).toBe(false);
+          expect(completed.dataUpdatedAt).toBeGreaterThan(0);
+
+          await act(async () => {
+            if (settlement === "success") finishOld({ entries: [row("retired-session")], cursor: "retired-next" });
+            else failOld(new Error("Retired credentials failed"));
+          });
+          await settle();
+          const afterOld = client.getQueryState(keyFor(scope, filter))!;
+          expect(afterOld.data).toEqual(completed.data);
+          expect(afterOld.dataUpdatedAt).toBe(completed.dataUpdatedAt);
+          expect(afterOld.isInvalidated).toBe(false);
+          expect(afterOld.error).toBeNull();
+          expect(result.current.error).toBeNull();
+          expect(result.current.isError).toBe(false);
+          expect(result.current.status).toBe("success");
+          expect(result.current.fetchStatus).toBe("idle");
+          expect(feed).toHaveBeenCalledTimes(2);
+
+          await act(async () => { await result.current.fetchNextPage(); });
+          expect(feed).toHaveBeenCalledTimes(3);
+          expect(feed.mock.calls[2][0].oauthSession).toBe(activeOAuthSession);
+          expect(feed.mock.calls[2][0].cursor).toBe("replacement-next");
+          expect(feed.mock.calls[2][0].signal?.aborted).toBe(false);
+          await waitFor(() => expect(ids(result.current.data)).toEqual(["replacement-head", "replacement-tail"]));
+          expect(result.current.data?.pageParams).toEqual([undefined, "replacement-next"]);
+          expect(result.current.isError).toBe(false);
+        });
+      }
+    }
+  }
+
+  for (const change of ["account", "cancel"] as const) {
+    it(`Following cold loading preserves ${change} guards`, async () => {
+      let finishOld!: (page: EntriesPage) => void;
+      const feed = spyOn(appviewClient, "listAggregateFeedFromAppView")
+        .mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+        .mockResolvedValue({ entries: [row("current-owner")] });
+      lifecycleRestores.push(() => feed.mockRestore());
+      const { result, rerender } = renderHook(() => useFeed("following", "unread"), { wrapper: Wrapper });
+      await waitFor(() => expect(feed).toHaveBeenCalledTimes(1));
+      const oldSignal = feed.mock.calls[0][0].signal;
+      if (change === "account") {
+        activeViewerDid = "did:plc:other";
+        activeOAuthSession = { ...mockOAuthSession as object, did: activeViewerDid } as never;
+        activeReloadSeq += 1;
+        rerender();
+        await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(ids(result.current.data)).toEqual(["current-owner"]));
+        expect(feed.mock.calls[1][0].oauthSession).toBe(activeOAuthSession);
+        expect(feed.mock.calls[1][0].signal?.aborted).toBe(false);
+      } else {
+        await act(async () => { await client.cancelQueries({ queryKey: keyFor("following", "unread"), exact: true }); });
+        expect(result.current.data).toBeUndefined();
+        await waitFor(() => expect(result.current.fetchStatus).toBe("idle"));
+      }
+      expect(oldSignal?.aborted).toBe(true);
+      await act(async () => { finishOld({ entries: [row("retired-cold-request")] }); });
+      await settle();
+      expect(client.getQueryState(keyFor("following", "unread"))?.dataUpdatedAt).toBe(0);
+      if (change === "cancel") {
+        expect(feed).toHaveBeenCalledTimes(1); // cancellation alone cannot restart it
+        expect(result.current.data).toBeUndefined();
+        await act(async () => { await result.current.refetch(); });
+        await waitFor(() => expect(ids(result.current.data)).toEqual(["current-owner"]));
+      }
+      expect(feed).toHaveBeenCalledTimes(2);
+      expect(result.current.fetchStatus).toBe("idle");
+      expect(result.current.isError).toBe(false);
+    });
+  }
+
+  for (const scope of ["publication", "subscribed", "following", "folder", "list"] as const) {
+    for (const trigger of ["remount", "reconnect"] as const) {
+      for (const response of ["empty", "short", "throw"] as const) {
+        it(`${scope} ${trigger} keeps two cached pages after ${response} refresh and permits retry`, async () => {
+          seed(scope);
+          // Mount fresh once, then make it stale to test a real remount/reconnect.
+          client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)));
+          let hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+          await settle();
+          expect(requests).toEqual([]);
+          client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)), { updatedAt: Date.now() - 60_000 });
+          respond = async () => {
+            if (response === "throw") throw new Error("network unavailable");
+            return json(response === "empty" ? [] : [row("new-head")]);
+          };
+          if (trigger === "remount") {
+            hook.unmount();
+            hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+          } else await reconnect();
+          await waitFor(() => expect(requests).toHaveLength(1));
+          await waitFor(() => expect(hook.result.current.isFetching).toBe(false));
+          expect(ids(hook.result.current.data)).toEqual(response === "short" ? ["new-head", "cached-head", "cached-tail"] : ["cached-head", "cached-tail"]);
+          expect(hook.result.current.data?.pageParams).toEqual([undefined, "page-two"]);
+          expect(hook.result.current.isError).toBe(response === "throw");
+          await settle();
+          expect(requests).toEqual([null]);
+          if (response === "throw") {
+            respond = async () => json([row("recovered")]);
+            await act(async () => { await hook.result.current.refetch(); });
+            await waitFor(() => expect(hook.result.current.isError).toBe(false));
+            expect(ids(hook.result.current.data)).toEqual(["recovered", "cached-head", "cached-tail"]);
+          }
+          hook.unmount();
+        });
+      }
+    }
+
+    for (const settlement of ["before", "after"] as const) {
+      it(`${scope} remount starts fresh before aborted fetch settles ${settlement} replacement resolution`, async () => {
+        seed(scope);
+        // Hold the feed client response after real Query cancellation. The
+        // Gateway nonce lane itself serializes raw transport settlement.
+        const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementation(async ({ signal }) => {
+          requests.push(null);
+          return (await respond(signal)).json();
+        });
+        lifecycleRestores.push(() => feed.mockRestore());
+        let oldSignal: AbortSignal | null | undefined;
+        let newSignal: AbortSignal | null | undefined;
+        let failOld!: (error: Error) => void;
+        let finishNew!: (response: Response) => void;
+        respond = signal => {
+          if (requests.length === 1) {
+            oldSignal = signal;
+            return new Promise((_resolve, reject) => { failOld = reject; });
+          }
+          newSignal = signal;
+          return new Promise(resolve => { finishNew = resolve; });
+        };
+        const first = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        expect(oldSignal?.aborted).toBe(false);
+        first.unmount();
+        expect(oldSignal?.aborted).toBe(true);
+        // Leave the transport abort rejection pending until a new observer has
+        // mounted and begun a separate request.
+        const second = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(2));
+        expect(newSignal).not.toBe(oldSignal);
+        expect(newSignal?.aborted).toBe(false);
+        expect(ids(second.result.current.data)).toEqual(["cached-head", "cached-tail"]);
+        if (settlement === "before") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+          await settle();
+          expect(second.result.current.isFetching).toBe(true);
+        }
+        await act(async () => { finishNew(json([row("fresh-remount")])); });
+        await waitFor(() => expect(ids(second.result.current.data)).toEqual(["fresh-remount", "cached-head", "cached-tail"]));
+        if (settlement === "after") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+        }
+        await settle();
+        expect(second.result.current.isError).toBe(false);
+        expect(second.result.current.isFetching).toBe(false);
+        expect(newSignal?.aborted).toBe(false);
+        expect(requests).toEqual([null, null]);
+        expect(second.result.current.data?.pageParams).toEqual([undefined, "page-two"]);
+        second.unmount();
+      });
+    }
+
+    it(`${scope} keeps Unread authoritative on stale mount`, async () => {
+      seed(scope, "unread");
+      const { result, unmount } = renderHook(() => useFeed(scope, "unread"), { wrapper: Wrapper });
+      await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+      expect(ids(result.current.data)).toEqual([]);
+      expect(requests).toEqual([null]);
+      unmount();
+    });
+
+    for (const supersede of ["account", "generation", "cancel"] as const) {
+      it(`${scope} rejects a late mount refresh after ${supersede}`, async () => {
+        seed(scope);
+        let finish!: (response: Response) => void;
+        respond = () => new Promise(resolve => { finish = resolve; });
+        const { result, rerender, unmount } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        if (supersede === "account") {
+          activeViewerDid = "did:plc:other";
+          activeOAuthSession = { did: activeViewerDid } as never;
+          seed(scope, "all", activeViewerDid);
+          // Keep the new account's baseline fresh so only the old request resolves.
+          client.setQueryData(keyFor(scope, "all", activeViewerDid), client.getQueryData(keyFor(scope, "all", activeViewerDid)));
+          rerender();
+        } else if (supersede === "generation") {
+          advanceFeedRefreshRevision(client, keyFor(scope));
+        } else await act(async () => { await client.cancelQueries({ queryKey: keyFor(scope), exact: true }); });
+        await act(async () => { finish(json([row("late-stale")])); });
+        await settle();
+        expect(ids(result.current.data)).toEqual(["cached-head", "cached-tail"]);
+        expect(ids(client.getQueryData(keyFor(scope)))).toEqual(["cached-head", "cached-tail"]);
+        unmount();
+      });
+    }
+
+    for (const action of ["markEntryRead", "markEntryUnread", "markEntriesRead", "markEntriesUnread"] as const) {
+      it(`${scope} restarts a blocked cold initial load after ReadStateProvider ${action} without cancelling another viewer`, async () => {
+        if (action.endsWith("Unread")) {
+          window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify({ "action-entry": "2026-01-01T00:00:00.000Z" }));
+        }
+        let finishOld!: (response: Response) => void;
+        let finishReplacement!: (response: Response) => void;
+        respond = () => new Promise(resolve => {
+          if (requests.length === 1) finishOld = resolve;
+          else finishReplacement = resolve;
+        });
+        // Real fetch rejects on abort, releasing the Gateway's serialized request
+        // queue even if the server finishes producing the cancelled response later.
+        const fetchBeforeAbort = globalThis.fetch;
+        globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+          const response = fetchBeforeAbort(input, init);
+          if (!init?.signal) return response;
+          const signal = init.signal;
+          return new Promise<Response>((resolve, reject) => {
+            const abort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+            signal.addEventListener("abort", abort, { once: true });
+            if (signal.aborted) abort();
+            response.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+          });
+        }) as typeof fetch;
+        const otherViewer = "did:plc:other";
+        let finishOther!: (data: InfiniteData<EntriesPage>) => void;
+        const otherRequest = mock(() => new Promise<InfiniteData<EntriesPage>>(resolve => { finishOther = resolve; }));
+        const { result } = renderHook(() => ({
+          feed: useFeed(scope),
+          readState: useReadState(),
+          otherFeed: useQuery({ queryKey: keyFor(scope, "all", otherViewer), queryFn: otherRequest }),
+        }), { wrapper: ReadStateWrapper });
+        await waitFor(() => expect(requests).toEqual([null]));
+        await waitFor(() => expect(otherRequest).toHaveBeenCalledTimes(1));
+        expect(result.current.feed.data).toBeUndefined();
+        expect(result.current.feed.fetchStatus).toBe("fetching");
+        if (action.endsWith("Unread")) {
+          await waitFor(() => expect(result.current.readState.isEntryRead("action-entry")).toBe(true));
+        }
+        await act(async () => {
+          if (action === "markEntryRead" || action === "markEntryUnread") {
+            result.current.readState[action]("action-entry");
+          } else result.current.readState[action](["action-entry", "second-action-entry"]);
+        });
+        await waitFor(() => expect(result.current.readState.isEntryRead("action-entry")).toBe(!action.endsWith("Unread")));
+        await waitFor(() => expect(requests).toEqual([null, null]));
+        expect(result.current.feed.data).toBeUndefined();
+        expect(result.current.feed.fetchStatus).toBe("fetching");
+        expect(otherRequest).toHaveBeenCalledTimes(1);
+        expect(result.current.otherFeed.data).toBeUndefined();
+        expect(result.current.otherFeed.fetchStatus).toBe("fetching");
+
+        await act(async () => {
+          finishReplacement(json([row("replacement-content")]));
+          finishOther({ pages: [{ entries: [row("other-viewer-content")] }], pageParams: [undefined] });
+        });
+        await waitFor(() => expect(ids(result.current.feed.data)).toEqual(["replacement-content"]));
+        await waitFor(() => expect(result.current.feed.fetchStatus).toBe("idle"));
+        await waitFor(() => expect(ids(result.current.otherFeed.data)).toEqual(["other-viewer-content"]));
+        expect(result.current.feed.isSuccess).toBe(true);
+        const completed = client.getQueryState(keyFor(scope))!;
+        await act(async () => { finishOld(json([row("cancelled-initial-content")])); });
+        await settle();
+        expect(ids(result.current.feed.data)).toEqual(["replacement-content"]);
+        expect(client.getQueryState(keyFor(scope))?.dataUpdatedAt).toBe(completed.dataUpdatedAt);
+        expect(result.current.feed.fetchStatus).toBe("idle");
+        expect(result.current.feed.isError).toBe(false);
+        expect(ids(result.current.otherFeed.data)).toEqual(["other-viewer-content"]);
+        expect(otherRequest).toHaveBeenCalledTimes(1);
+        expect(requests).toEqual([null, null]);
+      });
+
+      it(`${scope} rejects a blocked lifecycle response after ReadStateProvider ${action}`, async () => {
+        seed(scope);
+        // Unread actions undo persisted read intent instead of exercising a no-op.
+        if (action.endsWith("Unread")) {
+          window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify({ "cached-head": "2026-01-01T00:00:00.000Z" }));
+        }
+        let finish!: (response: Response) => void;
+        respond = () => new Promise(resolve => { finish = resolve; });
+        const { result } = renderHook(() => ({ feed: useFeed(scope), readState: useReadState() }), { wrapper: ReadStateWrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        if (action.endsWith("Unread")) {
+          await waitFor(() => expect(result.current.readState.isEntryRead("cached-head")).toBe(true));
+        }
+        await act(async () => {
+          if (action === "markEntryRead" || action === "markEntryUnread") {
+            result.current.readState[action]("cached-head");
+          } else result.current.readState[action](["cached-head", "cached-tail"]);
+        });
+        await waitFor(() => expect(result.current.readState.isEntryRead("cached-head")).toBe(!action.endsWith("Unread")));
+        await act(async () => {
+          await client.invalidateQueries({ queryKey: keyFor(scope), exact: true, refetchType: "none" });
+        });
+        const afterAction = client.getQueryState(keyFor(scope))!;
+        expect(afterAction.isInvalidated).toBe(true);
+        await act(async () => { finish(json([row("stale-before-read-action")])); });
+        await settle();
+        const afterResponse = client.getQueryState(keyFor(scope))!;
+        expect(afterResponse.data).toEqual(afterAction.data);
+        expect(afterResponse.dataUpdatedAt).toBe(afterAction.dataUpdatedAt);
+        expect(afterResponse.isInvalidated).toBe(true);
+        expect(ids(result.current.feed.data)).toEqual(["cached-head", "cached-tail"]);
+        expect(requests).toEqual([null]);
+      });
+    }
+
+    for (const filter of ["all", "unread"] as const) {
+      it(`${scope} confirmation replaces retired lifecycle options before an observer rerender (${filter})`, async () => {
+        seed(scope, filter);
+        client.setQueryData(keyFor(scope, filter), client.getQueryData(keyFor(scope, filter)));
+        let finishOld!: (page: EntriesPage) => void;
+        const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementationOnce(
+          () => new Promise(resolve => { finishOld = resolve; }),
+        ).mockResolvedValue({ entries: [row("confirmed-fresh")] });
+        lifecycleRestores.push(() => feed.mockRestore());
+        const { result } = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+        expect(feed).not.toHaveBeenCalled();
+        // This is the confirmation path's real cancellation/revision/invalidation
+        // sequence, without an intervening observer render to restore its options.
+        await act(async () => {
+          const refreshing = result.current.refetch();
+          expect(feed).toHaveBeenCalledTimes(1);
+          const confirming = invalidateConfirmedReadStateQueries(client, viewer);
+          await Promise.all([refreshing, confirming]);
+        });
+        expect(feed).toHaveBeenCalledTimes(2);
+        await waitFor(() => expect(ids(result.current.data)).toEqual(filter === "all"
+          ? ["confirmed-fresh", "cached-head", "cached-tail"] : ["confirmed-fresh"]));
+        expect(client.getQueryState(keyFor(scope, filter))?.isInvalidated).toBe(false);
+        expect(result.current.fetchStatus).toBe("idle");
+        await act(async () => { finishOld({ entries: [row("retired-before-confirmation")] }); });
+        await settle();
+        expect(ids(result.current.data)).not.toContain("retired-before-confirmation");
+      });
+
+      it(`${scope} starts a same-DID OAuth successor and rejects the old lifecycle response (${filter})`, async () => {
+        seed(scope, filter);
+        let finishOld!: (page: EntriesPage) => void;
+        let finishNew!: (page: EntriesPage) => void;
+        const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementationOnce(
+          () => new Promise(resolve => { finishOld = resolve; }),
+        ).mockImplementation(() => new Promise(resolve => { finishNew = resolve; }));
+        lifecycleRestores.push(() => feed.mockRestore());
+        const { result, rerender } = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+        await waitFor(() => expect(feed).toHaveBeenCalledTimes(1));
+        const oldSignal = feed.mock.calls[0][0].signal;
+        activeOAuthSession = { ...mockOAuthSession as object, did: viewer } as never;
+        rerender();
+        await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+        expect(oldSignal?.aborted).toBe(true);
+        expect(feed.mock.calls[1][0].oauthSession).toBe(activeOAuthSession);
+        expect(feed.mock.calls[1][0].signal?.aborted).toBe(false);
+        await act(async () => { finishNew({ entries: [row("new-session")] }); });
+        await waitFor(() => expect(ids(result.current.data)).toEqual(filter === "all"
+          ? ["new-session", "cached-head", "cached-tail"] : ["new-session"]));
+        const completedAt = client.getQueryState(keyFor(scope, filter))?.dataUpdatedAt;
+        await act(async () => { finishOld({ entries: [row("retired-session")] }); });
+        await settle();
+        expect(ids(result.current.data)).not.toContain("retired-session");
+        expect(client.getQueryState(keyFor(scope, filter))?.dataUpdatedAt).toBe(completedAt);
+        expect(client.getQueryState(keyFor(scope, filter))?.isInvalidated).toBe(false);
+        expect(result.current.isError).toBe(false);
+        expect(result.current.fetchStatus).toBe("idle");
+      });
+    }
+
+    it(`${scope} applies fresh data through the real ReadStateProvider confirmation event`, async () => {
+      seed(scope, "unread");
+      client.setQueryData(keyFor(scope, "unread"), client.getQueryData(keyFor(scope, "unread")));
+      let finishOld!: (page: EntriesPage) => void;
+      const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementationOnce(
+        () => new Promise(resolve => { finishOld = resolve; }),
+      ).mockResolvedValue({ entries: [row("provider-confirmed")] });
+      const runtime = spyOn(readStateRuntime, "loadPDSReadStateSync").mockResolvedValue({
+        snapshot: async () => ({ viewerDid: viewer, entries: [{ attempts: 0, retryAt: 0,
+          intent: { actionId: "other-pending", state: "unread", actedAt: "2026-01-01T00:00:00Z", selection: "exact", subjectUris: ["other"] },
+        }] }),
+      } as never);
+      lifecycleRestores.push(() => feed.mockRestore(), () => runtime.mockRestore());
+      const { result } = renderHook(() => ({ feed: useFeed(scope, "unread"), state: useReadState() }), { wrapper: ReadStateWrapper });
+      await act(async () => {}); // finish provider hydration before the race
+      await act(async () => {
+        const refreshing = result.current.feed.refetch();
+        expect(feed).toHaveBeenCalledTimes(1);
+        window.dispatchEvent(new window.CustomEvent(readStateRuntime.PDS_READ_STATE_SYNC_EVENT, {
+          detail: { viewerDid: viewer, kind: "confirmed" },
+        }));
+        await refreshing;
+      });
+      await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(ids(result.current.feed.data)).toEqual(["provider-confirmed"]));
+      expect(client.getQueryState(keyFor(scope, "unread"))?.isInvalidated).toBe(false);
+      const updatedAt = client.getQueryState(keyFor(scope, "unread"))?.dataUpdatedAt;
+      await act(async () => { finishOld({ entries: [row("pre-confirmation")] }); });
+      await settle();
+      expect(ids(result.current.feed.data)).toEqual(["provider-confirmed"]);
+      expect(client.getQueryState(keyFor(scope, "unread"))?.dataUpdatedAt).toBe(updatedAt);
+      expect(result.current.feed.fetchStatus).toBe("idle");
+    });
+
+    it(`${scope} preserves a recreated query when its removed query's lifecycle response arrives`, async () => {
+      seed(scope);
+      let finish!: (response: Response) => void;
+      respond = () => new Promise(resolve => { finish = resolve; });
+      const oldHook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      await waitFor(() => expect(requests).toHaveLength(1));
+      const removed = client.getQueryCache().find({ queryKey: keyFor(scope), exact: true });
+      await act(async () => {
+        client.removeQueries({ queryKey: keyFor(scope), exact: true });
+        client.setQueryData(keyFor(scope), { pages: [{ entries: [row("recreated")], cursor: "new-cursor" }], pageParams: [undefined] });
+        await client.invalidateQueries({ queryKey: keyFor(scope), exact: true, refetchType: "none" });
+      });
+      const recreated = client.getQueryCache().find({ queryKey: keyFor(scope), exact: true })!;
+      expect(recreated).not.toBe(removed);
+      const before = recreated.state;
+      await act(async () => { finish(json([row("removed-query-response")])); });
+      await settle();
+      expect(ids(client.getQueryData(keyFor(scope)))).toEqual(["recreated"]);
+      expect(recreated.state.dataUpdatedAt).toBe(before.dataUpdatedAt);
+      expect(recreated.state.isInvalidated).toBe(true);
+      oldHook.unmount();
+    });
+
+    it(`${scope} runs active invalidation after a lifecycle refresh`, async () => {
+      seed(scope);
+      respond = async () => json([row("lifecycle-head")]);
+      const { result } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["lifecycle-head", "cached-head", "cached-tail"]));
+      await waitFor(() => expect(result.current.isFetching).toBe(false));
+      respond = async () => requests.at(-1) === "authoritative-next"
+        ? json([row("authoritative-tail")])
+        : json([row("authoritative-head")], "authoritative-next");
+      await act(async () => { await client.invalidateQueries({ queryKey: keyFor(scope), exact: true }); });
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["authoritative-head", "authoritative-tail"]));
+      expect(requests).toEqual([null, null, "authoritative-next"]);
+      expect(client.getQueryState(keyFor(scope))?.isInvalidated).toBe(false);
+    });
+
+    it(`${scope} paginates from the retained tail cursor after a lifecycle refresh`, async () => {
+      seed(scope);
+      respond = async () => json([row("lifecycle-head")], "fresh-head-cursor");
+      const { result } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["lifecycle-head", "cached-head", "cached-tail"]));
+      await waitFor(() => expect(result.current.isFetching).toBe(false));
+      respond = async () => json([row("next-tail")]);
+      await act(async () => { await result.current.fetchNextPage(); });
+      expect(requests).toEqual([null, "page-three"]);
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["lifecycle-head", "cached-head", "cached-tail", "next-tail"]));
+      expect(result.current.data?.pageParams).toEqual([undefined, "page-two", "page-three"]);
+    });
+
+    it(`${scope} preserves initial fetching and cursor pagination`, async () => {
+      respond = async () => json([row(requests.length === 1 ? "initial" : "next")], requests.length === 1 ? "next-page" : undefined);
+      const { result, unmount } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["initial"]));
+      await act(async () => { await result.current.fetchNextPage(); });
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["initial", "next"]));
+      expect(requests).toEqual([null, "next-page"]);
+      unmount();
+    });
+  }
 });

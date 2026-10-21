@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
 import type { OutboxState } from "@thesocialwire/read-state";
 
 /** Local outbox order preserves user intent until its complete manifest is confirmed. */
@@ -21,6 +22,7 @@ export function effectiveEntryReadState(entryId: string, serverIsRead: boolean |
 
 /** Inactive unread feeds opt out of mount refetch and must not survive confirmation. */
 export async function invalidateConfirmedReadStateQueries(queryClient: QueryClient, viewerDid: string): Promise<void> {
+  await cancelViewerFeedRefreshes(queryClient, viewerDid);
   const viewerFeed = ({ queryKey }: { queryKey: readonly unknown[] }) => queryKey[1] === viewerDid
     && ["entries", "aggregateEntries"].includes(String(queryKey[0]));
   queryClient.removeQueries({ type: "inactive", predicate: query => viewerFeed(query) && query.queryKey.at(-1) === "unread" });

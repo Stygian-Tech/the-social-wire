@@ -5,6 +5,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { EntriesPage } from "@/hooks/useEntries";
 import * as appView from "@/lib/thinAppViewClient";
 import { refreshReaderFeeds } from "@/lib/refreshReaderFeeds";
+import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
 
 const viewerDid = "did:plc:viewer";
 const oauthSession = { did: viewerDid } as unknown as OAuthSession;
@@ -109,6 +110,66 @@ describe("refreshReaderFeeds", () => {
     fetchPage.mockImplementation(async ({ feed }) => feed.id === "navigated" ? page("navigated-cached") : page("new", "original-cached"));
     await refreshReaderFeeds({ queryClient: client, viewerDid, oauthSession, onNewArticleIds: ids => reported.push([...ids]) });
     expect(reported).toEqual([["new"], []]);
+  });
+
+  for (const key of [publication("pub"), aggregate("folder", "folder-id")]) {
+    for (const filter of ["all", "unread"] as const) {
+      it(`rejects retired ${key[0]} ${filter} responses without reporting stale IDs`, async () => {
+        const queryKey = [...key.slice(0, -1), filter];
+        seed(queryKey, [page("old"), page("history")]);
+        activate(queryKey);
+        const started = deferred<void>(), response = deferred<EntriesPage>();
+        fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+        const reported: string[][] = [];
+        const pending = refreshReaderFeeds({ queryClient: client, viewerDid, oauthSession, onNewArticleIds: ids => reported.push([...ids]) });
+        await started.promise;
+        await cancelViewerFeedRefreshes(client, viewerDid);
+        client.setQueryData<InfiniteData<EntriesPage>>(queryKey, current => ({ ...current!, pages: current!.pages.map(page => ({ ...page, entries: page.entries.map(item => ({ ...item, isRead: false })) })) }));
+        await client.invalidateQueries({ queryKey, exact: true, refetchType: "none" });
+        const before = client.getQueryState(queryKey)!;
+        response.resolve({ entries: [{ ...entry("old"), isRead: true }, entry("stale-new")] });
+        expect(await pending).toEqual({ newArticleCount: 0 });
+        const after = client.getQueryState(queryKey)!;
+        expect(after.data).toBe(before.data);
+        expect(after.dataUpdatedAt).toBe(before.dataUpdatedAt);
+        expect(after.isInvalidated).toBe(true);
+        expect(reported).toEqual([[]]);
+      });
+    }
+  }
+
+  it("captures each queued request's revision when that read starts", async () => {
+    for (let index = 0; index < 4; index++) { const key = publication(`pub-${index}`); seed(key); activate(key); }
+    const started = deferred<void>(), release = deferred<void>();
+    let count = 0;
+    fetchPage.mockImplementation(async ({ feed }) => {
+      if (++count === 3) started.resolve();
+      if (feed.id !== "pub-3") await release.promise;
+      return page(feed.id === "pub-3" ? "current-new" : "stale-new");
+    });
+    const pending = refresh();
+    await started.promise;
+    await cancelViewerFeedRefreshes(client, viewerDid);
+    release.resolve();
+    expect(await pending).toEqual({ newArticleCount: 1 });
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(publication("pub-0"))?.pages[0]).toEqual(page("old"));
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(publication("pub-3"))?.pages[0].entries[0].entryId).toBe("current-new");
+  });
+
+  it("rejects a response owned by a removed and recreated exact query", async () => {
+    const key = publication("pub");
+    seed(key); activate(key);
+    const started = deferred<void>(), response = deferred<EntriesPage>();
+    fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+    const pending = refresh();
+    await started.promise;
+    client.removeQueries({ queryKey: key, exact: true });
+    seed(key, [page("replacement")]);
+    const before = client.getQueryState(key)!;
+    response.resolve(page("stale-new"));
+    expect(await pending).toEqual({ newArticleCount: 0 });
+    expect(client.getQueryState(key)?.data).toBe(before.data);
+    expect(client.getQueryState(key)?.dataUpdatedAt).toBe(before.dataUpdatedAt);
   });
 
   it("marks inactive feeds stale without issuing reads and allows their next mount to refetch", async () => {

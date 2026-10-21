@@ -22,6 +22,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 import { queueBootstrapFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 import { consumeBootstrapStream } from "@/lib/bootstrapStreamClient";
+import { captureFeedRefreshRevisions, getViewerReadStateRevision } from "@/lib/feedRefreshCoordinator";
 import {
   markBootstrapPerf,
   resetBootstrapPerf,
@@ -201,6 +202,8 @@ function PublicationSidebarProviderInner({
       }
 
       const generation = ++streamGenerationRef.current;
+      const feedRevisions = captureFeedRefreshRevisions(qc);
+      const readStateRevision = getViewerReadStateRevision(qc, did);
       streamSawSidebarSectionRef.current = false;
       pendingAutoSelectPublicationIdRef.current = null;
       bootstrapFeedPublicationIdRef.current = null;
@@ -264,7 +267,7 @@ function PublicationSidebarProviderInner({
                   event.payload.publicationId;
               }
               if (event.kind === "entriesPage" && !options.force) {
-                writeStreamedEntriesPage(qc, did, event.payload);
+                writeStreamedEntriesPage(qc, did, event.payload, "all", feedRevisions, readStateRevision);
                 bootstrapFeedPublicationIdRef.current =
                   event.payload.publicationId;
                 if (
@@ -503,14 +506,18 @@ function PublicationSidebarProviderInner({
             await updateArticles();
           },
         });
-        // Observe errors immediately while the POST is pending. Only the
-        // authoritative source set can decide whether a seed failure is relevant.
-        const seed = seedRows ? checkSources(seedRows).then(
-          () => ({ error: undefined as unknown }), error => ({ error })
-        ) : undefined;
+        let seed: Promise<{ error: unknown }> | undefined;
         try {
           const sidebarSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
-          const response = await awaitWithAbort(refreshPublicationSidebar(oauth, sidebarSignal), sidebarSignal);
+          // Queue authority first: seed enrollment shares the Gateway nonce lane
+          // and can otherwise consume the POST's deadline before it starts.
+          const sidebarRequest = awaitWithAbort(refreshPublicationSidebar(oauth, sidebarSignal), sidebarSignal);
+          // Observe errors immediately while the POST is pending. Only the
+          // authoritative source set can decide whether a seed failure is relevant.
+          seed = seedRows ? checkSources(seedRows).then(
+            () => ({ error: undefined as unknown }), error => ({ error })
+          ) : undefined;
+          const response = await sidebarRequest;
           signal.throwIfAborted();
           if (response.viewerDid !== did) throw new Error("Publication details are unavailable. Try Refresh again.");
           // The POST returns the complete authoritative sidebar. Supersede any

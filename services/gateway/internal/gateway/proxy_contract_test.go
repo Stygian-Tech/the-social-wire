@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"github.com/stygian-tech/the-social-wire/packages/go/gatewaycore"
 	"net/http"
 	"net/http/httptest"
@@ -69,6 +70,45 @@ func TestProxyMutationBodyBounds(t *testing.T) {
 		if w.Code != 413 {
 			t.Fatal(tc.service, w.Code)
 		}
+	}
+}
+
+func TestEnrollmentBatchBudgetAndCallerCancellation(t *testing.T) {
+	for _, path := range []string{"/xrpc/app.thesocialwire.appview.enrollSources", "/v1/appview/enroll"} {
+		t.Run(path, func(t *testing.T) {
+			started := make(chan struct{})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			client := &http.Client{Transport: contractTransport(func(r *http.Request) (*http.Response, error) {
+				deadline, ok := r.Context().Deadline()
+				remaining := time.Until(deadline)
+				if !ok || remaining > 5*time.Minute || remaining < 5*time.Minute-time.Second {
+					t.Errorf("enrollment lost ingestion/counter budget: %v", remaining)
+				}
+				close(started)
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			})}
+			p := Proxy{Config: Config{AppViewURL: "http://appview.invalid"}, Internal: client}
+			r := httptest.NewRequest("POST", "https://gateway.invalid"+path, strings.NewReader(`{}`))
+			r = r.WithContext(gatewaycore.ContextWithAuth(ctx, gatewaycore.AuthContext{DID: "did:plc:viewer"}))
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				p.Handler(Route{Target: path, UpstreamMethod: "POST", Service: "appview"}).ServeHTTP(httptest.NewRecorder(), r)
+			}()
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("enrollment not started")
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("caller cancellation did not stop enrollment")
+			}
+		})
 	}
 }
 
