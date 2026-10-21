@@ -8,6 +8,7 @@ import {
   applyUnreadCountsEvent,
   writeStreamedEntriesPage,
 } from "@/lib/bootstrapStreamState";
+import { invalidateReadFeedRefreshes, readFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 
@@ -105,21 +106,19 @@ describe("writeStreamedEntriesPage", () => {
     });
   }
 
-  it("replaces cached rows with an authoritative live empty page", () => {
+  it("preserves All history when a live empty first page arrives", () => {
     const qc = new QueryClient();
     qc.setQueryData(queryKey, cached, { updatedAt: 1 });
     const receivedAt = Date.now();
     writeStreamedEntriesPage(qc, "did:plc:viewer", {
       publicationId, entries: [], source: "live_projection",
     });
-    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
-      pages: [{ entries: [], cursor: undefined }], pageParams: [undefined],
-    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual(cached);
     expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBeGreaterThanOrEqual(receivedAt);
     qc.clear();
   });
 
-  it("replaces with a valid cached empty page using its original timestamp", () => {
+  it("merges a newer cached empty All page using its original timestamp", () => {
     const qc = new QueryClient();
     qc.setQueryData(queryKey, cached, { updatedAt: 1 });
     const cachedAt = "2026-01-02T00:00:00Z";
@@ -127,10 +126,129 @@ describe("writeStreamedEntriesPage", () => {
       publicationId, entries: [], source: "projection_cache", cachedAt,
       expiresAt: "2026-01-03T00:00:00Z",
     });
-    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
-      pages: [{ entries: [], cursor: undefined }], pageParams: [undefined],
-    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual(cached);
     expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(Date.parse(cachedAt));
+    qc.clear();
+  });
+
+  const existingUpdatedAt = Date.parse("2026-01-02T00:00:00Z");
+  const freshCachedAt = "2026-01-03T00:00:00Z";
+  const fresh = { ...cached.pages[1].entries[0], title: "Updated Two" };
+
+  for (const filter of ["all", "unread"] as const) {
+    for (const entries of [[], [fresh]]) {
+      for (const cachedAt of ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", undefined, "invalid"]) {
+        it(`rejects stale/invalid cached ${filter} pages (${entries.length} rows, ${cachedAt})`, () => {
+          const qc = new QueryClient();
+          const key = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), filter];
+          qc.setQueryData(key, cached, { updatedAt: existingUpdatedAt });
+          const before = qc.getQueryData<InfiniteData<EntriesPage>>(key);
+          writeStreamedEntriesPage(qc, "did:plc:viewer", {
+            publicationId: encodeURIComponent(publicationId), entries, source: "projection_cache", cachedAt,
+          }, filter);
+          expect(qc.getQueryData<InfiniteData<EntriesPage>>(key)).toBe(before);
+          expect(qc.getQueryState(key)?.dataUpdatedAt).toBe(existingUpdatedAt);
+          expect(qc.getQueryCache().getAll()).toHaveLength(1);
+          qc.clear();
+        });
+      }
+    }
+  }
+
+  for (const source of ["live_projection", "projection_cache"] as const) {
+    it(`merges accepted ${source} All rows retaining tail cursors and page params`, () => {
+      const qc = new QueryClient();
+      qc.setQueryData(queryKey, {
+        pages: [cached.pages[0], { ...cached.pages[1], cursor: "tail-cursor" }],
+        pageParams: ["first-param", "next"],
+      }, { updatedAt: existingUpdatedAt });
+      const receivedAt = Date.now();
+      writeStreamedEntriesPage(qc, "did:plc:viewer", {
+        publicationId, entries: [fresh, fresh], cursor: "fresh-cursor", source, cachedAt: freshCachedAt,
+      });
+      expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
+        pages: [
+          { entries: [fresh, ...cached.pages[0].entries], cursor: "fresh-cursor" },
+          { entries: [], cursor: "tail-cursor" },
+        ],
+        pageParams: ["first-param", "next"],
+      });
+      if (source === "projection_cache") {
+        expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(Date.parse(freshCachedAt));
+      } else {
+        expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBeGreaterThanOrEqual(receivedAt);
+      }
+      qc.clear();
+    });
+
+    for (const entries of [[], [fresh]]) {
+      it(`keeps accepted ${source} Unread authoritative (${entries.length} rows)`, () => {
+        const qc = new QueryClient();
+        const key = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), "unread"];
+        qc.setQueryData(key, cached, { updatedAt: existingUpdatedAt });
+        writeStreamedEntriesPage(qc, "did:plc:viewer", {
+          publicationId, entries, source, cachedAt: freshCachedAt, cursor: "unread-next",
+        }, "unread");
+        expect(qc.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual({
+          pages: [{ entries, cursor: "unread-next" }], pageParams: [undefined],
+        });
+        qc.clear();
+      });
+    }
+
+    for (const filter of ["all", "unread"] as const) {
+      it(`rejects ${source} ${filter} writes after a read mutation without advancing freshness`, () => {
+        const qc = new QueryClient();
+        const key = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), filter];
+        qc.setQueryData(key, cached, { updatedAt: existingUpdatedAt });
+        const before = qc.getQueryData<InfiniteData<EntriesPage>>(key);
+        const session = {};
+        const snapshot = { session, revision: readFeedRefreshRevision(qc, session) };
+        invalidateReadFeedRefreshes(qc, session);
+        writeStreamedEntriesPage(qc, "did:plc:viewer", {
+          publicationId, entries: [], source, cachedAt: freshCachedAt,
+        }, filter, snapshot);
+        expect(qc.getQueryData<InfiniteData<EntriesPage>>(key)).toBe(before);
+        expect(qc.getQueryState(key)?.dataUpdatedAt).toBe(existingUpdatedAt);
+        qc.clear();
+      });
+    }
+  }
+
+  for (const entries of [[], [{ entryId: "stream", title: "Stream", publishedAt: "2026-01-01" }]]) {
+    it(`retains a newer completed fetch's All history when live bootstrap arrives (${entries.length} rows)`, async () => {
+      const qc = new QueryClient();
+      const receivedAt = Date.now();
+      await qc.fetchInfiniteQuery({
+        queryKey, initialPageParam: undefined as string | undefined,
+        queryFn: ({ pageParam }) => Promise.resolve(pageParam ? cached.pages[1] : cached.pages[0]),
+        getNextPageParam: (page) => page.cursor,
+        pages: 2,
+      });
+      expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBeGreaterThanOrEqual(receivedAt);
+      writeStreamedEntriesPage(qc, "did:plc:viewer", {
+        publicationId, entries, source: "live_projection",
+      });
+      expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
+        pages: [{ ...cached.pages[0], entries: [...entries, ...cached.pages[0].entries] }, cached.pages[1]],
+        pageParams: cached.pageParams,
+      });
+      qc.clear();
+    });
+  }
+
+  it("seeds only the target account on a cache miss with projection freshness", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKey, cached, { updatedAt: Date.parse(freshCachedAt) });
+    const before = qc.getQueryData<InfiniteData<EntriesPage>>(queryKey);
+    const otherKey = [...ENTRIES_QUERY_KEY("did:plc:other", publicationId), "all"];
+    writeStreamedEntriesPage(qc, "did:plc:other", {
+      publicationId, entries: [], cursor: "next", source: "projection_cache", cachedAt: "2026-01-02T00:00:00Z",
+    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toBe(before);
+    expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(Date.parse(freshCachedAt));
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(otherKey)).toEqual({ pages: [{ entries: [], cursor: "next" }], pageParams: [undefined] });
+    expect(qc.getQueryState(otherKey)?.dataUpdatedAt).toBe(existingUpdatedAt);
     qc.clear();
   });
 

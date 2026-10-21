@@ -21,7 +21,7 @@ afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear())
 function fixture() {
   const client = new QueryClient(); clients.push(client);
   const session = {};
-  client.setQueryData(key, { pages: [{ entries: [{ ...entry, isRead: false }] }], pageParams: [undefined] });
+  client.setQueryData(key, { pages: [{ entries: [{ ...entry, isRead: false }] }], pageParams: [undefined] }, { updatedAt: Date.parse("2026-10-16T06:00:00Z") });
   const isRead = () => client.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries[0]?.isRead;
   return { client, session, isRead };
 }
@@ -37,7 +37,7 @@ it("rejects a bootstrap begun before unread, even after its acknowledgement reti
   expect(isRead()).toBe(false);
 });
 
-it("accepts a new stream after acknowledgement even when its content cache predates the mutation", () => {
+it("rejects older cached content after acknowledgement but accepts a current live stream", () => {
   const { client, session, isRead } = fixture();
   invalidateReadFeedRefreshes(client, session);
   invalidateReadFeedRefreshes(client, session);
@@ -46,7 +46,8 @@ it("accepts a new stream after acknowledgement even when its content cache preda
   writeStreamedEntriesPage(client, viewer, {
     publicationId, entries: [entry], source: "projection_cache", cachedAt: "2026-10-16T05:59:59Z",
   }, "all", snapshot);
-  expect(isRead()).toBeUndefined();
+  expect(isRead()).toBe(false);
+  expect(client.getQueryState(key)?.dataUpdatedAt).toBe(Date.parse("2026-10-16T06:00:00Z"));
   // Future read-state-bearing payloads can still update authoritative flags.
   writeStreamedEntriesPage(client, viewer, {
     publicationId, entries: [{ ...entry, isRead: true }], source: "live_projection",
@@ -59,7 +60,7 @@ it("does not retire another OAuth session's stream revision", () => {
   invalidateReadFeedRefreshes(client, session);
   const otherSession = {};
   writeStreamedEntriesPage(client, viewer, {
-    publicationId, entries: [{ ...entry, isRead: true }], source: "projection_cache", cachedAt: "2026-10-16T05:59:59Z",
+    publicationId, entries: [{ ...entry, isRead: true }], source: "projection_cache", cachedAt: "2026-10-16T06:00:01Z",
   }, "all", { session: otherSession, revision: 0 });
   expect(isRead()).toBe(true);
 });
