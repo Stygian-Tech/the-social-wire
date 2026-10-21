@@ -1,3 +1,4 @@
+import { buildDocumentRecord, buildNativeDocumentWrapper } from "@stygian/anypub-kit/records";
 import { AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichText } from "@atproto/api";
 import { TID } from "@atproto/common-web";
 import { cidForLex } from "@atproto/lex-cbor";
@@ -121,9 +122,8 @@ export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent,
     let previous: ArticleRecord = {};
     if (current.articleRef) { const { data } = await agent.com.atproto.repo.getRecord({ repo: session.did, collection: DOCUMENT, rkey: docKey }, { signal }); if (data.cid !== current.articleRef.cid) throw new Error("The article changed outside this event. Refresh and reconcile it before publishing."); previous = data.value as ArticleRecord; if (previous.site !== current.publicationUri) throw new Error("The article publication changed."); }
     const path = previous.path ?? (host === "offprint" ? `/a/${docKey}-live` : `/live-${docKey}`);
-    const record: ArticleRecord = { ...previous, $type: DOCUMENT, site: publication.uri, title: current.title, path, publishedAt: previous.publishedAt ?? operation.createdAt, updatedAt: operation.createdAt, tags: current.tags, content: appendLiveArticleContent(host, previous.content as ArticleRecord | undefined, operation.createdAt, text.trim()), textContent: [previous.textContent, operation.createdAt, text.trim()].filter(Boolean).join("\n\n") };
+    const record = await buildDocumentRecord({ site: publication.uri, title: current.title, path: path as string, publishedAt: (previous.publishedAt as string | undefined) ?? operation.createdAt, updatedAt: operation.createdAt, tags: current.tags, content: await appendLiveArticleContent(host, previous.content as ArticleRecord | undefined, operation.createdAt, text.trim(), { signal }), textContent: [previous.textContent, operation.createdAt, text.trim()].filter(Boolean).join("\n\n"), ...(host === "pckt" && !previous.langs ? { langs: ["en"] } : {}) }, previous, { signal });
     if (new TextEncoder().encode(JSON.stringify(record)).length > 900_000) throw new Error("The live article has reached its safe record size limit.");
-    if (host === "pckt" && !record.langs) record.langs = ["en"];
     entry.articleRef = await reference(session.did, DOCUMENT, docKey, record); next.articleRef = entry.articleRef; next.articleUrl = `${publication.url}${path}`;
     writes.push({ $type: `com.atproto.repo.applyWrites#${current.articleRef ? "update" : "create"}`, collection: DOCUMENT, rkey: docKey, value: record });
     if (host === "offprint" || host === "pckt") {
@@ -131,7 +131,7 @@ export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent,
       let wrapper: ArticleRecord = {};
       if (current.articleRef) { const { data } = await agent.com.atproto.repo.getRecord({ repo: session.did, collection, rkey: docKey }, { signal }); wrapper = data.value as ArticleRecord; const ref = wrapper.document as LiveReference; if (ref?.uri !== current.articleRef.uri || ref.cid !== current.articleRef.cid) throw new Error("The native article wrapper changed."); }
       if (host === "pckt" && !current.articleRef) { const pk = recordKey(publication.uri, session.did, "site.standard.publication"); const { data } = await agent.com.atproto.repo.getRecord({ repo: session.did, collection: "blog.pckt.publication", rkey: pk }, { signal }); const ref = (data.value as ArticleRecord).publication as LiveReference; if (ref?.uri !== publication.uri || ref.cid !== publication.cid) throw new Error("The native publication is unavailable."); wrapper.site = data.uri; }
-      writes.push({ $type: `com.atproto.repo.applyWrites#${current.articleRef ? "update" : "create"}`, collection, rkey: docKey, value: { ...wrapper, $type: collection, document: { ...(host === "offprint" ? { $type: "com.atproto.repo.strongRef" } : {}), ...entry.articleRef } } });
+      writes.push({ $type: `com.atproto.repo.applyWrites#${current.articleRef ? "update" : "create"}`, collection, rkey: docKey, value: await buildNativeDocumentWrapper(host, entry.articleRef, wrapper.site as string | undefined, wrapper, { signal }) });
     }
   }
   if (current.destination !== "blog") {

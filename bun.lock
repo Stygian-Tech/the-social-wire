@@ -57,6 +57,7 @@
         "@atproto/oauth-types": "^0.6.3",
         "@atproto/repo": "0.10.11",
         "@base-ui/react": "^1.4.1",
+        "@stygian/anypub-kit": "github:Stygian-Tech/anypub-kit#a53942cd966b147c2c300a8341df350d6d1f0720",
         "@stygian/markdown-editor": "file:../../packages/vendor/markdown-editor-0.1.1-socialwire.3.tgz",
         "@tanstack/query-sync-storage-persister": "^5.100.10",
         "@tanstack/react-query": "^5.100.10",
@@ -508,6 +509,8 @@
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
     "@standard-schema/utils": ["@standard-schema/utils@0.3.0", "", {}, "sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g=="],
+
+    "@stygian/anypub-kit": ["@stygian/anypub-kit@github:Stygian-Tech/anypub-kit#a53942c", {}, "Stygian-Tech-anypub-kit-a53942c"],
 
     "@stygian/markdown-editor": ["@stygian/markdown-editor@../../packages/vendor/markdown-editor-0.1.1-socialwire.3.tgz", { "dependencies": { "clsx": "2.1.1", "lucide-react": "1.24.0", "prism-react-renderer": "2.4.1", "tailwind-merge": "3.6.0" }, "peerDependencies": { "react": ">=19.0.0", "react-dom": ">=19.0.0", "tailwindcss": ">=4.0.0" } }],
 
