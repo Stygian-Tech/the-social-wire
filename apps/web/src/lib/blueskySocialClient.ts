@@ -5,6 +5,7 @@ import { LocalAppViewAgent } from "@/lib/localAppViewAgent";
 import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import type { SocialModerationOpts } from "@/lib/socialModerationTypes";
 import { hydrateSocialReplies } from "./hydrateSocialReplies";
+import { socialModerationScope } from "./socialQueryScope";
 
 export type SocialFeed = {
   kind: "following" | "feed" | "list";
@@ -21,6 +22,7 @@ export const SOCIAL_FOLLOWING_FEED: SocialFeed = {
 export type BlueskySocialCatalog = {
   feeds: SocialFeed[];
   moderation: SocialModerationOpts;
+  metadataError?: string;
 };
 
 export type BlueskySocialPage = {
@@ -102,7 +104,7 @@ function canDisplayCatalogAvatar(decision: ModerationDecision): boolean {
   });
 }
 
-export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal, options: { includeFeeds?: boolean; onReady?: (catalog: BlueskySocialCatalog) => void } = {}): Promise<BlueskySocialCatalog> {
+export async function getBlueskySocialCatalog(session: OAuthSession, signal?: AbortSignal, options: { includeFeeds?: boolean; onReady?: (catalog: BlueskySocialCatalog) => void; previousCatalog?: BlueskySocialCatalog } = {}): Promise<BlueskySocialCatalog> {
   const agent = createAuthenticatedAppViewAgent(session);
   const preferences = await agent.getPreferences();
   throwIfAborted(signal);
@@ -133,16 +135,24 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
   }
   // Brand engagement needs viewer moderation without saved-feed navigation grants.
   if (options.includeFeeds === false) return { feeds: [], moderation };
-  const feeds = socialFeedsFromPreferences(preferences.savedFeeds);
+  const previous = options.previousCatalog;
+  const compatible = previous?.moderation.userDid === session.did && socialModerationScope(previous.moderation) === socialModerationScope(moderation);
+  const feeds = socialFeedsFromPreferences(preferences.savedFeeds).map(feed => {
+    const cached = compatible ? previous.feeds.find(row => row.kind === feed.kind && row.uri === feed.uri) : undefined;
+    return cached ? { ...feed, name: cached.name, ...(cached.avatar ? { avatar: cached.avatar } : {}) } : feed;
+  });
   options.onReady?.({ feeds, moderation });
+  let metadataError: string | undefined;
   const generators = feeds.filter(feed => feed.kind === "feed");
   const names = new Map<string, string>();
   const avatars = new Map<string, string>();
+  const resolved = new Set<string>();
   // Metadata is optional: deleted/unavailable saved feeds remain navigable entries.
   for (let offset = 0; offset < generators.length; offset += 25) {
     try {
       const result = await agent.app.bsky.feed.getFeedGenerators({ feeds: generators.slice(offset, offset + 25).map(feed => feed.uri) }, { signal });
       for (const feed of result.data.feeds) {
+        resolved.add(feed.uri);
         const decision = moderateFeedGenerator(feed, moderation);
         if (canDisplayCatalogName(decision)) names.set(feed.uri, feed.displayName);
         const avatar = safeSocialFeedAvatarUrl(feed.avatar);
@@ -150,7 +160,7 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
       }
     } catch (error) {
       throwIfAborted(signal);
-      if (isMissingOAuthScope(error)) throw error;
+      metadataError = socialErrorMessage(error);
     }
   }
   const lists = feeds.filter(feed => feed.kind === "list");
@@ -158,20 +168,27 @@ export async function getBlueskySocialCatalog(session: OAuthSession, signal?: Ab
     await Promise.all(lists.slice(offset, offset + 10).map(async feed => {
       try {
         const result = await agent.app.bsky.graph.getList({ list: feed.uri, limit: 1 }, { signal });
+        resolved.add(feed.uri);
         const decision = moderateUserList(result.data.list, moderation);
         if (canDisplayCatalogName(decision)) names.set(feed.uri, result.data.list.name);
         const avatar = safeSocialFeedAvatarUrl(result.data.list.avatar);
         if (avatar && canDisplayCatalogAvatar(decision)) avatars.set(feed.uri, avatar);
       } catch (error) {
         throwIfAborted(signal);
-        if (isMissingOAuthScope(error)) throw error;
+        metadataError = socialErrorMessage(error);
       }
     }));
   }
   throwIfAborted(signal);
   return {
-    feeds: feeds.map(feed => ({ ...feed, name: names.get(feed.uri) || feed.name, ...(avatars.has(feed.uri) ? { avatar: avatars.get(feed.uri) } : {}) })),
+    feeds: feeds.map(feed => {
+      if (!resolved.has(feed.uri)) return feed;
+      const base = { ...feed };
+      delete base.avatar;
+      return { ...base, name: names.get(feed.uri) || (feed.kind === "feed" ? "Saved Feed" : "Saved List"), ...(avatars.has(feed.uri) ? { avatar: avatars.get(feed.uri) } : {}) };
+    }),
     moderation,
+    ...(metadataError ? { metadataError } : {}),
   };
 }
 
