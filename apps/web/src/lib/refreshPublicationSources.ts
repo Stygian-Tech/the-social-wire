@@ -32,6 +32,25 @@ export function readerRefreshRows(client: QueryClient, did: string, projection: 
   return [...selected.values()];
 }
 
+/** Compare source work independently of row order and duplicate scope aliases. */
+export function readerRefreshSourcesKey(rows: SidebarPublicationRow[]): { membership: string[]; sources: string[] } {
+  const sources = new Set<string>();
+  for (const { appViewScope: scope } of rows) {
+    if (scope.authorDid === "did:web:skyreader.rss") {
+      for (const feed of scope.publicationSiteUrls) {
+        if (!feed.trim()) continue;
+        let normalized = feed;
+        try { normalized = new URL(feed).href; } catch { /* Keep invalid sources in the failure barrier. */ }
+        sources.add(`feed:${normalized}`);
+      }
+    } else if (scope.authorDid) sources.add(`author:${normalizeAtRepoParam(scope.authorDid)}`);
+  }
+  return {
+    membership: [...new Set(rows.map(row => normalizeAtRepoParam(row.publicationId)))].sort(),
+    sources: [...sources].sort(),
+  };
+}
+
 /** Poll mounted feeds while scoped enrollment requests ingest and recount. */
 export async function refreshPublicationSources(args: {
   oauthSession: OAuthSession;

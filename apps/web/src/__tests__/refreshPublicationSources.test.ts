@@ -2,7 +2,7 @@ import { afterEach, expect, it, spyOn } from "bun:test";
 import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as appview from "@/lib/thinAppViewClient";
-import { readerRefreshRows, refreshPublicationSources } from "@/lib/refreshPublicationSources";
+import { readerRefreshRows, readerRefreshSourcesKey, refreshPublicationSources } from "@/lib/refreshPublicationSources";
 import type { PublicationSidebarProjection, SidebarPublicationRow } from "@/lib/publicationProjectionClient";
 
 const oauthSession = {} as OAuthSession;
@@ -264,4 +264,19 @@ it("selects subscribed folders without enrolling the following graph or another 
   expect(readerRefreshRows(client, "viewer", projection).map(row => row.publicationId)).toEqual([subscribed.publicationId, folder.publicationId]);
   expect(readerRefreshRows(client, "other-viewer", projection)).toEqual([]);
   unsubscribe(); client.clear();
+});
+
+it("compares normalized source and membership sets without order or duplicate sensitivity", () => {
+  const rss = row("did:web:skyreader.rss", "rss");
+  rss.appViewScope.publicationSiteUrls = ["https://FEED.test:443/rss", "https://feed.test/rss"];
+  const original = readerRefreshSourcesKey([row("did:plc:author", "at://did:plc:author/site.standard.publication/key"), rss]);
+  const equivalent = readerRefreshSourcesKey([rss, row("did:plc:author", "at%3A%2F%2Fdid%3Aplc%3Aauthor%2Fsite.standard.publication%2Fkey"), rss]);
+  expect(equivalent).toEqual(original);
+  expect(original.sources).toEqual(["author:did:plc:author", "feed:https://feed.test/rss"]);
+  const changedMembership = readerRefreshSourcesKey([row("did:plc:author", "different"), rss]);
+  expect(changedMembership.sources).toEqual(original.sources);
+  expect(changedMembership.membership).not.toEqual(original.membership);
+  expect(readerRefreshSourcesKey([row("", "empty")]).sources).toEqual([]);
+  rss.appViewScope.publicationSiteUrls = ["invalid", "  "];
+  expect(readerRefreshSourcesKey([rss]).sources).toEqual(["feed:invalid"]);
 });

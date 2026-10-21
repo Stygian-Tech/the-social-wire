@@ -52,7 +52,7 @@ import {
 import { awaitWithAbort } from "@/lib/awaitWithAbort";
 import { refreshReaderUnreadCounts } from "@/lib/refreshReaderUnreadCounts";
 import { refreshReaderFeeds } from "@/lib/refreshReaderFeeds";
-import { readerRefreshRows, refreshPublicationSources } from "@/lib/refreshPublicationSources";
+import { readerRefreshRows, readerRefreshSourcesKey, refreshPublicationSources } from "@/lib/refreshPublicationSources";
 import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 
 export type SidebarBootstrapState = {
@@ -132,7 +132,7 @@ function PublicationSidebarProviderInner({
   } | null>(null);
   const [refreshMessage, setRefreshMessage] = useState("");
   const manualRefreshRef = useRef<{ controller: AbortController; task: Promise<void> } | null>(null);
-  useEffect(() => () => manualRefreshRef.current?.controller.abort(), [oauthSessionReloadSeq]);
+  useEffect(() => () => manualRefreshRef.current?.controller.abort(), [did, oauthSessionReloadSeq]);
 
   const unreadRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -471,36 +471,6 @@ function PublicationSidebarProviderInner({
         if (!oauth) throw new Error("OAuth session required");
         const signal = controller.signal;
         setRefreshMessage("Checking Publications…");
-        const sidebarSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
-        const response = await awaitWithAbort(refreshPublicationSidebar(oauth, sidebarSignal), sidebarSignal);
-        signal.throwIfAborted();
-        if (getOAuthSession() !== oauth) throw new DOMException("Account changed", "AbortError");
-        if (response.viewerDid !== did) throw new Error("Publication details are unavailable. Try Refresh again.");
-        // The POST returns the complete authoritative sidebar. Supersede any
-        // older initial stream without selecting an article or replacing history.
-        streamGenerationRef.current += 1;
-        const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
-        const previous = qc.getQueryData<PublicationSidebarProjection>(queryKey);
-        const retainedFollowingIds = new Set(response.retainedFollowingPublicationIds ?? []);
-        const following = new Map(response.followingTabPublications.map(row => [row.publicationId, row]));
-        for (const row of previous?.followingTabPublications ?? []) {
-          if (retainedFollowingIds.has(row.publicationId) && !following.has(row.publicationId)) following.set(row.publicationId, row);
-        }
-        const allRows = new Map(response.allPublicationRows.map(row => [row.publicationId, row]));
-        for (const row of following.values()) if (!allRows.has(row.publicationId)) allRows.set(row.publicationId, row);
-        const projection = { ...response, followingTabPublications: [...following.values()], allPublicationRows: [...allRows.values()] };
-        qc.setQueryData(queryKey, previous?.unreadCountsByPublicationId && !projection.unreadCountsByPublicationId
-          ? applyUnreadCountsEvent(projection, previous.unreadCountsByPublicationId ?? {}, {
-              generation: previous.unreadCountsGeneration,
-              accuracy: previous.unreadCountsAccuracy,
-              countedAt: previous.unreadCountsCountedAt,
-            })
-          : projection);
-        setStreamProjection(undefined);
-        setProjectionError(null);
-        setSidebarFetching(false);
-        setFolderPublicationsLoading(false);
-        setBootstrapStreamComplete(true);
         // Remember the operation's starting rows too: an old Unread row can
         // disappear during one paint and resurface later without being new.
         const startingArticleIds = new Set(qc.getQueryCache().findAll({
@@ -518,30 +488,98 @@ function PublicationSidebarProviderInner({
           });
           signal.throwIfAborted();
         };
-        const rows = readerRefreshRows(qc, did, projection);
-        let sourceFailure: unknown;
+        const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
+        const cached = qc.getQueryData<PublicationSidebarProjection>(queryKey);
+        const cachedRows = cached?.viewerDid === did ? readerRefreshRows(qc, did, cached) : [];
+        const seedRows = cachedRows.length && readerRefreshSourcesKey(cachedRows).sources.length ? cachedRows : undefined;
+        let authoritativeApplied = false;
+        const checkSources = (rows: typeof cachedRows) => refreshPublicationSources({
+          oauthSession: oauth, rows, signal,
+          onProgress: (completed, total) => {
+            signal.throwIfAborted();
+            setRefreshMessage(authoritativeApplied && completed === total ? "Updating Articles…" : `Checking ${total} Publications…`);
+          },
+          onBatch: updateArticles,
+        });
+        // Observe errors immediately while the POST is pending. Only the
+        // authoritative source set can decide whether a seed failure is relevant.
+        const seed = seedRows ? checkSources(seedRows).then(
+          () => ({ error: undefined as unknown }), error => ({ error })
+        ) : undefined;
         try {
-          await refreshPublicationSources({
-            oauthSession: oauth,
-            rows,
-            signal,
-            onProgress: (completed, total) => {
-              signal.throwIfAborted();
-              setRefreshMessage(completed === total ? "Updating Articles…" : `Checking ${total} Publications…`);
-            },
-            onBatch: updateArticles,
-          });
-        } catch (error) {
+          const sidebarSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+          const response = await awaitWithAbort(refreshPublicationSidebar(oauth, sidebarSignal), sidebarSignal);
           signal.throwIfAborted();
-          sourceFailure = error;
+          if (response.viewerDid !== did) throw new Error("Publication details are unavailable. Try Refresh again.");
+          // The POST returns the complete authoritative sidebar. Supersede any
+          // older initial stream without selecting an article or replacing history.
+          streamGenerationRef.current += 1;
+          const previousSnapshot = qc.getQueryData<PublicationSidebarProjection>(queryKey);
+          const previous = previousSnapshot?.viewerDid === did ? previousSnapshot : undefined;
+          const retainedFollowingIds = new Set(response.retainedFollowingPublicationIds ?? []);
+          const following = new Map(response.followingTabPublications.map(row => [row.publicationId, row]));
+          for (const row of previous?.followingTabPublications ?? []) {
+            if (retainedFollowingIds.has(row.publicationId) && !following.has(row.publicationId)) following.set(row.publicationId, row);
+          }
+          const allRows = new Map(response.allPublicationRows.map(row => [row.publicationId, row]));
+          for (const row of following.values()) if (!allRows.has(row.publicationId)) allRows.set(row.publicationId, row);
+          const projection = { ...response, followingTabPublications: [...following.values()], allPublicationRows: [...allRows.values()] };
+          qc.setQueryData(queryKey, previous?.unreadCountsByPublicationId && !projection.unreadCountsByPublicationId
+            ? applyUnreadCountsEvent(projection, previous.unreadCountsByPublicationId ?? {}, {
+                generation: previous.unreadCountsGeneration,
+                accuracy: previous.unreadCountsAccuracy,
+                countedAt: previous.unreadCountsCountedAt,
+              })
+            : projection);
+          setStreamProjection(undefined);
+          setProjectionError(null);
+          setSidebarFetching(false);
+          setFolderPublicationsLoading(false);
+          setBootstrapStreamComplete(true);
+          authoritativeApplied = true;
+          const outcome = await seed;
+          signal.throwIfAborted();
+          const currentRows = () => readerRefreshRows(qc, did, qc.getQueryData<PublicationSidebarProjection>(queryKey) ?? projection);
+          const rows = currentRows();
+          let sourceFailure: unknown;
+          if (seed) {
+            const cachedKey = readerRefreshSourcesKey(seedRows!);
+            const authoritativeKey = readerRefreshSourcesKey(rows);
+            if (JSON.stringify(cachedKey) === JSON.stringify(authoritativeKey)) {
+              sourceFailure = outcome?.error;
+              // The seed may have flushed before the POST applied membership.
+              // Re-read mounted queries against the current authoritative projection.
+              try { await updateArticles(); } catch (error) {
+                signal.throwIfAborted();
+                sourceFailure ??= error;
+              }
+            } else {
+              // Removed sources cannot fail the current scope. Settle every seed
+              // worker before rechecking the complete authoritative source set.
+              try { await checkSources(rows); } catch (error) {
+                signal.throwIfAborted();
+                sourceFailure = error;
+              }
+            }
+          } else {
+            try { await checkSources(rows); } catch (error) {
+              signal.throwIfAborted();
+              sourceFailure = error;
+            }
+          }
+          signal.throwIfAborted();
+          setRefreshMessage("Updating Unread Counts…");
+          await refreshReaderUnreadCounts({ queryClient: qc, viewerDid: did, oauthSession: oauth, publicationIds: currentRows().map(row => row.publicationId), signal });
+          signal.throwIfAborted();
+          if (sourceFailure) throw sourceFailure;
+          const newArticleCount = newArticleIds.size;
+          setRefreshMessage(newArticleCount > 0 ? `${newArticleCount} New ${newArticleCount === 1 ? "Article" : "Articles"} Loaded` : "Refresh Complete");
+        } finally {
+          // POST failure, cancellation, and account changes own the seed too.
+          // Its helper drains any in-flight paint before this refresh settles.
+          controller.abort();
+          await seed;
         }
-        signal.throwIfAborted();
-        setRefreshMessage("Updating Unread Counts…");
-        await refreshReaderUnreadCounts({ queryClient: qc, viewerDid: did, oauthSession: oauth, publicationIds: rows.map(row => row.publicationId), signal });
-        signal.throwIfAborted();
-        if (sourceFailure) throw sourceFailure;
-        const newArticleCount = newArticleIds.size;
-        setRefreshMessage(newArticleCount > 0 ? `${newArticleCount} New ${newArticleCount === 1 ? "Article" : "Articles"} Loaded` : "Refresh Complete");
       })().finally(() => {
         if (manualRefreshRef.current?.controller === controller) manualRefreshRef.current = null;
       });
