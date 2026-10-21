@@ -93,6 +93,7 @@ func (s *Service) Discover(ctx context.Context, viewer string, includeFollows bo
 	discovery, e := Discover(ctx, s.Repo, s.Client, viewer, includeFollows, prior, s.Now(), includeOwn...)
 	if e == nil {
 		s.mu.Lock()
+		discovery.cacheToken = new(byte)
 		s.discoveries[viewer] = discoveryEntry{discovery, s.Now().Add(10 * time.Minute)}
 		s.mu.Unlock()
 	}

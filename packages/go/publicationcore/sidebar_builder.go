@@ -125,6 +125,23 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 			keep[row.PublicationID] = true
 		}
 		s.mu.Lock()
+		// Prune only the discovery used by this build. A newer concurrent
+		// discovery owns its own cache token and must not be overwritten here.
+		entry := s.discoveries[discovery.ViewerDID]
+		if discovery.cacheToken != nil && entry.value.cacheToken == discovery.cacheToken {
+			prune := func(rows []DiscoveredRow) []DiscoveredRow {
+				out := []DiscoveredRow{}
+				for _, row := range rows {
+					if keep[row.PublicationID] {
+						out = append(out, row)
+					}
+				}
+				return out
+			}
+			entry.value.Following = prune(entry.value.Following)
+			entry.value.UniqueRows = prune(entry.value.UniqueRows)
+			s.discoveries[discovery.ViewerDID] = entry
+		}
 		for key, row := range s.rows[discovery.ViewerDID] {
 			if !keep[row.PublicationID] {
 				delete(s.rows[discovery.ViewerDID], key)
