@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
-import { advanceFeedRefreshRevision, coalesceFeedFirstPage, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { advanceFeedRefreshRevision, coalesceFeedFirstPage, getFeedRefreshRevision, getViewerReadStateRevision, cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
 
 it("coalesces one feed scope while isolating OAuth reconnects and filters", async () => {
   const client = new QueryClient();
@@ -143,4 +143,24 @@ it("does not retain work whose owner signal was already aborted", async () => {
   expect(requests).toBe(0);
   expect(await coalesceFeedFirstPage(client, session, ["feed"], async () => "fresh")).toBe("fresh");
   client.clear();
+});
+
+
+it("advances a viewer read fence synchronously even before any feed query exists", async () => {
+  const client = new QueryClient();
+  const otherClient = new QueryClient();
+  const viewer = "did:plc:viewer";
+  const futureKey = ["entries", viewer, "future-publication", "all"];
+  const changed = cancelViewerFeedRefreshes(client, viewer);
+  expect(getViewerReadStateRevision(client, viewer)).toBe(1);
+  expect(getViewerReadStateRevision(client, "did:plc:other")).toBe(0);
+  expect(getViewerReadStateRevision(otherClient, viewer)).toBe(0);
+  expect(getFeedRefreshRevision(client, futureKey)).toBe(0);
+  expect(client.getQueryCache().getAll()).toHaveLength(0);
+  await changed;
+  client.setQueryData(futureKey, "later");
+  await cancelViewerFeedRefreshes(client, viewer);
+  expect(getViewerReadStateRevision(client, viewer)).toBe(2);
+  expect(getFeedRefreshRevision(client, futureKey)).toBe(1);
+  client.clear(); otherClient.clear();
 });

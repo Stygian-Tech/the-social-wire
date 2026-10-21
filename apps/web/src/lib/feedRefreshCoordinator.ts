@@ -2,6 +2,12 @@ import { hashKey, type QueryClient } from "@tanstack/react-query";
 import { awaitWithAbort } from "@/lib/awaitWithAbort";
 
 const revisionsByClient = new WeakMap<QueryClient, Map<string, number>>();
+const viewerReadStateRevisionsByClient = new WeakMap<QueryClient, Map<string, number>>();
+
+/** Read changes retire stream snapshots even before a feed query exists. */
+export function getViewerReadStateRevision(client: QueryClient, viewerDid: string): number {
+  return viewerReadStateRevisionsByClient.get(client)?.get(viewerDid) ?? 0;
+}
 
 /** Current write generation for one complete feed query scope. */
 export function getFeedRefreshRevision(client: QueryClient, queryKey: readonly unknown[]): number {
@@ -26,6 +32,9 @@ export function advanceFeedRefreshRevision(client: QueryClient, queryKey: readon
 
 /** Retire viewer feed reads before changing read state, preserving optimistic data. */
 export function cancelViewerFeedRefreshes(client: QueryClient, viewerDid: string): Promise<void> {
+  let readRevisions = viewerReadStateRevisionsByClient.get(client);
+  if (!readRevisions) { readRevisions = new Map(); viewerReadStateRevisionsByClient.set(client, readRevisions); }
+  readRevisions.set(viewerDid, getViewerReadStateRevision(client, viewerDid) + 1);
   const filters = {
     predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[1] === viewerDid &&
       (query.queryKey[0] === "entries" || query.queryKey[0] === "aggregateEntries"),

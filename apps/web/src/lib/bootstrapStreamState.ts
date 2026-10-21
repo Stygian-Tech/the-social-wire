@@ -3,7 +3,7 @@ import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { ParsedBootstrapStreamEvent } from "@/lib/bootstrapStreamModels";
 import { mergeFeedRefreshForFilter } from "@/lib/feedCacheMerge";
-import { getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { getFeedRefreshRevision, getViewerReadStateRevision } from "@/lib/feedRefreshCoordinator";
 import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   mergeSidebarProjections,
@@ -400,10 +400,13 @@ export function writeStreamedEntriesPage(
   viewerDid: string,
   payload: Extract<ParsedBootstrapStreamEvent, { kind: "entriesPage" }>["payload"],
   articleFilter: "all" | "unread" = "all",
-  revisionAtStreamStart?: (queryKey: readonly unknown[]) => number
+  revisionAtStreamStart?: (queryKey: readonly unknown[]) => number,
+  readStateRevisionAtStreamStart?: number
 ): void {
   // Missing evidence is not an authoritative empty feed, nor a fresh snapshot.
   if (payload.source === "unavailable") return;
+  if (readStateRevisionAtStreamStart !== undefined &&
+    readStateRevisionAtStreamStart !== getViewerReadStateRevision(queryClient, viewerDid)) return;
   const updatedAt = payload.source === "projection_cache"
     ? Date.parse(payload.cachedAt ?? "")
     : undefined;

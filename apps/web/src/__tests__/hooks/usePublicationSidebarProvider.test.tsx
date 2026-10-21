@@ -8,6 +8,8 @@ import { PublicationSidebarProvider, useSidebarBootstrap } from "@/contexts/Publ
 import { ReadStateProvider, useReadState } from "@/contexts/ReadStateContext";
 import type { EntriesPage } from "@/hooks/useEntries";
 import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
+import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
+import { effectiveEntryReadState } from "@/lib/pendingReadStateOverlay";
 import * as auth from "@/hooks/useAuth";
 import * as bootstrapClient from "@/lib/bootstrapStreamClient";
 import * as imageCache from "@/lib/imageBlobCache";
@@ -87,6 +89,88 @@ function cacheActiveSources(mounted: ReturnType<typeof mountProvider>, rows = [s
 afterEach(() => { while (observers.length) observers.pop()!(); cleanup(); mock.restore(); });
 
 describe("PublicationSidebarProvider", () => {
+  for (const action of ["markEntryUnread", "markEntriesUnread"] as const) {
+    it(`rejects a delayed bootstrap seed for an absent publication after aggregate ${action}`, async () => {
+      const env = process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED;
+      process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = "false";
+      window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify({
+        old: "2026-01-01T00:00:00Z", history: "2026-01-01T00:00:00Z",
+      }));
+      spyOn(appview, "writeThroughReadMarkDelete").mockResolvedValue(undefined);
+      const gate = deferred();
+      const mounted = mountProvider({ initialGate: gate, streamedEntries: true });
+      const { queryClient, did, result } = mounted;
+      const publicationKey = ["entries", did, "at://did:plc:author/site.standard.publication/pub", "all"];
+      const aggregateKey = ["aggregateEntries", did, "subscribed", "", "all"];
+      const entryIds = action === "markEntriesUnread" ? ["old", "history"] : ["old"];
+      queryClient.setQueryData(aggregateKey, {
+        pages: [{ entries: [
+          { entryId: "old", title: "Old", publishedAt: "2026-10-20", isRead: true },
+          { entryId: "history", title: "History", publishedAt: "2026-10-19", isRead: true },
+        ] }], pageParams: [undefined],
+      });
+      try {
+        await waitFor(() => expect(mounted.stream).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(result.current.readState!.isEntryRead("old")).toBe(true));
+        expect(result.current.bootstrapStreamComplete).toBe(false);
+        expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+
+        await act(async () => {
+          if (action === "markEntriesUnread") result.current.readState!.markEntriesUnread(entryIds);
+          else result.current.readState!.markEntryUnread("old");
+        });
+        for (const entryId of entryIds) {
+          expect(result.current.readState!.isEntryRead(entryId)).toBe(false);
+          expect(result.current.readState!.pendingEntryReadState(entryId)).toBeUndefined();
+        }
+        expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+        const before = queryClient.getQueryData<{ pages: EntriesPage[] }>(aggregateKey)!;
+        for (const entryId of entryIds) {
+          expect(before.pages[0].entries.find(entry => entry.entryId === entryId)?.isRead).toBe(false);
+        }
+
+        await act(async () => { gate.resolve(); });
+        await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+
+        expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+        const after = queryClient.getQueryData<{ pages: EntriesPage[] }>(aggregateKey)!;
+        expect(after).toBe(before);
+        for (const entryId of entryIds) {
+          const entry = after.pages[0].entries.find(entry => entry.entryId === entryId)!;
+          expect(entry.isRead).toBe(false);
+          expect(effectiveEntryReadState(entryId, entry.isRead,
+            result.current.readState!.isEntryRead, result.current.readState!.pendingEntryReadState)).toBe(false);
+        }
+      } finally {
+        gate.resolve(); cleanup(); queryClient.clear();
+        window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
+        if (env === undefined) delete process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED;
+        else process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = env;
+      }
+    });
+  }
+
+  it("allows a delayed bootstrap seed for an absent publication after another viewer changes read state", async () => {
+    const gate = deferred();
+    const mounted = mountProvider({ initialGate: gate, streamedEntries: true });
+    const { queryClient, did, result } = mounted;
+    const publicationKey = ["entries", did, "at://did:plc:author/site.standard.publication/pub", "all"];
+    try {
+      await waitFor(() => expect(mounted.stream).toHaveBeenCalledTimes(1));
+      expect(result.current.bootstrapStreamComplete).toBe(false);
+      expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+      await act(async () => { await cancelViewerFeedRefreshes(queryClient, `${did}-other-viewer`); });
+      expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+      await act(async () => { gate.resolve(); });
+      await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+      expect(queryClient.getQueryData<{ pages: EntriesPage[] }>(publicationKey)?.pages[0].entries).toMatchObject([
+        { entryId: "old", isRead: true }, { entryId: "stale-new" },
+      ]);
+    } finally {
+      gate.resolve(); cleanup(); queryClient.clear();
+    }
+  });
+
   for (const mode of ["manual", "bootstrap"] as const) {
     for (const action of ["markEntryRead", "markEntryUnread"] as const) {
       it(`preserves read intent, flags, freshness and invalidation after blocked ${mode} ${action}`, async () => {

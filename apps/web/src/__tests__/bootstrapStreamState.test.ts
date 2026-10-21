@@ -8,7 +8,7 @@ import {
   applyUnreadCountsEvent,
   writeStreamedEntriesPage,
 } from "@/lib/bootstrapStreamState";
-import { advanceFeedRefreshRevision, cancelViewerFeedRefreshes, captureFeedRefreshRevisions } from "@/lib/feedRefreshCoordinator";
+import { advanceFeedRefreshRevision, cancelViewerFeedRefreshes, captureFeedRefreshRevisions, getFeedRefreshRevision, getViewerReadStateRevision } from "@/lib/feedRefreshCoordinator";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 
@@ -67,6 +67,41 @@ function row(
 }
 
 describe("writeStreamedEntriesPage", () => {
+  for (const filter of ["all", "unread"] as const) {
+    for (const source of ["live_projection", "projection_cache"] as const) {
+      it(`rejects ${source} ${filter} bootstrap data after a read change with no target query`, async () => {
+        const qc = new QueryClient();
+        const viewer = "did:plc:absent-viewer";
+        const publicationId = "at://did:plc:author/site.standard.publication/absent";
+        const key = [...ENTRIES_QUERY_KEY(viewer, publicationId), filter];
+        const revisions = captureFeedRefreshRevisions(qc);
+        const readRevision = getViewerReadStateRevision(qc, viewer);
+        await cancelViewerFeedRefreshes(qc, viewer);
+        expect(getFeedRefreshRevision(qc, key)).toBe(0);
+        const payload = { publicationId: encodeURIComponent(publicationId), source,
+          cachedAt: "2026-01-01T00:00:00Z", entries: [{ entryId: "old", title: "Old", isRead: true, publishedAt: "2026-01-01" }] };
+        writeStreamedEntriesPage(qc, viewer, payload, filter, revisions, readRevision);
+        expect(qc.getQueryState(key)).toBeUndefined();
+        // A new stream after the action can still seed the same absent scope.
+        writeStreamedEntriesPage(qc, viewer, payload, filter, captureFeedRefreshRevisions(qc), getViewerReadStateRevision(qc, viewer));
+        expect(qc.getQueryData(key)).toBeDefined();
+        qc.clear();
+      });
+    }
+  }
+
+  it("accepts an absent scope when only another viewer changed read state", async () => {
+    const qc = new QueryClient();
+    const viewer = "did:plc:viewer";
+    const publicationId = "at://did:plc:author/site.standard.publication/absent";
+    const revisions = captureFeedRefreshRevisions(qc);
+    const readRevision = getViewerReadStateRevision(qc, viewer);
+    await cancelViewerFeedRefreshes(qc, "did:plc:other");
+    writeStreamedEntriesPage(qc, viewer, { publicationId, source: "live_projection", entries: [] }, "all", revisions, readRevision);
+    expect(qc.getQueryData([...ENTRIES_QUERY_KEY(viewer, publicationId), "all"])).toBeDefined();
+    qc.clear();
+  });
+
   const publicationId = "rss:aHR0cHM6Ly9leGFtcGxlLnRlc3QvcnNz";
   const queryKey = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), "all"];
   const cached = {
