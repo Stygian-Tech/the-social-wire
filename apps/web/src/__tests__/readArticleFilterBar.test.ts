@@ -69,7 +69,7 @@ describe("read feed header", () => {
     refreshError = null; refreshPending = true;
     rerender(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));
     expect(screen.queryByRole("alert")).toBeNull();
-    expect((screen.getByRole("button", { name: "Refresh Publications" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Refreshing Publications" }) as HTMLButtonElement).disabled).toBe(true);
   });
   it.each([["finance", "Finance"], ["sports", "Sports"]])("provides the shared route header for %s without unrelated reader actions", (routeFeed, title) => {
     feed = routeFeed;
