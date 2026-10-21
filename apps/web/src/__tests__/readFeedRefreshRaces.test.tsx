@@ -61,6 +61,14 @@ it("ignores a late aggregate manual refresh after a read mutation retires it", a
   invalidateReadFeedRefreshes(client, oauth);
   act(() => client.setQueryData(key, { pages: [{ entries: [{ ...row, isRead: false }] }], pageParams: [undefined] }));
   finish({ entries: [row] });
-  await act(async () => { await refresh; });
+  const updatedAt = client.getQueryState(key)?.dataUpdatedAt;
+  await act(async () => { expect(await refresh).toBeUndefined(); });
+  expect(client.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries[0].isRead).toBe(false);
+  // The request is rejected inside Query so retained rows are not marked fresh,
+  // but the public refetch reports supersession without rejecting its caller.
+  expect(client.getQueryState(key)?.dataUpdatedAt).toBe(updatedAt);
+  expect(client.getQueryState(key)?.fetchStatus).toBe("idle");
+  fetch.mockRejectedValueOnce(new Error("getFeed offline"));
+  await act(async () => { await expect(result.current.refetch()).rejects.toThrow("getFeed offline"); });
   expect(client.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries[0].isRead).toBe(false);
 });
