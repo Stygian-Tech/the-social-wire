@@ -109,7 +109,7 @@ func TestDiscoverCancelsAndJoinsSubscriptionLookups(t *testing.T) {
 	s := NewService(nil, r, nil)
 	defer s.Close()
 	done := make(chan error, 1)
-	go func() { _, err := s.Discover(ctx, "viewer", false); done <- err }()
+	go func() { _, err := s.Refresh(ctx, gatewaycore.AuthContext{DID: "viewer"}); done <- err }()
 	for i := 0; i < 25; i++ {
 		awaitLookup(t, r.started)
 	}
@@ -186,7 +186,7 @@ func TestRefreshFullSidebarFreshScopesAndRemovals(t *testing.T) {
 			t.Fatalf("discovery count for %s: %d", col, r.lists[col])
 		}
 	}
-	if r.lists["app.bsky.graph.follow"] != 0 || r.gets != 6 {
+	if r.lists["app.bsky.graph.follow"] != 0 || r.gets != 3 {
 		t.Fatalf("unexpected follow walk/rebuild or lookups: lists=%v gets=%d", r.lists, r.gets)
 	}
 }
@@ -291,10 +291,15 @@ func TestRefreshReportsFailedAuthoritativePersistence(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s := NewService(db, repoFixture{}, nil)
+	r := &refreshLookupRepo{repoFixture: refreshFixture(3)}
+	s := NewService(db, r, nil)
 	defer s.Close()
-	if _, err := s.Refresh(context.Background(), gatewaycore.AuthContext{DID: "viewer"}); err == nil {
-		t.Fatal("refresh reported success without persisting its authoritative replacement")
+	result, err := s.Refresh(context.Background(), gatewaycore.AuthContext{DID: "viewer"})
+	if err == nil || len(result.AllPublicationRows) != 0 {
+		t.Fatalf("refresh reported success without persisting its authoritative replacement: %+v %v", result, err)
+	}
+	if r.gets != 3 || s.Repo != r || s.discoveries["viewer"].value.refresh != nil {
+		t.Fatal("failed persistence repeated discovery reads or retained refresh-local metadata")
 	}
 }
 
@@ -330,7 +335,7 @@ func TestRefreshDiscoversUnsubscribedOwnPublicationWithoutFollows(t *testing.T) 
 	viewer := fmt.Sprintf("did:plc:ownrefresh%d", time.Now().UnixNano())
 	at := time.Now().UTC()
 	id := "at://" + viewer + "/site.standard.publication/own"
-	publication := record(id, map[string]any{"title": "My Fresh Publication", "url": "https://own.invalid/"})
+	publication := record(id, map[string]any{"title": "My Fresh Publication", "site": "https://own.invalid/"})
 	r := &refreshLookupRepo{repoFixture: repoFixture{records: map[string]gatewaycore.RepoRecord{id: publication}, pages: map[string][]gatewaycore.RepoRecord{viewer + "/site.standard.publication": {publication}}}}
 	s := NewService(db, r, nil)
 	defer s.Close()
@@ -352,7 +357,7 @@ func TestRefreshDiscoversUnsubscribedOwnPublicationWithoutFollows(t *testing.T) 
 	if row.PublicationID != id || row.Title != "My Fresh Publication" || !row.DiscoveredAt.Equal(at) || !reflect.DeepEqual(row.AppViewScope.PublicationSiteURLs, []string{"https://own.invalid"}) {
 		t.Fatalf("own metadata/scope not fresh: %+v", row)
 	}
-	if r.lists["app.bsky.graph.follow"] != 0 || r.lists["site.standard.publication"] != 1 || r.gets != 1 {
+	if r.lists["app.bsky.graph.follow"] != 0 || r.lists["site.standard.publication"] != 1 || r.gets != 0 {
 		t.Fatalf("own discovery exceeded bounded reads: lists=%v gets=%d", r.lists, r.gets)
 	}
 	var count int

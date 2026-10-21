@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 )
 
 func uniqueRows(rows []DiscoveredRow) []DiscoveredRow {
@@ -50,7 +51,17 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 		go func(row DiscoveredRow) {
 			defer wg.Done()
 			defer func() { <-slots }()
-			scope := s.Scope(ctx, row.PublicationID, row.AuthorDID)
+			var scope AppViewScope
+			if discovery.refresh != nil {
+				// Manual refresh bypasses persistent scopes, including retained rows.
+				// Missing fresh records use the normal repository fallback.
+				scope = buildScope(ctx, discovery.refresh, row.PublicationID, row.AuthorDID, discovery.refresh.record(row.PublicationID))
+				s.mu.Lock()
+				s.scopes[NormalizeATRepoParam(row.PublicationID)] = scopeEntry{scope, s.Now().Add(5 * time.Minute)}
+				s.mu.Unlock()
+			} else {
+				scope = s.Scope(ctx, row.PublicationID, row.AuthorDID)
+			}
 			r := SidebarRow{PublicationID: row.PublicationID, SubscriptionPublicationID: row.SubscriptionPublicationID, AuthorDID: row.AuthorDID, AuthorHandle: row.AuthorHandle, Title: row.Title, IconURL: row.IconURL, AvatarURL: row.AvatarURL, DiscoveredAt: row.DiscoveredAt, AppViewScope: scope}
 			mu.Lock()
 			built[row.PublicationID] = r

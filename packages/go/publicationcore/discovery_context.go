@@ -2,6 +2,7 @@ package publicationcore
 
 type DiscoveryContext struct {
 	cacheToken *byte
+	refresh    *refreshMetadata
 
 	SubscriptionPublicationIDs                                    []string
 	ViewerDID                                                     string
