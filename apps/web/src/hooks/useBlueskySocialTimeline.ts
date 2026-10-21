@@ -48,7 +48,7 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
       if (!oauth) throw new Error(SCOPE_RECOVERY_MESSAGE);
       if (oauth.did !== session?.did || !moderation) throw new Error("Your account changed. Please reload this feed.");
       const fetchPage = () => getBlueskySocialPage({ session: oauth, feed, moderation, cursor: pageParam, signal, deferReplyHydration: true });
-      return pageParam === undefined ? coalesceFeedFirstPage(client, requestOwner(route, oauth), [...key, moderationScope, safety.generation], fetchPage) : fetchPage();
+      return pageParam === undefined ? coalesceFeedFirstPage(client, requestOwner(route, oauth), [...key, moderationScope, safety.generation], fetchPage, signal) : fetchPage();
     },
     getNextPageParam: (lastPage, _pages, _lastParam, pageParams) => nextSocialCursor(lastPage, pageParams),
     retry: false,
