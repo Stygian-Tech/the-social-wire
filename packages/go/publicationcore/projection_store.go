@@ -22,6 +22,90 @@ func allSidebarRows(sidebar Sidebar) []SidebarRow {
 	return rows
 }
 func (s ProjectionStore) Persist(ctx context.Context, sidebar Sidebar, replaceAll bool, preserveFollowing ...bool) error {
+	return s.persist(ctx, &sidebar, replaceAll, preserveFollowing...)
+}
+
+func (s ProjectionStore) persist(ctx context.Context, sidebar *Sidebar, replaceAll bool, preserveFollowing ...bool) error {
+	tx, e := s.DB.BeginTx(ctx, nil)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback()
+	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "appview-publications:"+sidebar.ViewerDID); e != nil {
+		return e
+	}
+	pruneFollowing := replaceAll && len(preserveFollowing) > 0 && preserveFollowing[0]
+	excluded := []string{}
+	if pruneFollowing {
+		fresh := map[string]bool{}
+		addFresh := func(id string) {
+			for _, key := range LookupKeys(id) {
+				fresh[key] = true
+			}
+		}
+		for _, id := range sidebar.subscriptionPublicationIDs {
+			addFresh(id)
+		}
+		for _, row := range sidebar.SubscribedUnfoldered {
+			addFresh(row.PublicationID)
+		}
+		for _, row := range sidebar.MyPublications {
+			addFresh(row.PublicationID)
+		}
+		for _, section := range sidebar.FolderSections {
+			for _, row := range section.Publications {
+				addFresh(row.PublicationID)
+			}
+		}
+		isFresh := func(id string) bool {
+			for _, key := range LookupKeys(id) {
+				if fresh[key] {
+					return true
+				}
+			}
+			return false
+		}
+		// Cached rows cannot create Following membership. The durable set under
+		// this lock wins over stale process/snapshot rows from another replica.
+		rows, err := tx.QueryContext(ctx, `SELECT DISTINCT publication_id FROM appview_feed_publications WHERE viewer_did=$1 AND feed_kind='following'`, sidebar.ViewerDID)
+		if err != nil {
+			return err
+		}
+		allowed := map[string]bool{}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			if isFresh(id) || len(FilterHidden([]DiscoveredRow{{PublicationID: id}}, sidebar.PublicationPrefs)) == 0 {
+				excluded = append(excluded, id)
+			} else {
+				allowed[id] = true
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		cached := map[string]bool{}
+		following := []SidebarRow{}
+		for _, row := range sidebar.FollowingTabPublications {
+			cached[row.PublicationID] = true
+			if allowed[row.PublicationID] {
+				following = append(following, row)
+			}
+		}
+		sidebar.FollowingTabPublications = following
+		all := []SidebarRow{}
+		for _, row := range sidebar.AllPublicationRows {
+			if !cached[row.PublicationID] || allowed[row.PublicationID] || isFresh(row.PublicationID) {
+				all = append(all, row)
+			}
+		}
+		sidebar.AllPublicationRows = all
+	}
 	sections := map[string]map[string]bool{}
 	add := func(id, key string) {
 		if sections[id] == nil {
@@ -52,7 +136,7 @@ func (s ProjectionStore) Persist(ctx context.Context, sidebar Sidebar, replaceAl
 		}
 	}
 	byID := map[string]SidebarRow{}
-	for _, row := range allSidebarRows(sidebar) {
+	for _, row := range allSidebarRows(*sidebar) {
 		byID[row.PublicationID] = row
 	}
 	scopes := []map[string]any{}
@@ -100,38 +184,8 @@ func (s ProjectionStore) Persist(ctx context.Context, sidebar Sidebar, replaceAl
 	}
 	feedJSON, _ := json.Marshal(feeds)
 	membershipJSON, _ := json.Marshal(memberships)
-	tx, e := s.DB.BeginTx(ctx, nil)
-	if e != nil {
-		return e
-	}
-	defer tx.Rollback()
-	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "appview-publications:"+sidebar.ViewerDID); e != nil {
-		return e
-	}
-	if replaceAll && len(preserveFollowing) > 0 && preserveFollowing[0] {
-		// Manual refresh discovers subscriptions, not the follow graph. Keep the
-		// durable Following projection on cold replicas, except newly hidden rows.
-		rows, err := tx.QueryContext(ctx, `SELECT DISTINCT publication_id FROM appview_feed_publications WHERE viewer_did=$1 AND feed_kind='following'`, sidebar.ViewerDID)
-		if err != nil {
-			return err
-		}
-		hidden := []string{}
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			if len(FilterHidden([]DiscoveredRow{{PublicationID: id}}, sidebar.PublicationPrefs)) == 0 {
-				hidden = append(hidden, id)
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return err
-		}
-		if _, e = tx.ExecContext(ctx, `DELETE FROM appview_feed_publications WHERE viewer_did=$1 AND (feed_kind<>'following' OR publication_id=ANY($2::text[]))`, sidebar.ViewerDID, hidden); e != nil {
+	if pruneFollowing {
+		if _, e = tx.ExecContext(ctx, `DELETE FROM appview_feed_publications WHERE viewer_did=$1 AND (feed_kind<>'following' OR publication_id=ANY($2::text[]))`, sidebar.ViewerDID, excluded); e != nil {
 			return e
 		}
 		if _, e = tx.ExecContext(ctx, `DELETE FROM appview_viewer_feeds WHERE viewer_did=$1 AND feed_kind<>'following'`, sidebar.ViewerDID); e != nil {

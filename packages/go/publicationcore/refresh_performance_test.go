@@ -154,7 +154,7 @@ func TestRefreshFullSidebarFreshScopesAndRemovals(t *testing.T) {
 	s.rows[viewer] = map[string]SidebarRow{id(0): old, "removed": removed}
 	s.scopes[id(0)] = scopeEntry{value: old.AppViewScope, expires: at.Add(time.Hour)}
 	s.scopes["removed"] = scopeEntry{value: removed.AppViewScope, expires: at.Add(time.Hour)}
-	if err := (ProjectionStore{DB: db}).Persist(ctx, Sidebar{ViewerDID: viewer, AllPublicationRows: []SidebarRow{old, removed}, SubscribedUnfoldered: []SidebarRow{old, removed}}, true); err != nil {
+	if err := (ProjectionStore{DB: db}).Persist(ctx, Sidebar{ViewerDID: viewer, AllPublicationRows: []SidebarRow{old, removed}, SubscribedUnfoldered: []SidebarRow{old, removed}, FollowingTabPublications: []SidebarRow{{PublicationID: following.PublicationID, AuthorDID: following.AuthorDID, AppViewScope: AppViewScope{AuthorDID: following.AuthorDID}}}}, true); err != nil {
 		t.Fatal(err)
 	}
 	result, err := s.Refresh(ctx, gatewaycore.AuthContext{DID: viewer})
@@ -199,7 +199,7 @@ func TestDiscoverRetainedFollowingUsesPreferencesWithoutEnrollingAuthors(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Following) != 2 || len(result.UniqueRows) != 2 || !reflect.DeepEqual(result.EnrollAuthorDIDs, []string{"did:plc:author"}) {
+	if len(result.Following) != 1 || len(result.UniqueRows) != 2 || !reflect.DeepEqual(result.EnrollAuthorDIDs, []string{"did:plc:author"}) {
 		t.Fatalf("retention affected hidden rows/enrollment: %+v", result)
 	}
 	for _, row := range result.UniqueRows {
@@ -371,5 +371,114 @@ func TestRefreshDiscoversUnsubscribedOwnPublicationWithoutFollows(t *testing.T) 
 	}
 	if r.lists["site.standard.publication"] != 0 || len(r.lists) != 4 {
 		t.Fatalf("default bootstrap discovery changed: %v", r.lists)
+	}
+}
+
+func TestRefreshCannotResurrectFollowingRemovedByAnotherReplica(t *testing.T) {
+	for _, snapshot := range []bool{false, true} {
+		t.Run(fmt.Sprint("snapshot=", snapshot), func(t *testing.T) {
+			db := fixtureDB(t)
+			ctx := context.Background()
+			at := time.Now().UTC()
+			viewer := fmt.Sprintf("did:plc:stale-follow%d", at.UnixNano())
+			row := SidebarRow{PublicationID: "did:plc:removed-follow", AuthorDID: "did:plc:removed-follow", Title: "Stale Following", DiscoveredAt: at.Add(-time.Minute), AppViewScope: AppViewScope{AuthorDID: "did:plc:removed-follow"}}
+			stale := Sidebar{ViewerDID: viewer, FollowingTabPublications: []SidebarRow{row}, AllPublicationRows: []SidebarRow{row}}
+			store := ProjectionStore{DB: db}
+			cache := CacheStore{Projection: thinappviewcore.ProjectionCache{DB: db}}
+			t.Cleanup(func() {
+				cache.InvalidateSidebar(ctx, viewer)
+				for _, table := range []string{"appview_feed_publications", "appview_viewer_feeds", "appview_publication_scopes"} {
+					db.ExecContext(ctx, "DELETE FROM "+table+" WHERE viewer_did=$1", viewer)
+				}
+			})
+			if err := store.Persist(ctx, stale, true); err != nil {
+				t.Fatal(err)
+			}
+			s := NewService(db, repoFixture{}, nil)
+			defer s.Close()
+			s.Now = func() time.Time { return at }
+			if snapshot {
+				s.Cache = &cache
+				if err := cache.Store(ctx, viewer, BootstrapSnapshot{Version: 1, Priority: stale}, at); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				s.discoveries[viewer] = discoveryEntry{value: DiscoveryContext{Following: []DiscoveredRow{{PublicationID: row.PublicationID, AuthorDID: row.AuthorDID, Title: row.Title}}}, expires: at.Add(time.Minute)}
+			}
+			// A different replica's authoritative full discovery removes this follow,
+			// while this process or snapshot still has its old display row.
+			if err := store.Persist(ctx, Sidebar{ViewerDID: viewer}, true); err != nil {
+				t.Fatal(err)
+			}
+			result, err := s.Refresh(ctx, gatewaycore.AuthContext{DID: viewer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.FollowingTabPublications) != 0 || len(result.AllPublicationRows) != 0 || len(result.RetainedFollowingPublicationIDs) != 0 || len(s.SidebarRows(viewer, []string{row.PublicationID})) != 0 {
+				t.Fatalf("stale follow resurrected: %+v", result)
+			}
+			if scope, err := store.Scope(ctx, viewer, row.PublicationID); err != nil || scope != nil {
+				t.Fatalf("removed durable scope resurrected: %+v %v", scope, err)
+			}
+			if ids, err := store.FollowingPublicationIDs(ctx, viewer); err != nil || len(ids) != 0 {
+				t.Fatalf("removed durable membership resurrected: %v %v", ids, err)
+			}
+		})
+	}
+}
+
+func TestRefreshMovesFollowingToSubscribed(t *testing.T) {
+	for _, missingRecord := range []bool{false, true} {
+		t.Run(fmt.Sprint("missing-record=", missingRecord), func(t *testing.T) {
+			db := fixtureDB(t)
+			ctx := context.Background()
+			at := time.Now().UTC()
+			viewer := fmt.Sprintf("did:plc:follow-to-sub%d", at.UnixNano())
+			id := "at://did:plc:author/site.standard.publication/000"
+			old := SidebarRow{PublicationID: id, AuthorDID: "did:plc:author", Title: "Old Following", AppViewScope: AppViewScope{AuthorDID: "did:plc:author"}}
+			store := ProjectionStore{DB: db}
+			t.Cleanup(func() {
+				for _, table := range []string{"appview_feed_publications", "appview_viewer_feeds", "appview_publication_scopes"} {
+					db.ExecContext(ctx, "DELETE FROM "+table+" WHERE viewer_did=$1", viewer)
+				}
+			})
+			if err := store.Persist(ctx, Sidebar{ViewerDID: viewer, FollowingTabPublications: []SidebarRow{old}}, true); err != nil {
+				t.Fatal(err)
+			}
+			fixture := refreshFixture(1)
+			fixture.pages[viewer+"/site.standard.graph.subscription"] = fixture.pages["viewer/site.standard.graph.subscription"]
+			delete(fixture.pages, "viewer/site.standard.graph.subscription")
+			if missingRecord {
+				delete(fixture.records, id)
+			}
+			s := NewService(db, fixture, nil)
+			defer s.Close()
+			s.Now = func() time.Time { return at }
+			s.discoveries[viewer] = discoveryEntry{value: DiscoveryContext{Following: []DiscoveredRow{{PublicationID: id, AuthorDID: old.AuthorDID, Title: old.Title}}}, expires: at.Add(time.Minute)}
+			result, err := s.Refresh(ctx, gatewaycore.AuthContext{DID: viewer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.FollowingTabPublications) != 0 || len(result.RetainedFollowingPublicationIDs) != 0 {
+				t.Fatalf("subscribed publication remained in Following: %+v", result)
+			}
+			want := 1
+			if missingRecord {
+				want = 0
+			}
+			if len(result.SubscribedUnfoldered) != want || len(result.AllPublicationRows) != want {
+				t.Fatalf("subscription rows: %+v", result)
+			}
+			if !missingRecord && result.SubscribedUnfoldered[0].Title != "Title 001" {
+				t.Fatal("stale Following metadata won")
+			}
+			var count int
+			if err := db.QueryRowContext(ctx, `SELECT count(*) FROM appview_feed_publications WHERE viewer_did=$1 AND feed_kind='following'`, viewer).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("durable following count=%d err=%v", count, err)
+			}
+			if err := db.QueryRowContext(ctx, `SELECT count(*) FROM appview_feed_publications WHERE viewer_did=$1 AND feed_kind='subscribed'`, viewer).Scan(&count); err != nil || count != want {
+				t.Fatalf("durable subscribed count=%d want=%d err=%v", count, want, err)
+			}
+		})
 	}
 }

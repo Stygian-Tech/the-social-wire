@@ -84,7 +84,7 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 		}
 		return out
 	}
-	result := Sidebar{ViewerDID: discovery.ViewerDID, Folders: discovery.Folders, PublicationPrefs: discovery.Prefs, FolderSections: []FolderSection{}, AllPublicationRows: convert(discovery.UniqueRows), MyPublications: convert(discovery.MyPublications), SubscribedUnfoldered: convert(discovery.Unfoldered), FollowingTabPublications: convert(discovery.Following), EnrollAuthorDIDs: discovery.EnrollAuthorDIDs, RefreshedAt: s.Now()}
+	result := Sidebar{subscriptionPublicationIDs: discovery.SubscriptionPublicationIDs, ViewerDID: discovery.ViewerDID, Folders: discovery.Folders, PublicationPrefs: discovery.Prefs, FolderSections: []FolderSection{}, AllPublicationRows: convert(discovery.UniqueRows), MyPublications: convert(discovery.MyPublications), SubscribedUnfoldered: convert(discovery.Unfoldered), FollowingTabPublications: convert(discovery.Following), EnrollAuthorDIDs: discovery.EnrollAuthorDIDs, RefreshedAt: s.Now()}
 	for _, folder := range discovery.Folders {
 		section := FolderSection{FolderURI: folder.URI, FolderRKey: folder.RKey, Name: text(folder.Value, "name"), Publications: []SidebarRow{}}
 		if section.Name == "" {
@@ -116,8 +116,22 @@ func (s *Service) BuildSidebar(ctx context.Context, discovery DiscoveryContext, 
 	}
 	// Ordinary source reads remain available during persistence outages. Manual
 	// refresh must report failure if its authoritative replacement did not persist.
-	if err := (ProjectionStore{DB: s.DB}).Persist(ctx, result, phase == "full", preserveFollowing...); err != nil && len(preserveFollowing) > 0 && preserveFollowing[0] {
+	if err := (ProjectionStore{DB: s.DB}).persist(ctx, &result, phase == "full", preserveFollowing...); err != nil && len(preserveFollowing) > 0 && preserveFollowing[0] {
 		return Sidebar{}, err
+	}
+	if len(preserveFollowing) > 0 && preserveFollowing[0] {
+		keep := map[string]bool{}
+		for _, row := range allSidebarRows(result) {
+			keep[row.PublicationID] = true
+		}
+		s.mu.Lock()
+		for key, row := range s.rows[discovery.ViewerDID] {
+			if !keep[row.PublicationID] {
+				delete(s.rows[discovery.ViewerDID], key)
+				delete(s.scopes, NormalizeATRepoParam(key))
+			}
+		}
+		s.mu.Unlock()
 	}
 	return result, nil
 }

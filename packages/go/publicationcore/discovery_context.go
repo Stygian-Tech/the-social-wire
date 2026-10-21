@@ -1,6 +1,7 @@
 package publicationcore
 
 type DiscoveryContext struct {
+	SubscriptionPublicationIDs                                    []string
 	ViewerDID                                                     string
 	Folders                                                       []FolderRecord
 	Prefs                                                         []PreferenceRecord
