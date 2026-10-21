@@ -16,7 +16,6 @@ import {
   useQueryClient,
   useIsRestoring,
   type InfiniteData,
-  type QueryKey,
 } from "@tanstack/react-query";
 import { mergeStandardReaderListsPage, standardReaderListsQueryKey } from "@/lib/standardReaderListsClient";
 import { useAuth } from "@/hooks/useAuth";
@@ -49,10 +48,9 @@ import {
   sidebarListShowsSkeleton,
   type SidebarProjectionState,
 } from "@/lib/sidebarProjectionState";
-import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { awaitWithAbort } from "@/lib/awaitWithAbort";
 import { refreshReaderUnreadCounts } from "@/lib/refreshReaderUnreadCounts";
-import { refreshReaderFeeds, rollbackSeedFeedPaint } from "@/lib/refreshReaderFeeds";
+import { refreshReaderFeeds } from "@/lib/refreshReaderFeeds";
 import { readerRefreshRows, readerRefreshSourcesKey, refreshPublicationSources } from "@/lib/refreshPublicationSources";
 import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 
@@ -474,30 +472,10 @@ function PublicationSidebarProviderInner({
           predicate: query => query.queryKey[1] === did && (query.queryKey[0] === "entries" || query.queryKey[0] === "aggregateEntries"),
         }).flatMap(query => (query.state.data as InfiniteData<EntriesPage> | undefined)?.pages.flatMap(page => page.entries.map(entry => entry.entryId)) ?? []));
         const newArticleIds = new Set<string>();
-        const startingFeedData = new Map(qc.getQueryCache().findAll({
-          predicate: query => query.queryKey[1] === did && (query.queryKey[0] === "entries" || query.queryKey[0] === "aggregateEntries"),
-        }).map(query => [JSON.stringify(query.queryKey), query.state.data as InfiniteData<EntriesPage> | undefined]));
-        const seedPaints = new Map<string, { queryKey: QueryKey; baseline: InfiniteData<EntriesPage> | undefined; ids: Set<string> }>();
-        let collectingSeedArticles = true;
         const updateArticles = async () => {
           signal.throwIfAborted();
           await refreshReaderFeeds({
             queryClient: qc, viewerDid: did, oauthSession: oauth, signal,
-            onArticleIdsPainted: (queryKey, previous, ids) => {
-              signal.throwIfAborted();
-              if (!collectingSeedArticles) return;
-              const key = JSON.stringify(queryKey);
-              let paint = seedPaints.get(key);
-              if (!paint) {
-                paint = { queryKey, baseline: startingFeedData.has(key) ? startingFeedData.get(key) : previous, ids: new Set() };
-                seedPaints.set(key, paint);
-              }
-              // A normal read/pagination may finish between operation start and
-              // this paint. Preserve its additions, excluding only prior seed IDs.
-              paint.baseline = rollbackSeedFeedPaint(previous, paint.baseline, paint.ids);
-              const baselineIds = new Set(paint.baseline?.pages.flatMap(page => page.entries.map(entry => entry.entryId)) ?? []);
-              for (const id of ids) if (!baselineIds.has(id)) paint.ids.add(id);
-            },
             onNewArticleIds: ids => {
               signal.throwIfAborted();
               for (const id of ids) if (!startingArticleIds.has(id)) newArticleIds.add(id);
@@ -510,13 +488,20 @@ function PublicationSidebarProviderInner({
         const cachedRows = cached?.viewerDid === did ? readerRefreshRows(qc, did, cached) : [];
         const seedRows = cachedRows.length && readerRefreshSourcesKey(cachedRows).sources.length ? cachedRows : undefined;
         let authoritativeApplied = false;
+        let releaseAuthority!: () => void;
+        const authorityReady = new Promise<void>(resolve => { releaseAuthority = resolve; });
         const checkSources = (rows: typeof cachedRows) => refreshPublicationSources({
           oauthSession: oauth, rows, signal,
           onProgress: (completed, total) => {
             signal.throwIfAborted();
             setRefreshMessage(authoritativeApplied && completed === total ? "Updating Articles…" : `Checking ${total} Publications…`);
           },
-          onBatch: updateArticles,
+          onBatch: async () => {
+            // Ingestion may start from cached sources, but every paint must read
+            // only after the POST has applied authoritative membership/scopes.
+            await awaitWithAbort(authorityReady, signal);
+            await updateArticles();
+          },
         });
         // Observe errors immediately while the POST is pending. Only the
         // authoritative source set can decide whether a seed failure is relevant.
@@ -554,9 +539,9 @@ function PublicationSidebarProviderInner({
           setFolderPublicationsLoading(false);
           setBootstrapStreamComplete(true);
           authoritativeApplied = true;
+          releaseAuthority();
           const outcome = await seed;
           signal.throwIfAborted();
-          collectingSeedArticles = false;
           const currentRows = () => readerRefreshRows(qc, did, qc.getQueryData<PublicationSidebarProjection>(queryKey) ?? projection);
           const rows = currentRows();
           let sourceFailure: unknown;
@@ -565,30 +550,7 @@ function PublicationSidebarProviderInner({
             const authoritativeKey = readerRefreshSourcesKey(rows);
             if (JSON.stringify(cachedKey) === JSON.stringify(authoritativeKey)) {
               sourceFailure = outcome?.error;
-              // The seed may have flushed before the POST applied membership.
-              // Re-read mounted queries against the current authoritative projection.
-              try { await updateArticles(); } catch (error) {
-                signal.throwIfAborted();
-                sourceFailure ??= error;
-              }
             } else {
-              // All-feed merges retain absent rows as history. Remove only IDs
-              // painted by this seed in each query, restoring its displaced
-              // baseline history before authoritative rows and counts arrive.
-              const feedQueries = {
-                predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[1] === did && (query.queryKey[0] === "entries" || query.queryKey[0] === "aggregateEntries"),
-              };
-              // Cancellation can restore the pre-request cache. Drain it before
-              // cleanup so the next paint cannot resurrect seed-only rows.
-              const affectedKeys = new Map(qc.getQueryCache().findAll(feedQueries).map(query => [JSON.stringify(query.queryKey), query.queryKey]));
-              for (const paint of seedPaints.values()) affectedKeys.set(JSON.stringify(paint.queryKey), paint.queryKey);
-              for (const queryKey of affectedKeys.values()) advanceFeedRefreshRevision(qc, queryKey);
-              await qc.cancelQueries(feedQueries);
-              signal.throwIfAborted();
-              for (const paint of seedPaints.values()) {
-                qc.setQueryData<InfiniteData<EntriesPage>>(paint.queryKey, current => rollbackSeedFeedPaint(current, paint.baseline, paint.ids));
-              }
-              newArticleIds.clear();
               // Removed sources cannot fail the current scope. Every seed worker
               // has settled before rechecking the authoritative source set.
               try { await checkSources(rows); } catch (error) {
