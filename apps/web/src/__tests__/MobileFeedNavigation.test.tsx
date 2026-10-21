@@ -69,10 +69,41 @@ describe("MobileFeedNavigation", () => {
     render(<MobileFeedNavigation currentFeed="finance" visibleFeeds={new Set(["finance", "subscribed"])} onSelect={onSelect} />);
     const finance = screen.getByRole("button", { name: "Finance, Beta" });
     expect(finance.querySelector("svg")?.classList.contains("lucide-chart-no-axes-combined")).toBe(true);
+    expect(finance.textContent).toContain("Beta");
     expect(finance.getAttribute("aria-current")).toBe("page");
     fireEvent.click(finance);
     expect(onSelect).toHaveBeenCalledWith("finance");
   });
+  it("keeps Sports Beta in a primary mobile slot", () => {
+    const onSelect = mock(() => undefined);
+    render(<MobileFeedNavigation currentFeed="sports" visibleFeeds={new Set(["sports"])} onSelect={onSelect} />);
+    const sports = screen.getByRole("button", { name: "Sports, Beta" });
+    expect(sports.textContent).toContain("Beta");
+    expect(sports.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(sports);
+    expect(onSelect).toHaveBeenCalledWith("sports");
+  });
+
+  it("keeps Wire and Circle plain while Beta feeds appear in More", async () => {
+    const onSelect = mock(() => undefined);
+    render(<MobileFeedNavigation currentFeed="sports" visibleFeeds={new Set(["wire", "circle", "subscribed", "following", "podcasts", "finance", "sports"])} onSelect={onSelect} />);
+    for (const label of ["The Wire", "Your Circle"]) {
+      const button = screen.getByRole("button", { name: label });
+      expect(button.textContent).not.toContain("Beta");
+    }
+    expect(screen.queryByText("Beta")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More Feeds" }));
+    for (const label of ["Podcasts", "Finance", "Sports"]) {
+      const item = await screen.findByRole("menuitem", { name: `${label}, Beta` });
+      expect(item.textContent).toContain("Beta");
+    }
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+    const sports = screen.getByRole("menuitem", { name: "Sports, Beta" });
+    expect(sports.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(sports);
+    expect(onSelect).toHaveBeenCalledWith("sports");
+  });
+
   it("shows visible feeds and preserves the active feed", () => {
     const onSelect = mock(() => undefined);
     render(
@@ -108,8 +139,8 @@ describe("MobileFeedNavigation", () => {
       />,
     );
 
-    const wire = screen.getByRole("button", { name: "The Wire, Beta" });
-    expect(screen.getByText("Beta")).toBeDefined();
+    const wire = screen.getByRole("button", { name: "The Wire" });
+    expect(screen.queryByText("Beta")).toBeNull();
     expect(wire.querySelector("svg")?.classList.contains("lucide-rss")).toBe(true);
     expect(wire.getAttribute("aria-current")).toBe("page");
     fireEvent.click(wire);
@@ -122,7 +153,7 @@ describe("MobileFeedNavigation", () => {
         onSelect={onSelect}
       />,
     );
-    expect(screen.queryByRole("button", { name: "The Wire, Beta" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "The Wire" })).toBeNull();
   });
 
   it("shows Your Circle only when the authenticated catalog enables it", () => {
@@ -135,8 +166,8 @@ describe("MobileFeedNavigation", () => {
       />,
     );
 
-    const circle = screen.getByRole("button", { name: "Your Circle, Beta" });
-    expect(screen.getByText("Beta")).toBeDefined();
+    const circle = screen.getByRole("button", { name: "Your Circle" });
+    expect(screen.queryByText("Beta")).toBeNull();
     expect(circle.querySelector("svg")?.classList.contains("lucide-network")).toBe(
       true,
     );
@@ -154,6 +185,7 @@ describe("MobileFeedNavigation", () => {
     expect(more.getAttribute("aria-current")).toBe("page");
     fireEvent.click(more);
     const finance = await screen.findByRole("menuitem", { name: "Finance, Beta" });
+    expect(finance.textContent).toContain("Beta");
     expect(finance.getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("menuitem", { name: "Saved" })).toBeDefined();
     expect(screen.getByRole("menuitem", { name: "Archive" })).toBeDefined();
@@ -178,7 +210,7 @@ describe("MobileFeedNavigation", () => {
   it("opens Lists from More without replacing a primary feed slot", async () => {
     const onOpenLists = mock(() => undefined);
     render(<MobileFeedNavigation currentFeed={null} listsActive visibleFeeds={new Set(["wire", "circle", "subscribed", "following"])} onSelect={() => undefined} onOpenLists={onOpenLists} />);
-    expect(screen.getByRole("button", { name: "The Wire, Beta" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "The Wire" })).toBeDefined();
     const more = screen.getByRole("button", { name: "More Feeds" });
     expect(more.getAttribute("aria-current")).toBe("page");
     fireEvent.click(more);

@@ -72,7 +72,7 @@ export function MobileFeedNavigation({
             key={feed}
             type="button"
             aria-label={
-              feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label
+              feed === "podcasts" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label
             }
             aria-current={active ? "page" : undefined}
             className={cn(
@@ -84,7 +84,7 @@ export function MobileFeedNavigation({
             {feed === "podcasts" && player?.playing ? <PodcastPlaybackWaveform player={player} /> : <Icon className="size-5" aria-hidden="true" />}
             <span className="w-full truncate text-center">{label}</span>
             <span className="flex h-2.5 items-center">
-              {feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? (
+              {feed === "podcasts" || feed === "finance" || feed === "sports" ? (
                 <WireBetaBadge className="px-1 py-px text-[7px]" />
               ) : null}
             </span>
@@ -109,14 +109,14 @@ export function MobileFeedNavigation({
               return (
                 <DropdownMenuItem
                   key={feed}
-                  aria-label={feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label}
+                  aria-label={feed === "podcasts" || feed === "finance" || feed === "sports" ? `${label}, Beta` : label}
                   aria-current={currentFeed === feed ? "page" : undefined}
                   className={cn("min-h-11", currentFeed === feed && "text-[var(--purple-foreground)]")}
                   onClick={() => onSelect(feed)}
                 >
                   {feed === "podcasts" && player?.playing ? <PodcastPlaybackWaveform player={player} /> : <Icon className="size-4" aria-hidden="true" />}
                   <span className="flex-1 truncate">{label}</span>
-                  {feed === "podcasts" || feed === "wire" || feed === "circle" || feed === "finance" || feed === "sports" ? <WireBetaBadge /> : null}
+                  {feed === "podcasts" || feed === "finance" || feed === "sports" ? <WireBetaBadge /> : null}
                 </DropdownMenuItem>
               );
             })}
