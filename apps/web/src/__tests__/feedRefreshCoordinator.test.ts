@@ -103,7 +103,10 @@ for (const oldOutcome of ["reject", "resolve"] as const) {
       finishOld = resolve;
       failOld = reject;
     }), oldController.signal);
+    const joined = coalesceFeedFirstPage(client, session, key, async () => "unexpected");
+    expect(joined).toBe(old);
     const oldResult = old.catch(error => error);
+    const joinedResult = joined.catch(error => error);
     oldController.abort();
     let finishCurrent!: (value: string) => void;
     const current = coalesceFeedFirstPage(client, session, key, () => new Promise<string>(resolve => {
@@ -111,6 +114,9 @@ for (const oldOutcome of ["reject", "resolve"] as const) {
     }), currentController.signal);
     expect(current).not.toBe(old);
     expect(currentController.signal.aborted).toBe(false);
+    // Abort cleanup runs after a replacement is installed; transport is still pending.
+    expect(await oldResult).toBe(oldController.signal.reason);
+    expect(await joinedResult).toBe(oldController.signal.reason);
     if (oldOutcome === "reject") failOld(new DOMException("aborted", "AbortError"));
     else finishOld("retired");
     await oldResult;
@@ -128,12 +134,13 @@ it("does not retain work whose owner signal was already aborted", async () => {
   const session = {};
   const controller = new AbortController();
   controller.abort();
-  let finish!: (value: string) => void;
-  const retired = coalesceFeedFirstPage(client, session, ["feed"], () => new Promise<string>(resolve => {
-    finish = resolve;
-  }), controller.signal);
+  let requests = 0;
+  const retired = coalesceFeedFirstPage(client, session, ["feed"], async () => {
+    requests++;
+    return "retired";
+  }, controller.signal);
+  await expect(retired).rejects.toBe(controller.signal.reason);
+  expect(requests).toBe(0);
   expect(await coalesceFeedFirstPage(client, session, ["feed"], async () => "fresh")).toBe("fresh");
-  finish("retired");
-  await retired;
   client.clear();
 });
