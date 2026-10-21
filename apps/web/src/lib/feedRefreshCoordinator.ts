@@ -1,4 +1,5 @@
 import { hashKey, type QueryClient } from "@tanstack/react-query";
+import { awaitWithAbort } from "@/lib/awaitWithAbort";
 
 const revisionsByClient = new WeakMap<QueryClient, Map<string, number>>();
 
@@ -95,6 +96,7 @@ export function coalesceFeedFirstPage<T>(
   fetchPage: () => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
   let sessions = pendingByClient.get(client);
   if (!sessions) { sessions = new WeakMap(); pendingByClient.set(client, sessions); }
   const owner = session ?? publicSession;
@@ -107,7 +109,9 @@ export function coalesceFeedFirstPage<T>(
     // Abort precedes transport settlement. Late cleanup must preserve a replacement.
     if (pending.get(key) === entry) pending.delete(key);
   };
-  const task = fetchPage().finally(() => {
+  const work = fetchPage();
+  // Every joined consumer must observe cancellation, including direct cache writers.
+  const task = (signal ? awaitWithAbort(work, signal) : work).finally(() => {
     signal?.removeEventListener("abort", retire);
     retire();
   });
