@@ -32,7 +32,7 @@ export function readerRefreshRows(client: QueryClient, did: string, projection: 
   return [...selected.values()];
 }
 
-/** Await ingestion in small batches and paint completed batches even if another source fails. */
+/** Poll mounted feeds while scoped enrollment requests ingest and recount. */
 export async function refreshPublicationSources(args: {
   oauthSession: OAuthSession;
   rows: SidebarPublicationRow[];
@@ -40,34 +40,84 @@ export async function refreshPublicationSources(args: {
   onProgress: (completed: number, total: number) => void;
   onBatch: () => Promise<void>;
 }): Promise<void> {
-  const sources = new Map<string, { author?: string; feed?: string }>();
+  args.signal.throwIfAborted();
+  const authors = new Set<string>();
+  const feeds = new Set<string>();
   for (const row of args.rows) {
     const scope = row.appViewScope;
     if (scope.authorDid === "did:web:skyreader.rss") {
-      for (const feed of scope.publicationSiteUrls) sources.set(feed, { feed });
-    } else if (scope.authorDid) sources.set(scope.authorDid, { author: scope.authorDid });
+      for (const feed of scope.publicationSiteUrls) feeds.add(feed);
+    } else if (scope.authorDid) authors.add(scope.authorDid);
   }
-  const pending = [...sources.values()];
-  let failed = 0;
-  args.onProgress(0, pending.length);
-  for (let start = 0; start < pending.length; start += 4) {
-    args.signal.throwIfAborted();
-    const batch = pending.slice(start, start + 4);
-    try {
-      const signal = AbortSignal.any([args.signal, AbortSignal.timeout(30_000)]);
-      await awaitWithAbort(enrollAuthorsInAppView(
-        args.oauthSession,
-        batch.flatMap(source => source.author ? [source.author] : []),
-        batch.flatMap(source => source.feed ? [source.feed] : []),
-        signal,
-      ), signal);
-    } catch {
-      args.signal.throwIfAborted();
-      failed += batch.length;
+  // The enroller caps authors at 500 and the lexicon caps each array at 1000;
+  // use at most 500 combined sources and the route's 1 MiB JSON body limit.
+  const requests: { authorDids: string[]; feedUrls: string[] }[] = [];
+  let request = { authorDids: [] as string[], feedUrls: [] as string[] };
+  const bytes = (value: typeof request) => new TextEncoder().encode(JSON.stringify(value)).length;
+  for (const [kind, sources] of [["authorDids", authors], ["feedUrls", feeds]] as const) {
+    for (const source of sources) {
+      const next = { ...request, [kind]: [...request[kind], source] };
+      if (request.authorDids.length + request.feedUrls.length >= 500 || bytes(next) > 1 << 20) {
+        if (request.authorDids.length + request.feedUrls.length) requests.push(request);
+        request = { authorDids: [], feedUrls: [] };
+      }
+      request[kind].push(source);
+      if (bytes(request) > 1 << 20) throw new Error("A publication source exceeds the refresh request size limit.");
     }
-    args.signal.throwIfAborted();
-    await args.onBatch();
-    args.onProgress(Math.min(start + batch.length, pending.length), pending.length);
   }
-  if (failed) throw new Error("Some publications could not be checked. Articles received so far are available. Try Refresh again.");
+  if (request.authorDids.length + request.feedUrls.length) requests.push(request);
+  const total = authors.size + feeds.size;
+  args.onProgress(0, total);
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let paint: Promise<void> | undefined;
+  let paintFailure: unknown;
+  const schedulePaint = () => {
+    if (stopped || args.signal.aborted || paintFailure) return;
+    timer = setTimeout(() => {
+      if (stopped || args.signal.aborted) return;
+      // Schedule only after this paint settles: slow reads never accumulate work
+      // or hold up ingestion, and direct feed cache writes cannot race each other.
+      paint = Promise.resolve().then(() => {
+        args.signal.throwIfAborted();
+        return args.onBatch();
+      }).catch(error => {
+        paintFailure = error;
+      }).finally(schedulePaint);
+    }, 1000);
+  };
+  let sourceFailure: unknown;
+  if (total) {
+    schedulePaint();
+    try {
+      for (const request of requests) {
+        args.signal.throwIfAborted();
+        try {
+          // Preserve the former 30-second allowance per four sources without
+          // letting one large request wait indefinitely. Caller abort stays independent.
+          const sourceCount = request.authorDids.length + request.feedUrls.length;
+          const deadlineMs = Math.min(300_000, 30_000 * Math.ceil(sourceCount / 4));
+          const signal = AbortSignal.any([args.signal, AbortSignal.timeout(deadlineMs)]);
+          await awaitWithAbort(enrollAuthorsInAppView(args.oauthSession, request.authorDids, request.feedUrls, signal), signal);
+        } catch (error) {
+          args.signal.throwIfAborted();
+          sourceFailure ??= error;
+        }
+      }
+    } finally {
+      stopped = true;
+      clearTimeout(timer);
+      // Even a failed/cancelled request must settle its started feed workers.
+      await paint;
+    }
+  }
+  args.signal.throwIfAborted();
+  // Completion may commit articles after the last poll started. Flush this dirty
+  // interval once, including partial ingestion on failure; the caller must not
+  // issue an additional unconditional feed refresh.
+  if (!sourceFailure) args.onProgress(total, total);
+  await args.onBatch();
+  args.signal.throwIfAborted();
+  if (sourceFailure) throw new Error("Some publications could not be checked. Articles received so far are available. Try Refresh again.", { cause: sourceFailure });
+  if (paintFailure) throw paintFailure;
 }

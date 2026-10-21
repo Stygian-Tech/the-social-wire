@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -19,6 +21,18 @@ type RSSIngestion struct {
 }
 
 func (r RSSIngestion) Ingest(ctx context.Context, raw string) (int, error) {
+	return r.ingest(ctx, raw, false)
+}
+
+// IngestAndWait is for explicit enrollment: contention is not completed work.
+// After the prior owner releases its lease, revalidate using persisted validators.
+// Background Ingest intentionally keeps its existing nonblocking behavior.
+func (r RSSIngestion) IngestAndWait(ctx context.Context, raw string) (int, error) {
+	n, err := r.ingest(ctx, raw, true)
+	return n, errors.Join(err, ctx.Err())
+}
+
+func (r RSSIngestion) ingest(ctx context.Context, raw string, waitForLease bool) (int, error) {
 	feed := NormalizeFeedURL(raw)
 	if feed == nil {
 		return 0, nil
@@ -26,6 +40,19 @@ func (r RSSIngestion) Ingest(ctx context.Context, raw string) (int, error) {
 
 	if r.Cache != nil {
 		lease, err := r.Cache.AcquireRefreshLease(ctx, "rss", *feed, 120*time.Second)
+		for waitForLease && err == nil && lease == nil {
+			timer := time.NewTimer(100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return 0, ctx.Err()
+			case <-timer.C:
+			}
+			lease, err = r.Cache.AcquireRefreshLease(ctx, "rss", *feed, 120*time.Second)
+		}
+		if waitForLease && err != nil {
+			return 0, err
+		}
 		if err == nil && lease == nil {
 			return 0, nil
 		}
@@ -63,8 +90,14 @@ func (r RSSIngestion) Ingest(ctx context.Context, raw string) (int, error) {
 	}
 	at := now()
 	store := RSSStore{DB: r.DB}
-	previous, _ := store.Metadata(ctx, *feed)
+	previous, metadataErr := store.Metadata(ctx, *feed)
+	if waitForLease && metadataErr != nil {
+		return 0, metadataErr
+	}
 	if previous != nil && previous.BackoffUntil != nil && previous.BackoffUntil.After(at) {
+		if waitForLease {
+			return 0, errors.New("RSS refresh deferred by upstream failure backoff")
+		}
 		return 0, nil
 	}
 	headers := http.Header{"Accept": []string{"application/rss+xml, application/atom+xml, application/xml, text/xml, */*"}, "User-Agent": []string{"the-social-wire/thin-appview"}}
@@ -83,7 +116,7 @@ func (r RSSIngestion) Ingest(ctx context.Context, raw string) (int, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	status, responseHeaders, body, err := client.Get(requestCtx, *feed, headers, 2*1024*1024, 5)
-	failure := func() {
+	failure := func() error {
 		m := RSSFetchMetadata{FeedURL: *feed, LastPollAt: &at, ConsecutiveErrors: 1}
 		if previous != nil {
 			m.ETag = previous.ETag
@@ -93,9 +126,9 @@ func (r RSSIngestion) Ingest(ctx context.Context, raw string) (int, error) {
 		delay := min(6*time.Hour, 5*time.Minute*time.Duration(uint64(1)<<max(0, m.ConsecutiveErrors-1)))
 		until := at.Add(delay)
 		m.BackoffUntil = &until
-		_ = store.StoreMetadata(ctx, m)
+		return store.StoreMetadata(ctx, m)
 	}
-	success := func() {
+	success := func() error {
 		m := RSSFetchMetadata{FeedURL: *feed, LastPollAt: &at}
 		if previous != nil {
 			m.ETag = previous.ETag
@@ -107,23 +140,35 @@ func (r RSSIngestion) Ingest(ctx context.Context, raw string) (int, error) {
 		if value := strings.TrimSpace(responseHeaders.Get("Last-Modified")); value != "" {
 			m.LastModified = &value
 		}
-		_ = store.StoreMetadata(ctx, m)
+		return store.StoreMetadata(ctx, m)
 	}
 	if err != nil {
-		failure()
+		metadataErr := failure()
+		if waitForLease {
+			return 0, errors.Join(err, metadataErr)
+		}
 		return 0, nil
 	}
 	if status == 304 {
-		success()
+		metadataErr := success()
+		if waitForLease {
+			return 0, metadataErr
+		}
 		return 0, nil
 	}
 	if status != 200 && status != 403 && status != 406 && status != 415 {
-		failure()
+		metadataErr := failure()
+		if waitForLease {
+			return 0, errors.Join(fmt.Errorf("RSS fetch status %d", status), metadataErr)
+		}
 		return 0, nil
 	}
 	parsed, err := ParseRSS(body, feed, at)
 	if err != nil {
-		failure()
+		metadataErr := failure()
+		if waitForLease {
+			return 0, errors.Join(err, metadataErr)
+		}
 		return 0, nil
 	}
 	limit := r.MaximumItems
@@ -179,7 +224,10 @@ func (r RSSIngestion) Ingest(ctx context.Context, raw string) (int, error) {
 	if err := r.cleanupDuplicates(ctx, *feed); err != nil {
 		return indexed, err
 	}
-	success()
+	metadataErr = success()
+	if waitForLease {
+		return indexed, metadataErr
+	}
 	return indexed, nil
 }
 func (r RSSIngestion) cleanupDuplicates(ctx context.Context, feed string) error {

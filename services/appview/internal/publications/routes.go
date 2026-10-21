@@ -117,7 +117,7 @@ func (a Routes) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, e := a.Service.Enroller.Enroll(r.Context(), viewer, body.AuthorDIDs, body.FeedURLs, true)
-	if e != nil {
+	if r.Context().Err() != nil {
 		fail(w, 503, "Enrollment unavailable")
 		return
 	}
@@ -126,6 +126,12 @@ func (a Routes) enroll(w http.ResponseWriter, r *http.Request) {
 	}
 	if e := a.Service.RefreshEnrollmentCounters(r.Context(), viewer.DID, body.AuthorDIDs, body.FeedURLs); e != nil {
 		fail(w, 503, "Enrollment counters unavailable")
+		return
+	}
+	// A failed source can leave other sources committed. Publish their fresh counts
+	// before reporting partial failure so the reader can reconcile those articles.
+	if e != nil {
+		fail(w, 503, "Enrollment unavailable")
 		return
 	}
 	write(w, map[string]int{"indexed": n})

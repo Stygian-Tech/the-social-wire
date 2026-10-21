@@ -46,11 +46,13 @@ export async function refreshReaderFeeds({
   viewerDid,
   oauthSession,
   signal: callerSignal,
+  onNewArticleIds,
 }: {
   queryClient: QueryClient;
   viewerDid: string;
   oauthSession: OAuthSession;
   signal?: AbortSignal;
+  onNewArticleIds?: (ids: readonly string[]) => void;
 }): Promise<{ newArticleCount: number }> {
   const signal = AbortSignal.any([...(callerSignal ? [callerSignal] : []), AbortSignal.timeout(30_000)]);
   signal.throwIfAborted();
@@ -111,5 +113,6 @@ export async function refreshReaderFeeds({
     if (result.status === "rejected") throw result.reason;
   }
   signal?.throwIfAborted();
+  onNewArticleIds?.([...addedIds]);
   return { newArticleCount: addedIds.size };
 }

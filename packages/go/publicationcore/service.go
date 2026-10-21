@@ -82,7 +82,7 @@ func (s *Service) ResolveIDs(ctx context.Context, auth gatewaycore.AuthContext, 
 	}
 	return out, nil
 }
-func (s *Service) Discover(ctx context.Context, viewer string, includeFollows bool) (DiscoveryContext, error) {
+func (s *Service) Discover(ctx context.Context, viewer string, includeFollows bool, includeOwn ...bool) (DiscoveryContext, error) {
 	s.mu.Lock()
 	cached := s.discoveries[viewer]
 	s.mu.Unlock()
@@ -90,9 +90,10 @@ func (s *Service) Discover(ctx context.Context, viewer string, includeFollows bo
 	if cached.expires.After(s.Now()) {
 		prior = cached.value.Following
 	}
-	discovery, e := Discover(ctx, s.Repo, s.Client, viewer, includeFollows, prior, s.Now())
+	discovery, e := Discover(ctx, s.Repo, s.Client, viewer, includeFollows, prior, s.Now(), includeOwn...)
 	if e == nil {
 		s.mu.Lock()
+		discovery.cacheToken = new(byte)
 		s.discoveries[viewer] = discoveryEntry{discovery, s.Now().Add(10 * time.Minute)}
 		s.mu.Unlock()
 	}
@@ -156,13 +157,44 @@ func (s *Service) Counters(ctx context.Context, viewer string, rows []SidebarRow
 }
 func (s *Service) Refresh(ctx context.Context, auth gatewaycore.AuthContext) (Sidebar, error) {
 	if s.Cache != nil {
+		// Restore display metadata before invalidation on a cold replica. A cached
+		// Following list is retained, not represented as freshly rediscovered.
+		if cached, err := s.Cache.Lookup(ctx, auth.DID, s.Now(), true); err == nil && cached != nil {
+			s.mu.Lock()
+			if !s.discoveries[auth.DID].expires.After(s.Now()) {
+				prior := []DiscoveredRow{}
+				for _, row := range cached.Snapshot.Sidebar().FollowingTabPublications {
+					prior = append(prior, DiscoveredRow{PublicationID: row.PublicationID, SubscriptionPublicationID: row.SubscriptionPublicationID, AuthorDID: row.AuthorDID, AuthorHandle: row.AuthorHandle, Title: row.Title, IconURL: row.IconURL, AvatarURL: row.AvatarURL, DiscoveredAt: row.DiscoveredAt})
+				}
+				s.discoveries[auth.DID] = discoveryEntry{value: DiscoveryContext{Following: prior}, expires: s.Now().Add(10 * time.Minute)}
+			}
+			s.mu.Unlock()
+		}
 		_ = s.Cache.InvalidateSidebar(ctx, auth.DID)
 	}
-	sidebar, _, e := s.Priority(ctx, auth, true)
-	if e == nil {
-		s.launch("sidebar:"+auth.DID, func(work context.Context) { s.rebuild(work, auth) })
+	// Invalidate row-derived scopes before rebuilding so changed publication sites
+	// and removed subscriptions cannot survive the authoritative refresh.
+	s.mu.Lock()
+	for key := range s.rows[auth.DID] {
+		delete(s.scopes, NormalizeATRepoParam(key))
 	}
-	return sidebar, e
+	delete(s.rows, auth.DID)
+	s.mu.Unlock()
+	discovery, e := s.Discover(ctx, auth.DID, false, true)
+	if e != nil {
+		return Sidebar{}, e
+	}
+	sidebar, e := s.BuildSidebar(ctx, discovery, "full", true)
+	if e != nil {
+		return Sidebar{}, e
+	}
+	// Membership is authoritative even when a cold replica lacks cached display
+	// rows. Read after persistence, which removes newly hidden Following rows.
+	sidebar.RetainedFollowingPublicationIDs, e = (ProjectionStore{DB: s.DB}).FollowingPublicationIDs(ctx, auth.DID)
+	if e != nil {
+		return Sidebar{}, e
+	}
+	return sidebar, nil
 }
 func (s *Service) SidebarRows(viewer string, ids []string) []SidebarRow {
 	s.mu.Lock()

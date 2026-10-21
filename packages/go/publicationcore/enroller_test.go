@@ -161,7 +161,7 @@ func TestRecentEnrollPreservesCancellation(t *testing.T) {
 	repo := &enrollerSubscriptionRepo{}
 	enroll := Enroller{PDS: &thinappviewcore.PDSClient{HTTP: getter}, Repo: repo, RSS: &thinappviewcore.RSSIngestion{}}
 	n, err := enroll.Enroll(ctx, gatewaycore.AuthContext{}, []string{did}, []string{"https://publisher.social/feed"}, true)
-	if n != 0 || !errors.Is(err, context.Canceled) || repo.calls != 0 {
+	if n != 0 || !errors.Is(err, context.Canceled) || repo.calls > 1 {
 		t.Fatalf("cancellation indexed=%d RSS calls=%d err=%v", n, repo.calls, err)
 	}
 }

@@ -27,6 +27,7 @@ type Enroller struct {
 	Projection                                  *appviewworkercore.EventProjectorRuntime
 	RSS                                         *thinappviewcore.RSSIngestion
 	MaximumAuthors, MaximumRecords, Concurrency int
+	RSSConcurrency                              int
 	Wait                                        func(context.Context, time.Duration) error
 	Now                                         func() time.Time
 }
@@ -42,6 +43,24 @@ func waitContext(ctx context.Context, delay time.Duration) error {
 	}
 }
 func (e *Enroller) Enroll(ctx context.Context, auth gatewaycore.AuthContext, authors, feeds []string, recent bool) (int, error) {
+	type result struct {
+		count int
+		err   error
+	}
+	authorsDone := make(chan result, 1)
+	go func() {
+		n, err := e.enrollAuthors(ctx, authors, recent)
+		authorsDone <- result{n, err}
+	}()
+	rssCount, rssErr := 0, error(nil)
+	if e.RSS != nil && len(feeds) > 0 && ctx.Err() == nil {
+		rssCount, rssErr = e.ingestSubscriptions(ctx, auth, feeds, true)
+	}
+	authorResult := <-authorsDone
+	return authorResult.count + rssCount, errors.Join(authorResult.err, rssErr, ctx.Err())
+}
+
+func (e *Enroller) enrollAuthors(ctx context.Context, authors []string, recent bool) (int, error) {
 	maxAuthors, concurrency := e.MaximumAuthors, e.Concurrency
 	if maxAuthors <= 0 {
 		maxAuthors = 500
@@ -74,7 +93,7 @@ func (e *Enroller) Enroll(ctx context.Context, auth gatewaycore.AuthContext, aut
 		case slots <- struct{}{}:
 		case <-ctx.Done():
 			wg.Wait()
-			return count, ctx.Err()
+			return count, errors.Join(append(errs, ctx.Err())...)
 		}
 		wg.Add(1)
 		go func(author string) {
@@ -91,21 +110,21 @@ func (e *Enroller) Enroll(ctx context.Context, auth gatewaycore.AuthContext, aut
 	}
 	wg.Wait()
 	if ctx.Err() != nil {
-		return count, ctx.Err()
+		return count, errors.Join(append(errs, ctx.Err())...)
 	}
 	if len(errs) > 0 {
 		errs = []error{fmt.Errorf("PDS enrollment incomplete: %w", errors.Join(errs...))}
 	}
-	if e.RSS != nil && len(feeds) > 0 {
-		n, err := e.IngestSubscriptions(ctx, auth, feeds)
-		count += n
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
 	return count, errors.Join(errs...)
 }
 func (e *Enroller) IngestSubscriptions(ctx context.Context, auth gatewaycore.AuthContext, priority []string) (int, error) {
+	return e.ingestSubscriptions(ctx, auth, priority, false)
+}
+
+func (e *Enroller) ingestSubscriptions(ctx context.Context, auth gatewaycore.AuthContext, priority []string, explicit bool) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	if e.RSS == nil {
 		return 0, errors.New("RSS ingestion unavailable")
 	}
@@ -127,29 +146,26 @@ func (e *Enroller) IngestSubscriptions(ctx context.Context, auth gatewaycore.Aut
 			allowed[*feed] = true
 		}
 	}
-	feeds := []string{}
+	selected := map[string]bool{}
 	if len(priority) == 0 {
 		for feed := range allowed {
-			feeds = append(feeds, feed)
+			selected[feed] = true
 		}
 	} else {
 		for _, raw := range priority {
 			if feed := thinappviewcore.NormalizeFeedURL(raw); feed != nil && allowed[*feed] {
-				feeds = append(feeds, *feed)
+				selected[*feed] = true
 			}
 		}
 	}
-	sort.Strings(feeds)
-	total := 0
-	for _, feed := range feeds {
-		n, err := e.RSS.Ingest(ctx, feed)
-		total += n
-		if err != nil {
-			return total, err
-		}
+	feeds := make([]string, 0, len(selected))
+	for feed := range selected {
+		feeds = append(feeds, feed)
 	}
-	return total, nil
+	sort.Strings(feeds)
+	return e.ingestFeeds(ctx, feeds, explicit)
 }
+
 func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-chan time.Time) (int, error) {
 	if !strings.HasPrefix(did, "did:plc:") && !strings.HasPrefix(did, "did:web:") || did == thinappviewcore.RSSAuthorDID {
 		return 0, errors.New("invalid enrollment author")
@@ -299,5 +315,5 @@ func NewEnroller(db *sql.DB, repo Repository, pds *thinappviewcore.PDSClient, ge
 	retention := time.Duration(integer("THIN_APPVIEW_CONTENT_TTL_SECONDS", 30*86400)) * time.Second
 	rss := &thinappviewcore.RSSIngestion{DB: db, HTTP: getter, Cache: cache, MaximumItems: integer("THIN_APPVIEW_MAX_RSS_ITEMS_PER_FEED", 200), Retention: retention}
 	projector := &appviewworkercore.EventProjectorRuntime{DB: db, PDS: pds, Cache: cache, RSS: rss, Counters: thinappviewcore.CounterStore{DB: db}, Retention: retention}
-	return &Enroller{DB: db, Repo: repo, PDS: pds, HTTP: getter, Projection: projector, RSS: rss, MaximumAuthors: integer("THIN_APPVIEW_MAX_ENROLL_AUTHORS", 500), MaximumRecords: integer("THIN_APPVIEW_MAX_ENROLL_RECORDS_PER_AUTHOR", 2000), Concurrency: integer("THIN_APPVIEW_MAX_ENROLL_CONCURRENCY", 4)}
+	return &Enroller{DB: db, Repo: repo, PDS: pds, HTTP: getter, Projection: projector, RSS: rss, MaximumAuthors: integer("THIN_APPVIEW_MAX_ENROLL_AUTHORS", 500), MaximumRecords: integer("THIN_APPVIEW_MAX_ENROLL_RECORDS_PER_AUTHOR", 2000), Concurrency: integer("THIN_APPVIEW_MAX_ENROLL_CONCURRENCY", 4), RSSConcurrency: min(integer("THIN_APPVIEW_MAX_RSS_ENROLL_CONCURRENCY", maximumRSSConcurrency), maximumRSSConcurrency)}
 }
