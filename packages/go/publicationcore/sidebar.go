@@ -3,6 +3,8 @@ package publicationcore
 import "time"
 
 type Sidebar struct {
+	subscriptionPublicationIDs []string
+
 	ViewerDID                string             `json:"viewerDid"`
 	Folders                  []FolderRecord     `json:"folders"`
 	PublicationPrefs         []PreferenceRecord `json:"publicationPrefs"`

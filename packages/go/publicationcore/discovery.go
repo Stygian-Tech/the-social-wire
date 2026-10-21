@@ -133,6 +133,7 @@ resolve:
 	visibleRSS := FilterHidden(rss, result.Prefs)
 	graph, following := Segment(visible, viewer, subscriptions)
 	result.Subscribed = MergeSubscribed(graph, visibleRSS, FilterHidden(orphans, result.Prefs))
+	result.SubscriptionPublicationIDs = subscriptions
 	result.PrefsByPublicationID = PreferencesByID(result.Prefs)
 	for _, row := range result.Subscribed {
 		if owns(row, viewer) {
@@ -148,7 +149,7 @@ resolve:
 			}
 		}
 	} else {
-		result.Following = FilterHidden(priorFollowing, result.Prefs)
+		_, result.Following = Segment(FilterHidden(priorFollowing, result.Prefs), viewer, subscriptions)
 	}
 	unique := map[string]DiscoveredRow{}
 	authors := map[string]bool{}
