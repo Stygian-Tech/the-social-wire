@@ -135,6 +135,48 @@ describe("Bluesky Social query safety", () => {
     expect(timelineSignal?.aborted).toBe(true);
   });
 
+  it("retires an automatic request and its joined refresh on unmount before a late transport settles", async () => {
+    const oauth = { did: alice } as unknown as OAuthSession;
+    const safety = moderation(alice);
+    restoreAuth();
+    const auth = spyOn(Auth, "useAuth").mockReturnValue({
+      session: { did: alice }, getOAuthSession: () => oauth, oauthSessionReloadSeq: 0,
+    } as ReturnType<typeof Auth.useAuth>);
+    restoreAuth = () => auth.mockRestore();
+    let finishOld!: (value: Client.BlueskySocialPage) => void;
+    let finishNew!: typeof finishOld;
+    // Ignore cancellation at the transport so the real coordinator must retire it.
+    const old = new Promise<Client.BlueskySocialPage>(resolve => { finishOld = resolve; });
+    const fresh = new Promise<Client.BlueskySocialPage>(resolve => { finishNew = resolve; });
+    const timeline = spyOn(Client, "getBlueskySocialPage").mockReturnValueOnce(old).mockReturnValue(fresh);
+    const hydrate = spyOn(Client, "hydrateBlueskySocialPage").mockImplementation(async (_oauth, value) => value);
+    restores.push(() => timeline.mockRestore(), () => hydrate.mockRestore());
+    const first = renderHook(() => useBlueskySocialTimeline(Client.SOCIAL_FOLLOWING_FEED, safety), { wrapper: Wrapper });
+    await waitFor(() => expect(timeline).toHaveBeenCalledTimes(1));
+    let retiredRefreshSettled = false;
+    act(() => { void first.result.current.refreshFirstPage().then(() => { retiredRefreshSettled = true; }); });
+    expect(timeline).toHaveBeenCalledTimes(1);
+    first.unmount();
+    expect(timeline.mock.calls[0][0].signal?.aborted).toBe(true);
+    await waitFor(() => expect(retiredRefreshSettled).toBe(true));
+
+    const second = renderHook(() => useBlueskySocialTimeline(Client.SOCIAL_FOLLOWING_FEED, safety), { wrapper: Wrapper });
+    await waitFor(() => expect(timeline).toHaveBeenCalledTimes(2));
+    expect(timeline.mock.calls[1][0].signal?.aborted).toBe(false);
+    let currentRefresh!: Promise<void>;
+    let currentRefreshSettled = false;
+    act(() => {
+      currentRefresh = second.result.current.refreshFirstPage().then(() => { currentRefreshSettled = true; });
+    });
+    expect(timeline).toHaveBeenCalledTimes(2);
+    await act(async () => { finishOld(page("retired-post")); await old; });
+    expect(second.result.current.data).toBeUndefined();
+    expect(currentRefreshSettled).toBe(false);
+    await act(async () => { finishNew(page("current-post")); await currentRefresh; });
+    await waitFor(() => expect(second.result.current.data?.pages[0]?.feed[0]?.post.uri).toBe("current-post"));
+    expect(timeline).toHaveBeenCalledTimes(2);
+  });
+
   it("stops pagination when the server repeats its previous cursor", async () => {
     const timeline = spyOn(Client, "getBlueskySocialPage").mockImplementation(async args => page(args.cursor ? "second" : "first", "repeat"));
     restores.push(() => timeline.mockRestore());
