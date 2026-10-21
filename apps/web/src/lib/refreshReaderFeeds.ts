@@ -47,15 +47,12 @@ export async function refreshReaderFeeds({
   oauthSession,
   signal: callerSignal,
   onNewArticleIds,
-  onArticleIdsPainted,
 }: {
   queryClient: QueryClient;
   viewerDid: string;
   oauthSession: OAuthSession;
   signal?: AbortSignal;
   onNewArticleIds?: (ids: readonly string[]) => void;
-  /** Report each committed paint, including partial work before another worker fails. */
-  onArticleIdsPainted?: (queryKey: QueryKey, previous: InfiniteData<EntriesPage> | undefined, ids: readonly string[]) => void;
 }): Promise<{ newArticleCount: number }> {
   const signal = AbortSignal.any([...(callerSignal ? [callerSignal] : []), AbortSignal.timeout(30_000)]);
   signal.throwIfAborted();
@@ -95,11 +92,9 @@ export async function refreshReaderFeeds({
           signal,
         }), signal);
         signal?.throwIfAborted();
-        const previous = query.state.data as InfiniteData<EntriesPage> | undefined;
         queryClient.setQueryData<InfiniteData<EntriesPage>>(query.queryKey, current =>
           mergeFeedRefreshForFilter(current, freshPage, scope.filter)
         );
-        onArticleIdsPainted?.(query.queryKey, previous, freshPage.entries.map(entry => entry.entryId));
         for (const entry of freshPage.entries) {
           if (!previousIds.has(entry.entryId)) addedIds.add(entry.entryId);
         }
@@ -120,26 +115,4 @@ export async function refreshReaderFeeds({
   signal?.throwIfAborted();
   onNewArticleIds?.([...addedIds]);
   return { newArticleCount: addedIds.size };
-}
-
-/** Undo speculative paints while retaining baseline rows displaced by URL deduplication. */
-export function rollbackSeedFeedPaint(
-  current: InfiniteData<EntriesPage> | undefined,
-  baseline: InfiniteData<EntriesPage> | undefined,
-  seedIds: ReadonlySet<string>,
-): InfiniteData<EntriesPage> | undefined {
-  if (!current) return baseline;
-  const baselineIds = new Set(baseline?.pages.flatMap(page => page.entries.map(entry => entry.entryId)) ?? []);
-  const seen = new Set(baselineIds);
-  const pages = Array.from({ length: Math.max(current.pages.length, baseline?.pages.length ?? 0) }, (_, index) => {
-    const original = baseline?.pages[index];
-    const latest = current.pages[index];
-    const additions = (latest?.entries ?? []).filter(entry => {
-      if (seedIds.has(entry.entryId) || seen.has(entry.entryId)) return false;
-      seen.add(entry.entryId);
-      return true;
-    });
-    return { ...(original ?? latest), entries: [...additions, ...(original?.entries ?? [])] };
-  });
-  return { ...current, pages, pageParams: pages.map((_, index) => baseline && index < baseline.pageParams.length ? baseline.pageParams[index] : current.pageParams[index]) };
 }
