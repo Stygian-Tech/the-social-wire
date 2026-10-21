@@ -8,6 +8,7 @@ import * as Runtime from "@/lib/pdsReadStateRuntime";
 import * as Sync from "@/lib/pdsReadStateSync";
 import { usePendingPDSReadState } from "@/hooks/usePendingPDSReadState";
 import { effectiveEntryReadState, pendingReadStateOverlay, invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
+import { getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 const restores: (() => void)[] = [];
 afterEach(() => { cleanup(); restores.splice(0).forEach(restore => restore()); });
 const alice = { did: "did:plc:alice" } as unknown as OAuthSession;
@@ -71,6 +72,8 @@ test("confirmation discards stale inactive unread feeds without touching another
   await invalidateConfirmedReadStateQueries(client, alice.did);
   expect(client.getQueryData(unread)).toBeUndefined();
   expect(client.getQueryState(all)?.isInvalidated).toBe(true);
+  expect(getFeedRefreshRevision(client, all)).toBe(1);
+  expect(getFeedRefreshRevision(client, other)).toBe(0);
   expect(client.getQueryState(other)?.isInvalidated).toBe(false);
   expect(client.getQueryData<unknown>(other)).toEqual({ rows: ["article"] });
 });

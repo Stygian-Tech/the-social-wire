@@ -16,6 +16,8 @@ import * as ReadRouteContext from "@/contexts/ReadRouteContext";
 import * as PublicationProjectionClient from "@/lib/publicationProjectionClient";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 
+import { getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+
 const markEntriesRead = mock(() => {});
 const markEntriesUnread = mock(() => {});
 const isEntryRead = mock((entryId: string) => entryId.length < 0);
@@ -248,6 +250,7 @@ describe("useCachedBulkReadActions", () => {
     );
 
     result.current.applyMarkAllRead();
+    expect(getFeedRefreshRevision(queryClient, activeUnreadQueryKey)).toBe(1);
 
     await waitFor(() => expect(gatewaySpy).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -268,6 +271,7 @@ describe("useCachedBulkReadActions", () => {
     // The observed unread feed survives and refetches.
     await waitFor(() => expect(activeUnreadFetch).toHaveBeenCalledTimes(2));
     expect(queryClient.getQueryState(activeUnreadQueryKey)).toBeDefined();
+    expect(getFeedRefreshRevision(queryClient, activeUnreadQueryKey)).toBe(2);
 
     unsubscribeActiveObserver();
     authSpy.mockRestore();

@@ -5,6 +5,11 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ReactNode } from "react";
 
 import { PublicationSidebarProvider, useSidebarBootstrap } from "@/contexts/PublicationSidebarContext";
+import { ReadStateProvider, useReadState } from "@/contexts/ReadStateContext";
+import type { EntriesPage } from "@/hooks/useEntries";
+import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
+import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
+import { effectiveEntryReadState } from "@/lib/pendingReadStateOverlay";
 import * as auth from "@/hooks/useAuth";
 import * as bootstrapClient from "@/lib/bootstrapStreamClient";
 import * as imageCache from "@/lib/imageBlobCache";
@@ -13,6 +18,10 @@ import * as readerFeeds from "@/lib/refreshReaderFeeds";
 import * as publicationSources from "@/lib/refreshPublicationSources";
 import * as readerUnread from "@/lib/refreshReaderUnreadCounts";
 import * as appview from "@/lib/thinAppViewClient";
+import * as attestation from "@/lib/pdsSessionAttestation";
+import * as gatewayAuth from "@/lib/latrGatewayUserAuth";
+import * as upstreamDpop from "@/lib/latrGatewayUpstreamDpop";
+import { socialWireXrpc } from "@/lib/socialWireXrpc";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 
 function deferred() {
@@ -22,8 +31,9 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+const actualRefreshReaderFeeds = readerFeeds.refreshReaderFeeds;
 let viewerSequence = 0;
-function mountProvider(options: { initialError?: boolean; initialGate?: ReturnType<typeof deferred> } = {}) {
+function mountProvider(options: { initialError?: boolean; initialGate?: ReturnType<typeof deferred>; streamedEntries?: boolean } = {}) {
   const did = `did:plc:sidebar-test-${++viewerSequence}`;
   const oauthSession = { did } as OAuthSession;
   const authState = {
@@ -41,6 +51,10 @@ function mountProvider(options: { initialError?: boolean; initialGate?: ReturnTy
     if (options.initialGate) {
       await options.initialGate.promise;
       handlers.onEvent({ kind: "sidebarPriority", payload: projection });
+      if (options.streamedEntries) handlers.onEvent({ kind: "entriesPage", payload: {
+        publicationId: encodeURIComponent("at://did:plc:author/site.standard.publication/pub"), source: "live_projection",
+        entries: [{ entryId: "old", title: "Stale", publishedAt: "2026-10-20", isRead: true }, { entryId: "stale-new", title: "New", publishedAt: "2026-10-20" }],
+      } });
     }
     if (options.initialError) handlers.onError?.(new Error("Initial bootstrap failed"));
     else handlers.onEvent({ kind: "done", payload: { refreshedAt: projection.refreshedAt } });
@@ -53,11 +67,11 @@ function mountProvider(options: { initialError?: boolean; initialGate?: ReturnTy
   function wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <PublicationSidebarProvider>{children}</PublicationSidebarProvider>
+        <PublicationSidebarProvider><ReadStateProvider>{children}</ReadStateProvider></PublicationSidebarProvider>
       </QueryClientProvider>
     );
   }
-  return { ...renderHook(() => useSidebarBootstrap(), { wrapper }), did, projection, queryClient, stream, post, sources, feeds, unread };
+  return { ...renderHook(() => ({ ...useSidebarBootstrap(), readState: useReadState() }), { wrapper }), did, projection, queryClient, stream, post, sources, feeds, unread, oauthSession };
 }
 
 const observers: (() => void)[] = [];
@@ -75,6 +89,148 @@ function cacheActiveSources(mounted: ReturnType<typeof mountProvider>, rows = [s
 afterEach(() => { while (observers.length) observers.pop()!(); cleanup(); mock.restore(); });
 
 describe("PublicationSidebarProvider", () => {
+  for (const action of ["markEntryUnread", "markEntriesUnread"] as const) {
+    it(`rejects a delayed bootstrap seed for an absent publication after aggregate ${action}`, async () => {
+      const env = process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED;
+      process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = "false";
+      window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify({
+        old: "2026-01-01T00:00:00Z", history: "2026-01-01T00:00:00Z",
+      }));
+      spyOn(appview, "writeThroughReadMarkDelete").mockResolvedValue(undefined);
+      const gate = deferred();
+      const mounted = mountProvider({ initialGate: gate, streamedEntries: true });
+      const { queryClient, did, result } = mounted;
+      const publicationKey = ["entries", did, "at://did:plc:author/site.standard.publication/pub", "all"];
+      const aggregateKey = ["aggregateEntries", did, "subscribed", "", "all"];
+      const entryIds = action === "markEntriesUnread" ? ["old", "history"] : ["old"];
+      queryClient.setQueryData(aggregateKey, {
+        pages: [{ entries: [
+          { entryId: "old", title: "Old", publishedAt: "2026-10-20", isRead: true },
+          { entryId: "history", title: "History", publishedAt: "2026-10-19", isRead: true },
+        ] }], pageParams: [undefined],
+      });
+      try {
+        await waitFor(() => expect(mounted.stream).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(result.current.readState!.isEntryRead("old")).toBe(true));
+        expect(result.current.bootstrapStreamComplete).toBe(false);
+        expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+
+        await act(async () => {
+          if (action === "markEntriesUnread") result.current.readState!.markEntriesUnread(entryIds);
+          else result.current.readState!.markEntryUnread("old");
+        });
+        for (const entryId of entryIds) {
+          expect(result.current.readState!.isEntryRead(entryId)).toBe(false);
+          expect(result.current.readState!.pendingEntryReadState(entryId)).toBeUndefined();
+        }
+        expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+        const before = queryClient.getQueryData<{ pages: EntriesPage[] }>(aggregateKey)!;
+        for (const entryId of entryIds) {
+          expect(before.pages[0].entries.find(entry => entry.entryId === entryId)?.isRead).toBe(false);
+        }
+
+        await act(async () => { gate.resolve(); });
+        await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+
+        expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+        const after = queryClient.getQueryData<{ pages: EntriesPage[] }>(aggregateKey)!;
+        expect(after).toBe(before);
+        for (const entryId of entryIds) {
+          const entry = after.pages[0].entries.find(entry => entry.entryId === entryId)!;
+          expect(entry.isRead).toBe(false);
+          expect(effectiveEntryReadState(entryId, entry.isRead,
+            result.current.readState!.isEntryRead, result.current.readState!.pendingEntryReadState)).toBe(false);
+        }
+      } finally {
+        gate.resolve(); cleanup(); queryClient.clear();
+        window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
+        if (env === undefined) delete process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED;
+        else process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = env;
+      }
+    });
+  }
+
+  it("allows a delayed bootstrap seed for an absent publication after another viewer changes read state", async () => {
+    const gate = deferred();
+    const mounted = mountProvider({ initialGate: gate, streamedEntries: true });
+    const { queryClient, did, result } = mounted;
+    const publicationKey = ["entries", did, "at://did:plc:author/site.standard.publication/pub", "all"];
+    try {
+      await waitFor(() => expect(mounted.stream).toHaveBeenCalledTimes(1));
+      expect(result.current.bootstrapStreamComplete).toBe(false);
+      expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+      await act(async () => { await cancelViewerFeedRefreshes(queryClient, `${did}-other-viewer`); });
+      expect(queryClient.getQueryCache().find({ queryKey: publicationKey, exact: true })).toBeUndefined();
+      await act(async () => { gate.resolve(); });
+      await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+      expect(queryClient.getQueryData<{ pages: EntriesPage[] }>(publicationKey)?.pages[0].entries).toMatchObject([
+        { entryId: "old", isRead: true }, { entryId: "stale-new" },
+      ]);
+    } finally {
+      gate.resolve(); cleanup(); queryClient.clear();
+    }
+  });
+
+  for (const mode of ["manual", "bootstrap"] as const) {
+    for (const action of ["markEntryRead", "markEntryUnread"] as const) {
+      it(`preserves read intent, flags, freshness and invalidation after blocked ${mode} ${action}`, async () => {
+        const env = process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED;
+        process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = "false";
+        window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
+        if (action === "markEntryUnread") window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify({ old: "2026-01-01T00:00:00Z" }));
+        spyOn(appview, "writeThroughReadMark").mockResolvedValue(undefined);
+        spyOn(appview, "writeThroughReadMarkDelete").mockResolvedValue(undefined);
+        const gate = deferred();
+        const mounted = mountProvider({ initialGate: gate, streamedEntries: mode === "bootstrap" });
+        const { queryClient, did, result } = mounted;
+        const key = ["entries", did, "at://did:plc:author/site.standard.publication/pub", "all"];
+        queryClient.setQueryData(key, {
+          pages: [{ entries: [{ entryId: "old", title: "Old", publishedAt: "2026-10-20", isRead: action === "markEntryUnread" }], cursor: "tail" }, { entries: [{ entryId: "history", title: "History", publishedAt: "2026-10-19" }] }],
+          pageParams: [undefined, "tail"],
+        }, { updatedAt: 1 });
+        const started = deferred(), release = deferred();
+        const reported: string[][] = [];
+        let pending: Promise<{ newArticleCount: number }> | undefined;
+        try {
+          await waitFor(() => expect(mounted.stream).toHaveBeenCalledTimes(1));
+          await waitFor(() => expect(result.current.readState!.isEntryRead("old")).toBe(action === "markEntryUnread"));
+          if (mode === "manual") {
+            await act(async () => { gate.resolve(); });
+            await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+            const observer = new InfiniteQueryObserver<EntriesPage>(queryClient, {
+              queryKey: key, initialPageParam: undefined, getNextPageParam: () => undefined,
+              staleTime: Infinity, queryFn: async () => { throw new Error("Unexpected refetch"); },
+            });
+            observers.push(observer.subscribe(() => {}));
+            spyOn(appview, "listAggregateFeedFromAppView").mockImplementation(async () => {
+              started.resolve(); await release.promise;
+              return { entries: [{ entryId: "old", title: "Stale", publishedAt: "2026-10-20", isRead: true }, { entryId: "stale-new", title: "New", publishedAt: "2026-10-20" }] };
+            });
+            pending = actualRefreshReaderFeeds({ queryClient, viewerDid: did, oauthSession: mounted.oauthSession, onNewArticleIds: ids => reported.push([...ids]) });
+            await started.promise;
+          }
+          await act(async () => { result.current.readState![action]("old"); });
+          await waitFor(() => expect(result.current.readState!.isEntryRead("old")).toBe(action === "markEntryRead"));
+          await queryClient.invalidateQueries({ queryKey: key, exact: true, refetchType: "none" });
+          const before = queryClient.getQueryState(key)!;
+          await act(async () => { release.resolve(); gate.resolve(); if (pending) expect(await pending).toEqual({ newArticleCount: 0 }); });
+          await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+          const after = queryClient.getQueryState(key)!;
+          expect(after.data).toBe(before.data);
+          expect(after.dataUpdatedAt).toBe(before.dataUpdatedAt);
+          expect(after.isInvalidated).toBe(true);
+          if (mode === "manual") expect(reported).toEqual([[]]);
+          expect(queryClient.getQueryCache().findAll({ predicate: query => query.queryKey[0] === "entries" })).toHaveLength(1);
+        } finally {
+          cleanup(); queryClient.clear();
+          window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
+          if (env === undefined) delete process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED;
+          else process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = env;
+        }
+      });
+    }
+  }
+
   it("starts a single bootstrap stream per provider mount", async () => {
     const { result, stream } = mountProvider();
     await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
@@ -175,6 +331,72 @@ describe("PublicationSidebarProvider", () => {
     await act(async () => { ingested.resolve(); await task; });
     expect(feeds).toHaveBeenCalledTimes(2); expect(unread).toHaveBeenCalledTimes(1);
     expect(result.current.refreshMessage).toBe("Refresh Complete");
+  });
+
+  it("queues the authoritative POST before blocked seed enrollment on the real Gateway nonce lane", async () => {
+    const mounted = mountProvider();
+    const { result, post, sources, feeds, unread, oauthSession, queryClient, did } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted, Array.from({ length: 5 }, (_, i) => sourceRow(`did:plc:source-${i}`)));
+    // Select the real serialized Gateway path, mocking only proof creation and
+    // transport. Neither the sidebar request nor enrollment bypasses its queue.
+    Object.assign(oauthSession, { getTokenSet: async () => ({ access_token: "token" }), server: { dpopKey: {} } });
+    spyOn(attestation, "createPdsSessionAttestationProof").mockResolvedValue("session-proof");
+    spyOn(upstreamDpop, "createUpstreamDpopProof").mockResolvedValue("upstream-proof");
+    spyOn(gatewayAuth, "buildLatrGatewayUserAuthHeaders").mockResolvedValue({ Authorization: "DPoP token", DPoP: "gateway-proof" });
+    post.mockRestore();
+    sources.mockRestore();
+    const deadlines: { milliseconds: number; controller: AbortController }[] = [];
+    spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => {
+      const controller = new AbortController();
+      deadlines.push({ milliseconds, controller });
+      return controller.signal;
+    });
+    const posted = deferred(), ingested = deferred();
+    const requests: { path: string; signal: AbortSignal | null | undefined }[] = [];
+    spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path === socialWireXrpc.listEntries) {
+        return Response.json({ entries: [] }, { headers: { "X-ATProto-Session-Attestation-Receipt": "receipt" } });
+      }
+      requests.push({ path, signal: init?.signal });
+      if (path === socialWireXrpc.refreshSidebar) {
+        await posted.promise;
+        return Response.json({ ...cached, refreshedAt: "authoritative-queued-first" });
+      }
+      if (path === socialWireXrpc.enrollSources) {
+        await ingested.promise;
+        return Response.json({});
+      }
+      throw new Error(`Unexpected Gateway request: ${path}`);
+    }, { preconnect: globalThis.fetch.preconnect }));
+    let outcome!: Promise<unknown>;
+    act(() => { outcome = result.current.refresh.mutateAsync().catch(error => error); });
+    try {
+      await waitFor(() => expect(requests).toHaveLength(1));
+      expect(requests[0].path).toBe(socialWireXrpc.refreshSidebar);
+      expect(feeds).not.toHaveBeenCalled();
+      expect(unread).not.toHaveBeenCalled();
+      await act(async () => { posted.resolve(); });
+      await waitFor(() => expect(requests).toHaveLength(2));
+      expect(requests.map(request => request.path)).toEqual([socialWireXrpc.refreshSidebar, socialWireXrpc.enrollSources]);
+      expect(queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did))?.refreshedAt).toBe("authoritative-queued-first");
+      expect(deadlines.map(deadline => deadline.milliseconds)).toEqual([30_000, 60_000]);
+      // Advance the POST's entire allowance while enrollment is still blocked.
+      // Authority has already reached fetch and applied, so this cannot time it
+      // out waiting behind the seed or cancel the independently owned seed.
+      await act(async () => { deadlines[0].controller.abort(new DOMException("Sidebar deadline exceeded", "TimeoutError")); });
+      expect(requests[0].signal?.aborted).toBe(true);
+      expect(requests[1].signal?.aborted).toBe(false);
+      expect(result.current.refresh.isPending).toBe(true);
+      expect(unread).not.toHaveBeenCalled();
+      await act(async () => { ingested.resolve(); expect(await outcome).toBeUndefined(); });
+      expect(feeds).toHaveBeenCalledTimes(1);
+      expect(unread).toHaveBeenCalledTimes(1);
+      expect(result.current.refreshMessage).toBe("Refresh Complete");
+    } finally {
+      await act(async () => { posted.resolve(); ingested.resolve(); await outcome; });
+    }
   });
 
   for (const invalid of ["missing", "other-viewer", "no-usable-sources"] as const) {

@@ -4,7 +4,7 @@ import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query"
 import type { EntriesPage } from "@/hooks/useEntries";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import { awaitWithAbort } from "@/lib/awaitWithAbort";
-import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { advanceFeedRefreshRevision, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { mergeFeedRefreshForFilter } from "@/lib/feedCacheMerge";
 import {
   listAggregateFeedFromAppView,
@@ -85,6 +85,7 @@ export async function refreshReaderFeeds({
       signal?.throwIfAborted();
       const query = activeQueries[nextIndex++];
       const scope = feedScope(query.queryKey)!;
+      const revision = getFeedRefreshRevision(queryClient, query.queryKey);
       try {
         const freshPage = await awaitWithAbort(listAggregateFeedFromAppView({
           ...scope,
@@ -92,6 +93,10 @@ export async function refreshReaderFeeds({
           signal,
         }), signal);
         signal?.throwIfAborted();
+        // Read-state actions retire direct writes as well as React Query reads.
+        // A removed/recreated query is also a different request owner.
+        if (getFeedRefreshRevision(queryClient, query.queryKey) !== revision ||
+          queryClient.getQueryCache().find({ queryKey: query.queryKey, exact: true }) !== query) continue;
         queryClient.setQueryData<InfiniteData<EntriesPage>>(query.queryKey, current =>
           mergeFeedRefreshForFilter(current, freshPage, scope.filter)
         );

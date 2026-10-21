@@ -8,6 +8,7 @@ import {
   applyUnreadCountsEvent,
   writeStreamedEntriesPage,
 } from "@/lib/bootstrapStreamState";
+import { advanceFeedRefreshRevision, cancelViewerFeedRefreshes, captureFeedRefreshRevisions, getFeedRefreshRevision, getViewerReadStateRevision } from "@/lib/feedRefreshCoordinator";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 
@@ -66,6 +67,41 @@ function row(
 }
 
 describe("writeStreamedEntriesPage", () => {
+  for (const filter of ["all", "unread"] as const) {
+    for (const source of ["live_projection", "projection_cache"] as const) {
+      it(`rejects ${source} ${filter} bootstrap data after a read change with no target query`, async () => {
+        const qc = new QueryClient();
+        const viewer = "did:plc:absent-viewer";
+        const publicationId = "at://did:plc:author/site.standard.publication/absent";
+        const key = [...ENTRIES_QUERY_KEY(viewer, publicationId), filter];
+        const revisions = captureFeedRefreshRevisions(qc);
+        const readRevision = getViewerReadStateRevision(qc, viewer);
+        await cancelViewerFeedRefreshes(qc, viewer);
+        expect(getFeedRefreshRevision(qc, key)).toBe(0);
+        const payload = { publicationId: encodeURIComponent(publicationId), source,
+          cachedAt: "2026-01-01T00:00:00Z", entries: [{ entryId: "old", title: "Old", isRead: true, publishedAt: "2026-01-01" }] };
+        writeStreamedEntriesPage(qc, viewer, payload, filter, revisions, readRevision);
+        expect(qc.getQueryState(key)).toBeUndefined();
+        // A new stream after the action can still seed the same absent scope.
+        writeStreamedEntriesPage(qc, viewer, payload, filter, captureFeedRefreshRevisions(qc), getViewerReadStateRevision(qc, viewer));
+        expect(qc.getQueryData(key)).toBeDefined();
+        qc.clear();
+      });
+    }
+  }
+
+  it("accepts an absent scope when only another viewer changed read state", async () => {
+    const qc = new QueryClient();
+    const viewer = "did:plc:viewer";
+    const publicationId = "at://did:plc:author/site.standard.publication/absent";
+    const revisions = captureFeedRefreshRevisions(qc);
+    const readRevision = getViewerReadStateRevision(qc, viewer);
+    await cancelViewerFeedRefreshes(qc, "did:plc:other");
+    writeStreamedEntriesPage(qc, viewer, { publicationId, source: "live_projection", entries: [] }, "all", revisions, readRevision);
+    expect(qc.getQueryData([...ENTRIES_QUERY_KEY(viewer, publicationId), "all"])).toBeDefined();
+    qc.clear();
+  });
+
   const publicationId = "rss:aHR0cHM6Ly9leGFtcGxlLnRlc3QvcnNz";
   const queryKey = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), "all"];
   const cached = {
@@ -75,6 +111,55 @@ describe("writeStreamedEntriesPage", () => {
     ],
     pageParams: [undefined, "next"],
   };
+
+  for (const filter of ["all", "unread"] as const) {
+    for (const source of ["live_projection", "projection_cache"] as const) {
+      it(`rejects ${source} ${filter} chunks after a read-state cancellation`, async () => {
+        const qc = new QueryClient();
+        const key = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), filter];
+        // Capture before the eventual target scope even exists in the cache.
+        const revisions = captureFeedRefreshRevisions(qc);
+        qc.setQueryData(key, cached, { updatedAt: 1 });
+        await cancelViewerFeedRefreshes(qc, "did:plc:viewer");
+        qc.setQueryData<InfiniteData<EntriesPage>>(key, current => ({
+          ...current!, pages: current!.pages.map(page => ({ ...page, entries: page.entries.map(entry => ({ ...entry, isRead: false })) })),
+        }));
+        await qc.invalidateQueries({ queryKey: key, exact: true, refetchType: "none" });
+        const before = qc.getQueryState(key)!;
+        writeStreamedEntriesPage(qc, "did:plc:viewer", {
+          publicationId: encodeURIComponent(publicationId), source,
+          cachedAt: "2099-01-01T00:00:00Z",
+          entries: [{ ...cached.pages[0].entries[0], isRead: true }],
+        }, filter, revisions);
+        const after = qc.getQueryState(key)!;
+        expect(after.data).toBe(before.data);
+        expect(after.dataUpdatedAt).toBe(before.dataUpdatedAt);
+        expect(after.isInvalidated).toBe(true);
+        expect(qc.getQueryDefaults(key)).toEqual({});
+        expect(qc.getQueryCache().getAll()).toHaveLength(1);
+        qc.clear();
+      });
+    }
+  }
+
+  it("copies nonzero stream-start generations and looks up the complete normalized query identity", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKey, cached, { updatedAt: 1 });
+    advanceFeedRefreshRevision(qc, queryKey);
+    const revisions = captureFeedRefreshRevisions(qc);
+    advanceFeedRefreshRevision(qc, [...queryKey.slice(0, -1), "unread"]);
+    advanceFeedRefreshRevision(qc, ["entries", "did:plc:other", publicationId, "all"]);
+    const payload = { publicationId: encodeURIComponent(publicationId), entries: [fresh], source: "live_projection" as const };
+    writeStreamedEntriesPage(qc, "did:plc:viewer", payload, "all", revisions);
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)?.pages[0].entries[0]).toEqual(fresh);
+    advanceFeedRefreshRevision(qc, queryKey);
+    const before = qc.getQueryState(queryKey)!;
+    writeStreamedEntriesPage(qc, "did:plc:viewer", { ...payload, entries: [] }, "all", revisions);
+    expect(qc.getQueryState(queryKey)?.data).toBe(before.data);
+    expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(before.dataUpdatedAt);
+    expect(revisions(queryKey)).toBe(1);
+    qc.clear();
+  });
 
   for (const id of [publicationId, encodeURIComponent(publicationId)]) {
     it(`preserves all cached pages and freshness when unavailable (${id})`, () => {
@@ -105,21 +190,19 @@ describe("writeStreamedEntriesPage", () => {
     });
   }
 
-  it("replaces cached rows with an authoritative live empty page", () => {
+  it("preserves All history when a live empty first page arrives", () => {
     const qc = new QueryClient();
     qc.setQueryData(queryKey, cached, { updatedAt: 1 });
     const receivedAt = Date.now();
     writeStreamedEntriesPage(qc, "did:plc:viewer", {
       publicationId, entries: [], source: "live_projection",
     });
-    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
-      pages: [{ entries: [], cursor: undefined }], pageParams: [undefined],
-    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual(cached);
     expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBeGreaterThanOrEqual(receivedAt);
     qc.clear();
   });
 
-  it("replaces with a valid cached empty page using its original timestamp", () => {
+  it("merges a newer cached empty All page using its original timestamp", () => {
     const qc = new QueryClient();
     qc.setQueryData(queryKey, cached, { updatedAt: 1 });
     const cachedAt = "2026-01-02T00:00:00Z";
@@ -127,10 +210,113 @@ describe("writeStreamedEntriesPage", () => {
       publicationId, entries: [], source: "projection_cache", cachedAt,
       expiresAt: "2026-01-03T00:00:00Z",
     });
-    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
-      pages: [{ entries: [], cursor: undefined }], pageParams: [undefined],
-    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual(cached);
     expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(Date.parse(cachedAt));
+    qc.clear();
+  });
+
+  const existingUpdatedAt = Date.parse("2026-01-02T00:00:00Z");
+  const freshCachedAt = "2026-01-03T00:00:00Z";
+  const fresh = { ...cached.pages[1].entries[0], title: "Updated Two" };
+
+  for (const filter of ["all", "unread"] as const) {
+    for (const entries of [[], [fresh]]) {
+      for (const cachedAt of ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", undefined, "invalid"]) {
+        it(`rejects stale/invalid cached ${filter} pages (${entries.length} rows, ${cachedAt})`, () => {
+          const qc = new QueryClient();
+          const key = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), filter];
+          qc.setQueryData(key, cached, { updatedAt: existingUpdatedAt });
+          const before = qc.getQueryData<InfiniteData<EntriesPage>>(key);
+          writeStreamedEntriesPage(qc, "did:plc:viewer", {
+            publicationId: encodeURIComponent(publicationId), entries, source: "projection_cache", cachedAt,
+          }, filter);
+          expect(qc.getQueryData<InfiniteData<EntriesPage>>(key)).toBe(before);
+          expect(qc.getQueryState(key)?.dataUpdatedAt).toBe(existingUpdatedAt);
+          expect(qc.getQueryCache().getAll()).toHaveLength(1);
+          qc.clear();
+        });
+      }
+    }
+  }
+
+  for (const source of ["live_projection", "projection_cache"] as const) {
+    it(`merges accepted ${source} All rows retaining tail cursors and page params`, () => {
+      const qc = new QueryClient();
+      qc.setQueryData(queryKey, {
+        pages: [cached.pages[0], { ...cached.pages[1], cursor: "tail-cursor" }],
+        pageParams: ["first-param", "next"],
+      }, { updatedAt: existingUpdatedAt });
+      const receivedAt = Date.now();
+      writeStreamedEntriesPage(qc, "did:plc:viewer", {
+        publicationId, entries: [fresh, fresh], cursor: "fresh-cursor", source, cachedAt: freshCachedAt,
+      });
+      expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
+        pages: [
+          { entries: [fresh, ...cached.pages[0].entries], cursor: "fresh-cursor" },
+          { entries: [], cursor: "tail-cursor" },
+        ],
+        pageParams: ["first-param", "next"],
+      });
+      if (source === "projection_cache") {
+        expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(Date.parse(freshCachedAt));
+      } else {
+        expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBeGreaterThanOrEqual(receivedAt);
+      }
+      qc.clear();
+    });
+
+    for (const entries of [[], [fresh]]) {
+      it(`keeps accepted ${source} Unread authoritative (${entries.length} rows)`, () => {
+        const qc = new QueryClient();
+        const key = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), "unread"];
+        qc.setQueryData(key, cached, { updatedAt: existingUpdatedAt });
+        writeStreamedEntriesPage(qc, "did:plc:viewer", {
+          publicationId, entries, source, cachedAt: freshCachedAt, cursor: "unread-next",
+        }, "unread");
+        expect(qc.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual({
+          pages: [{ entries, cursor: "unread-next" }], pageParams: [undefined],
+        });
+        qc.clear();
+      });
+    }
+
+
+  }
+
+  for (const entries of [[], [{ entryId: "stream", title: "Stream", publishedAt: "2026-01-01" }]]) {
+    it(`retains a newer completed fetch's All history when live bootstrap arrives (${entries.length} rows)`, async () => {
+      const qc = new QueryClient();
+      const receivedAt = Date.now();
+      await qc.fetchInfiniteQuery({
+        queryKey, initialPageParam: undefined as string | undefined,
+        queryFn: ({ pageParam }) => Promise.resolve(pageParam ? cached.pages[1] : cached.pages[0]),
+        getNextPageParam: (page) => page.cursor,
+        pages: 2,
+      });
+      expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBeGreaterThanOrEqual(receivedAt);
+      writeStreamedEntriesPage(qc, "did:plc:viewer", {
+        publicationId, entries, source: "live_projection",
+      });
+      expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
+        pages: [{ ...cached.pages[0], entries: [...entries, ...cached.pages[0].entries] }, cached.pages[1]],
+        pageParams: cached.pageParams,
+      });
+      qc.clear();
+    });
+  }
+
+  it("seeds only the target account on a cache miss with projection freshness", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKey, cached, { updatedAt: Date.parse(freshCachedAt) });
+    const before = qc.getQueryData<InfiniteData<EntriesPage>>(queryKey);
+    const otherKey = [...ENTRIES_QUERY_KEY("did:plc:other", publicationId), "all"];
+    writeStreamedEntriesPage(qc, "did:plc:other", {
+      publicationId, entries: [], cursor: "next", source: "projection_cache", cachedAt: "2026-01-02T00:00:00Z",
+    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toBe(before);
+    expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(Date.parse(freshCachedAt));
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(otherKey)).toEqual({ pages: [{ entries: [], cursor: "next" }], pageParams: [undefined] });
+    expect(qc.getQueryState(otherKey)?.dataUpdatedAt).toBe(existingUpdatedAt);
     qc.clear();
   });
 
