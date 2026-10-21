@@ -163,7 +163,8 @@ function useGuardedFeedRefresh(args: {
     pending.set(scope, owner);
     const fetchMerged = async (signal: AbortSignal): Promise<InfiniteData<EntriesPage>> => {
       const fresh = await coalesceFeedFirstPage(queryClient, oauth, queryKey, () =>
-        listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: oauth, signal })
+        listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: oauth, signal }),
+        signal,
       );
       const current = queryClient.getQueryData<InfiniteData<EntriesPage>>(queryKey);
       if (!isCurrent() || signal.aborted) return current ?? { pages: [], pageParams: [] };
@@ -270,7 +271,7 @@ export function useEntries(
         articleFilter,
         queryClient,
       });
-      return pageParam ? fetchPage() : coalesceFeedFirstPage(queryClient, oauth, entriesQueryKey, fetchPage);
+      return pageParam ? fetchPage() : coalesceFeedFirstPage(queryClient, oauth, entriesQueryKey, fetchPage, signal);
     },
     initialPageParam: undefined as string | undefined,
     initialData:
@@ -464,7 +465,7 @@ export function useAggregateFeedEntries(
         oauthSession: oauth,
         signal,
       });
-      const page = await (pageParam ? fetchPage() : coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, fetchPage));
+      const page = await (pageParam ? fetchPage() : coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, fetchPage, signal));
       // A successful first page means the server has prepared list publication metadata.
       if (feed.kind === "list" && !pageParam && !signal.aborted && getOAuthSession() === oauth) {
         const resolvedListQuery = {

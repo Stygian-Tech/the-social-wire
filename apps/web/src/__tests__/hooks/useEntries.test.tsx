@@ -360,7 +360,7 @@ describe("reader lifecycle refreshes", () => {
   type Filter = "all" | "unread";
   let client: QueryClient;
   let requests: (string | null)[];
-  let respond: () => Promise<Response>;
+  let respond: (signal?: AbortSignal | null) => Promise<Response>;
   const row = (id: string) => ({ ...MOCK_ENTRIES[0], entryId: id, title: id, isRead: false });
   const json = (entries: EntriesPage["entries"], cursor?: string) =>
     new Response(JSON.stringify({ entries, cursor }), { headers: { "Content-Type": "application/json" } });
@@ -401,11 +401,11 @@ describe("reader lifecycle refreshes", () => {
     requests = [];
     respond = async () => json([]);
     onlineManager.setOnline(true);
-    globalThis.fetch = (async (input: string | URL | Request) => {
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       if (url.pathname.endsWith("/app.thesocialwire.appview.getFeed")) {
         requests.push(url.searchParams.get("cursor"));
-        return respond();
+        return respond(init?.signal ?? (input instanceof Request ? input.signal : undefined));
       }
       return new Response("{}", { headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
@@ -455,6 +455,53 @@ describe("reader lifecycle refreshes", () => {
           hook.unmount();
         });
       }
+    }
+
+    for (const settlement of ["before", "after"] as const) {
+      it(`${scope} remount starts fresh before aborted fetch settles ${settlement} replacement resolution`, async () => {
+        seed(scope);
+        let oldSignal: AbortSignal | null | undefined;
+        let newSignal: AbortSignal | null | undefined;
+        let failOld!: (error: Error) => void;
+        let finishNew!: (response: Response) => void;
+        respond = signal => {
+          if (requests.length === 1) {
+            oldSignal = signal;
+            return new Promise((_resolve, reject) => { failOld = reject; });
+          }
+          newSignal = signal;
+          return new Promise(resolve => { finishNew = resolve; });
+        };
+        const first = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        expect(oldSignal?.aborted).toBe(false);
+        first.unmount();
+        expect(oldSignal?.aborted).toBe(true);
+        // Leave the transport abort rejection pending until a new observer has
+        // mounted and begun a separate request.
+        const second = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(2));
+        expect(newSignal).not.toBe(oldSignal);
+        expect(newSignal?.aborted).toBe(false);
+        expect(ids(second.result.current.data)).toEqual(["cached-head", "cached-tail"]);
+        if (settlement === "before") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+          await settle();
+          expect(second.result.current.isFetching).toBe(true);
+        }
+        await act(async () => { finishNew(json([row("fresh-remount")])); });
+        await waitFor(() => expect(ids(second.result.current.data)).toEqual(["fresh-remount", "cached-head", "cached-tail"]));
+        if (settlement === "after") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+        }
+        await settle();
+        expect(second.result.current.isError).toBe(false);
+        expect(second.result.current.isFetching).toBe(false);
+        expect(newSignal?.aborted).toBe(false);
+        expect(requests).toEqual([null, null]);
+        expect(second.result.current.data?.pageParams).toEqual([undefined, "page-two"]);
+        second.unmount();
+      });
     }
 
     it(`${scope} keeps Unread authoritative on stale mount`, async () => {
