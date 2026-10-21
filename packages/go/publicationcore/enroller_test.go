@@ -178,3 +178,75 @@ func TestRetryDelayPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestEnrollmentPDSPageFailureDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		err    error
+		kind   string
+	}{
+		{"status", 503, nil, "other"},
+		{"rate_limit", 429, nil, "other"},
+		{"timeout", 0, context.DeadlineExceeded, "timeout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := Enroller{HTTP: getterFunc(func(context.Context, string, http.Header, int, int) (int, http.Header, []byte, error) {
+				return tc.status, nil, []byte(`{"message":"SECRET private account"}`), tc.err
+			}), Wait: func(context.Context, time.Duration) error { return nil }}
+			_, _, err := e.page(context.Background(), "https://pds.publisher.social", url.Values{"repo": {"did:plc:SECRET-account"}}, false)
+			counts := thinappviewcore.EnrollmentFailureCounts(err)
+			if len(counts) != 1 || counts[0].Category != "pds_fetch" || counts[0].Host != "pds.publisher.social" || counts[0].Status != tc.status || counts[0].Kind != tc.kind || counts[0].Count != 1 {
+				t.Fatalf("counts=%+v", counts)
+			}
+			if tc.err != nil && !errors.Is(err, tc.err) {
+				t.Fatal("cause lost")
+			}
+		})
+	}
+}
+
+func TestEnrollmentCancellationDiagnosticsDoNotCountJoinedRequestLeaves(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	getter := getterFunc(func(context.Context, string, http.Header, int, int) (int, http.Header, []byte, error) {
+		cancel()
+		return 0, nil, nil, ctx.Err()
+	})
+	e := Enroller{PDS: &thinappviewcore.PDSClient{HTTP: getter}}
+	_, err := e.Enroll(ctx, gatewaycore.AuthContext{}, []string{"did:web:publisher.social"}, nil, true)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
+	}
+	counts := thinappviewcore.EnrollmentFailureCounts(err)
+	if len(counts) != 1 || counts[0].Category != "pds_resolve" || counts[0].Kind != "canceled" || counts[0].Count != 1 {
+		t.Fatalf("counts=%+v", counts)
+	}
+}
+
+func TestRSSEnrollmentCancellationDiagnosticsThroughAllJoinLayers(t *testing.T) {
+	db, repo, feeds := rssEnrollmentFixture(t, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	getter := getterFunc(func(context.Context, string, http.Header, int, int) (int, http.Header, []byte, error) {
+		cancel()
+		return 0, nil, nil, ctx.Err()
+	})
+	e := Enroller{Repo: repo, RSS: &thinappviewcore.RSSIngestion{DB: db, HTTP: getter}}
+	_, err := e.Enroll(ctx, gatewaycore.AuthContext{DID: "viewer"}, nil, feeds, true)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
+	}
+	counts := thinappviewcore.EnrollmentFailureCounts(err)
+	// Cancellation aborts both the fetch and the subsequent metadata write.
+	// IngestAndWait, admission.finish, ingestFeeds and Enroll also join ctx.Err;
+	// none of those repeated bookkeeping leaves is another source failure.
+	if len(counts) != 2 || counts[0].Category != "rss_fetch" || counts[1].Category != "rss_metadata" {
+		t.Fatalf("counts=%+v", counts)
+	}
+	for _, count := range counts {
+		if count.Kind != "canceled" || count.Count != 1 {
+			t.Fatalf("counts=%+v", counts)
+		}
+	}
+}

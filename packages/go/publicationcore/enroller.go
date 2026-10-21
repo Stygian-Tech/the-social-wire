@@ -130,7 +130,7 @@ func (e *Enroller) ingestSubscriptions(ctx context.Context, auth gatewaycore.Aut
 	}
 	records, err := listAll(ctx, e.Repo, auth.DID, thinappviewcore.RSSSubscriptionCollection, 20)
 	if err != nil {
-		return 0, err
+		return 0, thinappviewcore.WrapEnrollmentFailure("pds_subscriptions", "", 0, err)
 	}
 	allowed := map[string]bool{}
 	for _, r := range records {
@@ -168,11 +168,11 @@ func (e *Enroller) ingestSubscriptions(ctx context.Context, auth gatewaycore.Aut
 
 func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-chan time.Time) (int, error) {
 	if !strings.HasPrefix(did, "did:plc:") && !strings.HasPrefix(did, "did:web:") || did == thinappviewcore.RSSAuthorDID {
-		return 0, errors.New("invalid enrollment author")
+		return 0, thinappviewcore.WrapEnrollmentFailure("pds_author", "", 0, errors.New("invalid enrollment author"))
 	}
 	base, err := e.PDS.Resolve(ctx, did)
 	if err != nil || base == "" {
-		return 0, errors.New("PDS resolution unavailable")
+		return 0, thinappviewcore.WrapEnrollmentFailure("pds_resolve", "", 0, errors.Join(errors.New("PDS resolution unavailable"), err))
 	}
 	budget := e.MaximumRecords
 	if budget <= 0 {
@@ -189,7 +189,7 @@ func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-c
 		} // Hosted PDS currently caps documents at one; match verified Go recovery policy.
 		for {
 			if budget <= 0 {
-				return indexed, errors.New("record cap reached")
+				return indexed, thinappviewcore.WrapEnrollmentFailure("pds_limit", base, 0, errors.New("record cap reached"))
 			}
 			select {
 			case <-ctx.Done():
@@ -216,31 +216,31 @@ func (e *Enroller) author(ctx context.Context, did string, recent bool, rate <-c
 				Cursor json.RawMessage
 			}
 			if json.Unmarshal(body, &page) != nil || page.Records == nil {
-				return indexed, errors.New("malformed PDS page")
+				return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("malformed PDS page"))
 			}
 			for _, row := range page.Records {
 				if budget <= 0 {
-					return indexed, errors.New("record cap reached")
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_limit", base, 0, errors.New("record cap reached"))
 				}
 				budget--
 				prefix := "at://" + did + "/" + collection + "/"
 				key := strings.TrimPrefix(row.URI, prefix)
 				if !strings.HasPrefix(row.URI, prefix) || key == "" || strings.Contains(key, "/") || row.CID == "" {
-					return indexed, errors.New("malformed PDS record")
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("malformed PDS record"))
 				}
 				if err = e.Projection.Commit(ctx, did, collection, key, row.CID, "create", "", row.Value, time.Time{}, base); err != nil {
-					return indexed, err
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_store", base, 0, err)
 				}
 				indexed++
 			}
 			next := ""
 			if len(page.Cursor) > 0 && string(page.Cursor) != "null" {
 				if json.Unmarshal(page.Cursor, &next) != nil || strings.TrimSpace(next) == "" || len(next) > 4096 {
-					return indexed, errors.New("malformed PDS cursor")
+					return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("malformed PDS cursor"))
 				}
 			}
 			if next != "" && (next == cursor || seen[next] || len(page.Records) == 0) {
-				return indexed, errors.New("PDS cursor did not advance")
+				return indexed, thinappviewcore.WrapEnrollmentFailure("pds_parse", base, 0, errors.New("PDS cursor did not advance"))
 			}
 			if recent || next == "" {
 				break
@@ -265,7 +265,7 @@ func (e *Enroller) page(ctx context.Context, base string, params url.Values, rev
 		status, headers, body, err := getter.Get(request, strings.TrimRight(base, "/")+"/xrpc/com.atproto.repo.listRecords?"+params.Encode(), http.Header{"Accept": {"application/json"}}, 8*1024*1024, 0)
 		cancel()
 		if err != nil {
-			return nil, reverse, err
+			return nil, reverse, thinappviewcore.WrapEnrollmentFailure("pds_fetch", base, status, err)
 		}
 		if status == 400 && reverse {
 			var reason struct{ Error, Message string }
@@ -281,12 +281,12 @@ func (e *Enroller) page(ctx context.Context, base string, params url.Values, rev
 			attempt++
 			delay := retryDelay(headers.Get("Retry-After"), attempt, time.Now(), .1+rand.Float64()*.15)
 			if err = wait(ctx, delay); err != nil {
-				return nil, reverse, err
+				return nil, reverse, thinappviewcore.WrapEnrollmentFailure("pds_fetch", base, status, err)
 			}
 			continue
 		}
 		if status != 200 {
-			return nil, reverse, fmt.Errorf("PDS listRecords status %d", status)
+			return nil, reverse, thinappviewcore.WrapEnrollmentFailure("pds_fetch", base, status, fmt.Errorf("PDS listRecords status %d", status))
 		}
 		return body, reverse, nil
 	}
