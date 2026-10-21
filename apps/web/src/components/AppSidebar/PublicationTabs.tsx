@@ -14,7 +14,6 @@ import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import type { PublicationTab } from "./appSidebarConstants";
 import { SidebarSectionUnreadBadge } from "./SidebarSectionUnreadBadge";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
-import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 export function PublicationTabs({
   visibleFeeds,
@@ -65,14 +64,13 @@ export function PublicationTabs({
             <SidebarMenuButton
               type="button"
               role="tab"
-              aria-label="The Wire, Beta"
+              aria-label="The Wire"
               aria-selected={wireActive}
               isActive={wireActive}
               onClick={onWireSelect}
             >
               <Rss />
               <span>The Wire</span>
-              <WireBetaBadge className="ml-auto" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
@@ -81,14 +79,13 @@ export function PublicationTabs({
             <SidebarMenuButton
               type="button"
               role="tab"
-              aria-label="Your Circle, Beta"
+              aria-label="Your Circle"
               aria-selected={circleActive}
               isActive={circleActive}
               onClick={onCircleSelect}
             >
               <Network />
               <span>Your Circle</span>
-              <WireBetaBadge className="ml-auto" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
