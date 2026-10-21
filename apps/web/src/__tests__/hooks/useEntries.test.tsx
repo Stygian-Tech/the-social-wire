@@ -89,12 +89,13 @@ const mockOAuthSession = {
 
 let activeOAuthSession = mockOAuthSession;
 let activeViewerDid = "did:plc:testuser";
+let activeReloadSeq = 0;
 
 mock.module("@/hooks/useAuth", () => ({
   useAuth: () => ({
     session: { did: activeViewerDid },
     isLoading: false,
-    oauthSessionReloadSeq: 0,
+    oauthSessionReloadSeq: activeReloadSeq,
     applyOAuthSession: () => {},
     getOAuthSession: () => activeOAuthSession,
     getAuthFetch: () => null,
@@ -408,6 +409,7 @@ describe("reader lifecycle refreshes", () => {
     process.env.NEXT_PUBLIC_USE_THIN_APPVIEW = "true";
     activeViewerDid = viewer;
     activeOAuthSession = mockOAuthSession;
+    activeReloadSeq = 0;
     process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED = "false";
     window.localStorage.removeItem(READ_STATE_STORAGE_KEY);
     client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 1 } } });
@@ -431,9 +433,133 @@ describe("reader lifecycle refreshes", () => {
     onlineManager.setOnline(true);
     activeViewerDid = viewer;
     activeOAuthSession = mockOAuthSession;
+    activeReloadSeq = 0;
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
   });
+
+  for (const scope of ["publication", "subscribed", "following"] as const) {
+    for (const filter of ["all", "unread"] as const) {
+      for (const settlement of ["success", "failure"] as const) {
+        it(`${scope} cold same-DID OAuth replacement ignores late old ${settlement} (${filter})`, async () => {
+          let finishOld!: (page: EntriesPage) => void;
+          let failOld!: (error: Error) => void;
+          let finishNew!: (page: EntriesPage) => void;
+          // Mock at the client boundary so late transport settlement cannot hold
+          // the Gateway's serialized nonce lane after cancellation.
+          const feed = spyOn(appviewClient, "listAggregateFeedFromAppView")
+            .mockImplementationOnce(() => new Promise((resolve, reject) => {
+              finishOld = resolve;
+              failOld = reject;
+            }))
+            .mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve; }))
+            .mockResolvedValue({ entries: [row("replacement-tail")] });
+          lifecycleRestores.push(() => feed.mockRestore());
+          const { result, rerender } = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+          await waitFor(() => expect(feed).toHaveBeenCalledTimes(1));
+          const oldSignal = feed.mock.calls[0][0].signal;
+          expect(feed.mock.calls[0][0].oauthSession).toBe(mockOAuthSession);
+          expect(oldSignal).toBeDefined();
+          expect(oldSignal?.aborted).toBe(false);
+          expect(result.current.data).toBeUndefined();
+          expect<string>(result.current.status).toBe("pending");
+          expect<boolean>(result.current.isLoading).toBe(true);
+          expect(result.current.fetchStatus).toBe("fetching");
+
+          activeOAuthSession = { ...mockOAuthSession as object, did: viewer } as never;
+          activeReloadSeq += 1;
+          rerender();
+          await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+          expect(oldSignal?.aborted).toBe(true);
+          expect(feed.mock.calls[1][0].oauthSession).toBe(activeOAuthSession);
+          expect(feed.mock.calls[1][0].signal).toBeDefined();
+          expect(feed.mock.calls[1][0].signal?.aborted).toBe(false);
+          expect(result.current.data).toBeUndefined();
+          expect<string>(result.current.status).toBe("pending");
+          expect<boolean>(result.current.isLoading).toBe(true);
+          expect(result.current.fetchStatus).toBe("fetching");
+          expect(result.current.error).toBeNull();
+
+          await act(async () => {
+            finishNew({ entries: [row("replacement-head")], cursor: "replacement-next" });
+          });
+          await waitFor(() => expect(ids(result.current.data)).toEqual(["replacement-head"]));
+          await waitFor(() => expect(result.current.fetchStatus).toBe("idle"));
+          expect(result.current.status).toBe("success");
+          expect(result.current.isLoading).toBe(false);
+          expect(result.current.hasNextPage).toBe(true);
+          const completed = client.getQueryState(keyFor(scope, filter))!;
+          expect(completed.isInvalidated).toBe(false);
+          expect(completed.dataUpdatedAt).toBeGreaterThan(0);
+
+          await act(async () => {
+            if (settlement === "success") finishOld({ entries: [row("retired-session")], cursor: "retired-next" });
+            else failOld(new Error("Retired credentials failed"));
+          });
+          await settle();
+          const afterOld = client.getQueryState(keyFor(scope, filter))!;
+          expect(afterOld.data).toEqual(completed.data);
+          expect(afterOld.dataUpdatedAt).toBe(completed.dataUpdatedAt);
+          expect(afterOld.isInvalidated).toBe(false);
+          expect(afterOld.error).toBeNull();
+          expect(result.current.error).toBeNull();
+          expect(result.current.isError).toBe(false);
+          expect(result.current.status).toBe("success");
+          expect(result.current.fetchStatus).toBe("idle");
+          expect(feed).toHaveBeenCalledTimes(2);
+
+          await act(async () => { await result.current.fetchNextPage(); });
+          expect(feed).toHaveBeenCalledTimes(3);
+          expect(feed.mock.calls[2][0].oauthSession).toBe(activeOAuthSession);
+          expect(feed.mock.calls[2][0].cursor).toBe("replacement-next");
+          expect(feed.mock.calls[2][0].signal?.aborted).toBe(false);
+          await waitFor(() => expect(ids(result.current.data)).toEqual(["replacement-head", "replacement-tail"]));
+          expect(result.current.data?.pageParams).toEqual([undefined, "replacement-next"]);
+          expect(result.current.isError).toBe(false);
+        });
+      }
+    }
+  }
+
+  for (const change of ["account", "cancel"] as const) {
+    it(`Following cold loading preserves ${change} guards`, async () => {
+      let finishOld!: (page: EntriesPage) => void;
+      const feed = spyOn(appviewClient, "listAggregateFeedFromAppView")
+        .mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+        .mockResolvedValue({ entries: [row("current-owner")] });
+      lifecycleRestores.push(() => feed.mockRestore());
+      const { result, rerender } = renderHook(() => useFeed("following", "unread"), { wrapper: Wrapper });
+      await waitFor(() => expect(feed).toHaveBeenCalledTimes(1));
+      const oldSignal = feed.mock.calls[0][0].signal;
+      if (change === "account") {
+        activeViewerDid = "did:plc:other";
+        activeOAuthSession = { ...mockOAuthSession as object, did: activeViewerDid } as never;
+        activeReloadSeq += 1;
+        rerender();
+        await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(ids(result.current.data)).toEqual(["current-owner"]));
+        expect(feed.mock.calls[1][0].oauthSession).toBe(activeOAuthSession);
+        expect(feed.mock.calls[1][0].signal?.aborted).toBe(false);
+      } else {
+        await act(async () => { await client.cancelQueries({ queryKey: keyFor("following", "unread"), exact: true }); });
+        expect(result.current.data).toBeUndefined();
+        await waitFor(() => expect(result.current.fetchStatus).toBe("idle"));
+      }
+      expect(oldSignal?.aborted).toBe(true);
+      await act(async () => { finishOld({ entries: [row("retired-cold-request")] }); });
+      await settle();
+      expect(client.getQueryState(keyFor("following", "unread"))?.dataUpdatedAt).toBe(0);
+      if (change === "cancel") {
+        expect(feed).toHaveBeenCalledTimes(1); // cancellation alone cannot restart it
+        expect(result.current.data).toBeUndefined();
+        await act(async () => { await result.current.refetch(); });
+        await waitFor(() => expect(ids(result.current.data)).toEqual(["current-owner"]));
+      }
+      expect(feed).toHaveBeenCalledTimes(2);
+      expect(result.current.fetchStatus).toBe("idle");
+      expect(result.current.isError).toBe(false);
+    });
+  }
 
   for (const scope of ["publication", "subscribed", "following", "folder", "list"] as const) {
     for (const trigger of ["remount", "reconnect"] as const) {

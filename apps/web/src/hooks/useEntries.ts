@@ -137,7 +137,7 @@ function useGuardedFeedRefresh(args: {
   const { queryKey, feed, articleFilter, enabled, hasData, isFetchedAfterMount, getOAuthSession, fetchInitial } = args;
   const queryClient = useQueryClient();
   const oauthSession = getOAuthSession();
-  const mountedScope = useRef<{ queryKey: readonly string[]; session: OAuthSession } | null>(null);
+  const mountedScope = useRef<{ queryKey: readonly string[]; session: OAuthSession; hasData: boolean } | null>(null);
   const refresh = useCallback(async () => {
     const oauth = getOAuthSession();
     if (!enabled || !oauth || !feed) return false;
@@ -221,14 +221,25 @@ function useGuardedFeedRefresh(args: {
   }, [articleFilter, enabled, feed, fetchInitial, getOAuthSession, queryClient, queryKey]);
 
   useEffect(() => {
-    if (!enabled || !hasData || !oauthSession) return;
+    if (!enabled || !oauthSession) return;
     const previous = mountedScope.current;
-    if (previous?.queryKey === queryKey && previous.session === oauthSession) return;
-    const sessionChanged = previous !== null && previous.session !== oauthSession;
-    mountedScope.current = { queryKey, session: oauthSession };
+    const sameScope = previous?.queryKey === queryKey;
+    if (sameScope && previous.session === oauthSession && previous.hasData === hasData) return;
+    const sessionChanged = sameScope && previous.session !== oauthSession;
+    // Record the owner during initial loading too. A valid replacement session
+    // must not inherit a cold request made with the retired credentials.
+    mountedScope.current = { queryKey, session: oauthSession, hasData };
+    if (sessionChanged) {
+      const query = queryClient.getQueryCache().find({ queryKey, exact: true });
+      void queryClient.cancelQueries({ queryKey, exact: true }, { revert: false, silent: true });
+      query?.setState({ fetchStatus: "idle" });
+      void refresh().catch(() => undefined);
+      return;
+    }
+    if (!hasData) return; // the normal infinite query owns initial loading
     const state = queryClient.getQueryState(queryKey);
-    if (state && (sessionChanged || (!isFetchedAfterMount &&
-      (state.isInvalidated || Date.now() - state.dataUpdatedAt >= ENTRIES_QUERY_STALE_MS)))) {
+    if (!isFetchedAfterMount && state &&
+      (state.isInvalidated || Date.now() - state.dataUpdatedAt >= ENTRIES_QUERY_STALE_MS)) {
       void refresh().catch(() => undefined); // query exposes the error with cached rows
     }
   }, [enabled, hasData, isFetchedAfterMount, oauthSession, queryClient, queryKey, refresh]);
