@@ -107,10 +107,23 @@ async function loadedField() {
   await waitFor(() => expect(screen.getByRole("textbox", { name: "Post Text" }).hasAttribute("disabled")).toBe(false));
   return screen.getByRole("textbox", { name: "Post Text" }) as HTMLTextAreaElement;
 }
+async function waitForDialogClosed() {
+  // A failed Bun assertion on the mounted dialog formats its entire React DOM
+  // graph and can block the event loop for seconds before close can finish.
+  await waitFor(() => expect(screen.queryByRole("dialog") === null).toBe(true));
+}
+
+async function dismissComposer() {
+  // Let the asynchronous draft flush and controlled Dialog close settle before
+  // checking removal, rather than polling while the close action is in flight.
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Cancel" })); });
+  await waitForDialogClosed();
+}
+
 async function resumeSavedDraft() {
   const saved = Array.from(remoteDrafts.values())[0];
   expect(saved).toBeDefined();
-  cleanup();
+  await act(async () => { cleanup(); });
   render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={clone(saved)} autoOpen hideTrigger /></QueryClientProvider>);
   return await loadedField();
 }
@@ -208,8 +221,7 @@ it("enforces grapheme limits and saves cancelled content separately from a fresh
   fireEvent.change(field, { target: { value: "a".repeat(301) } });
   expect(screen.getByText("301/300")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Post" }).hasAttribute("disabled")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await dismissComposer();
   fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
   expect((await loadedField()).value).toBe("");
   expect(Array.from(remoteDrafts.values())[0].draft.posts[0].text).toBe("a".repeat(301));
@@ -264,7 +276,7 @@ it("publishes and resolves mentions as the selected brand without replacing pers
   expect(post).not.toHaveBeenCalled();
   allowed = true;
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitForDialogClosed();
   expect(post.mock.calls[0][0].session).toBe(brand);
   expect(personal).not.toHaveBeenCalled();
   expect(auth.useAuth().getOAuthSession()).toBe(oauth);
@@ -281,7 +293,7 @@ it("publishes and resolves mentions as the selected brand without replacing pers
   expect(schedule).toHaveBeenCalledWith("Brand Scheduled", new Date(value).toISOString(), undefined);
   expect(scheduling.useSkejScheduling).toHaveBeenCalledWith(oauth.did, brand.did, { includeSchedules: false });
   expect(post).toHaveBeenCalledTimes(1);
-}, 15_000);
+});
 
 it("isolates personal drafts and pending guards when the owner changes", async () => {
   let captured: Parameters<typeof compose.createBlueskyPost>[0] | undefined;
@@ -477,8 +489,7 @@ it("preserves a thread on dismissal and retries its original publication after p
   fireEvent.change(await open(), { target: { value: "Thread Root" } });
   fireEvent.click(screen.getByRole("button", { name: "Add Post" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Post 2 Text" }), { target: { value: "Thread Reply" } });
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await dismissComposer();
   await resumeSavedDraft();
   expect((screen.getByRole("textbox", { name: "Post 2 Text" }) as HTMLTextAreaElement).value).toBe("Thread Reply");
   fireEvent.click(screen.getByRole("button", { name: "Post Thread" }));
@@ -487,11 +498,11 @@ it("preserves a thread on dismissal and retries its original publication after p
   expect(screen.getByRole("textbox", { name: "Post Text" }).hasAttribute("disabled")).toBe(true);
   expect(screen.getByRole("button", { name: "Add Post" }).hasAttribute("disabled")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Retry Remaining Posts" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitForDialogClosed();
   expect(calls).toHaveLength(2);
   expect(calls[0].publication).toBe(calls[1].publication);
   expect(calls[0].publication.segments.map(segment => segment.draft.text)).toEqual(["Thread Root", "Thread Reply"]);
-}, 15_000);
+});
 
 
 it("preserves removed segment cards across dismissal and unlocks a thread that failed before any write", async () => {
@@ -503,8 +514,7 @@ it("preserves removed segment cards across dismissal and unlocks a thread that f
   fireEvent.click(screen.getByRole("button", { name: "Remove Link Preview" }));
   fireEvent.click(screen.getByRole("button", { name: "Add Post" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Post 2 Text" }), { target: { value: "Second Post" } });
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await dismissComposer();
   await resumeSavedDraft();
   expect(screen.queryByText("Dismissed Card")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Post Thread" }));
@@ -520,8 +530,7 @@ it("resumes a cloud draft, autosaves edits on close, and starts a separate blank
   const changed = mock(() => {});
   const view = render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger onDraftChanged={changed} /></QueryClientProvider>);
   fireEvent.change(await loadedField(), { target: { value: "Edited saved cloud text" } });
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await dismissComposer();
   expect(remoteDrafts.get(initial.id)?.draft.posts[0].text).toBe("Edited saved cloud text");
   expect(remoteDrafts.size).toBe(1);
   expect(changed).toHaveBeenCalled();
@@ -569,8 +578,7 @@ it.each(unsupportedSettings)("preserves unsupported foreign draft settings and p
   fireEvent.keyDown(field, { key: "Enter", metaKey: true });
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
   expect(publish).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await dismissComposer();
   expect(remoteDrafts.get(initial.id)?.draft).toMatchObject(initial.draft);
 });
 
@@ -596,7 +604,7 @@ it("retries failed draft cleanup without publishing the successful post again", 
   fireEvent.click(submit);
   remove.mockResolvedValue(undefined);
   fireEvent.click(screen.getByRole("button", { name: "Finish Draft Cleanup" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitForDialogClosed();
   expect(remove).toHaveBeenCalledTimes(2);
   expect(publish).toHaveBeenCalledTimes(1);
 });
