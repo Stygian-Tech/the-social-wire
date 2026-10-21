@@ -280,3 +280,21 @@ it("compares normalized source and membership sets without order or duplicate se
   rss.appViewScope.publicationSiteUrls = ["invalid", "  "];
   expect(readerRefreshSourcesKey([rss]).sources).toEqual(["feed:invalid"]);
 });
+
+it("compares publication scope URLs and AT-URIs even when author and membership stay unchanged", () => {
+  const original = row("did:plc:author", "publication");
+  original.appViewScope = { authorDid: "did:plc:author", publicationAtUri: "at://did:plc:author/site.standard.publication/key", publicationScopeAtUris: ["at://scope/one", "at://scope/two"], publicationSiteUrls: ["https://ONE.test:443", "https://two.test/"] };
+  const key = readerRefreshSourcesKey([original]);
+  const reordered = { ...original, appViewScope: { ...original.appViewScope, publicationScopeAtUris: ["at://scope/two", "at://scope/one", "at://scope/one"], publicationSiteUrls: ["https://two.test/", "https://one.test/"] } };
+  expect(readerRefreshSourcesKey([reordered])).toEqual(key);
+  for (const appViewScope of [
+    { ...original.appViewScope, publicationAtUri: "at://different" },
+    { ...original.appViewScope, publicationScopeAtUris: ["at://different"] },
+    { ...original.appViewScope, publicationSiteUrls: ["https://different.test"] },
+  ]) {
+    const changed = readerRefreshSourcesKey([{ ...original, appViewScope }]);
+    expect(changed.membership).toEqual(key.membership);
+    expect(changed.sources).toEqual(key.sources);
+    expect(changed.scopes).not.toEqual(key.scopes);
+  }
+});

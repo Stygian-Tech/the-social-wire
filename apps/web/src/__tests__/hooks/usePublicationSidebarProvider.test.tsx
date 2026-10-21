@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { InfiniteQueryObserver, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { InfiniteQueryObserver, QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ReactNode } from "react";
 
 import { PublicationSidebarProvider, useSidebarBootstrap } from "@/contexts/PublicationSidebarContext";
+import type { EntriesPage } from "@/hooks/useEntries";
 import * as auth from "@/hooks/useAuth";
 import * as bootstrapClient from "@/lib/bootstrapStreamClient";
 import * as imageCache from "@/lib/imageBlobCache";
@@ -12,6 +13,8 @@ import * as projectionClient from "@/lib/publicationProjectionClient";
 import * as readerFeeds from "@/lib/refreshReaderFeeds";
 import * as publicationSources from "@/lib/refreshPublicationSources";
 import * as readerUnread from "@/lib/refreshReaderUnreadCounts";
+import { refreshPublicationFeedFirstPage } from "@/lib/feedRefresh";
+import { getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import * as appview from "@/lib/thinAppViewClient";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 
@@ -228,6 +231,155 @@ describe("PublicationSidebarProvider", () => {
       expect(unread.mock.calls[0]?.[0].publicationIds).toEqual(freshRows.map(row => row.publicationId));
     });
   }
+
+  for (const change of ["membership", "site", "atUri", "partial-seed", "cross-cache", "shared-url"] as const) {
+    it(`discards seed-only rows/counts after authoritative ${change} changes, preserving All history and restoring valid new articles`, async () => {
+      const mounted = mountProvider();
+      const { result, queryClient, did, post, sources, feeds } = mounted;
+      await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+      const original = sourceRow("publication", "did:plc:author");
+      original.appViewScope.publicationSiteUrls = ["https://old.test"];
+      original.appViewScope.publicationAtUri = "at://did:plc:author/site.standard.publication/old";
+      const cached = cacheActiveSources(mounted, [original]);
+      const valid = sourceRow(change !== "site" && change !== "atUri" ? "new-publication" : "publication", "did:plc:author");
+      valid.appViewScope = { ...original.appViewScope,
+        publicationSiteUrls: change === "site" ? ["https://new.test"] : original.appViewScope.publicationSiteUrls,
+        publicationAtUri: change === "atUri" ? "at://did:plc:author/site.standard.publication/new" : original.appViewScope.publicationAtUri,
+      };
+      const fresh = { ...cached, subscribedUnfoldered: [valid], allPublicationRows: [valid], refreshedAt: "authoritative" };
+      const key = ["aggregateEntries", did, "subscribed", "", "all"];
+      const entry = (entryId: string) => ({ entryId, title: entryId, publishedAt: "2026-10-20T00:00:00Z", articleUrl: change === "shared-url" && ["existing", "removed-new"].includes(entryId) ? "https://article.test/shared" : undefined });
+      const baseline: InfiniteData<EntriesPage> = { pages: [{ entries: [entry("existing")], cursor: "old-tail" }, { entries: [entry("history")], cursor: "older-tail" }], pageParams: [undefined, "old-tail"] };
+      queryClient.setQueryData(key, baseline);
+      const otherKey = ["entries", "other-viewer", "publication", "all"];
+      const otherData = { pages: [{ entries: [entry("removed-new")] }], pageParams: [undefined] };
+      queryClient.setQueryData(otherKey, otherData);
+      const inactiveKey = ["entries", did, "inactive-publication", "all"];
+      if (change === "cross-cache") queryClient.setQueryData(inactiveKey, otherData);
+      if (change === "partial-seed") {
+        const observer = new InfiniteQueryObserver(queryClient, { queryKey: ["aggregateEntries", did, "folder", "absent-folder", "all"], queryFn: async () => ({ entries: [] }), initialPageParam: undefined, getNextPageParam: () => undefined, staleTime: Infinity, initialData: { pages: [{ entries: [] }], pageParams: [undefined] } });
+        observers.push(observer.subscribe(() => {}));
+      }
+      feeds.mockRestore(); // Exercise actual refreshReaderFeeds and the All-feed merge.
+      const pages = spyOn(appview, "listAggregateFeedFromAppView").mockImplementation(async ({ feed }) => {
+        const authoritative = queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did))?.refreshedAt === "authoritative";
+        if (feed.kind === "folder") {
+          if (!authoritative) throw new Error("Partial seed paint failed");
+          return { entries: [] };
+        }
+        return { entries: (authoritative ? ["valid-new"] : ["removed-new", "valid-new"]).map(entry) };
+      });
+      const posted = deferred(), seeded = deferred(), finishSeed = deferred();
+      post.mockImplementation(async () => { await posted.promise; return fresh; });
+      let calls = 0;
+      sources.mockImplementation(async ({ onBatch }) => {
+        if (++calls === 1) {
+          try { await onBatch(); } finally { seeded.resolve(); }
+          await finishSeed.promise;
+        } else await onBatch();
+      });
+      let task!: Promise<void>;
+      act(() => { task = result.current.refresh.mutateAsync(); });
+      await act(async () => { await seeded.promise; });
+      expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries.map(row => row.entryId)).toEqual(change === "shared-url" ? ["removed-new", "valid-new"] : ["removed-new", "valid-new", "existing"]);
+      expect(result.current.refresh.isPending).toBe(true);
+      // A cancelled background read restores its pre-request state, including
+      // seed rows. Cleanup must happen after cancellation, before the All merge.
+      const pendingRead = queryClient.fetchQuery({ queryKey: key, staleTime: 0, queryFn: () => new Promise<InfiniteData<EntriesPage>>(() => {}) }).catch(() => undefined);
+      await act(async () => { posted.resolve(); finishSeed.resolve(); await task; await pendingRead; });
+      const current = queryClient.getQueryData<InfiniteData<EntriesPage>>(key)!;
+      expect(current.pages[0].entries.map(row => row.entryId)).toEqual(["valid-new", "existing"]);
+      expect(current.pages[0].cursor).toBe(baseline.pages[0].cursor);
+      expect(current.pages[1]).toEqual(baseline.pages[1]);
+      expect(current.pageParams).toEqual(baseline.pageParams);
+      expect(queryClient.getQueryData<typeof otherData>(otherKey)).toBe(otherData);
+      if (change === "cross-cache") expect(queryClient.getQueryData<typeof otherData>(inactiveKey)).toBe(otherData);
+      expect(sources).toHaveBeenCalledTimes(2);
+      expect(pages.mock.calls.some(call => call[0].feed.kind === "subscribed")).toBe(true);
+      expect(result.current.refreshMessage).toBe("1 New Article Loaded");
+    });
+  }
+
+  it("rejects a direct background response after rollback while the authoritative paint is still pending", async () => {
+    const mounted = mountProvider();
+    const { result, queryClient, did, post, sources, feeds } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted, [sourceRow("publication", "did:plc:author")]);
+    const entry = (entryId: string) => ({ entryId, title: entryId, publishedAt: "2026-10-20T00:00:00Z" });
+    const key = ["entries", did, "publication", "all"];
+    const baseline: InfiniteData<EntriesPage> = { pages: [{ entries: [entry("existing")], cursor: "tail" }, { entries: [entry("history")] }], pageParams: [undefined, "tail"] };
+    queryClient.setQueryData(key, baseline);
+    queryClient.setQueryData(["aggregateEntries", did, "subscribed", "", "all"], baseline);
+    const observer = new InfiniteQueryObserver<EntriesPage>(queryClient, { queryKey: key, queryFn: async () => ({ entries: [] }), initialPageParam: undefined, getNextPageParam: page => page.cursor, staleTime: Infinity });
+    observers.push(observer.subscribe(() => {}));
+    feeds.mockRestore();
+    spyOn(appview, "isThinAppViewEnabled").mockReturnValue(true);
+    const fetchPage = spyOn(appview, "listAggregateFeedFromAppView").mockResolvedValue({ entries: [entry("removed-seed")] });
+    const counts = spyOn(appview, "fetchAppViewUnreadCounts").mockResolvedValue({ counts: {} });
+    const posted = deferred(), seeded = deferred(), finishSeed = deferred(), beginAuthoritativePaint = deferred(), fallbackStarted = deferred();
+    post.mockImplementation(async () => { await posted.promise; return { ...cached, subscribedUnfoldered: [], allPublicationRows: [] }; });
+    let calls = 0;
+    sources.mockImplementation(async ({ onBatch }) => {
+      if (++calls === 1) { await onBatch(); seeded.resolve(); await finishSeed.promise; }
+      else { fallbackStarted.resolve(); await beginAuthoritativePaint.promise; await onBatch(); }
+    });
+    let task!: Promise<void>;
+    act(() => { task = result.current.refresh.mutateAsync(); });
+    await act(async () => { await seeded.promise; });
+    expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries.map(row => row.entryId)).toEqual(["removed-seed", "existing"]);
+    let resolveBackground!: (page: EntriesPage) => void;
+    const backgroundPage = new Promise<EntriesPage>(resolve => { resolveBackground = resolve; });
+    fetchPage.mockImplementationOnce(() => backgroundPage);
+    const revision = getFeedRefreshRevision(queryClient, key);
+    const background = refreshPublicationFeedFirstPage({ queryClient, viewerDid: did, publicationKey: "publication", oauthSession: auth.useAuth().getOAuthSession()!, articleFilter: "all" });
+    await act(async () => { posted.resolve(); finishSeed.resolve(); await fallbackStarted.promise; });
+    expect(getFeedRefreshRevision(queryClient, key)).toBeGreaterThan(revision);
+    expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(baseline);
+    let accepted: boolean | undefined;
+    await act(async () => { resolveBackground({ entries: [entry("late-removed-source")] }); accepted = await background; });
+    expect(accepted).toBe(false);
+    expect(counts).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(baseline);
+    expect(result.current.refresh.isPending).toBe(true);
+    fetchPage.mockResolvedValue({ entries: [entry("valid-current")] });
+    await act(async () => { beginAuthoritativePaint.resolve(); await task; });
+    expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries.map(row => row.entryId)).toEqual(["valid-current", "existing"]);
+  });
+
+  it("preserves independently loaded pre-paint rows when the seed query becomes inactive before rollback", async () => {
+    const mounted = mountProvider();
+    const { result, queryClient, did, post, sources, feeds } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted);
+    const key = ["aggregateEntries", did, "subscribed", "", "all"];
+    const entry = (entryId: string) => ({ entryId, title: entryId, publishedAt: "2026-10-20T00:00:00Z" });
+    const baseline: InfiniteData<EntriesPage> = { pages: [{ entries: [entry("existing")], cursor: "tail" }, { entries: [entry("history")] }], pageParams: [undefined, "tail"] };
+    queryClient.setQueryData(key, baseline);
+    feeds.mockRestore();
+    spyOn(appview, "listAggregateFeedFromAppView").mockResolvedValue({ entries: [entry("independent"), entry("seed-only")] });
+    const posted = deferred(), beginPaint = deferred(), painted = deferred(), finishSeed = deferred();
+    post.mockImplementation(async () => { await posted.promise; return { ...cached, subscribedUnfoldered: [], allPublicationRows: [] }; });
+    let calls = 0;
+    sources.mockImplementation(async ({ onBatch }) => {
+      if (++calls === 1) { await beginPaint.promise; await onBatch(); painted.resolve(); await finishSeed.promise; }
+      else await onBatch();
+    });
+    let task!: Promise<void>;
+    act(() => { task = result.current.refresh.mutateAsync(); });
+    await waitFor(() => expect(sources).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await queryClient.fetchInfiniteQuery({ queryKey: key, staleTime: 0, initialPageParam: undefined as string | undefined, getNextPageParam: (page: EntriesPage) => page.cursor, queryFn: async ({ pageParam }) => pageParam === "tail" ? baseline.pages[1] : { ...baseline.pages[0], entries: [entry("independent"), entry("existing")] } });
+      beginPaint.resolve(); await painted.promise;
+    });
+    expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)?.pages[0].entries.map(row => row.entryId)).toEqual(["independent", "seed-only", "existing"]);
+    observers.pop()!();
+    await act(async () => { posted.resolve(); finishSeed.resolve(); await task; });
+    const current = queryClient.getQueryData<InfiniteData<EntriesPage>>(key)!;
+    expect(current.pages[0].entries.map(row => row.entryId)).toEqual(["independent", "existing"]);
+    expect(current.pages[1]).toEqual(baseline.pages[1]);
+    expect(current.pageParams).toEqual(baseline.pageParams);
+    expect(result.current.refreshMessage).toBe("Refresh Complete");
+  });
 
   it("uses current active scope after authoritative membership applies while the seed drains", async () => {
     const mounted = mountProvider();
