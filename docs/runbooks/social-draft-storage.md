@@ -6,11 +6,13 @@ This is an explicitly approved exception to the rebuildable AppView projection
 model: these files are canonical user data and cannot be rebuilt from the PDS.
 Both services can read their stored data; this is not end-to-end encryption.
 
-## Development Rollout
+## Environment Rollout
 
-The independent `.railway/social-drafts.ts` partial manages only the Development
-`Social Draft Attachments` bucket in `sjc`. Plan and apply this file explicitly;
-do not apply the indexing partial as part of a draft rollout. Production is excluded.
+The independent `.railway/social-drafts.ts` partial declares the Development
+`Social Draft Attachments` bucket and the distinct Production
+`Social Draft Attachments Production` bucket, both in `sjc`. Select the intended
+environment when planning this file; do not apply the indexing partial as part
+of a draft rollout. Existing provisioned buckets require no repeat apply.
 App View remains managed by `railway/appview.json`.
 
 Configure App View's server-only `SOCIAL_DRAFTS_ENABLED=true` and
@@ -20,6 +22,13 @@ Configure App View's server-only `SOCIAL_DRAFTS_ENABLED=true` and
 `SOCIAL_DRAFT_S3_REGION` using the dedicated bucket's Railway reference variables. Never reuse
 podcast credentials or storage keys. Disabled storage returns unavailable; incomplete enabled configuration rejects
 startup so a deployment cannot silently claim the feature is ready. No public bucket hostname, anonymous download, or signed public URL is used.
+
+For Production, bind the five S3 variables to the Production bucket references,
+set an independent Production storage key, and enable storage only after all
+configuration is present. Keep configuration changes staged without deploying
+until the approved source and migration are ready. Verify the database, key, and
+bucket-byte backup and restore process together before enabling canonical writes;
+never copy the Development key or bytes into Production.
 
 The Database Migrator owns migration `20261020233000_private_social_draft_assets.sql`.
 Deploy Gateway and App View with their existing migrator readiness dependency,

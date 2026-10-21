@@ -36,7 +36,7 @@ export function ReadArticleFilterBar() {
   } = useReadRoute();
   const isTabletPortrait = useIsTabletPortrait();
   const clientHydrated = useClientHydrated();
-  const { refresh, refreshMessage } = useSidebarBootstrap();
+  const { refresh, refreshMessage, projectionError } = useSidebarBootstrap();
   const editorialFeed = editorialFeedForReadRoute(
     pathname,
     searchParams.get("feed"),
@@ -123,7 +123,7 @@ export function ReadArticleFilterBar() {
   const refreshStatus = refresh.isError ? "Refresh Incomplete — Try Again" : refreshMessage;
   return (
     <FeedHeader title={feedTitle} subtitle={
-      refreshStatus ? <span role="status" aria-live="polite" aria-atomic="true" className={cn("hidden sm:inline", refresh.isError && "text-destructive")}>{refreshStatus}</span> : undefined
+      projectionError && !refreshMessage && !refresh.isError ? <span role="alert" className="text-destructive" title={projectionError.message}>Couldn’t refresh. Try Refresh.</span> : refreshStatus ? <span role="status" aria-live="polite" aria-atomic="true" className={cn("hidden sm:inline", refresh.isError && "text-destructive")}>{refreshStatus}</span> : undefined
     } mobileStatus={
       refreshStatus ? <span role="status" aria-live="polite" aria-atomic="true" className={refresh.isError ? "text-destructive" : undefined}>{refreshStatus}</span> : undefined
     }>

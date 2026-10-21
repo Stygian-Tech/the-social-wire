@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
-import { advanceFeedRefreshRevision, coalesceFeedFirstPage, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { advanceFeedRefreshRevision, coalesceFeedFirstPage, getFeedRefreshRevision, invalidateReadFeedRefreshes } from "@/lib/feedRefreshCoordinator";
 
 it("coalesces one feed scope while isolating OAuth reconnects and filters", async () => {
   const client = new QueryClient();
@@ -67,3 +67,30 @@ it("allows a new revision to fetch while an older revision remains in flight", a
   releaseNew("new");
   expect(await current).toBe("new");
 });
+
+for (const domain of ["entries", "aggregateEntries"]) {
+  it(`retires ${domain} work across query generations while preserving other domains and sessions`, async () => {
+    const client = new QueryClient();
+    const session = {}, otherSession = {};
+    const key = [domain, "alice", "pub", "unread"];
+    let finishOld!: (value: string) => void, finishNew!: (value: string) => void;
+    const old = coalesceFeedFirstPage(client, session, key, () => new Promise<string>(resolve => { finishOld = resolve; }));
+    advanceFeedRefreshRevision(client, key);
+    const newer = coalesceFeedFirstPage(client, session, key, () => new Promise<string>(resolve => { finishNew = resolve; }));
+    const other = coalesceFeedFirstPage(client, otherSession, key, async () => "other");
+    const social = coalesceFeedFirstPage(client, session, ["social", "alice"], async () => "social");
+    invalidateReadFeedRefreshes(client, session);
+    let finishCurrent!: (value: string) => void;
+    const current = coalesceFeedFirstPage(client, session, key, () => new Promise<string>(resolve => { finishCurrent = resolve; }));
+    expect(current).not.toBe(newer);
+    expect(coalesceFeedFirstPage(client, otherSession, key, async () => "unexpected")).toBe(other);
+    expect(coalesceFeedFirstPage(client, session, ["social", "alice"], async () => "unexpected")).toBe(social);
+    finishOld("old"); finishNew("newer");
+    await Promise.all([old, newer]);
+    expect(coalesceFeedFirstPage(client, session, key, async () => "unexpected")).toBe(current);
+    finishCurrent("current");
+    expect(await current).toBe("current");
+    await Promise.all([other, social]);
+    client.clear();
+  });
+}

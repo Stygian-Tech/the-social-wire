@@ -7,5 +7,7 @@ export const partial = "social-draft-storage";
 export default defineRailway((context) => project("The Social Wire", {
   resources: context.isEnvironment("dev")
     ? [bucket("Social Draft Attachments", { region: "sjc" })]
-    : [],
+    : context.isEnvironment("production")
+      ? [bucket("Social Draft Attachments Production", { region: "sjc" })]
+      : [],
 }));

@@ -122,7 +122,6 @@ function PublicationSidebarProviderInner({
     useState(false);
   const [projectionError, setProjectionError] = useState<Error | null>(null);
   const streamGenerationRef = useRef(0);
-  const manualRefreshControllerRef = useRef<AbortController | null>(null);
   const streamSawSidebarSectionRef = useRef(false);
   const pendingAutoSelectPublicationIdRef = useRef<string | null>(null);
   const bootstrapFeedPublicationIdRef = useRef<string | null>(null);
@@ -470,6 +469,11 @@ function PublicationSidebarProviderInner({
         const oauth = getOAuthSession();
         if (!oauth) throw new Error("OAuth session required");
         const signal = controller.signal;
+        const assertSession = () => {
+          signal.throwIfAborted();
+          if (getOAuthSession() !== oauth) throw new DOMException("Account changed", "AbortError");
+        };
+        const readRevision = readFeedRefreshRevision(qc, oauth);
         setRefreshMessage("Checking Publications…");
         // Remember the operation's starting rows too: an old Unread row can
         // disappear during one paint and resurface later without being new.
@@ -478,15 +482,16 @@ function PublicationSidebarProviderInner({
         }).flatMap(query => (query.state.data as InfiniteData<EntriesPage> | undefined)?.pages.flatMap(page => page.entries.map(entry => entry.entryId)) ?? []));
         const newArticleIds = new Set<string>();
         const updateArticles = async () => {
-          signal.throwIfAborted();
+          assertSession();
           await refreshReaderFeeds({
             queryClient: qc, viewerDid: did, oauthSession: oauth, signal,
+            isCurrentSession: () => getOAuthSession() === oauth,
             onNewArticleIds: ids => {
-              signal.throwIfAborted();
+              assertSession();
               for (const id of ids) if (!startingArticleIds.has(id)) newArticleIds.add(id);
             },
           });
-          signal.throwIfAborted();
+          assertSession();
         };
         const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
         const cached = qc.getQueryData<PublicationSidebarProjection>(queryKey);
@@ -498,7 +503,7 @@ function PublicationSidebarProviderInner({
         const checkSources = (rows: typeof cachedRows) => refreshPublicationSources({
           oauthSession: oauth, rows, signal,
           onProgress: (completed, total) => {
-            signal.throwIfAborted();
+            assertSession();
             setRefreshMessage(authoritativeApplied && completed === total ? "Updating Articles…" : `Checking ${total} Publications…`);
           },
           onBatch: async () => {
@@ -516,7 +521,7 @@ function PublicationSidebarProviderInner({
         try {
           const sidebarSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
           const response = await awaitWithAbort(refreshPublicationSidebar(oauth, sidebarSignal), sidebarSignal);
-          signal.throwIfAborted();
+          assertSession();
           if (response.viewerDid !== did) throw new Error("Publication details are unavailable. Try Refresh again.");
           // The POST returns the complete authoritative sidebar. Supersede any
           // older initial stream without selecting an article or replacing history.
@@ -531,6 +536,13 @@ function PublicationSidebarProviderInner({
           const allRows = new Map(response.allPublicationRows.map(row => [row.publicationId, row]));
           for (const row of following.values()) if (!allRows.has(row.publicationId)) allRows.set(row.publicationId, row);
           const projection = { ...response, followingTabPublications: [...following.values()], allPublicationRows: [...allRows.values()] };
+          const readChanged = readFeedRefreshRevision(qc, oauth) !== readRevision;
+          if (readChanged) {
+            projection.unreadCountsByPublicationId = previous?.unreadCountsByPublicationId;
+            projection.unreadCountsGeneration = previous?.unreadCountsGeneration;
+            projection.unreadCountsAccuracy = previous?.unreadCountsAccuracy;
+            projection.unreadCountsCountedAt = previous?.unreadCountsCountedAt;
+          }
           qc.setQueryData(queryKey, previous?.unreadCountsByPublicationId && !projection.unreadCountsByPublicationId
             ? applyUnreadCountsEvent(projection, previous.unreadCountsByPublicationId ?? {}, {
                 generation: previous.unreadCountsGeneration,
@@ -546,7 +558,7 @@ function PublicationSidebarProviderInner({
           authoritativeApplied = true;
           releaseAuthority();
           const outcome = await seed;
-          signal.throwIfAborted();
+          assertSession();
           const currentRows = () => readerRefreshRows(qc, did, qc.getQueryData<PublicationSidebarProjection>(queryKey) ?? projection);
           const rows = currentRows();
           let sourceFailure: unknown;
@@ -559,20 +571,20 @@ function PublicationSidebarProviderInner({
               // Removed sources cannot fail the current scope. Every seed worker
               // has settled before rechecking the authoritative source set.
               try { await checkSources(rows); } catch (error) {
-                signal.throwIfAborted();
+                assertSession();
                 sourceFailure = error;
               }
             }
           } else {
             try { await checkSources(rows); } catch (error) {
-              signal.throwIfAborted();
+              assertSession();
               sourceFailure = error;
             }
           }
-          signal.throwIfAborted();
+          assertSession();
           setRefreshMessage("Updating Unread Counts…");
-          await refreshReaderUnreadCounts({ queryClient: qc, viewerDid: did, oauthSession: oauth, publicationIds: currentRows().map(row => row.publicationId), signal });
-          signal.throwIfAborted();
+          await refreshReaderUnreadCounts({ queryClient: qc, viewerDid: did, oauthSession: oauth, publicationIds: currentRows().map(row => row.publicationId), signal, isCurrentSession: () => getOAuthSession() === oauth });
+          assertSession();
           if (sourceFailure) throw sourceFailure;
           const newArticleCount = newArticleIds.size;
           setRefreshMessage(newArticleCount > 0 ? `${newArticleCount} New ${newArticleCount === 1 ? "Article" : "Articles"} Loaded` : "Refresh Complete");
@@ -589,10 +601,6 @@ function PublicationSidebarProviderInner({
       return task;
     },
   });
-
-  useEffect(() => () => {
-    manualRefreshControllerRef.current?.abort();
-  }, [did, oauthSessionReloadSeq]);
 
   const refreshUnreadCountsFromAppViewImpl = useCallback(async () => {
     if (dummyReaderDataEnabled) return;

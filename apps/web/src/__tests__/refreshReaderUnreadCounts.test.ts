@@ -2,6 +2,7 @@ import { afterEach, expect, it, spyOn } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as appview from "@/lib/thinAppViewClient";
+import { recordReadEntryMutations } from "@/lib/feedRefreshCoordinator";
 import { refreshReaderUnreadCounts } from "@/lib/refreshReaderUnreadCounts";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
@@ -34,5 +35,21 @@ it("bounds count request sizes and does not apply a response after cancellation"
   expect(fetch.mock.calls[0]?.[1]).toHaveLength(50);
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(client.getQueryData<PublicationSidebarProjection>(key)?.unreadCountsByPublicationId?.a).toBe(9);
+  client.clear();
+});
+
+it("preserves badge optimism when a read gesture supersedes a pending count snapshot", async () => {
+  const client = new QueryClient();
+  const session = {} as OAuthSession;
+  const key = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY("viewer");
+  client.setQueryData(key, projection("viewer"));
+  const fetch = spyOn(appview, "fetchAppViewUnreadCounts").mockImplementation(async () => {
+    recordReadEntryMutations(client, session, ["article"]);
+    client.setQueryData(key, { ...projection("viewer"), unreadCountsByPublicationId: { a: 0 } });
+    return { counts: { a: 9 } };
+  });
+  restore = () => fetch.mockRestore();
+  await refreshReaderUnreadCounts({ queryClient: client, viewerDid: "viewer", oauthSession: session, publicationIds: ["a"], signal: new AbortController().signal });
+  expect(client.getQueryData<PublicationSidebarProjection>(key)?.unreadCountsByPublicationId).toEqual({ a: 0 });
   client.clear();
 });

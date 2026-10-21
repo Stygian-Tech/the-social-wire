@@ -4,6 +4,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import type { EntriesPage } from "@/hooks/useEntries";
 import * as appView from "@/lib/thinAppViewClient";
+import { advanceFeedRefreshRevision, recordReadEntryMutations } from "@/lib/feedRefreshCoordinator";
 import { refreshReaderFeeds } from "@/lib/refreshReaderFeeds";
 
 const viewerDid = "did:plc:viewer";
@@ -155,6 +156,53 @@ describe("refreshReaderFeeds", () => {
     expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(original);
     expect(client.getQueryState(key)?.isInvalidated).toBe(true);
     expect(fetchPage.mock.calls[0][0].signal?.aborted).toBe(true);
+  });
+
+  for (const isRead of [true, false]) {
+    it(`preserves an explicit ${isRead ? "read" : "unread"} gesture during a manual feed request`, async () => {
+      const key = aggregate();
+      const original = { ...entry("old"), isRead: !isRead };
+      seed(key, [{ entries: [original] }]);
+      activate(key);
+      const started = deferred<void>(), response = deferred<EntriesPage>();
+      fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+      const task = refresh();
+      await started.promise;
+      recordReadEntryMutations(client, oauthSession, ["old"]);
+      const chosen = seed(key, [{ entries: [{ ...original, isRead }] }]);
+      response.resolve({ entries: [original, entry("stale-new")] });
+      expect(await task).toEqual({ newArticleCount: 0 });
+      expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(chosen);
+    });
+  }
+
+  it("rejects an old account response even if transport and caller signal remain live", async () => {
+    const key = publication("pub");
+    const original = seed(key);
+    activate(key);
+    let current = true;
+    const started = deferred<void>(), response = deferred<EntriesPage>();
+    fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+    const task = refreshReaderFeeds({ queryClient: client, viewerDid, oauthSession, isCurrentSession: () => current });
+    await started.promise;
+    current = false;
+    response.resolve(page("wrong-account"));
+    await expect(task).rejects.toHaveProperty("name", "AbortError");
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(original);
+  });
+
+  it("cannot overwrite a newer per-query generation", async () => {
+    const key = publication("pub");
+    seed(key); activate(key);
+    const started = deferred<void>(), response = deferred<EntriesPage>();
+    fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+    const task = refresh();
+    await started.promise;
+    advanceFeedRefreshRevision(client, key);
+    const newer = seed(key, [page("newer")]);
+    response.resolve(page("obsolete"));
+    expect(await task).toEqual({ newArticleCount: 0 });
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(newer);
   });
 
   it("settles on a deadline even when a stalled transport ignores cancellation", async () => {
