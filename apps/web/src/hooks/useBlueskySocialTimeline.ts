@@ -54,6 +54,11 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
     retry: false,
     staleTime: 30_000,
     gcTime: 7 * 24 * 60 * 60 * 1000,
+    // Returning to a post must restore the same loaded feed, even when stale.
+    // New feed membership is loaded through refreshFirstPage / Home refresh.
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const pages = query.data?.pages;
   useEffect(() => {
