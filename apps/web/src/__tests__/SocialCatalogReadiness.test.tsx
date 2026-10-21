@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Navigation from "next/navigation";
@@ -76,4 +76,73 @@ describe("Social feed navigation readiness", () => {
     await screen.findByRole("button", { name: "Stable Feed" });
     await screen.findByRole("button", { name: "New Feed" });
   });
+  it("fetches fresh preferences for later gestures during stalled metadata and shares only in-flight safety", async () => {
+    client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    let preferencesRequests = 0;
+    let failPreferences = false;
+    let metadataRequests = 0;
+    let hiddenPosts: string[] = [];
+    let releasePreferences: (() => void) | undefined;
+    let preferencesGate: Promise<void> | undefined;
+    let finishMetadata!: (value: unknown) => void;
+    const metadata = new Promise<unknown>(resolve => { finishMetadata = resolve; });
+    const oauth = { did, fetchHandler: async (path: string) => {
+      const method = new URL(path, "https://pds.example").pathname.split("/").at(-1);
+      if (method === "app.bsky.actor.getPreferences") {
+        preferencesRequests++;
+        await preferencesGate;
+        if (failPreferences) throw new Error("Required safety unavailable");
+        return Response.json({ preferences: [
+          { $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: [{ id: "Stable", type: "feed", value: uri("Stable"), pinned: true }] },
+          { $type: "app.bsky.actor.defs#hiddenPostsPref", items: hiddenPosts },
+        ] });
+      }
+      if (method === "app.bsky.labeler.getServices") return Response.json({ views: [{ $type: "app.bsky.labeler.defs#labelerViewDetailed", uri: `at://${labeler}/app.bsky.labeler.service/self`, cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", creator: { did: labeler, handle: "labels.example" }, policies: { labelValues: [] }, indexedAt: "2026-10-09T00:00:00Z" }] });
+      if (method === "app.bsky.feed.getFeedGenerators") {
+        metadataRequests++;
+        return Response.json(await metadata);
+      }
+      throw new Error(`Unexpected ${method}`);
+    } } as unknown as OAuthSession;
+    const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => oauth } as ReturnType<typeof Auth.useAuth>);
+    restores.push(() => auth.mockRestore());
+    const hook = renderHook(() => ({ first: useBlueskySocialCatalog(), second: useBlueskySocialCatalog({ enabled: false }) }), {
+      wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    await waitFor(() => expect(metadataRequests).toBe(1));
+    expect(hook.result.current.first.data?.moderation.prefs.hiddenPosts).toEqual([]);
+
+    hiddenPosts = ["at://did:plc:other/app.bsky.feed.post/hidden"];
+    preferencesGate = new Promise<void>(resolve => { releasePreferences = resolve; });
+    let first!: ReturnType<typeof hook.result.current.first.refetchSafety>;
+    let concurrent!: typeof first;
+    act(() => {
+      first = hook.result.current.first.refetchSafety();
+      concurrent = hook.result.current.second.refetchSafety();
+    });
+    await waitFor(() => expect(preferencesRequests).toBe(2));
+    expect(metadataRequests).toBe(1);
+    await act(async () => { releasePreferences!(); await Promise.all([first, concurrent]); });
+    expect((await first).moderation.prefs.hiddenPosts).toEqual(hiddenPosts);
+    expect((await concurrent).moderation.prefs.hiddenPosts).toEqual(hiddenPosts);
+    expect(preferencesRequests).toBe(2);
+    expect(metadataRequests).toBe(2);
+
+    hiddenPosts = [];
+    preferencesGate = undefined;
+    await act(async () => { await hook.result.current.second.refetchSafety(); });
+    expect(preferencesRequests).toBe(3);
+    expect(hook.result.current.first.data?.moderation.prefs.hiddenPosts).toEqual([]);
+    expect(metadataRequests).toBe(3);
+    failPreferences = true;
+    await act(async () => { await expect(hook.result.current.first.refetchSafety()).rejects.toThrow(); });
+    expect(preferencesRequests).toBe(4);
+    expect(metadataRequests).toBe(3);
+    // Retired tails cannot replace safety or clear a newer required-phase failure.
+    await act(async () => { finishMetadata({ feeds: [generator("Stable")] }); });
+    await waitFor(() => expect(hook.result.current.first.isFetching).toBe(false));
+    expect(hook.result.current.first.isError).toBe(true);
+    expect(hook.result.current.first.data?.moderation.prefs.hiddenPosts).toEqual([]);
+  });
+
 });

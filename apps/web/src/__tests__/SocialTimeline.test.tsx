@@ -215,11 +215,14 @@ describe("Social timeline page", () => {
       await show();
       await screen.findByText("Initial post before metadata stall");
       const metadata = deferred<Client.BlueskySocialCatalog>();
+      let freshSafety = safety;
       catalog.mockImplementation((_oauth, _signal, options) => {
-        options?.onReady?.({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
-        return metadata.promise;
+        const requestSafety = freshSafety;
+        options?.onReady?.({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: requestSafety });
+        return metadata.promise.then(result => ({ ...result, moderation: requestSafety }));
       });
-      posts.mockResolvedValue({ feed: [item("ready", "Post refreshed before metadata")] });
+      const newlyHidden = item("newly-hidden", "Post hidden by later preferences");
+      posts.mockResolvedValue({ feed: [item("ready", "Post refreshed before metadata"), newlyHidden] });
       await act(async () => {
         if (trigger === "Home") requestSocialHomeRefresh();
         else fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
@@ -227,10 +230,14 @@ describe("Social timeline page", () => {
       await screen.findByText("Post refreshed before metadata");
       await waitFor(() => expect(screen.getByRole("button", { name: "Refresh Social Feed" }).hasAttribute("disabled")).toBe(false));
       expect(posts).toHaveBeenCalledTimes(2);
-      posts.mockResolvedValue({ feed: [item("again", "Repeated refresh during metadata")] });
+      expect(screen.getByText("Post hidden by later preferences")).toBeTruthy();
+      freshSafety = { ...safety, prefs: { ...safety.prefs, hiddenPosts: [newlyHidden.post.uri] } };
+      posts.mockResolvedValue({ feed: [item("again", "Repeated refresh during metadata"), newlyHidden] });
       fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
       await screen.findByText("Repeated refresh during metadata");
-      expect(catalog).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText("Post hidden by later preferences")).toBeNull();
+      expect(posts.mock.calls[2][0].moderation.prefs.hiddenPosts).toEqual([newlyHidden.post.uri]);
+      expect(catalog).toHaveBeenCalledTimes(3);
       expect(posts).toHaveBeenCalledTimes(3);
       expect(screen.getByRole("button", { name: "Refresh Social Feed" }).hasAttribute("disabled")).toBe(false);
       await act(async () => { metadata.resolve({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety, metadataError: "Optional metadata offline" }); });
