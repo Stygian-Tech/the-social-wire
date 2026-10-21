@@ -22,8 +22,9 @@ function item(key: string, text: string): AppBskyFeedDefs.FeedViewPost {
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(complete => { resolve = complete; });
-  return { promise, resolve };
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((complete, fail) => { resolve = complete; reject = fail; });
+  return { promise, resolve, reject };
 }
 const signIn = mock(async (_input: string) => { void _input; });
 const restores: (() => void)[] = [];
@@ -52,7 +53,9 @@ afterEach(() => {
   restores.splice(0).reverse().forEach(restore => restore());
 });
 async function show() {
-  await act(async () => { render(<QueryClientProvider client={queryClient}><SidebarProvider><SocialPage /></SidebarProvider></QueryClientProvider>); });
+  let view!: ReturnType<typeof render>;
+  await act(async () => { view = render(<QueryClientProvider client={queryClient}><SidebarProvider><SocialPage /></SidebarProvider></QueryClientProvider>); });
+  return view;
 }
 function serveCatalog(value: Client.BlueskySocialCatalog = { feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety }) {
   const fetch = spyOn(Client, "getBlueskySocialCatalog").mockResolvedValue(value);
@@ -66,12 +69,14 @@ function servePage(value: Client.BlueskySocialPage = { feed: [] }) {
 }
 
 describe("Social timeline page", () => {
-  it("restores a feed into a new client before network responses and updates it in place", async () => {
+  it("restores unsorted persisted labeler rows without a skeleton and preserves row DOM across equivalent reorder", async () => {
     const old = item("cached", "Cached post on reload");
+    const persistedSafety = { ...safety, prefs: { ...safety.prefs, labelers: [{ did: "did:plc:z", labels: {} }, { did: "did:plc:a", labels: {} }] } };
+    const freshSafety = { ...persistedSafety, prefs: { ...persistedSafety.prefs, labelers: [...persistedSafety.prefs.labelers].reverse() } };
     const catalogKey = ["blueskySocial", did, "catalog", "cache-v1"];
-    const timelineKey = ["blueskySocial", did, "timeline", "cache-v1", "following", "", []];
+    const timelineKey = ["blueskySocial", did, "timeline", "cache-v1", "following", "", ["did:plc:z", "did:plc:a"]];
     const source = new QueryClient();
-    source.setQueryData(catalogKey, { feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
+    source.setQueryData(catalogKey, { feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: persistedSafety });
     source.setQueryData(timelineKey, { pages: [{ feed: [old] }], pageParams: [undefined] });
     const snapshot = prepareSocialQueryPersistence({ timestamp: Date.now(), buster: "", clientState: dehydrate(source, { shouldDehydrateQuery: shouldPersistSocialQuery }) });
     source.clear();
@@ -89,7 +94,7 @@ describe("Social timeline page", () => {
     const row = screen.getByText("Cached post on reload").closest("[data-analytics-subject]");
     expect(row).not.toBeNull();
     await act(async () => {
-      freshCatalog.resolve({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
+      freshCatalog.resolve({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: freshSafety });
       freshPage.resolve({ feed: [{ ...old, post: { ...old.post, likeCount: 5 } }, item("new", "New post from background refresh")] });
     });
     await screen.findByText("New post from background refresh");
@@ -176,6 +181,173 @@ describe("Social timeline page", () => {
       else expect(hook.result.current.data).toBeUndefined();
     });
   }
+
+  for (const trigger of ["manual", "Home"] as const) {
+    it(`applies fresh labeler membership once on ${trigger} refresh and retries a failed request`, async () => {
+      const catalog = serveCatalog();
+      const posts = servePage({ feed: [item("before", "Before new labeler")] });
+      await show();
+      await screen.findByText("Before new labeler");
+      const target = { ...safety, prefs: { ...safety.prefs, labelers: [{ did: "did:plc:new", labels: {} }] } };
+      const pending = deferred<Client.BlueskySocialPage>();
+      catalog.mockResolvedValue({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: target });
+      posts.mockReturnValue(pending.promise);
+      await act(async () => {
+        if (trigger === "Home") requestSocialHomeRefresh();
+        else fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
+      });
+      await waitFor(() => expect(posts).toHaveBeenCalledTimes(2));
+      expect(posts.mock.calls[1][0].moderation).toEqual(target);
+      expect(screen.queryByText("Before new labeler")).toBeNull();
+      expect(screen.getByRole("status", { name: "Loading Social Posts" })).toBeTruthy();
+      await act(async () => { pending.reject(new Error("New labeler page failed")); });
+      await screen.findByRole("button", { name: "Retry" });
+      posts.mockResolvedValue({ feed: [item("fresh-labels", "Covered by fresh labels")] });
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await screen.findByText("Covered by fresh labels");
+      expect(posts).toHaveBeenCalledTimes(3);
+      expect(screen.getByRole("button", { name: "Refresh Social Feed" }).hasAttribute("disabled")).toBe(false);
+    });
+
+    it(`refreshes posts at safety readiness on ${trigger} while optional metadata stalls, including a repeated refresh`, async () => {
+      const catalog = serveCatalog();
+      const posts = servePage({ feed: [item("initial", "Initial post before metadata stall")] });
+      await show();
+      await screen.findByText("Initial post before metadata stall");
+      const metadata = deferred<Client.BlueskySocialCatalog>();
+      catalog.mockImplementation((_oauth, _signal, options) => {
+        options?.onReady?.({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
+        return metadata.promise;
+      });
+      posts.mockResolvedValue({ feed: [item("ready", "Post refreshed before metadata")] });
+      await act(async () => {
+        if (trigger === "Home") requestSocialHomeRefresh();
+        else fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
+      });
+      await screen.findByText("Post refreshed before metadata");
+      await waitFor(() => expect(screen.getByRole("button", { name: "Refresh Social Feed" }).hasAttribute("disabled")).toBe(false));
+      expect(posts).toHaveBeenCalledTimes(2);
+      posts.mockResolvedValue({ feed: [item("again", "Repeated refresh during metadata")] });
+      fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
+      await screen.findByText("Repeated refresh during metadata");
+      expect(catalog).toHaveBeenCalledTimes(2);
+      expect(posts).toHaveBeenCalledTimes(3);
+      expect(screen.getByRole("button", { name: "Refresh Social Feed" }).hasAttribute("disabled")).toBe(false);
+      await act(async () => { metadata.resolve({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety, metadataError: "Optional metadata offline" }); });
+      await screen.findByText(/Saved Feed Details Unavailable/);
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("Repeated refresh during metadata")).toBeTruthy();
+      expect(posts).toHaveBeenCalledTimes(3);
+    });
+  }
+
+  for (const context of ["account", "feed", "moderation", "same-membership policy", "session"] as const) {
+    for (const phase of ["catalog", "page"] as const) {
+      it(`ignores obsolete ${context} round trips while awaiting ${phase}`, async () => {
+        let oauth = { did } as unknown as OAuthSession;
+        let seq = 0;
+        const originalOAuth = oauth;
+        const auth = Auth.useAuth();
+        const authSpy = spyOn(Auth, "useAuth").mockImplementation(() => ({ ...auth, session: { did: oauth.did }, getOAuthSession: () => oauth, oauthSessionReloadSeq: seq }));
+        restores.push(() => authSpy.mockRestore());
+        const posts = servePage({ feed: [item("current", "Current post")] });
+        let feed = Client.SOCIAL_FOLLOWING_FEED;
+        let moderation = safety;
+        const hook = renderHook(() => useBlueskySocialTimeline(feed, moderation), { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> });
+        await waitFor(() => expect(hook.result.current.data?.pages[0].feed.length).toBe(1));
+        const settings = deferred<ModerationOpts>();
+        const pending = deferred<Client.BlueskySocialPage>();
+        posts.mockReturnValue(pending.promise);
+        let refresh!: Promise<void>;
+        act(() => { refresh = hook.result.current.refreshFirstPage(phase === "catalog" ? () => settings.promise : undefined); });
+        if (phase === "page") await waitFor(() => expect(posts).toHaveBeenCalledTimes(2));
+        await act(async () => {
+          if (context === "account") oauth = { did: "did:plc:other-viewer" } as unknown as OAuthSession;
+          else if (context === "session") seq++;
+          else if (context === "feed") feed = { kind: "list", name: "Other", pinned: false, uri: "at://did:plc:other/app.bsky.graph.list/team" };
+          else moderation = { ...safety, prefs: { ...safety.prefs, ...(context === "moderation" ? { labelers: [{ did: "did:plc:new", labels: {} }] } : { hiddenPosts: [item("current", "").post.uri] }) } };
+          hook.rerender();
+        });
+        await act(async () => { oauth = originalOAuth; feed = Client.SOCIAL_FOLLOWING_FEED; moderation = safety; if (context === "session") seq++; hook.rerender(); });
+        // A new gesture must not join the retired occurrence's pending request.
+        posts.mockResolvedValueOnce({ feed: [item("successor", "Current refreshed post")] });
+        await act(async () => { await hook.result.current.refreshFirstPage(); });
+        await act(async () => {
+          if (phase === "catalog") settings.resolve(safety);
+          else pending.resolve({ feed: [item("obsolete", "Obsolete result")] });
+          await refresh;
+        });
+        expect(hook.result.current.data?.pages[0].feed[0].post.uri).toBe(item("successor", "").post.uri);
+        expect(hook.result.current.refreshError).toBeUndefined();
+        expect(hook.result.current.isRefreshing).toBe(false);
+      });
+    }
+  }
+
+  for (const context of ["account", "feed", "moderation"] as const) {
+    for (const phase of ["catalog", "page"] as const) {
+      it(`keeps the rendered successor after a ${context} round trip during ${phase}`, async () => {
+        let oauth = { did } as unknown as OAuthSession;
+        const originalOAuth = oauth;
+        const auth = Auth.useAuth();
+        const authSpy = spyOn(Auth, "useAuth").mockImplementation(() => ({ ...auth, session: { did: oauth.did }, getOAuthSession: () => oauth }));
+        restores.push(() => authSpy.mockRestore());
+        const catalog = serveCatalog();
+        const posts = servePage({ feed: [item("visible", "Visible current visit")] });
+        const view = await show();
+        await screen.findByText("Visible current visit");
+        const pendingCatalog = deferred<Client.BlueskySocialCatalog>();
+        const pendingPage = deferred<Client.BlueskySocialPage>();
+        if (phase === "catalog") catalog.mockReturnValueOnce(pendingCatalog.promise);
+        else posts.mockReturnValueOnce(pendingPage.promise);
+        fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
+        await waitFor(() => expect(phase === "catalog" ? catalog : posts).toHaveBeenCalledTimes(2));
+        const tree = () => <QueryClientProvider client={queryClient}><SidebarProvider><SocialPage /></SidebarProvider></QueryClientProvider>;
+        const catalogKey = ["blueskySocial", did, "catalog", "cache-v1"];
+        await act(async () => {
+          if (context === "account") oauth = { did: "did:plc:successor" } as unknown as OAuthSession;
+          else if (context === "feed") params = new URLSearchParams("list=at://did:plc:other/app.bsky.graph.list/team");
+          else queryClient.setQueryData(catalogKey, { feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: { ...safety, prefs: { ...safety.prefs, hiddenPosts: [item("visible", "").post.uri] } } });
+          view.rerender(tree());
+        });
+        await act(async () => {
+          oauth = originalOAuth;
+          params = new URLSearchParams();
+          if (context === "moderation") queryClient.setQueryData(catalogKey, { feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
+          view.rerender(tree());
+        });
+        if (phase === "page") {
+          posts.mockResolvedValueOnce({ feed: [item("successor", "Rendered successor refresh")] });
+          fireEvent.click(screen.getByRole("button", { name: "Refresh Social Feed" }));
+          await screen.findByText("Rendered successor refresh");
+        }
+        await act(async () => {
+          if (phase === "catalog") pendingCatalog.resolve({ feeds: [Client.SOCIAL_FOLLOWING_FEED], moderation: safety });
+          else pendingPage.resolve({ feed: [item("obsolete", "Obsolete rendered result")] });
+        });
+        expect(screen.queryByText("Obsolete rendered result")).toBeNull();
+        expect(screen.queryByRole("alert")).toBeNull();
+        if (phase === "page") expect(screen.getByText("Rendered successor refresh")).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Refresh Social Feed" }).hasAttribute("disabled")).toBe(false);
+      });
+    }
+  }
+
+  it("keeps post rows when reply decorations stall or fail", async () => {
+    serveCatalog();
+    servePage({ feed: [item("reply", "Reply before optional context")] });
+    const pending = deferred<Client.BlueskySocialPage>();
+    const hydrate = spyOn(Client, "hydrateBlueskySocialPage").mockReturnValue(pending.promise);
+    restores.push(() => hydrate.mockRestore());
+    await show();
+    await screen.findByText("Reply before optional context");
+    await waitFor(() => expect(hydrate).toHaveBeenCalledTimes(1));
+    const row = screen.getByText("Reply before optional context").closest("[data-analytics-subject]");
+    expect(screen.queryByRole("status", { name: "Loading Social Posts" })).toBeNull();
+    await act(async () => { pending.reject(new Error("Optional thread unavailable")); });
+    expect(screen.getByText("Reply before optional context").closest("[data-analytics-subject]")).toBe(row);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("rejects invalid and conflicting feed parameters without fetching posts", async () => {
     params = new URLSearchParams("feed=https://example.com/not-a-feed&list=at://did:plc:other/app.bsky.graph.list/team");
