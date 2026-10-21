@@ -181,22 +181,83 @@ it("settles a started paint on cancellation and never flushes or polls afterward
   expect(clock.timers.filter(timer => !timer.cleared)).toHaveLength(0);
 });
 
-it("waits for a failed periodic paint, flushes once, and never reports success", async () => {
+it("recovers from an intermediate 503 when the final authoritative flush succeeds", async () => {
   const gate = deferred();
   const enroll = spyOn(appview, "enrollAuthorsInAppView").mockImplementation(() => gate.promise);
   restores.push(() => enroll.mockRestore());
   const clock = paintClock();
   let paints = 0;
   const progress: number[] = [];
-  const task = refresh(async () => { if (++paints === 1) throw new Error("feed unavailable"); }, undefined, undefined, n => progress.push(n));
-  const outcome = task.catch(error => error);
+  const task = refresh(async () => { if (++paints === 1) throw new Error("HTTP 503: feed unavailable"); }, undefined, undefined, n => progress.push(n));
   await clock.tick();
   expect(paints).toBe(1);
   expect(clock.timers.filter(timer => !timer.cleared)).toHaveLength(0);
   gate.resolve();
-  expect((await outcome).message).toBe("feed unavailable");
+  await task;
   expect(paints).toBe(2);
   expect(progress).toEqual([0, 1]);
+  expect(clock.timers.every(timer => timer.cleared)).toBe(true);
+});
+
+it("surfaces the final flush failure after an intermediate 503", async () => {
+  const gate = deferred();
+  const enroll = spyOn(appview, "enrollAuthorsInAppView").mockImplementation(() => gate.promise);
+  restores.push(() => enroll.mockRestore());
+  const clock = paintClock();
+  const finalFailure = new Error("final feed unavailable");
+  let paints = 0;
+  const outcome = refresh(async () => {
+    if (++paints === 1) throw new Error("HTTP 503: feed unavailable");
+    throw finalFailure;
+  }).catch(error => error);
+  await clock.tick();
+  gate.resolve();
+  expect(await outcome).toBe(finalFailure);
+  expect(paints).toBe(2);
+  expect(clock.timers.every(timer => timer.cleared)).toBe(true);
+});
+
+it("retains source failure after recovering from an intermediate paint failure", async () => {
+  const gate = deferred();
+  const sourceFailure = new Error("source unavailable");
+  const enroll = spyOn(appview, "enrollAuthorsInAppView").mockImplementation(() => gate.promise);
+  restores.push(() => enroll.mockRestore());
+  const clock = paintClock();
+  let paints = 0;
+  const progress: number[] = [];
+  const outcome = refresh(async () => {
+    if (++paints === 1) throw new Error("HTTP 503: feed unavailable");
+  }, undefined, undefined, n => progress.push(n)).catch(error => error);
+  await clock.tick();
+  gate.reject(sourceFailure);
+  const failure = await outcome;
+  expect(failure.message).toContain("Some publications");
+  expect(failure.cause).toBe(sourceFailure);
+  expect(paints).toBe(2);
+  expect(progress).toEqual([0]);
+  expect(clock.timers.every(timer => timer.cleared)).toBe(true);
+});
+
+it("drains a failing intermediate paint on cancellation without a final flush", async () => {
+  const controller = new AbortController();
+  const gate = deferred(), slowPaint = deferred();
+  const enroll = spyOn(appview, "enrollAuthorsInAppView").mockImplementation(() => gate.promise);
+  restores.push(() => enroll.mockRestore());
+  const clock = paintClock();
+  let paints = 0, settled = false;
+  const progress: number[] = [];
+  const outcome = refresh(async () => { paints++; await slowPaint.promise; }, controller.signal, undefined, n => progress.push(n)).catch(error => { settled = true; return error; });
+  await clock.tick();
+  controller.abort(); await settle();
+  expect(settled).toBe(false);
+  slowPaint.reject(new Error("HTTP 503: feed unavailable"));
+  expect(await outcome).toBe(controller.signal.reason);
+  gate.resolve();
+  for (const timer of clock.timers) timer.callback();
+  await settle();
+  expect(paints).toBe(1);
+  expect(progress).toEqual([0]);
+  expect(clock.timers.every(timer => timer.cleared)).toBe(true);
 });
 
 it("continues large scope chunks after an upstream failure and retains partial articles", async () => {

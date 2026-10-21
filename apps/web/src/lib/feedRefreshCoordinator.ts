@@ -1,4 +1,5 @@
 import { hashKey, type QueryClient } from "@tanstack/react-query";
+import { awaitWithAbort } from "@/lib/awaitWithAbort";
 
 const revisionsByClient = new WeakMap<QueryClient, Map<string, number>>();
 
@@ -18,7 +19,8 @@ export function advanceFeedRefreshRevision(client: QueryClient, queryKey: readon
 }
 
 const publicSession = {};
-const pendingByClient = new WeakMap<QueryClient, WeakMap<object, Map<string, Promise<unknown>>>>();
+type PendingFirstPage = { promise: Promise<unknown>; signal?: AbortSignal };
+const pendingByClient = new WeakMap<QueryClient, WeakMap<object, Map<string, PendingFirstPage>>>();
 const entryMutations = new WeakMap<QueryClient, WeakMap<object, Map<string, number>>>();
 const readRevisions = new WeakMap<QueryClient, WeakMap<object, number>>();
 
@@ -92,7 +94,9 @@ export function coalesceFeedFirstPage<T>(
   session: object | null,
   queryKey: readonly unknown[],
   fetchPage: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
   let sessions = pendingByClient.get(client);
   if (!sessions) { sessions = new WeakMap(); pendingByClient.set(client, sessions); }
   const owner = session ?? publicSession;
@@ -100,10 +104,20 @@ export function coalesceFeedFirstPage<T>(
   if (!pending) { pending = new Map(); sessions.set(owner, pending); }
   const key = hashKey([queryKey, getFeedRefreshRevision(client, queryKey)]);
   const existing = pending.get(key);
-  if (existing) return existing as Promise<T>;
-  const task = fetchPage().finally(() => {
-    if (pending.get(key) === task) pending.delete(key);
+  if (existing && !existing.signal?.aborted) return existing.promise as Promise<T>;
+  const retire = () => {
+    // Abort precedes transport settlement. Late cleanup must preserve a replacement.
+    if (pending.get(key) === entry) pending.delete(key);
+  };
+  const work = fetchPage();
+  // Every joined consumer must observe cancellation, including direct cache writers.
+  const task = (signal ? awaitWithAbort(work, signal) : work).finally(() => {
+    signal?.removeEventListener("abort", retire);
+    retire();
   });
-  pending.set(key, task);
+  const entry = { promise: task, signal };
+  pending.set(key, entry);
+  signal?.addEventListener("abort", retire, { once: true });
+  if (signal?.aborted) retire();
   return task;
 }

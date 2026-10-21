@@ -2,11 +2,11 @@
  * Tests for useEntries and useEntry hooks (Thin AppView gateway path).
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { describe, it, expect, mock, spyOn, beforeEach, afterEach } from "bun:test";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { onlineManager, QueryClient, QueryClientProvider, useQuery, type InfiniteData } from "@tanstack/react-query";
 import React from "react";
-import { useEntries, useEntry, useAggregateFeedEntries } from "@/hooks/useEntries";
+import { useEntries, useEntry, useAggregateFeedEntries, type EntriesPage } from "@/hooks/useEntries";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
 import {
   MOCK_ENTRIES,
@@ -14,6 +14,8 @@ import {
 } from "../mocks/handlers/service";
 import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
 import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestation";
+
+import { advanceFeedRefreshRevision, invalidateReadFeedRefreshes, recordReadEntryMutations } from "@/lib/feedRefreshCoordinator";
 
 const ORIG_ENV = { ...process.env };
 const ORIG_FETCH = globalThis.fetch;
@@ -80,13 +82,18 @@ const mockOAuthSession = {
   },
 } as never;
 
+let activeOAuthSession = mockOAuthSession;
+let activeViewerDid = "did:plc:testuser";
+let activeReloadSeq = 0;
+const getOAuthSession = () => activeOAuthSession;
+
 mock.module("@/hooks/useAuth", () => ({
   useAuth: () => ({
-    session: { did: "did:plc:testuser" },
+    session: { did: activeViewerDid },
     isLoading: false,
-    oauthSessionReloadSeq: 0,
+    oauthSessionReloadSeq: activeReloadSeq,
     applyOAuthSession: () => {},
-    getOAuthSession: () => mockOAuthSession,
+    getOAuthSession,
     getAuthFetch: () => null,
     reconcileOAuthSession: async () => false,
     signIn: async () => {},
@@ -345,4 +352,323 @@ describe("useEntry", () => {
     client.clear();
   });
 
+});
+
+
+describe("reader lifecycle refreshes", () => {
+  const viewer = "did:plc:testuser";
+  const publication = "did:plc:alice";
+  type Scope = "publication" | "subscribed" | "following";
+  type Filter = "all" | "unread";
+  let client: QueryClient;
+  let requests: (string | null)[];
+  let respond: (signal?: AbortSignal | null) => Promise<Response>;
+  const row = (id: string) => ({ ...MOCK_ENTRIES[0], entryId: id, title: id, isRead: false });
+  const json = (entries: EntriesPage["entries"], cursor?: string) =>
+    new Response(JSON.stringify({ entries, cursor }), { headers: { "Content-Type": "application/json" } });
+  const keyFor = (scope: Scope, filter: Filter = "all", did = viewer) => scope === "publication"
+    ? ["entries", did, publication, filter]
+    : ["aggregateEntries", did, scope, "", filter];
+  const seed = (scope: Scope, filter: Filter = "all", did = viewer) => {
+    const data = {
+      pages: [{ entries: [row("cached-head")], cursor: "page-two" }, { entries: [row("cached-tail")], cursor: "page-three" }],
+      pageParams: [undefined, "page-two"],
+    };
+    client.setQueryData(keyFor(scope, filter, did), data, { updatedAt: Date.now() - 60_000 });
+    return data;
+  };
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  }
+  function useFeed(scope: Scope, filter: Filter = "all") {
+    // Each test keeps the hook kind fixed; props only change the filter/account.
+    const publicationFeed = useEntries(scope === "publication" ? publication : null, filter);
+    const aggregateFeed = useAggregateFeedEntries(scope === "publication" ? null : { kind: scope }, filter);
+    return scope === "publication" ? publicationFeed : aggregateFeed;
+  }
+  const ids = (data: InfiniteData<EntriesPage> | undefined) => data?.pages.flatMap(page => page.entries.map(entry => entry.entryId));
+  const settle = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)); }); };
+  const reconnect = async () => {
+    await act(async () => { onlineManager.setOnline(false); });
+    await act(async () => { onlineManager.setOnline(true); });
+  };
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_APP_ENV = "production";
+    process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "false";
+    process.env.NEXT_PUBLIC_USE_THIN_APPVIEW = "true";
+    activeViewerDid = viewer;
+    activeOAuthSession = mockOAuthSession;
+    activeReloadSeq = 0;
+    client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 1 } } });
+    requests = [];
+    respond = async () => json([]);
+    onlineManager.setOnline(true);
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.pathname.endsWith("/app.thesocialwire.appview.getFeed")) {
+        requests.push(url.searchParams.get("cursor"));
+        return respond(init?.signal ?? (input instanceof Request ? input.signal : undefined));
+      }
+      if (url.pathname.endsWith("/app.thesocialwire.appview.listEntries")) {
+        return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "viewer-receipt" } });
+      }
+      return new Response("{}", { headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+  });
+  afterEach(() => {
+    cleanup();
+    client.clear();
+    onlineManager.setOnline(true);
+    activeViewerDid = viewer;
+    activeOAuthSession = mockOAuthSession;
+    process.env = { ...ORIG_ENV };
+    globalThis.fetch = ORIG_FETCH;
+  });
+
+  for (const transition of ["filter", "disable", "unmount"] as const) {
+    it(`does not restart a cold replacement after ${transition} during cancellation`, async () => {
+      const finishes: ((value: Response) => void)[] = [];
+      respond = () => new Promise(resolve => { finishes.push(resolve); });
+      const hook = renderHook(({ filter, enabled }: { filter: Filter; enabled: boolean }) =>
+        useEntries(enabled ? publication : null, filter), {
+        wrapper: Wrapper, initialProps: { filter: "all" as Filter, enabled: true },
+      });
+      await waitFor(() => expect(requests).toHaveLength(1));
+      const originalCancel = client.cancelQueries.bind(client);
+      let resume!: () => void;
+      const cancelled = new Promise<void>(resolve => { resume = resolve; });
+      const cancel = spyOn(client, "cancelQueries").mockImplementation(async (...args) => {
+        await originalCancel(...args);
+        await cancelled;
+      });
+      try {
+        activeOAuthSession = Object.assign({}, mockOAuthSession) as never;
+        activeReloadSeq++;
+        hook.rerender({ filter: "all", enabled: true });
+        await waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
+        if (transition === "unmount") hook.unmount();
+        else hook.rerender({ filter: transition === "filter" ? "unread" : "all", enabled: transition !== "disable" });
+        if (transition === "filter") await waitFor(() => expect(requests).toHaveLength(2));
+        const countBeforeResume = requests.length;
+        await act(async () => { resume(); });
+        await settle();
+        expect(requests).toHaveLength(countBeforeResume);
+        await act(async () => { finishes.forEach(finish => finish(json([row("late")]))); });
+        await settle();
+        expect(client.getQueryData(keyFor("publication"))).toBeUndefined();
+        if (transition !== "unmount") hook.unmount();
+      } finally {
+        resume();
+        cancel.mockRestore();
+      }
+    });
+  }
+
+  for (const scope of ["publication", "subscribed", "following"] as const) {
+    for (const trigger of ["remount", "reconnect"] as const) {
+      for (const response of ["empty", "short", "throw"] as const) {
+        it(`${scope} ${trigger} keeps two cached pages after ${response} refresh and permits retry`, async () => {
+          seed(scope);
+          // Mount fresh once, then make it stale to test a real remount/reconnect.
+          client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)));
+          let hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+          await settle();
+          expect(requests).toEqual([]);
+          client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)), { updatedAt: Date.now() - 60_000 });
+          respond = async () => {
+            if (response === "throw") throw new Error("network unavailable");
+            return json(response === "empty" ? [] : [row("new-head")]);
+          };
+          if (trigger === "remount") {
+            hook.unmount();
+            hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+          } else await reconnect();
+          await waitFor(() => expect(requests).toHaveLength(1));
+          await waitFor(() => expect(hook.result.current.isFetching).toBe(false));
+          expect(ids(hook.result.current.data)).toEqual(response === "short" ? ["new-head", "cached-head", "cached-tail"] : ["cached-head", "cached-tail"]);
+          expect(hook.result.current.data?.pageParams).toEqual([undefined, "page-two"]);
+          expect(hook.result.current.isError).toBe(response === "throw");
+          await settle();
+          expect(requests).toEqual([null]);
+          if (response === "throw") {
+            respond = async () => json([row("recovered")]);
+            await act(async () => { await hook.result.current.refetch(); });
+            await waitFor(() => expect(hook.result.current.isError).toBe(false));
+            expect(ids(hook.result.current.data)).toEqual(["recovered", "cached-head", "cached-tail"]);
+          }
+          hook.unmount();
+        });
+      }
+    }
+
+    for (const settlement of ["before", "after"] as const) {
+      it(`${scope} remount starts fresh before aborted fetch settles ${settlement} replacement resolution`, async () => {
+        seed(scope);
+        let oldSignal: AbortSignal | null | undefined;
+        let newSignal: AbortSignal | null | undefined;
+        let failOld!: (error: Error) => void;
+        let finishNew!: (response: Response) => void;
+        respond = signal => {
+          if (requests.length === 1) {
+            oldSignal = signal;
+            return new Promise((_resolve, reject) => { failOld = reject; });
+          }
+          newSignal = signal;
+          return new Promise(resolve => { finishNew = resolve; });
+        };
+        const first = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        expect(oldSignal?.aborted).toBe(false);
+        first.unmount();
+        expect(oldSignal?.aborted).toBe(true);
+        // Leave the transport abort rejection pending until a new observer has
+        // mounted and begun a separate request.
+        const second = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(2));
+        expect(newSignal).not.toBe(oldSignal);
+        expect(newSignal?.aborted).toBe(false);
+        expect(ids(second.result.current.data)).toEqual(["cached-head", "cached-tail"]);
+        if (settlement === "before") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+          await settle();
+          expect(second.result.current.isFetching).toBe(true);
+        }
+        await act(async () => { finishNew(json([row("fresh-remount")])); });
+        await waitFor(() => expect(ids(second.result.current.data)).toEqual(["fresh-remount", "cached-head", "cached-tail"]));
+        if (settlement === "after") {
+          await act(async () => { failOld(new DOMException("aborted", "AbortError")); });
+        }
+        await settle();
+        expect(second.result.current.isError).toBe(false);
+        expect(second.result.current.isFetching).toBe(false);
+        expect(newSignal?.aborted).toBe(false);
+        expect(requests).toEqual([null, null]);
+        expect(second.result.current.data?.pageParams).toEqual([undefined, "page-two"]);
+        second.unmount();
+      });
+    }
+
+    it(`${scope} keeps Unread authoritative on stale mount`, async () => {
+      seed(scope, "unread");
+      const { result, unmount } = renderHook(() => useFeed(scope, "unread"), { wrapper: Wrapper });
+      await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+      expect(ids(result.current.data)).toEqual([]);
+      expect(requests).toEqual([null]);
+      unmount();
+    });
+
+    for (const supersede of ["read", "account", "generation", "cancel"] as const) {
+      it(`${scope} rejects a late mount refresh after ${supersede}`, async () => {
+        seed(scope);
+        let finish!: (response: Response) => void;
+        respond = () => new Promise(resolve => { finish = resolve; });
+        const { result, rerender, unmount } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        if (supersede === "read") {
+          recordReadEntryMutations(client, activeOAuthSession, ["cached-head"]);
+          client.setQueryData<InfiniteData<EntriesPage>>(keyFor(scope), current => ({ ...current!, pages: current!.pages.map(page => ({ ...page, entries: page.entries.map(entry => ({ ...entry, isRead: true })) })) }));
+        } else if (supersede === "account") {
+          activeViewerDid = "did:plc:other";
+          activeOAuthSession = { did: activeViewerDid } as never;
+          seed(scope, "all", activeViewerDid);
+          // Keep the new account's baseline fresh so only the old request resolves.
+          client.setQueryData(keyFor(scope, "all", activeViewerDid), client.getQueryData(keyFor(scope, "all", activeViewerDid)));
+          rerender();
+        } else if (supersede === "generation") {
+          advanceFeedRefreshRevision(client, keyFor(scope));
+        } else await act(async () => { await client.cancelQueries({ queryKey: keyFor(scope), exact: true }); });
+        const updatedAt = client.getQueryState(keyFor(scope))?.dataUpdatedAt;
+        await act(async () => { finish(json([row("late-stale")])); });
+        await settle();
+        expect(ids(result.current.data)).toEqual(["cached-head", "cached-tail"]);
+        expect(ids(client.getQueryData(keyFor(scope)))).toEqual(["cached-head", "cached-tail"]);
+        expect(client.getQueryState(keyFor(scope))?.dataUpdatedAt).toBe(updatedAt);
+        if (supersede === "read") expect(result.current.data?.pages[0].entries[0].isRead).toBe(true);
+        unmount();
+      });
+    }
+
+    for (const filter of ["all", "unread"] as const) {
+      for (const oldOutcome of ["resolve", "reject"] as const) {
+        for (const cached of [true, false]) {
+          it(`${scope} replaces ${cached ? "cached" : "cold"} same-DID session work and ignores late old ${oldOutcome} (${filter})`, async () => {
+            if (cached) seed(scope, filter);
+            let finishOld!: (value: Response) => void, failOld!: (reason: Error) => void;
+            let finishNew!: (value: Response) => void;
+            let oldSignal: AbortSignal | null | undefined, newSignal: AbortSignal | null | undefined;
+            respond = signal => {
+              if (requests.length === 1) {
+                oldSignal = signal;
+                return new Promise((resolve, reject) => { finishOld = resolve; failOld = reject; });
+              }
+              newSignal = signal;
+              return new Promise(resolve => { finishNew = resolve; });
+            };
+            const hook = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+            await waitFor(() => expect(requests).toHaveLength(1));
+            activeOAuthSession = Object.assign({}, mockOAuthSession) as never;
+            activeReloadSeq++;
+            hook.rerender();
+            await waitFor(() => expect(requests).toHaveLength(2));
+            expect(oldSignal?.aborted).toBe(true);
+            expect(newSignal?.aborted).toBe(false);
+            expect(ids(hook.result.current.data)).toEqual(cached ? ["cached-head", "cached-tail"] : undefined);
+            expect(Boolean(hook.result.current.isPending)).toBe(!cached);
+            await act(async () => {
+              if (oldOutcome === "resolve") finishOld(json([row("old-session")]));
+              else failOld(new Error("old session failed"));
+            });
+            await settle();
+            expect(hook.result.current.isFetching).toBe(true);
+            expect(hook.result.current.isError).toBe(false);
+            expect(newSignal?.aborted).toBe(false);
+            await act(async () => { finishNew(json([row("new-session")])); });
+            const expected = cached && filter === "all" ? ["new-session", "cached-head", "cached-tail"] : ["new-session"];
+            await waitFor(() => expect(ids(hook.result.current.data)).toEqual(expected));
+            expect(hook.result.current.isFetching).toBe(false);
+            expect(hook.result.current.isError).toBe(false);
+            expect(client.getQueryState(keyFor(scope, filter))?.isInvalidated).toBe(false);
+            expect(hook.result.current.data?.pageParams).toEqual(cached && filter === "all" ? [undefined, "page-two"] : [undefined]);
+            expect(hook.result.current.isPending).toBe(false);
+            expect(requests).toEqual([null, null]);
+            hook.unmount();
+          });
+        }
+      }
+    }
+
+    for (const supersede of ["read", "generation"] as const) {
+      it(`${scope} rejects a cold replacement response superseded by ${supersede}`, async () => {
+        const finishes: ((value: Response) => void)[] = [];
+        respond = () => new Promise(resolve => { finishes.push(resolve); });
+        const hook = renderHook(() => useFeed(scope, "unread"), { wrapper: Wrapper });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        activeOAuthSession = Object.assign({}, mockOAuthSession) as never;
+        activeReloadSeq++;
+        hook.rerender();
+        await waitFor(() => expect(requests).toHaveLength(2));
+        if (supersede === "read") invalidateReadFeedRefreshes(client, activeOAuthSession);
+        else advanceFeedRefreshRevision(client, keyFor(scope, "unread"));
+        await act(async () => { finishes[1](json([row("superseded-replacement")])); });
+        await waitFor(() => expect(hook.result.current.isFetching).toBe(false));
+        await act(async () => { finishes[0](json([row("old-session")])); });
+        await settle();
+        expect(client.getQueryData(keyFor(scope, "unread"))).toBeUndefined();
+        expect(client.getQueryState(keyFor(scope, "unread"))?.dataUpdatedAt).toBe(0);
+        expect(requests).toEqual([null, null]);
+        hook.unmount();
+      });
+    }
+
+    it(`${scope} preserves initial fetching and cursor pagination`, async () => {
+      respond = async () => json([row(requests.length === 1 ? "initial" : "next")], requests.length === 1 ? "next-page" : undefined);
+      const { result, unmount } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["initial"]));
+      await act(async () => { await result.current.fetchNextPage(); });
+      await waitFor(() => expect(ids(result.current.data)).toEqual(["initial", "next"]));
+      expect(requests).toEqual([null, "next-page"]);
+      unmount();
+    });
+  }
 });

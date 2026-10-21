@@ -94,3 +94,57 @@ for (const domain of ["entries", "aggregateEntries"]) {
     client.clear();
   });
 }
+
+for (const oldOutcome of ["reject", "resolve"] as const) {
+  it(`retires aborted work before settlement and preserves its replacement after late ${oldOutcome}`, async () => {
+    const client = new QueryClient();
+    const session = {};
+    const key = ["entries", "alice", "pub", "all"];
+    const oldController = new AbortController();
+    const currentController = new AbortController();
+    let finishOld!: (value: string) => void, failOld!: (error: Error) => void;
+    const old = coalesceFeedFirstPage(client, session, key, () => new Promise<string>((resolve, reject) => {
+      finishOld = resolve;
+      failOld = reject;
+    }), oldController.signal);
+    const joined = coalesceFeedFirstPage(client, session, key, async () => "unexpected");
+    expect(joined).toBe(old);
+    const oldResult = old.catch(error => error);
+    const joinedResult = joined.catch(error => error);
+    oldController.abort();
+    let finishCurrent!: (value: string) => void;
+    const current = coalesceFeedFirstPage(client, session, key, () => new Promise<string>(resolve => {
+      finishCurrent = resolve;
+    }), currentController.signal);
+    expect(current).not.toBe(old);
+    expect(currentController.signal.aborted).toBe(false);
+    // Abort cleanup runs after a replacement is installed; transport is still pending.
+    expect(await oldResult).toBe(oldController.signal.reason);
+    expect(await joinedResult).toBe(oldController.signal.reason);
+    if (oldOutcome === "reject") failOld(new DOMException("aborted", "AbortError"));
+    else finishOld("retired");
+    await oldResult;
+    // Old finally cleanup cannot erase the still-active replacement.
+    expect(coalesceFeedFirstPage(client, session, key, async () => "unexpected")).toBe(current);
+    finishCurrent("fresh");
+    expect(await current).toBe("fresh");
+    expect(await coalesceFeedFirstPage(client, session, key, async () => "next")).toBe("next");
+    client.clear();
+  });
+}
+
+it("does not retain work whose owner signal was already aborted", async () => {
+  const client = new QueryClient();
+  const session = {};
+  const controller = new AbortController();
+  controller.abort();
+  let requests = 0;
+  const retired = coalesceFeedFirstPage(client, session, ["feed"], async () => {
+    requests++;
+    return "retired";
+  }, controller.signal);
+  await expect(retired).rejects.toBe(controller.signal.reason);
+  expect(requests).toBe(0);
+  expect(await coalesceFeedFirstPage(client, session, ["feed"], async () => "fresh")).toBe("fresh");
+  client.clear();
+});
