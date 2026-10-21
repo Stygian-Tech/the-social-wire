@@ -15,7 +15,7 @@ import (
 func (s *Service) RefreshEnrollmentCounters(ctx context.Context, viewer string, authors, feeds []string) error {
 	rows, err := s.enrollmentCounterRows(ctx, viewer, authors, feeds)
 	if err != nil || len(rows) == 0 {
-		return err
+		return thinappviewcore.WrapEnrollmentFailure("counter_scopes", "", 0, err)
 	}
 	// Wait for an older recount rather than using RefreshCounters' stale fallback
 	// or racing its cache write. Keep the explicit request bounded under contention.
@@ -25,23 +25,23 @@ func (s *Service) RefreshEnrollmentCounters(ctx context.Context, viewer string, 
 		for {
 			lease, leaseErr := s.Cache.Projection.AcquireRefreshLease(ctx, "unread", viewer, 10*time.Second)
 			if leaseErr != nil {
-				return leaseErr
+				return thinappviewcore.WrapEnrollmentFailure("counter_lease", "", 0, leaseErr)
 			}
 			if lease != nil {
 				defer s.renew(ctx, lease)()
 				break
 			}
 			if err := waitContext(ctx, 100*time.Millisecond); err != nil {
-				return err
+				return thinappviewcore.WrapEnrollmentFailure("counter_lease", "", 0, err)
 			}
 		}
 	}
 	snapshot, err := s.Counters(ctx, viewer, rows, true)
 	if err != nil {
-		return err
+		return thinappviewcore.WrapEnrollmentFailure("counter_recount", "", 0, err)
 	}
 	if s.Cache != nil {
-		return s.Cache.storeUnread(ctx, viewer, snapshot.Counts, snapshot.CountedAt)
+		return thinappviewcore.WrapEnrollmentFailure("counter_cache", "", 0, s.Cache.storeUnread(ctx, viewer, snapshot.Counts, snapshot.CountedAt))
 	}
 	return nil
 }

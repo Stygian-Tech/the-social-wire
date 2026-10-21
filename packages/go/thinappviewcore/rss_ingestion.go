@@ -45,13 +45,13 @@ func (r RSSIngestion) ingest(ctx context.Context, raw string, waitForLease bool)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return 0, ctx.Err()
+				return 0, WrapEnrollmentFailure("rss_lease", *feed, 0, ctx.Err())
 			case <-timer.C:
 			}
 			lease, err = r.Cache.AcquireRefreshLease(ctx, "rss", *feed, 120*time.Second)
 		}
 		if waitForLease && err != nil {
-			return 0, err
+			return 0, WrapEnrollmentFailure("rss_lease", *feed, 0, err)
 		}
 		if err == nil && lease == nil {
 			return 0, nil
@@ -92,11 +92,11 @@ func (r RSSIngestion) ingest(ctx context.Context, raw string, waitForLease bool)
 	store := RSSStore{DB: r.DB}
 	previous, metadataErr := store.Metadata(ctx, *feed)
 	if waitForLease && metadataErr != nil {
-		return 0, metadataErr
+		return 0, WrapEnrollmentFailure("rss_metadata", *feed, 0, metadataErr)
 	}
 	if previous != nil && previous.BackoffUntil != nil && previous.BackoffUntil.After(at) {
 		if waitForLease {
-			return 0, errors.New("RSS refresh deferred by upstream failure backoff")
+			return 0, WrapEnrollmentFailure("rss_backoff", *feed, 0, errors.New("RSS refresh deferred by upstream failure backoff"))
 		}
 		return 0, nil
 	}
@@ -145,21 +145,21 @@ func (r RSSIngestion) ingest(ctx context.Context, raw string, waitForLease bool)
 	if err != nil {
 		metadataErr := failure()
 		if waitForLease {
-			return 0, errors.Join(err, metadataErr)
+			return 0, errors.Join(WrapEnrollmentFailure("rss_fetch", *feed, status, err), WrapEnrollmentFailure("rss_metadata", *feed, 0, metadataErr))
 		}
 		return 0, nil
 	}
 	if status == 304 {
 		metadataErr := success()
 		if waitForLease {
-			return 0, metadataErr
+			return 0, WrapEnrollmentFailure("rss_metadata", *feed, 0, metadataErr)
 		}
 		return 0, nil
 	}
 	if status != 200 && status != 403 && status != 406 && status != 415 {
 		metadataErr := failure()
 		if waitForLease {
-			return 0, errors.Join(fmt.Errorf("RSS fetch status %d", status), metadataErr)
+			return 0, errors.Join(WrapEnrollmentFailure("rss_fetch", *feed, status, fmt.Errorf("RSS fetch status %d", status)), WrapEnrollmentFailure("rss_metadata", *feed, 0, metadataErr))
 		}
 		return 0, nil
 	}
@@ -167,7 +167,7 @@ func (r RSSIngestion) ingest(ctx context.Context, raw string, waitForLease bool)
 	if err != nil {
 		metadataErr := failure()
 		if waitForLease {
-			return 0, errors.Join(err, metadataErr)
+			return 0, errors.Join(WrapEnrollmentFailure("rss_parse", *feed, status, err), WrapEnrollmentFailure("rss_metadata", *feed, 0, metadataErr))
 		}
 		return 0, nil
 	}
@@ -217,16 +217,16 @@ func (r RSSIngestion) ingest(ctx context.Context, raw string, waitForLease bool)
 		}
 		entry := IndexedContentItem{URI: uri, CID: RSSDeterministicCID(uri), AuthorDID: RSSAuthorDID, Collection: RSSEntryCollection, CreatedAt: created, IndexedAt: at, ExpiresAt: at.Add(retention), PublicationSite: feed, Render: render}
 		if err := content.Upsert(ctx, entry); err != nil {
-			return indexed, err
+			return indexed, WrapEnrollmentFailure("rss_store", *feed, 0, err)
 		}
 		indexed++
 	}
 	if err := r.cleanupDuplicates(ctx, *feed); err != nil {
-		return indexed, err
+		return indexed, WrapEnrollmentFailure("rss_store", *feed, 0, err)
 	}
 	metadataErr = success()
 	if waitForLease {
-		return indexed, metadataErr
+		return indexed, WrapEnrollmentFailure("rss_metadata", *feed, 0, metadataErr)
 	}
 	return indexed, nil
 }
