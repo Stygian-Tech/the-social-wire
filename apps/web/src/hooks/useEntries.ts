@@ -136,7 +136,8 @@ function useGuardedFeedRefresh(args: {
 }) {
   const { queryKey, feed, articleFilter, enabled, hasData, isFetchedAfterMount, getOAuthSession, fetchInitial } = args;
   const queryClient = useQueryClient();
-  const mountedScope = useRef<readonly string[] | null>(null);
+  const oauthSession = getOAuthSession();
+  const mountedScope = useRef<{ queryKey: readonly string[]; session: OAuthSession } | null>(null);
   const refresh = useCallback(async () => {
     const oauth = getOAuthSession();
     if (!enabled || !oauth || !feed) return false;
@@ -159,22 +160,36 @@ function useGuardedFeedRefresh(args: {
       void queryClient.cancelQueries({ queryKey, exact: true }, { revert: false, silent: true });
       cachedQuery.setState({ fetchStatus: "idle" });
     }
-    const owner = { isCurrent };
-    pending.set(scope, owner);
     const fetchMerged = async (signal: AbortSignal): Promise<InfiniteData<EntriesPage>> => {
-      const fresh = await coalesceFeedFirstPage(queryClient, oauth, queryKey, () =>
-        listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: oauth, signal }),
-        signal,
-      );
-      const current = queryClient.getQueryData<InfiniteData<EntriesPage>>(queryKey);
-      if (!isCurrent() || signal.aborted) {
-        // A rejected response is not fresh data. Keep its cache metadata intact.
-        if (!pending.get(scope)?.isCurrent() && queryClient.getQueryCache().find({ queryKey, exact: true }) === cachedQuery) {
-          cachedQuery.setState({ fetchStatus: "idle" });
-        }
+      // fetchQuery leaves these options installed until an observer restores its
+      // own options. Confirmation can refetch first, so each invocation owns a
+      // new session/revision snapshot rather than the original refresh's fence.
+      const requestSession = getOAuthSession();
+      const requestQuery = queryClient.getQueryCache().find({ queryKey, exact: true });
+      if (!requestSession || requestSession.did !== queryKey[1] || !requestQuery) {
         throw new CancelledError({ silent: true, revert: false });
       }
-      return mergeFeedRefreshForFilter(current, fresh, articleFilter);
+      const requestRevision = getFeedRefreshRevision(queryClient, queryKey);
+      const owner = { isCurrent: () => getOAuthSession() === requestSession &&
+        getFeedRefreshRevision(queryClient, queryKey) === requestRevision &&
+        queryClient.getQueryCache().find({ queryKey, exact: true }) === requestQuery };
+      pending.set(scope, owner);
+      try {
+        const fresh = await coalesceFeedFirstPage(queryClient, requestSession, queryKey, () =>
+          listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: requestSession, signal }),
+          signal,
+        );
+        if (!owner.isCurrent() || signal.aborted) {
+          // Rejected work is not fresh data and cannot settle a successor fetch.
+          if (pending.get(scope) === owner && queryClient.getQueryCache().find({ queryKey, exact: true }) === requestQuery) {
+            requestQuery.setState({ fetchStatus: "idle" });
+          }
+          throw new CancelledError({ silent: true, revert: false });
+        }
+        return mergeFeedRefreshForFilter(queryClient.getQueryData<InfiniteData<EntriesPage>>(queryKey), fresh, articleFilter);
+      } finally {
+        if (pending.get(scope) === owner) pending.delete(scope);
+      }
     };
     try {
       await queryClient.fetchQuery({
@@ -190,8 +205,6 @@ function useGuardedFeedRefresh(args: {
     } catch (error) {
       if (isCancelledError(error)) return false;
       throw error;
-    } finally {
-      if (pending.get(scope) === owner) pending.delete(scope);
     }
     if (!isCurrent()) return false;
     void recordClientPerformance(oauth, {
@@ -208,14 +221,17 @@ function useGuardedFeedRefresh(args: {
   }, [articleFilter, enabled, feed, fetchInitial, getOAuthSession, queryClient, queryKey]);
 
   useEffect(() => {
-    if (!enabled || !hasData || mountedScope.current === queryKey) return;
-    mountedScope.current = queryKey;
+    if (!enabled || !hasData || !oauthSession) return;
+    const previous = mountedScope.current;
+    if (previous?.queryKey === queryKey && previous.session === oauthSession) return;
+    const sessionChanged = previous !== null && previous.session !== oauthSession;
+    mountedScope.current = { queryKey, session: oauthSession };
     const state = queryClient.getQueryState(queryKey);
-    if (!isFetchedAfterMount && state &&
-      (state.isInvalidated || Date.now() - state.dataUpdatedAt >= ENTRIES_QUERY_STALE_MS)) {
+    if (state && (sessionChanged || (!isFetchedAfterMount &&
+      (state.isInvalidated || Date.now() - state.dataUpdatedAt >= ENTRIES_QUERY_STALE_MS)))) {
       void refresh().catch(() => undefined); // query exposes the error with cached rows
     }
-  }, [enabled, hasData, isFetchedAfterMount, queryClient, queryKey, refresh]);
+  }, [enabled, hasData, isFetchedAfterMount, oauthSession, queryClient, queryKey, refresh]);
 
   useEffect(() => onlineManager.subscribe((online) => {
     if (!online || !enabled) return;

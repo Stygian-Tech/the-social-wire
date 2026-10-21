@@ -18,6 +18,7 @@ import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestat
 import { ReadStateProvider, useReadState } from "@/contexts/ReadStateContext";
 import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
 import * as appviewClient from "@/lib/thinAppViewClient";
+import { invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
 import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 
 const ORIG_ENV = { ...process.env };
@@ -666,25 +667,65 @@ describe("reader lifecycle refreshes", () => {
       });
     }
 
-    it(`${scope} rejects a lifecycle response from a replaced OAuth session with the same DID`, async () => {
-      seed(scope);
-      let finish!: (response: Response) => void;
-      respond = () => new Promise(resolve => { finish = resolve; });
-      const { result, rerender } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
-      await waitFor(() => expect(requests).toHaveLength(1));
-      activeOAuthSession = { ...mockOAuthSession as object, did: viewer } as never;
-      rerender();
-      await act(async () => {
-        await client.invalidateQueries({ queryKey: keyFor(scope), exact: true, refetchType: "none" });
+    for (const filter of ["all", "unread"] as const) {
+      it(`${scope} confirmation replaces retired lifecycle options before an observer rerender (${filter})`, async () => {
+        seed(scope, filter);
+        client.setQueryData(keyFor(scope, filter), client.getQueryData(keyFor(scope, filter)));
+        let finishOld!: (page: EntriesPage) => void;
+        const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementationOnce(
+          () => new Promise(resolve => { finishOld = resolve; }),
+        ).mockResolvedValue({ entries: [row("confirmed-fresh")] });
+        lifecycleRestores.push(() => feed.mockRestore());
+        const { result } = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+        expect(feed).not.toHaveBeenCalled();
+        // This is the confirmation path's real cancellation/revision/invalidation
+        // sequence, without an intervening observer render to restore its options.
+        await act(async () => {
+          const refreshing = result.current.refetch();
+          expect(feed).toHaveBeenCalledTimes(1);
+          const confirming = invalidateConfirmedReadStateQueries(client, viewer);
+          await Promise.all([refreshing, confirming]);
+        });
+        expect(feed).toHaveBeenCalledTimes(2);
+        await waitFor(() => expect(ids(result.current.data)).toEqual(filter === "all"
+          ? ["confirmed-fresh", "cached-head", "cached-tail"] : ["confirmed-fresh"]));
+        expect(client.getQueryState(keyFor(scope, filter))?.isInvalidated).toBe(false);
+        expect(result.current.fetchStatus).toBe("idle");
+        await act(async () => { finishOld({ entries: [row("retired-before-confirmation")] }); });
+        await settle();
+        expect(ids(result.current.data)).not.toContain("retired-before-confirmation");
       });
-      const before = client.getQueryState(keyFor(scope))!;
-      await act(async () => { finish(json([row("retired-session")])); });
-      await settle();
-      expect(ids(result.current.data)).toEqual(["cached-head", "cached-tail"]);
-      expect(client.getQueryState(keyFor(scope))?.dataUpdatedAt).toBe(before.dataUpdatedAt);
-      expect(client.getQueryState(keyFor(scope))?.isInvalidated).toBe(true);
-      expect(result.current.isError).toBe(false);
-    });
+
+      it(`${scope} starts a same-DID OAuth successor and rejects the old lifecycle response (${filter})`, async () => {
+        seed(scope, filter);
+        let finishOld!: (page: EntriesPage) => void;
+        let finishNew!: (page: EntriesPage) => void;
+        const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementationOnce(
+          () => new Promise(resolve => { finishOld = resolve; }),
+        ).mockImplementation(() => new Promise(resolve => { finishNew = resolve; }));
+        lifecycleRestores.push(() => feed.mockRestore());
+        const { result, rerender } = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+        await waitFor(() => expect(feed).toHaveBeenCalledTimes(1));
+        const oldSignal = feed.mock.calls[0][0].signal;
+        activeOAuthSession = { ...mockOAuthSession as object, did: viewer } as never;
+        rerender();
+        await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+        expect(oldSignal?.aborted).toBe(true);
+        expect(feed.mock.calls[1][0].oauthSession).toBe(activeOAuthSession);
+        expect(feed.mock.calls[1][0].signal?.aborted).toBe(false);
+        await act(async () => { finishNew({ entries: [row("new-session")] }); });
+        await waitFor(() => expect(ids(result.current.data)).toEqual(filter === "all"
+          ? ["new-session", "cached-head", "cached-tail"] : ["new-session"]));
+        const completedAt = client.getQueryState(keyFor(scope, filter))?.dataUpdatedAt;
+        await act(async () => { finishOld({ entries: [row("retired-session")] }); });
+        await settle();
+        expect(ids(result.current.data)).not.toContain("retired-session");
+        expect(client.getQueryState(keyFor(scope, filter))?.dataUpdatedAt).toBe(completedAt);
+        expect(client.getQueryState(keyFor(scope, filter))?.isInvalidated).toBe(false);
+        expect(result.current.isError).toBe(false);
+        expect(result.current.fetchStatus).toBe("idle");
+      });
+    }
 
     it(`${scope} preserves a recreated query when its removed query's lifecycle response arrives`, async () => {
       seed(scope);
