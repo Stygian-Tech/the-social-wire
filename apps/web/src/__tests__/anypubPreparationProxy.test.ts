@@ -1,8 +1,8 @@
-import { expect, test } from "bun:test";
-import { POST } from "@/app/xrpc/tech.stygian.anypub.prepare/route";
+import { expect, spyOn, test } from "bun:test";
+import { POST } from "@/app/xrpc/at.anypub.prepare/route";
 import { createPreparationProxy } from "@/lib/anypub/preparationProxy";
 function request(body = '{"operation":"document","input":{"title":"Private Draft"}}') {
-  return new Request("https://thesocialwire.app/xrpc/tech.stygian.anypub.prepare", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer browser-token", DPoP: "browser-proof", Cookie: "session=private" }, body });
+  return new Request("https://thesocialwire.app/xrpc/at.anypub.prepare", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer browser-token", DPoP: "browser-proof", Cookie: "session=private" }, body });
 }
 test("forwards only JSON preparation without browser credentials", async () => {
   let sent: RequestInit | undefined;
@@ -10,7 +10,7 @@ test("forwards only JSON preparation without browser credentials", async () => {
   const fetcher = (async (url: string | URL | Request, init?: RequestInit) => { target = String(url); sent = init; return Response.json({ record: { $type: "site.standard.document" } }); }) as typeof fetch;
   const response = await createPreparationProxy({ upstream: "http://anypub.railway.internal:8080", fetcher })(request());
   expect(response.status).toBe(200);
-  expect(target).toBe("http://anypub.railway.internal:8080/xrpc/tech.stygian.anypub.prepare");
+  expect(target).toBe("http://anypub.railway.internal:8080/xrpc/at.anypub.prepare");
   expect(sent?.headers).toEqual({ "Content-Type": "application/json" });
   expect(sent?.credentials).toBe("omit");
   expect(sent?.redirect).toBe("error");
@@ -41,4 +41,24 @@ test("the XRPC route reads only server configuration and reports a missing servi
   delete process.env.ANYPUB_API_URL;
   try { expect((await POST(request())).status).toBe(503); }
   finally { if (previous === undefined) delete process.env.ANYPUB_API_URL; else process.env.ANYPUB_API_URL = previous; }
+});
+
+test("the configured XRPC route forwards to the published at.anypub namespace", async () => {
+  const previous = process.env.ANYPUB_API_URL;
+  process.env.ANYPUB_API_URL = "https://anypub.example";
+  const fetcher = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ record: { $type: "site.standard.document" } }));
+  try {
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [endpoint, init] = fetcher.mock.calls[0];
+    expect(String(endpoint)).toBe("https://anypub.example/xrpc/at.anypub.prepare");
+    expect(init?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(init?.credentials).toBe("omit");
+    expect(await response.json()).toEqual({ record: { $type: "site.standard.document" } });
+  } finally {
+    fetcher.mockRestore();
+    if (previous === undefined) delete process.env.ANYPUB_API_URL;
+    else process.env.ANYPUB_API_URL = previous;
+  }
 });

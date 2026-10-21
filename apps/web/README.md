@@ -37,6 +37,10 @@ Copy `.env.example` to `.env.local` or create `.env.local` manually (see **Envir
 | `NEXT_PUBLIC_SOCIALWIRE_API_URL` | Social Wire gateway base URL for authenticated sidebar, AppView, and sync routes (default `https://api.thesocialwire.app`) |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public Web origin for metadata and absolute URLs; set to the environment's Railway custom domain |
 
+### Publishing Preparation
+
+Set server-only `ANYPUB_API_URL` to the Go AnyPub backend base URL to enable Articles and Live Posts publishing. The browser calls `POST /xrpc/at.anypub.prepare`; the Next route proxies JSON to that same procedure on the backend without forwarding browser OAuth, DPoP, or cookies. AnyPubKit publishes the `at.anypub` XRPC namespace under the owning account `samclemente.me`. Preparation performs no PDS writes; the browser retains OAuth and writes records directly to the viewer’s PDS.
+
 ## Architecture
 
 ### Auth

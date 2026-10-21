@@ -1,4 +1,4 @@
-const NSID = "tech.stygian.anypub.prepare";
+const NSID = "at.anypub.prepare";
 const MAX_BODY = 8 * 1024 * 1024;
 const MAX_RESPONSE = 12 * 1024 * 1024;
 

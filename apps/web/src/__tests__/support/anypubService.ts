@@ -41,7 +41,7 @@ export function setupGoPreparationService() {
     const requestFetch = originalFetch;
     const transport = (async (input: string | URL | Request, init?: RequestInit) => {
       const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      return requestFetch(target === "/xrpc/tech.stygian.anypub.prepare" ? `${endpoint}${target}` : input, init);
+      return requestFetch(target === "/xrpc/at.anypub.prepare" ? `${endpoint}${target}` : input, init);
     }) as typeof fetch;
     globalThis.fetch = transport;
   });
