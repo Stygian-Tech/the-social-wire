@@ -1,7 +1,8 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
+import { invalidateSocialPostQueries } from "./invalidateSocialPostQueries";
 
 const POST_SURFACES = new Set(["thread", "timeline", "profileTimeline", "explore", "bookmarks", "notifications"]);
-const PAGINATED_POST_SURFACES = new Set(["timeline", "profileTimeline", "explore", "bookmarks", "notifications"]);
+const PAGINATED_POST_SURFACES = new Set(["profileTimeline", "explore", "bookmarks", "notifications"]);
 
 /** Refresh newest rows, then allow two bounded retries for PDS-to-AppView indexing. */
 export function refreshSocialPostQueries(
@@ -17,7 +18,8 @@ export function refreshSocialPostQueries(
 
   async function refresh(resetPages: boolean) {
     if (!current()) return;
-    await cache.cancelQueries({ predicate });
+    // Let initial loads and pagination finish; timeline membership is not refetched below.
+    await cache.cancelQueries({ predicate: query => predicate(query) && query.queryKey[2] !== "timeline" });
     if (!current()) return;
     if (resetPages) {
       cache.setQueriesData<InfiniteData<unknown>>({ predicate: query => predicate(query)
@@ -26,7 +28,7 @@ export function refreshSocialPostQueries(
         return { ...data, pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) };
       });
     }
-    await cache.invalidateQueries({ predicate });
+    await invalidateSocialPostQueries(cache, viewerDid, POST_SURFACES);
   }
 
   void refresh(true).then(() => {
