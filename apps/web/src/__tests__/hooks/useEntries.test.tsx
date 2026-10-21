@@ -84,14 +84,16 @@ const mockOAuthSession = {
 
 let activeOAuthSession = mockOAuthSession;
 let activeViewerDid = "did:plc:testuser";
+let activeReloadSeq = 0;
+const getOAuthSession = () => activeOAuthSession;
 
 mock.module("@/hooks/useAuth", () => ({
   useAuth: () => ({
     session: { did: activeViewerDid },
     isLoading: false,
-    oauthSessionReloadSeq: 0,
+    oauthSessionReloadSeq: activeReloadSeq,
     applyOAuthSession: () => {},
-    getOAuthSession: () => activeOAuthSession,
+    getOAuthSession,
     getAuthFetch: () => null,
     reconcileOAuthSession: async () => false,
     signIn: async () => {},
@@ -397,6 +399,7 @@ describe("reader lifecycle refreshes", () => {
     process.env.NEXT_PUBLIC_USE_THIN_APPVIEW = "true";
     activeViewerDid = viewer;
     activeOAuthSession = mockOAuthSession;
+    activeReloadSeq = 0;
     client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 1 } } });
     requests = [];
     respond = async () => json([]);
@@ -406,6 +409,9 @@ describe("reader lifecycle refreshes", () => {
       if (url.pathname.endsWith("/app.thesocialwire.appview.getFeed")) {
         requests.push(url.searchParams.get("cursor"));
         return respond(init?.signal ?? (input instanceof Request ? input.signal : undefined));
+      }
+      if (url.pathname.endsWith("/app.thesocialwire.appview.listEntries")) {
+        return new Response("{}", { headers: { [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]: "viewer-receipt" } });
       }
       return new Response("{}", { headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
@@ -533,13 +539,60 @@ describe("reader lifecycle refreshes", () => {
         } else if (supersede === "generation") {
           advanceFeedRefreshRevision(client, keyFor(scope));
         } else await act(async () => { await client.cancelQueries({ queryKey: keyFor(scope), exact: true }); });
+        const updatedAt = client.getQueryState(keyFor(scope))?.dataUpdatedAt;
         await act(async () => { finish(json([row("late-stale")])); });
         await settle();
         expect(ids(result.current.data)).toEqual(["cached-head", "cached-tail"]);
         expect(ids(client.getQueryData(keyFor(scope)))).toEqual(["cached-head", "cached-tail"]);
+        expect(client.getQueryState(keyFor(scope))?.dataUpdatedAt).toBe(updatedAt);
         if (supersede === "read") expect(result.current.data?.pages[0].entries[0].isRead).toBe(true);
         unmount();
       });
+    }
+
+    for (const filter of ["all", "unread"] as const) {
+      for (const oldOutcome of ["resolve", "reject"] as const) {
+        it(`${scope} replaces same-DID session work and ignores late old ${oldOutcome} (${filter})`, async () => {
+          seed(scope, filter);
+          let finishOld!: (value: Response) => void, failOld!: (reason: Error) => void;
+          let finishNew!: (value: Response) => void;
+          let oldSignal: AbortSignal | null | undefined, newSignal: AbortSignal | null | undefined;
+          respond = signal => {
+            if (requests.length === 1) {
+              oldSignal = signal;
+              return new Promise((resolve, reject) => { finishOld = resolve; failOld = reject; });
+            }
+            newSignal = signal;
+            return new Promise(resolve => { finishNew = resolve; });
+          };
+          const hook = renderHook(() => useFeed(scope, filter), { wrapper: Wrapper });
+          await waitFor(() => expect(requests).toHaveLength(1));
+          activeOAuthSession = Object.assign({}, mockOAuthSession) as never;
+          activeReloadSeq++;
+          hook.rerender();
+          await waitFor(() => expect(requests).toHaveLength(2));
+          expect(oldSignal?.aborted).toBe(true);
+          expect(newSignal?.aborted).toBe(false);
+          expect(ids(hook.result.current.data)).toEqual(["cached-head", "cached-tail"]);
+          await act(async () => {
+            if (oldOutcome === "resolve") finishOld(json([row("old-session")]));
+            else failOld(new Error("old session failed"));
+          });
+          await settle();
+          expect(hook.result.current.isFetching).toBe(true);
+          expect(hook.result.current.isError).toBe(false);
+          expect(newSignal?.aborted).toBe(false);
+          await act(async () => { finishNew(json([row("new-session")])); });
+          const expected = filter === "all" ? ["new-session", "cached-head", "cached-tail"] : ["new-session"];
+          await waitFor(() => expect(ids(hook.result.current.data)).toEqual(expected));
+          expect(hook.result.current.isFetching).toBe(false);
+          expect(hook.result.current.isError).toBe(false);
+          expect(client.getQueryState(keyFor(scope, filter))?.isInvalidated).toBe(false);
+          if (filter === "all") expect(hook.result.current.data?.pageParams).toEqual([undefined, "page-two"]);
+          expect(requests).toEqual([null, null]);
+          hook.unmount();
+        });
+      }
     }
 
     it(`${scope} preserves initial fetching and cursor pagination`, async () => {
