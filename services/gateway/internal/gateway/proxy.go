@@ -78,6 +78,11 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	if strings.HasSuffix(path, "appview.getFeed") {
 		timeout = 3 * time.Second
 	}
+	if path == "/xrpc/app.thesocialwire.appview.enrollSources" || path == "/v1/appview/enroll" {
+		// A bounded source batch includes ingestion and its fresh-counter barrier.
+		// Match the Web client's maximum allowance; caller cancellation still wins.
+		timeout = 5 * time.Minute
+	}
 	media := strings.HasPrefix(path, "/v1/podcasts/") && (strings.HasSuffix(path, "/media") || strings.HasSuffix(path, "/image") || strings.HasSuffix(path, "/assets") || strings.HasSuffix(path, "/public/clips"))
 	if media {
 		timeout = 6 * time.Hour
