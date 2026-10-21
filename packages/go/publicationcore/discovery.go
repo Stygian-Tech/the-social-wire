@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-func Discover(ctx context.Context, repo Repository, client *http.Client, viewer string, includeFollows bool, priorFollowing []DiscoveredRow, at time.Time) (DiscoveryContext, error) {
+// Match BuildSidebar's per-request bound; each worker issues one repository call at a time.
+const subscriptionResolutionConcurrency = 25
+
+func Discover(ctx context.Context, repo Repository, client *http.Client, viewer string, includeFollows bool, priorFollowing []DiscoveredRow, at time.Time, includeOwn ...bool) (DiscoveryContext, error) {
 	result := DiscoveryContext{ViewerDID: viewer, Folders: []FolderRecord{}, Prefs: []PreferenceRecord{}, Following: []DiscoveredRow{}, PrefsByPublicationID: map[string]PreferenceRecord{}}
 	collections := []string{"app.thesocialwire.folder", "app.thesocialwire.publicationPrefs", "site.standard.graph.subscription", "app.skyreader.feed.subscription"}
 	records := make([][]gatewaycore.RepoRecord, 4)
@@ -31,8 +34,16 @@ func Discover(ctx context.Context, repo Repository, client *http.Client, viewer 
 	if includeFollows {
 		wg.Add(1)
 		go func() { defer wg.Done(); discovered = FollowDiscovery(ctx, repo, client, viewer, at) }()
+	} else if len(includeOwn) > 0 && includeOwn[0] {
+		// Explicit refresh also owns My Publications, even when the viewer has no
+		// subscriptions. This bounded author lookup never traverses follows.
+		wg.Add(1)
+		go func() { defer wg.Done(); discovered = discoverAuthor(ctx, repo, viewer, "You", "My Publications", at) }()
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	for _, e := range errs {
 		if e != nil {
 			return result, e
@@ -59,7 +70,7 @@ func Discover(ctx context.Context, repo Repository, client *http.Client, viewer 
 			existing[key] = true
 		}
 	}
-	orphans := []DiscoveredRow{}
+	orphanIDs := []string{}
 	seen := map[string]bool{}
 	for _, r := range records[2] {
 		id := text(recordValue(r), "publication")
@@ -73,11 +84,51 @@ func Discover(ctx context.Context, repo Repository, client *http.Client, viewer 
 		}
 		if !present && !seen[id] {
 			seen[id] = true
-			if row := rowFromURI(ctx, repo, id, at); row != nil {
-				orphans = append(orphans, *row)
-			}
+			orphanIDs = append(orphanIDs, id)
 		}
 	}
+	// Resolve subscriptions with a fixed worker count; indexed results keep completion
+	// order from affecting sidebar ordering or duplicate selection.
+	resolved := make([]*DiscoveredRow, len(orphanIDs))
+	jobs := make(chan int)
+	for i := 0; i < min(subscriptionResolutionConcurrency, len(orphanIDs)); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				resolved[index] = rowFromURI(ctx, repo, orphanIDs[index], at)
+			}
+		}()
+	}
+resolve:
+	for index := range orphanIDs {
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			break resolve
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	orphans := []DiscoveredRow{}
+	for _, row := range resolved {
+		if row != nil {
+			orphans = append(orphans, *row)
+		}
+	}
+	sort.Slice(orphans, func(i, j int) bool {
+		a, b := strings.ToLower(orphans[i].Title), strings.ToLower(orphans[j].Title)
+		if a == b {
+			return orphans[i].PublicationID < orphans[j].PublicationID
+		}
+		return a < b
+	})
 	visible := FilterHidden(append(discovered, orphans...), result.Prefs)
 	visibleRSS := FilterHidden(rss, result.Prefs)
 	graph, following := Segment(visible, viewer, subscriptions)
@@ -97,10 +148,15 @@ func Discover(ctx context.Context, repo Repository, client *http.Client, viewer 
 			}
 		}
 	} else {
-		result.Following = priorFollowing
+		result.Following = FilterHidden(priorFollowing, result.Prefs)
 	}
 	unique := map[string]DiscoveredRow{}
 	authors := map[string]bool{}
+	// Retained Following rows are needed by full builds, but do not expand the
+	// fresh subscription enrollment set. Fresh metadata wins on overlapping IDs.
+	for _, row := range result.Following {
+		unique[row.PublicationID] = row
+	}
 	for _, row := range append(visible, visibleRSS...) {
 		unique[row.PublicationID] = row
 		if strings.HasPrefix(row.AuthorDID, "did:plc:") || strings.HasPrefix(row.AuthorDID, "did:web:") && row.AuthorDID != "did:web:skyreader.rss" {

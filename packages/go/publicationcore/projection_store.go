@@ -21,7 +21,7 @@ func allSidebarRows(sidebar Sidebar) []SidebarRow {
 	}
 	return rows
 }
-func (s ProjectionStore) Persist(ctx context.Context, sidebar Sidebar, replaceAll bool) error {
+func (s ProjectionStore) Persist(ctx context.Context, sidebar Sidebar, replaceAll bool, preserveFollowing ...bool) error {
 	sections := map[string]map[string]bool{}
 	add := func(id, key string) {
 		if sections[id] == nil {
@@ -108,7 +108,39 @@ func (s ProjectionStore) Persist(ctx context.Context, sidebar Sidebar, replaceAl
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "appview-publications:"+sidebar.ViewerDID); e != nil {
 		return e
 	}
-	if replaceAll {
+	if replaceAll && len(preserveFollowing) > 0 && preserveFollowing[0] {
+		// Manual refresh discovers subscriptions, not the follow graph. Keep the
+		// durable Following projection on cold replicas, except newly hidden rows.
+		rows, err := tx.QueryContext(ctx, `SELECT DISTINCT publication_id FROM appview_feed_publications WHERE viewer_did=$1 AND feed_kind='following'`, sidebar.ViewerDID)
+		if err != nil {
+			return err
+		}
+		hidden := []string{}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			if len(FilterHidden([]DiscoveredRow{{PublicationID: id}}, sidebar.PublicationPrefs)) == 0 {
+				hidden = append(hidden, id)
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		if _, e = tx.ExecContext(ctx, `DELETE FROM appview_feed_publications WHERE viewer_did=$1 AND (feed_kind<>'following' OR publication_id=ANY($2::text[]))`, sidebar.ViewerDID, hidden); e != nil {
+			return e
+		}
+		if _, e = tx.ExecContext(ctx, `DELETE FROM appview_viewer_feeds WHERE viewer_did=$1 AND feed_kind<>'following'`, sidebar.ViewerDID); e != nil {
+			return e
+		}
+		if _, e = tx.ExecContext(ctx, `DELETE FROM appview_publication_scopes s WHERE viewer_did=$1 AND NOT EXISTS (SELECT 1 FROM appview_feed_publications f WHERE f.viewer_did=s.viewer_did AND f.publication_id=s.publication_id AND f.feed_kind='following')`, sidebar.ViewerDID); e != nil {
+			return e
+		}
+	} else if replaceAll {
 		for _, table := range []string{"appview_feed_publications", "appview_viewer_feeds", "appview_publication_scopes"} {
 			if _, e = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE viewer_did=$1", sidebar.ViewerDID); e != nil {
 				return e
@@ -144,4 +176,23 @@ func (s ProjectionStore) Scope(ctx context.Context, viewer, id string) (*AppView
 		return nil, e
 	}
 	return &result, nil
+}
+
+// FollowingPublicationIDs returns retained membership without inventing display
+// metadata or walking the viewer's follow graph.
+func (s ProjectionStore) FollowingPublicationIDs(ctx context.Context, viewer string) ([]string, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT DISTINCT publication_id FROM appview_feed_publications WHERE viewer_did=$1 AND feed_kind='following' ORDER BY publication_id`, viewer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
