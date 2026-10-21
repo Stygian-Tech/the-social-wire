@@ -3,6 +3,7 @@ import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { ParsedBootstrapStreamEvent } from "@/lib/bootstrapStreamModels";
 import { mergeFeedRefreshForFilter } from "@/lib/feedCacheMerge";
+import { getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   mergeSidebarProjections,
@@ -398,7 +399,8 @@ export function writeStreamedEntriesPage(
   queryClient: QueryClient,
   viewerDid: string,
   payload: Extract<ParsedBootstrapStreamEvent, { kind: "entriesPage" }>["payload"],
-  articleFilter: "all" | "unread" = "all"
+  articleFilter: "all" | "unread" = "all",
+  revisionAtStreamStart?: (queryKey: readonly unknown[]) => number
 ): void {
   // Missing evidence is not an authoritative empty feed, nor a fresh snapshot.
   if (payload.source === "unavailable") return;
@@ -408,6 +410,8 @@ export function writeStreamedEntriesPage(
   if (updatedAt !== undefined && !Number.isFinite(updatedAt)) return;
   const publicationKey = normalizeAtRepoParam(payload.publicationId);
   const queryKey = [...ENTRIES_QUERY_KEY(viewerDid, publicationKey), articleFilter] as const;
+  if (revisionAtStreamStart &&
+    revisionAtStreamStart(queryKey) !== getFeedRefreshRevision(queryClient, queryKey)) return;
   const currentState = queryClient.getQueryState(queryKey);
   // Projection timestamps describe the data, unlike the time the stream arrives.
   // In particular, a delayed warm chunk must not roll back a newer feed fetch.

@@ -18,6 +18,7 @@ import { PDS_SESSION_ATTESTATION_RECEIPT_HEADER } from "@/lib/pdsSessionAttestat
 import { ReadStateProvider, useReadState } from "@/contexts/ReadStateContext";
 import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
 import * as appviewClient from "@/lib/thinAppViewClient";
+import * as readStateRuntime from "@/lib/pdsReadStateRuntime";
 import { invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
 import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 
@@ -726,6 +727,40 @@ describe("reader lifecycle refreshes", () => {
         expect(result.current.fetchStatus).toBe("idle");
       });
     }
+
+    it(`${scope} applies fresh data through the real ReadStateProvider confirmation event`, async () => {
+      seed(scope, "unread");
+      client.setQueryData(keyFor(scope, "unread"), client.getQueryData(keyFor(scope, "unread")));
+      let finishOld!: (page: EntriesPage) => void;
+      const feed = spyOn(appviewClient, "listAggregateFeedFromAppView").mockImplementationOnce(
+        () => new Promise(resolve => { finishOld = resolve; }),
+      ).mockResolvedValue({ entries: [row("provider-confirmed")] });
+      const runtime = spyOn(readStateRuntime, "loadPDSReadStateSync").mockResolvedValue({
+        snapshot: async () => ({ viewerDid: viewer, entries: [{ attempts: 0, retryAt: 0,
+          intent: { actionId: "other-pending", state: "unread", actedAt: "2026-01-01T00:00:00Z", selection: "exact", subjectUris: ["other"] },
+        }] }),
+      } as never);
+      lifecycleRestores.push(() => feed.mockRestore(), () => runtime.mockRestore());
+      const { result } = renderHook(() => ({ feed: useFeed(scope, "unread"), state: useReadState() }), { wrapper: ReadStateWrapper });
+      await act(async () => {}); // finish provider hydration before the race
+      await act(async () => {
+        const refreshing = result.current.feed.refetch();
+        expect(feed).toHaveBeenCalledTimes(1);
+        window.dispatchEvent(new window.CustomEvent(readStateRuntime.PDS_READ_STATE_SYNC_EVENT, {
+          detail: { viewerDid: viewer, kind: "confirmed" },
+        }));
+        await refreshing;
+      });
+      await waitFor(() => expect(feed).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(ids(result.current.feed.data)).toEqual(["provider-confirmed"]));
+      expect(client.getQueryState(keyFor(scope, "unread"))?.isInvalidated).toBe(false);
+      const updatedAt = client.getQueryState(keyFor(scope, "unread"))?.dataUpdatedAt;
+      await act(async () => { finishOld({ entries: [row("pre-confirmation")] }); });
+      await settle();
+      expect(ids(result.current.feed.data)).toEqual(["provider-confirmed"]);
+      expect(client.getQueryState(keyFor(scope, "unread"))?.dataUpdatedAt).toBe(updatedAt);
+      expect(result.current.feed.fetchStatus).toBe("idle");
+    });
 
     it(`${scope} preserves a recreated query when its removed query's lifecycle response arrives`, async () => {
       seed(scope);

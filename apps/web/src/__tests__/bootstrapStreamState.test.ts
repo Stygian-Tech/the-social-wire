@@ -8,6 +8,7 @@ import {
   applyUnreadCountsEvent,
   writeStreamedEntriesPage,
 } from "@/lib/bootstrapStreamState";
+import { advanceFeedRefreshRevision, cancelViewerFeedRefreshes, captureFeedRefreshRevisions } from "@/lib/feedRefreshCoordinator";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 
@@ -75,6 +76,55 @@ describe("writeStreamedEntriesPage", () => {
     ],
     pageParams: [undefined, "next"],
   };
+
+  for (const filter of ["all", "unread"] as const) {
+    for (const source of ["live_projection", "projection_cache"] as const) {
+      it(`rejects ${source} ${filter} chunks after a read-state cancellation`, async () => {
+        const qc = new QueryClient();
+        const key = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), filter];
+        // Capture before the eventual target scope even exists in the cache.
+        const revisions = captureFeedRefreshRevisions(qc);
+        qc.setQueryData(key, cached, { updatedAt: 1 });
+        await cancelViewerFeedRefreshes(qc, "did:plc:viewer");
+        qc.setQueryData<InfiniteData<EntriesPage>>(key, current => ({
+          ...current!, pages: current!.pages.map(page => ({ ...page, entries: page.entries.map(entry => ({ ...entry, isRead: false })) })),
+        }));
+        await qc.invalidateQueries({ queryKey: key, exact: true, refetchType: "none" });
+        const before = qc.getQueryState(key)!;
+        writeStreamedEntriesPage(qc, "did:plc:viewer", {
+          publicationId: encodeURIComponent(publicationId), source,
+          cachedAt: "2099-01-01T00:00:00Z",
+          entries: [{ ...cached.pages[0].entries[0], isRead: true }],
+        }, filter, revisions);
+        const after = qc.getQueryState(key)!;
+        expect(after.data).toBe(before.data);
+        expect(after.dataUpdatedAt).toBe(before.dataUpdatedAt);
+        expect(after.isInvalidated).toBe(true);
+        expect(qc.getQueryDefaults(key)).toEqual({});
+        expect(qc.getQueryCache().getAll()).toHaveLength(1);
+        qc.clear();
+      });
+    }
+  }
+
+  it("copies nonzero stream-start generations and looks up the complete normalized query identity", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKey, cached, { updatedAt: 1 });
+    advanceFeedRefreshRevision(qc, queryKey);
+    const revisions = captureFeedRefreshRevisions(qc);
+    advanceFeedRefreshRevision(qc, [...queryKey.slice(0, -1), "unread"]);
+    advanceFeedRefreshRevision(qc, ["entries", "did:plc:other", publicationId, "all"]);
+    const payload = { publicationId: encodeURIComponent(publicationId), entries: [fresh], source: "live_projection" as const };
+    writeStreamedEntriesPage(qc, "did:plc:viewer", payload, "all", revisions);
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)?.pages[0].entries[0]).toEqual(fresh);
+    advanceFeedRefreshRevision(qc, queryKey);
+    const before = qc.getQueryState(queryKey)!;
+    writeStreamedEntriesPage(qc, "did:plc:viewer", { ...payload, entries: [] }, "all", revisions);
+    expect(qc.getQueryState(queryKey)?.data).toBe(before.data);
+    expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(before.dataUpdatedAt);
+    expect(revisions(queryKey)).toBe(1);
+    qc.clear();
+  });
 
   for (const id of [publicationId, encodeURIComponent(publicationId)]) {
     it(`preserves all cached pages and freshness when unavailable (${id})`, () => {

@@ -8,6 +8,12 @@ export function getFeedRefreshRevision(client: QueryClient, queryKey: readonly u
   return revisionsByClient.get(client)?.get(hashKey(queryKey)) ?? 0;
 }
 
+/** Freeze existing generations before a stream reveals its eventual feed scope. */
+export function captureFeedRefreshRevisions(client: QueryClient): (queryKey: readonly unknown[]) => number {
+  const revisions = new Map(revisionsByClient.get(client));
+  return queryKey => revisions.get(hashKey(queryKey)) ?? 0;
+}
+
 /** Supersede pending direct cache writes before cancelling or fetching reader queries. */
 export function advanceFeedRefreshRevision(client: QueryClient, queryKey: readonly unknown[]): number {
   let revisions = revisionsByClient.get(client);
