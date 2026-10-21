@@ -161,6 +161,119 @@ describe("Social feed contracts", () => {
     await pending;
   });
 
+  describe("catalog refresh metadata", () => {
+    const otherLabeler = "did:plc:otherlabeler";
+    const newFeedUri = "at://did:plc:feeds/app.bsky.feed.generator/new";
+    const items = [{ id: "f", type: "feed", value: feedUri, pinned: true }, { id: "l", type: "list", value: listUri, pinned: false }];
+    function catalogSession(options: {
+      items?: typeof items;
+      labelers?: string[];
+      adultContentEnabled?: boolean;
+      changedDefinitions?: boolean;
+      viewer?: string;
+      unsafe?: boolean;
+      metadata?: (method: string) => Promise<unknown>;
+    } = {}) {
+      const session = fakeSession(async method => {
+        if (method === "app.bsky.actor.getPreferences") return { preferences: [
+          { $type: "app.bsky.actor.defs#savedFeedsPrefV2", items: options.items ?? items },
+          { $type: "app.bsky.actor.defs#adultContentPref", enabled: options.adultContentEnabled ?? false },
+          { $type: "app.bsky.actor.defs#labelersPref", labelers: (options.labelers ?? [customLabeler, otherLabeler]).map(did => ({ did })) },
+        ] };
+        if (method === "app.bsky.labeler.getServices") return { views: [baseLabeler, customLabeler, otherLabeler].map(did => ({
+          ...labelerView(did),
+          policies: { labelValues: ["test-label"], labelValueDefinitions: [{ identifier: "test-label", severity: options.changedDefinitions ? "alert" : "inform", blurs: "none", defaultSetting: "warn", locales: [{ lang: "en", name: "Test Label", description: "Test definition" }] }] },
+        })) };
+        if (method === "app.bsky.feed.getFeedGenerators" || method === "app.bsky.graph.getList") {
+          if (options.metadata) return options.metadata(method);
+          const creator = { did: "did:plc:feeds", handle: "feeds.example", viewer: options.unsafe ? { blocking: "at://did:plc:alice/app.bsky.graph.block/one" } : {} };
+          const common = { cid: "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku", creator, indexedAt: "2026-10-09T00:00:00Z" };
+          if (method === "app.bsky.feed.getFeedGenerators") return { feeds: [{ ...common, uri: feedUri, did: "did:plc:feedservice", displayName: "Network News", avatar: "https://images.example/feed.png" }] };
+          return { list: { ...common, uri: listUri, name: "Network Friends", avatar: "https://images.example/list.png", purpose: "app.bsky.graph.defs#curatelist" }, items: [] };
+        }
+        throw new Error(`Unexpected ${method}`);
+      });
+      return options.viewer ? { ...session, did: options.viewer } as OAuthSession : session;
+    }
+    const placeholders: import("@/lib/blueskySocialClient").SocialFeed[] = [{ kind: "feed", uri: feedUri, name: "Saved Feed", pinned: true }, { kind: "list", uri: listUri, name: "Saved List", pinned: false }];
+
+    it("retains names and avatars in onReady during a same-safety metadata stall with reordered labelers", async () => {
+      const previousCatalog = await getBlueskySocialCatalog(catalogSession());
+      let finish!: (error: Error) => void;
+      const metadata = new Promise<unknown>((_resolve, reject) => { finish = reject; });
+      let markReady!: (catalog: Awaited<ReturnType<typeof getBlueskySocialCatalog>>) => void;
+      const ready = new Promise<Awaited<ReturnType<typeof getBlueskySocialCatalog>>>(resolve => { markReady = resolve; });
+      let completed = false;
+      const pending = getBlueskySocialCatalog(catalogSession({ labelers: [otherLabeler, customLabeler], metadata: () => metadata }), undefined, { previousCatalog, onReady: markReady }).then(catalog => { completed = true; return catalog; });
+      try {
+        const catalog = await ready;
+        expect(completed).toBe(false);
+        expect(catalog.feeds).toEqual(previousCatalog.feeds);
+        expect(catalog.feeds.slice(1).map(feed => [feed.name, feed.avatar])).toEqual([["Network News", "https://images.example/feed.png"], ["Network Friends", "https://images.example/list.png"]]);
+      } finally {
+        finish(new Error("Metadata offline"));
+        await pending;
+      }
+    });
+
+    it("uses fresh membership and pinning, leaves new rows as placeholders, and matches both URI and kind", async () => {
+      const previousCatalog = await getBlueskySocialCatalog(catalogSession());
+      let ready: Awaited<ReturnType<typeof getBlueskySocialCatalog>> | undefined;
+      const metadata = async () => { throw new Error("Metadata offline"); };
+      const catalog = await getBlueskySocialCatalog(catalogSession({ items: [{ ...items[0]!, pinned: false }, { id: "new", type: "feed", value: newFeedUri, pinned: true }], metadata }), undefined, { previousCatalog, onReady: value => { ready = value; } });
+      const expected: import("@/lib/blueskySocialClient").SocialFeed[] = [SOCIAL_FOLLOWING_FEED, { kind: "feed", uri: newFeedUri, name: "Saved Feed", pinned: true }, { kind: "feed", uri: feedUri, name: "Network News", avatar: "https://images.example/feed.png", pinned: false }];
+      expect(ready?.feeds).toEqual(expected);
+      expect(catalog.feeds).toEqual(expected);
+      expect(catalog.feeds.some(feed => feed.uri === listUri)).toBe(false);
+      const wrongKind = { ...previousCatalog, feeds: previousCatalog.feeds.map(feed => feed.uri === feedUri ? { ...feed, kind: "list" as const } : feed) };
+      const mismatched = await getBlueskySocialCatalog(catalogSession({ items: [items[0]!], metadata }), undefined, { previousCatalog: wrongKind });
+      expect(mismatched.feeds[1]).toEqual(placeholders[0]);
+    });
+
+    for (const change of ["preferences", "definitions", "viewer"] as const) {
+      it(`does not reuse decorations when ${change} change`, async () => {
+        const previousCatalog = await getBlueskySocialCatalog(catalogSession());
+        let ready: Awaited<ReturnType<typeof getBlueskySocialCatalog>> | undefined;
+        const catalog = await getBlueskySocialCatalog(catalogSession({ adultContentEnabled: change === "preferences", changedDefinitions: change === "definitions", viewer: change === "viewer" ? "did:plc:bob" : undefined, metadata: async () => { throw new Error("Metadata offline"); } }), undefined, { previousCatalog, onReady: value => { ready = value; } });
+        expect(ready?.feeds.slice(1)).toEqual(placeholders);
+        expect(catalog.feeds.slice(1)).toEqual(placeholders);
+        expect(catalog.moderation.userDid).toBe(change === "viewer" ? "did:plc:bob" : "did:plc:alice");
+      });
+    }
+
+    for (const kind of ["feed", "list"] as const) {
+      it(`reports optional ${kind} metadata failure while retaining compatible names and avatars`, async () => {
+        const savedItems = items.filter(item => item.type === kind);
+        const previousCatalog = await getBlueskySocialCatalog(catalogSession({ items: savedItems }));
+        const catalog = await getBlueskySocialCatalog(catalogSession({ items: savedItems, metadata: async () => { throw new Error(`${kind} metadata unavailable`); } }), undefined, { previousCatalog });
+        expect(catalog.feeds).toEqual(previousCatalog.feeds);
+        expect(catalog.metadataError).toBe("This social feed could not be loaded. Please retry.");
+        expect(catalog.moderation.userDid).toBe("did:plc:alice");
+      });
+    }
+
+    it("removes retained names and avatars when fresh successful metadata is unsafe", async () => {
+      const previousCatalog = await getBlueskySocialCatalog(catalogSession());
+      let ready: Awaited<ReturnType<typeof getBlueskySocialCatalog>> | undefined;
+      const catalog = await getBlueskySocialCatalog(catalogSession({ unsafe: true }), undefined, { previousCatalog, onReady: value => { ready = value; } });
+      expect(ready?.feeds).toEqual(previousCatalog.feeds);
+      expect(catalog.feeds.slice(1)).toEqual(placeholders);
+      expect(catalog.metadataError).toBeUndefined();
+    });
+
+    it("does not expose a previous catalog when required safety definitions fail", async () => {
+      const previousCatalog = await getBlueskySocialCatalog(catalogSession());
+      let ready = false;
+      const session = fakeSession(method => {
+        if (method === "app.bsky.actor.getPreferences") return { preferences: [{ $type: "app.bsky.actor.defs#savedFeedsPrefV2", items }, { $type: "app.bsky.actor.defs#labelersPref", labelers: [{ did: customLabeler }] }] };
+        if (method === "app.bsky.labeler.getServices") return { views: [labelerView(baseLabeler)] };
+        throw new Error(`Unexpected ${method}`);
+      });
+      await expect(getBlueskySocialCatalog(session, undefined, { previousCatalog, onReady: () => { ready = true; } })).rejects.toThrow("moderation settings");
+      expect(ready).toBe(false);
+    });
+  });
+
   it("fails closed when a subscribed moderation service is missing", async () => {
     const session = fakeSession(method => method === "app.bsky.actor.getPreferences"
       ? { preferences: [{ $type: "app.bsky.actor.defs#labelersPref", labelers: [{ did: customLabeler }] }] }

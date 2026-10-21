@@ -50,14 +50,11 @@ export function SocialTimeline() {
     try { await signIn(session.did); } catch { setReauthorizing(false); setReauthorizeError(true); }
   }
 
-  const refetchCatalog = catalog.refetch;
+  const refetchSafety = catalog.refetchSafety;
   const refreshFirstPage = timeline.refreshFirstPage;
   const refresh = useCallback(async () => {
-    const settings = await refetchCatalog();
-    if (!settings.isError && session) {
-      await refreshFirstPage(settings.data?.moderation);
-    }
-  }, [refetchCatalog, session, refreshFirstPage]);
+    await refreshFirstPage(async () => (await refetchSafety()).moderation);
+  }, [refetchSafety, refreshFirstPage]);
 
   useEffect(() => {
     const returnHome = () => {
@@ -72,15 +69,18 @@ export function SocialTimeline() {
   return <div className="relative flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title={selected.name} subtitle="Social">
       <SocialFeedsSheet />
-      <Button variant="ghost" size="icon" aria-label="Refresh Social Feed" disabled={!!routeError || catalog.isFetching || timeline.isFetching || timeline.isRefreshing} onClick={() => { void refresh(); }}>
+      <Button variant="ghost" size="icon" aria-label="Refresh Social Feed" disabled={!!routeError || timeline.isFetching || timeline.isRefreshing} onClick={() => { void refresh(); }}>
         <RefreshCw data-icon="inline-start" />
       </Button>
     </FeedHeader>
     <div ref={scrollContainer} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24" key={`${session?.did}:${feed.kind}:${feed.uri}`}>
+      {catalog.data?.metadataError ? <section role="status" className="mx-auto max-w-2xl p-3 text-sm text-muted-foreground">
+        Saved Feed Details Unavailable. {catalog.data.metadataError}
+      </section> : null}
       {refreshError && !error ? <section role="alert" className="mx-auto flex max-w-2xl flex-col items-start gap-3 p-6">
         <h2 className="text-lg font-semibold">Social Refresh Unavailable</h2><p className="text-sm text-muted-foreground">{refreshError}</p>
         {refreshError === SCOPE_RECOVERY_MESSAGE ? <Button disabled={reauthorizing} onClick={() => { void reauthorize(); }}>{reauthorizing ? "Opening Login…" : "Log In Again"}</Button>
-          : <Button variant="outline" disabled={timeline.isRefreshing || catalog.isFetching} onClick={() => { void refresh(); }}>Retry</Button>}
+          : <Button variant="outline" disabled={timeline.isRefreshing} onClick={() => { void refresh(); }}>Retry</Button>}
         {reauthorizeError ? <p className="text-sm text-destructive">Login could not be opened. Please try again.</p> : null}
       </section> : null}
       {error ? <section role="alert" className="mx-auto flex max-w-2xl flex-col items-start gap-3 p-6">
