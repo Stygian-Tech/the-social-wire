@@ -1,12 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { focusManager, onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Navigation from "next/navigation";
 
 import * as Auth from "@/hooks/useAuth";
 import * as Client from "@/lib/blueskySocialClient";
+import * as PostClient from "@/lib/blueskyPostClient";
+import * as BookmarkClient from "@/lib/blueskyBookmarksClient";
 import SocialPage from "@/app/social/page";
 import { useBlueskySocialTimeline } from "@/hooks/useBlueskySocialTimeline";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -34,6 +36,11 @@ afterAll(() => {
   else Reflect.deleteProperty(window, "matchMedia");
 });
 beforeEach(() => {
+  for (const [name, value] of Object.entries({ getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+    restores.push(() => { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
+  }
   params = new URLSearchParams();
   signIn.mockClear();
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
@@ -221,12 +228,59 @@ describe("Social timeline page", () => {
     fireEvent.click(row);
     expect(Navigation.useRouter().push).toHaveBeenCalled();
     cleanup();
+    // Returning after the freshness window or a mutation must not replay page one.
+    await queryClient.invalidateQueries({ queryKey: ["blueskySocial", did, "timeline"], refetchType: "none" });
+    posts.mockResolvedValue({ feed: [item("newer-head", "Newer upstream head")] });
     await show();
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
     const returned = await screen.findByText("Return Second Page");
     expect(returned.closest(".overflow-y-auto")?.scrollTop).toBe(780);
     expect(screen.getByText("Return First Page")).toBeTruthy();
     expect(posts).toHaveBeenCalledTimes(2);
   });
+
+  for (const action of ["Like", "Repost", "Bookmark"] as const) {
+    it(`preserves page-two rows and position after ${action} when newer upstream posts exist`, async () => {
+      serveCatalog();
+      const posts = servePage();
+      posts.mockImplementation(async args => args.cursor
+        ? { feed: [item("action-two", "Action Second Page")] }
+        : { feed: [item("action-one", "Action First Page")], cursor: "action-next" });
+      const engage = spyOn(PostClient, "setBlueskyPostEngagement").mockResolvedValue("at://did:plc:viewer/app.bsky.feed.like/action");
+      const bookmark = spyOn(BookmarkClient, "setBlueskyBookmark").mockResolvedValue(undefined);
+      restores.push(() => engage.mockRestore(), () => bookmark.mockRestore());
+      await show();
+      await screen.findByText("Action First Page");
+      fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+      const row = await screen.findByText("Action Second Page");
+      const card = within(row.closest("article")!);
+      const scrolling = row.closest(".overflow-y-auto") as HTMLElement;
+      scrolling.scrollTop = 780;
+      posts.mockResolvedValue({ feed: [item("new-head", "New upstream post")] });
+      if (action === "Bookmark") {
+        fireEvent.click(card.getByRole("button", { name: "Bookmark Post" }));
+        await waitFor(() => expect(card.getByRole("button", { name: "Remove Bookmark" })).toBeTruthy());
+      } else if (action === "Like") {
+        fireEvent.click(card.getByRole("button", { name: "Like (0)" }));
+        await waitFor(() => expect(card.getByRole("button", { name: "Like (1)" }).getAttribute("aria-pressed")).toBe("true"));
+      } else {
+        fireEvent.click(card.getByRole("button", { name: "Repost (0)" }));
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Repost" }));
+        await waitFor(() => expect(card.getByRole("button", { name: "Repost (1)" })).toBeTruthy());
+      }
+      await waitFor(() => expect(action === "Bookmark" ? bookmark : engage).toHaveBeenCalledTimes(1));
+      expect(posts).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Action First Page")).toBeTruthy();
+      expect(screen.getByText("Action Second Page")).toBe(row);
+      expect(scrolling.scrollTop).toBe(780);
+      expect(screen.queryByText("New upstream post")).toBeNull();
+    });
+  }
 
   it("refreshes safety settings before invalidating posts and reflects updated preferences", async () => {
     const oldPost = item("old", "Old feed post");

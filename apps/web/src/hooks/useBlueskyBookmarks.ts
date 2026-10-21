@@ -6,6 +6,7 @@ import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import { useAuth } from "./useAuth";
 import { getBlueskyBookmarks, setBlueskyBookmark } from "@/lib/blueskyBookmarksClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { invalidateSocialPostQueries } from "@/lib/invalidateSocialPostQueries";
 
 export function useBlueskyBookmarks(moderation?: ModerationOpts) {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
@@ -40,7 +41,7 @@ export function useBlueskyBookmark(post: AppBskyFeedDefs.PostView, moderation: M
     onSuccess: (_data, action) => {
       if (getOAuthSession()?.did !== action.did) return;
       client.setQueryData(["blueskySocial", action.did, "bookmarkState", oauthSessionReloadSeq, post.uri], action.saved);
-      void client.invalidateQueries({ predicate: query => query.queryKey[0] === "blueskySocial" && query.queryKey[1] === action.did && ["bookmarks", "timeline", "profileTimeline", "thread"].includes(String(query.queryKey[2])) });
+      void invalidateSocialPostQueries(client, action.did, new Set(["bookmarks", "timeline", "profileTimeline", "thread"]));
     },
     onSettled: () => { busy.current = false; },
   });

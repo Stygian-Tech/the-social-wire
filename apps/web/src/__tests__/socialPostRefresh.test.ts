@@ -1,5 +1,5 @@
 import { afterEach, expect, it, spyOn } from "bun:test";
-import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
+import { InfiniteQueryObserver, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { refreshSocialPostQueries } from "@/lib/socialPostRefresh";
 
 const did = "did:plc:viewer";
@@ -15,10 +15,13 @@ async function settle() {
   for (let index = 0; index < 20; index++) await Promise.resolve();
 }
 
-it("refreshes active timelines from page one instead of replaying loaded cursors", async () => {
+it("preserves active and inactive timeline pages after publishing without fetching a newer head", async () => {
   const cache = client();
   const key = ["blueskySocial", did, "timeline", 0, "following"];
   cache.setQueryData(key, { pages: [{ feed: ["old"], cursor: "older" }, { feed: ["older"] }], pageParams: [undefined, "older"] });
+  const original = cache.getQueryData(key);
+  const inactiveKey = ["blueskySocial", did, "timeline", 0, "generator", "other-feed"];
+  cache.setQueryData(inactiveKey, original);
   const cursors: unknown[] = [];
   const observer = new InfiniteQueryObserver(cache, {
     queryKey: key,
@@ -30,8 +33,46 @@ it("refreshes active timelines from page one instead of replaying loaded cursors
   cleanups.push(observer.subscribe(() => {}));
   cleanups.push(refreshSocialPostQueries(cache, did, () => true));
   await settle();
-  expect(cursors).toEqual([undefined]);
-  expect(cache.getQueryData<unknown>(key)).toEqual({ pages: [{ feed: ["new reply"] }], pageParams: [undefined] });
+  expect(cursors).toEqual([]);
+  expect(cache.getQueryData<unknown>(key)).toBe(original);
+  expect(cache.getQueryData<unknown>(inactiveKey)).toBe(original);
+  expect(cache.getQueryState(key)?.isInvalidated).toBe(true);
+});
+
+it("still refreshes the active conversation after publishing", async () => {
+  const cache = client();
+  const key = ["blueskySocial", did, "thread", "post"];
+  cache.setQueryData(key, "old thread");
+  const observer = new QueryObserver(cache, { queryKey: key, staleTime: Infinity, queryFn: async () => "thread with new reply" });
+  cleanups.push(observer.subscribe(() => {}));
+  cleanups.push(refreshSocialPostQueries(cache, did, () => true));
+  await settle();
+  expect(cache.getQueryData<string>(key)).toBe("thread with new reply");
+});
+
+it("lets an in-flight initial timeline load complete when publishing refresh overlaps it", async () => {
+  const cache = client();
+  const key = ["blueskySocial", did, "timeline", 0, "following"];
+  let complete!: (page: { feed: string[] }) => void;
+  let signal!: AbortSignal;
+  const observer = new InfiniteQueryObserver(cache, {
+    queryKey: key,
+    initialPageParam: undefined,
+    queryFn: args => {
+      signal = args.signal;
+      return new Promise<{ feed: string[] }>(resolve => { complete = resolve; });
+    },
+    getNextPageParam: () => undefined,
+  });
+  cleanups.push(observer.subscribe(() => {}));
+  cleanups.push(refreshSocialPostQueries(cache, did, () => true));
+  await settle();
+  expect(signal.aborted).toBe(false);
+  expect(observer.getCurrentResult().fetchStatus).toBe("fetching");
+  complete({ feed: ["initial post"] });
+  await settle();
+  expect(observer.getCurrentResult().status).toBe("success");
+  expect(observer.getCurrentResult().data?.pages).toEqual([{ feed: ["initial post"] }]);
 });
 
 it("invalidates affected surfaces for the posting viewer without touching other accounts or catalog state", async () => {

@@ -33,6 +33,11 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
     getNextPageParam: (lastPage, _pages, _lastParam, pageParams) => nextSocialCursor(lastPage, pageParams),
     retry: false,
     staleTime: 30_000,
+    // Returning to a post must restore the same loaded feed, even when stale.
+    // New feed membership is loaded through refreshFirstPage / Home refresh.
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const pages = query.data?.pages;
   useEffect(() => {
