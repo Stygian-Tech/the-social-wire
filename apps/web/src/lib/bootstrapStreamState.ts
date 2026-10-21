@@ -1,7 +1,8 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { ParsedBootstrapStreamEvent } from "@/lib/bootstrapStreamModels";
+import { mergeFeedRefreshForFilter } from "@/lib/feedCacheMerge";
 import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   mergeSidebarProjections,
@@ -406,20 +407,22 @@ export function writeStreamedEntriesPage(
     : undefined;
   if (updatedAt !== undefined && !Number.isFinite(updatedAt)) return;
   const publicationKey = normalizeAtRepoParam(payload.publicationId);
+  const queryKey = [...ENTRIES_QUERY_KEY(viewerDid, publicationKey), articleFilter] as const;
+  const currentState = queryClient.getQueryState(queryKey);
+  // Projection timestamps describe the data, unlike the time the stream arrives.
+  // In particular, a delayed warm chunk must not roll back a newer feed fetch.
+  if (updatedAt !== undefined && currentState?.data !== undefined && updatedAt <= currentState.dataUpdatedAt) return;
   const page: EntriesPage = {
     entries: dedupeEntryListItems(payload.entries),
     cursor: payload.cursor,
   };
-  queryClient.setQueryData(
-    [...ENTRIES_QUERY_KEY(viewerDid, publicationKey), articleFilter] as const,
-    {
-      pages: [page],
-      pageParams: [undefined],
-    },
+  queryClient.setQueryData<InfiniteData<EntriesPage>>(
+    queryKey,
+    (current) => mergeFeedRefreshForFilter(current, page, articleFilter),
     { updatedAt }
   );
   queryClient.setQueryDefaults(
-    [...ENTRIES_QUERY_KEY(viewerDid, publicationKey), articleFilter] as const,
+    queryKey,
     { staleTime: ENTRIES_QUERY_STALE_MS }
   );
 }

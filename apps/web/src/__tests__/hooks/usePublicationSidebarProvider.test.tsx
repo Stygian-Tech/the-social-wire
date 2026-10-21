@@ -13,6 +13,10 @@ import * as readerFeeds from "@/lib/refreshReaderFeeds";
 import * as publicationSources from "@/lib/refreshPublicationSources";
 import * as readerUnread from "@/lib/refreshReaderUnreadCounts";
 import * as appview from "@/lib/thinAppViewClient";
+import * as attestation from "@/lib/pdsSessionAttestation";
+import * as gatewayAuth from "@/lib/latrGatewayUserAuth";
+import * as upstreamDpop from "@/lib/latrGatewayUpstreamDpop";
+import { socialWireXrpc } from "@/lib/socialWireXrpc";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 
 function deferred() {
@@ -57,7 +61,7 @@ function mountProvider(options: { initialError?: boolean; initialGate?: ReturnTy
       </QueryClientProvider>
     );
   }
-  return { ...renderHook(() => useSidebarBootstrap(), { wrapper }), did, projection, queryClient, stream, post, sources, feeds, unread };
+  return { ...renderHook(() => useSidebarBootstrap(), { wrapper }), did, projection, queryClient, stream, post, sources, feeds, unread, oauthSession };
 }
 
 const observers: (() => void)[] = [];
@@ -175,6 +179,72 @@ describe("PublicationSidebarProvider", () => {
     await act(async () => { ingested.resolve(); await task; });
     expect(feeds).toHaveBeenCalledTimes(2); expect(unread).toHaveBeenCalledTimes(1);
     expect(result.current.refreshMessage).toBe("Refresh Complete");
+  });
+
+  it("queues the authoritative POST before blocked seed enrollment on the real Gateway nonce lane", async () => {
+    const mounted = mountProvider();
+    const { result, post, sources, feeds, unread, oauthSession, queryClient, did } = mounted;
+    await waitFor(() => expect(result.current.bootstrapStreamComplete).toBe(true));
+    const cached = cacheActiveSources(mounted, Array.from({ length: 5 }, (_, i) => sourceRow(`did:plc:source-${i}`)));
+    // Select the real serialized Gateway path, mocking only proof creation and
+    // transport. Neither the sidebar request nor enrollment bypasses its queue.
+    Object.assign(oauthSession, { getTokenSet: async () => ({ access_token: "token" }), server: { dpopKey: {} } });
+    spyOn(attestation, "createPdsSessionAttestationProof").mockResolvedValue("session-proof");
+    spyOn(upstreamDpop, "createUpstreamDpopProof").mockResolvedValue("upstream-proof");
+    spyOn(gatewayAuth, "buildLatrGatewayUserAuthHeaders").mockResolvedValue({ Authorization: "DPoP token", DPoP: "gateway-proof" });
+    post.mockRestore();
+    sources.mockRestore();
+    const deadlines: { milliseconds: number; controller: AbortController }[] = [];
+    spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => {
+      const controller = new AbortController();
+      deadlines.push({ milliseconds, controller });
+      return controller.signal;
+    });
+    const posted = deferred(), ingested = deferred();
+    const requests: { path: string; signal: AbortSignal | null | undefined }[] = [];
+    spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path === socialWireXrpc.listEntries) {
+        return Response.json({ entries: [] }, { headers: { "X-ATProto-Session-Attestation-Receipt": "receipt" } });
+      }
+      requests.push({ path, signal: init?.signal });
+      if (path === socialWireXrpc.refreshSidebar) {
+        await posted.promise;
+        return Response.json({ ...cached, refreshedAt: "authoritative-queued-first" });
+      }
+      if (path === socialWireXrpc.enrollSources) {
+        await ingested.promise;
+        return Response.json({});
+      }
+      throw new Error(`Unexpected Gateway request: ${path}`);
+    }, { preconnect: globalThis.fetch.preconnect }));
+    let outcome!: Promise<unknown>;
+    act(() => { outcome = result.current.refresh.mutateAsync().catch(error => error); });
+    try {
+      await waitFor(() => expect(requests).toHaveLength(1));
+      expect(requests[0].path).toBe(socialWireXrpc.refreshSidebar);
+      expect(feeds).not.toHaveBeenCalled();
+      expect(unread).not.toHaveBeenCalled();
+      await act(async () => { posted.resolve(); });
+      await waitFor(() => expect(requests).toHaveLength(2));
+      expect(requests.map(request => request.path)).toEqual([socialWireXrpc.refreshSidebar, socialWireXrpc.enrollSources]);
+      expect(queryClient.getQueryData<projectionClient.PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did))?.refreshedAt).toBe("authoritative-queued-first");
+      expect(deadlines.map(deadline => deadline.milliseconds)).toEqual([30_000, 60_000]);
+      // Advance the POST's entire allowance while enrollment is still blocked.
+      // Authority has already reached fetch and applied, so this cannot time it
+      // out waiting behind the seed or cancel the independently owned seed.
+      await act(async () => { deadlines[0].controller.abort(new DOMException("Sidebar deadline exceeded", "TimeoutError")); });
+      expect(requests[0].signal?.aborted).toBe(true);
+      expect(requests[1].signal?.aborted).toBe(false);
+      expect(result.current.refresh.isPending).toBe(true);
+      expect(unread).not.toHaveBeenCalled();
+      await act(async () => { ingested.resolve(); expect(await outcome).toBeUndefined(); });
+      expect(feeds).toHaveBeenCalledTimes(1);
+      expect(unread).toHaveBeenCalledTimes(1);
+      expect(result.current.refreshMessage).toBe("Refresh Complete");
+    } finally {
+      await act(async () => { posted.resolve(); ingested.resolve(); await outcome; });
+    }
   });
 
   for (const invalid of ["missing", "other-viewer", "no-usable-sources"] as const) {
