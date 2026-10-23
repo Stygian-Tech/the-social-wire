@@ -46,7 +46,13 @@ private struct SocialListEditorView: View {
             Form {
                 TextField("Name", text: $name)
                 TextField("Description", text: $description, axis: .vertical)
-                if list != nil { TextField("Add Member DID", text: $memberDID).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                if list != nil {
+                    TextField("Add Member DID", text: $memberDID)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .autocorrectionDisabled()
+                }
             }
             .navigationTitle(list == nil ? "New List" : "Edit List")
             .toolbar {
