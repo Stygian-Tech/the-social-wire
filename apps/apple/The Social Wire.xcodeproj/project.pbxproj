@@ -826,6 +826,104 @@
 		B17600000000000000000101 /* PodcastUnsubscribeConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17600000000000000000001 /* PodcastUnsubscribeConfirmation.swift */; };
 		B17600000000000000000200 /* PodcastSubscriptionMatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17600000000000000000002 /* PodcastSubscriptionMatchTests.swift */; };
 		B17600000000000000000201 /* PodcastSubscriptionMatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17600000000000000000002 /* PodcastSubscriptionMatchTests.swift */; };
+		00544D7D77D0EE2327A2FC3F /* SocialThreadDraftSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC9D4F44F3C4D388FF0B13F /* SocialThreadDraftSegment.swift */; };
+		01CE6E255967227178FF0826 /* SocialPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49656ECEA50001C22B87096F /* SocialPage.swift */; };
+		02E9BA7926BE6501B55B8F43 /* SocialProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E936F85E632CD3486732E8DB /* SocialProfileView.swift */; };
+		05005450C7D9D80DD6CB59A9 /* SocialProEntitlementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D193EAEA86216BAB9E49A6 /* SocialProEntitlementModel.swift */; };
+		0BD53EA4C4990ADE8675B7C6 /* SocialResponseDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 914D3D077D7CF98B048B5118 /* SocialResponseDTOs.swift */; };
+		0E87B83F67E3DFBBF1179D02 /* SocialProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF30B8F7BB0FDB1FACA6487B /* SocialProfile.swift */; };
+		102CCAC0C194EE651B43DCD8 /* SocialComposerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ED58CA61DA986306B9C3B0C /* SocialComposerModel.swift */; };
+		104B8931C8B64ACF9323E1B7 /* SocialComposerAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B078C15888268591E916381 /* SocialComposerAttachment.swift */; };
+		1F143CEA660FEA135A566E88 /* SocialPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16AB71AE785B79DEE25A7E3 /* SocialPost.swift */; };
+		2329AB6E618621E51325816A /* SocialProFeatureGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124EA6F53142F6E138C45A85 /* SocialProFeatureGate.swift */; };
+		23B12F4DF4EBB7C49F1BD8AB /* StandardSiteSocialEmbed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D37EBA083B5ADF965AD3B521 /* StandardSiteSocialEmbed.swift */; };
+		2AF75AA93773DAAD5B9994F7 /* SocialCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6885E0B9158A538DA66630BB /* SocialCoreTests.swift */; };
+		2D2441161D2DB800EF8B4D3C /* SocialComposerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ED58CA61DA986306B9C3B0C /* SocialComposerModel.swift */; };
+		2E34852551C59A77EF3941DE /* SocialEmbed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D0E2FDCE73085AA8279811 /* SocialEmbed.swift */; };
+		2F809DE7E3D827538F683FE2 /* SocialTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAFFF0F0BBF33DF3CCAB709 /* SocialTimelineView.swift */; };
+		30AB73BA2F74A4D1EEB263C6 /* SocialListSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8CE2C3C78A2407A7816406B /* SocialListSummary.swift */; };
+		4019AD8376BEA037658EFE7F /* SocialAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA64F2C761D2D43F265E83B /* SocialAvatarView.swift */; };
+		416DD2933716BDA11CFF8DD3 /* StandardSiteSocialEmbedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28A546164890391695D4E9DE /* StandardSiteSocialEmbedTests.swift */; };
+		47206152960A4BBE26D48A07 /* SocialRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79DC4AD65C71399EBF13C9A7 /* SocialRoute.swift */; };
+		4C9E132115F971E4B0F1F9DC /* SocialPostMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530A9C37D1A0B9698780C6A9 /* SocialPostMediaView.swift */; };
+		507BBD761669462BFC8C7DEE /* SocialProToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB761123F0057A170D3E9254 /* SocialProToolsView.swift */; };
+		52CF3C3CA261532F17576413 /* SocialProEntitlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600DF0E22411494AD1D7B0B /* SocialProEntitlement.swift */; };
+		537C259D9D3FF0D74AE67B58 /* SocialFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD1E27C7628F0FD41A242E95 /* SocialFeedView.swift */; };
+		53BC81E1A10AE381C7283F55 /* SocialListsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3CDA8905887DC4AB31D0D4 /* SocialListsView.swift */; };
+		5413125541E22B947B2C3B96 /* SocialResponseDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 914D3D077D7CF98B048B5118 /* SocialResponseDTOs.swift */; };
+		54EC3584F208420A1A432A1A /* SocialWorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B26D0E85235ADADA25B8A7D /* SocialWorkspaceModel.swift */; };
+		56E0F3C418CF6F39699D835E /* SocialNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41963027AD864DE2212564E6 /* SocialNotification.swift */; };
+		5A4586A43A30B8A0685F4C0C /* SocialPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49656ECEA50001C22B87096F /* SocialPage.swift */; };
+		5A57451E2C253DB21B6417B6 /* SocialTimelineModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041281790901182516751A5E /* SocialTimelineModel.swift */; };
+		6107A052D8DC7A9B1C435DBE /* SocialDiscoveryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9317C4B4EF8FC522310046E1 /* SocialDiscoveryModel.swift */; };
+		623A5DAB7F56A0AB5F1B29AA /* SocialBookmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 890656DB4D659F97D499E211 /* SocialBookmarksView.swift */; };
+		639829BE8E0AA9666A5A658B /* SocialExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2E53AEF24AD4FD04F3294F /* SocialExploreView.swift */; };
+		64BA71481B000C5AADBD13C3 /* SocialConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E57CEE99487B734952E9F47 /* SocialConversation.swift */; };
+		64C89E523D893781577C9CAF /* SocialAuthor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50961F55D8F8A8B4F94D0F1 /* SocialAuthor.swift */; };
+		676BE9C4D1C136FAB92B65F9 /* SocialPostMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530A9C37D1A0B9698780C6A9 /* SocialPostMediaView.swift */; };
+		6AB85212D5F593E799898C9F /* SocialPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16AB71AE785B79DEE25A7E3 /* SocialPost.swift */; };
+		6AD1C8956A2E63E950ADE7D9 /* SocialCatalogModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988C4FAF1A0E413C1C667BF4 /* SocialCatalogModel.swift */; };
+		6CD2B594E096B99C7907AE58 /* SocialStandardSiteExternalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 418AEC205A8AEAB2546104DE /* SocialStandardSiteExternalCard.swift */; };
+		70BDC6FA326000E2746BB800 /* SocialProPaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D8D4599DE8C7A688E0619B /* SocialProPaywallView.swift */; };
+		724A25B666B34EC8A3040E74 /* SocialMessagesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A7249D237EA7267F0E9E75 /* SocialMessagesModel.swift */; };
+		764E07CBF6BEEEBCE0B1CE94 /* SocialWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0711A9F139D64A12BFB3A88A /* SocialWorkspaceView.swift */; };
+		7B52DAA63DF607C17669C686 /* SocialWorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B26D0E85235ADADA25B8A7D /* SocialWorkspaceModel.swift */; };
+		7E54E93067570EFD25415C4F /* SocialTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAFFF0F0BBF33DF3CCAB709 /* SocialTimelineView.swift */; };
+		81450201DD1A63BA91C6357D /* SocialThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EB329C391109812A17EB102 /* SocialThreadView.swift */; };
+		8634A67A5633EFDC5BD4E945 /* SocialNotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817BE761EF1211C783E9AA09 /* SocialNotificationsView.swift */; };
+		88EAB3B557184317C49BF658 /* SocialProPaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D8D4599DE8C7A688E0619B /* SocialProPaywallView.swift */; };
+		8A68AA5846B3ED1F3493BECE /* SocialCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6885E0B9158A538DA66630BB /* SocialCoreTests.swift */; };
+		8A71AB5FA94FD3509D179C8E /* SocialFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD1E27C7628F0FD41A242E95 /* SocialFeedView.swift */; };
+		8C410AE481A09F61337B7415 /* SocialEmbed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D0E2FDCE73085AA8279811 /* SocialEmbed.swift */; };
+		8EBC94D8B2FC05C3C73EA24E /* SocialDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A245DD9B7ED440DA05B754 /* SocialDestination.swift */; };
+		942AB2415C04485B4DB16B61 /* StandardSiteSocialEmbed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D37EBA083B5ADF965AD3B521 /* StandardSiteSocialEmbed.swift */; };
+		94BBFCBDA3EA23FBB81B883B /* SocialFeedDirectoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D68AEE272C9C11DC4666159 /* SocialFeedDirectoryView.swift */; };
+		961CE6B5F90AC5261D401DD6 /* SocialWireSocialClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 208543D5CBEAC47B76F30344 /* SocialWireSocialClient.swift */; };
+		9B940B13C58613894F9370A8 /* SocialFeedDirectoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D68AEE272C9C11DC4666159 /* SocialFeedDirectoryView.swift */; };
+		9BA0EA99755855646DF909D4 /* SocialThreadDraftSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC9D4F44F3C4D388FF0B13F /* SocialThreadDraftSegment.swift */; };
+		9F1418C321A6607F0F6DEF94 /* SocialEmbedViewerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE7F3AE305149362F6A0757 /* SocialEmbedViewerState.swift */; };
+		A219969E7B03394D326336C7 /* SocialFeedSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4328ABAF13BB5B5697E4647B /* SocialFeedSummary.swift */; };
+		A466BED0C6A9AB680661E16E /* SocialProEntitlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2600DF0E22411494AD1D7B0B /* SocialProEntitlement.swift */; };
+		A682D300F58EB714BADF00CE /* SocialPostActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F64EB7F57FE1BFBB78E2335 /* SocialPostActionsView.swift */; };
+		A73E0191370314D47898B864 /* SocialComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D65BA05333457C650E2CE01 /* SocialComposerView.swift */; };
+		AEF7773F1B33AB37EB60ACDB /* SocialRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79DC4AD65C71399EBF13C9A7 /* SocialRoute.swift */; };
+		B28033A98A848DEB3E90D73F /* SocialNotificationsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D56929C9FCE67DDDC3F2BB8A /* SocialNotificationsModel.swift */; };
+		B39CD1896F58C76E48C3CDEB /* SocialWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0711A9F139D64A12BFB3A88A /* SocialWorkspaceView.swift */; };
+		B80CC8AF5AC11D784E686334 /* SocialProToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB761123F0057A170D3E9254 /* SocialProToolsView.swift */; };
+		B8A41AC721D4D2BBDDF0E108 /* SocialMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E7A8471577300238E039F1 /* SocialMessagesView.swift */; };
+		B8E24DA13CB7D6970751653E /* SocialPostRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A533BE7A7B4F56047796773 /* SocialPostRow.swift */; };
+		B9E3D3A9EB237DEAD6324BD1 /* SocialPostRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A533BE7A7B4F56047796773 /* SocialPostRow.swift */; };
+		BCB03048C97863DAB97068B9 /* SocialNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41963027AD864DE2212564E6 /* SocialNotification.swift */; };
+		BF92A4BB71022EF1CF1C1724 /* SocialAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA64F2C761D2D43F265E83B /* SocialAvatarView.swift */; };
+		C1D195AC67E50BA609CAB060 /* SocialProEntitlementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D193EAEA86216BAB9E49A6 /* SocialProEntitlementModel.swift */; };
+		C1E75FF8B5AB0EA8E6615CCA /* SocialDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A245DD9B7ED440DA05B754 /* SocialDestination.swift */; };
+		C584BB5591C738EE7ACF53C3 /* SocialThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EB329C391109812A17EB102 /* SocialThreadView.swift */; };
+		C732F5D3D31B2748ECD25473 /* SocialListsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3CDA8905887DC4AB31D0D4 /* SocialListsView.swift */; };
+		CF0685A58BC9BDE36CCAD180 /* SocialBookmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 890656DB4D659F97D499E211 /* SocialBookmarksView.swift */; };
+		D32D06B5E6822E5A75CDC9F7 /* SocialListSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8CE2C3C78A2407A7816406B /* SocialListSummary.swift */; };
+		D3BCC0474DB263132CDA5040 /* SocialNotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817BE761EF1211C783E9AA09 /* SocialNotificationsView.swift */; };
+		D4530C5DF98E320058F2D32F /* SocialConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E57CEE99487B734952E9F47 /* SocialConversation.swift */; };
+		D561CDF45E3F0F6D0326F535 /* SocialDiscoveryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9317C4B4EF8FC522310046E1 /* SocialDiscoveryModel.swift */; };
+		D5F8843B6EB84A5D69F67F73 /* SocialEmbedViewerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE7F3AE305149362F6A0757 /* SocialEmbedViewerState.swift */; };
+		DA6782CEF6962DE7F6D8087C /* SocialCatalogModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988C4FAF1A0E413C1C667BF4 /* SocialCatalogModel.swift */; };
+		DCE8689363B5ABF7C0ED6AA7 /* SocialAuthor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50961F55D8F8A8B4F94D0F1 /* SocialAuthor.swift */; };
+		DDD355155F5B1F9FCE4E0072 /* SocialExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2E53AEF24AD4FD04F3294F /* SocialExploreView.swift */; };
+		DEC6FBD069B3E2C34C3E2F8C /* SocialMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E7A8471577300238E039F1 /* SocialMessagesView.swift */; };
+		E12E79DBA282F391E2089209 /* SocialWireSocialClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 208543D5CBEAC47B76F30344 /* SocialWireSocialClient.swift */; };
+		E18AC942A61ACDE50EF1101D /* SocialProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF30B8F7BB0FDB1FACA6487B /* SocialProfile.swift */; };
+		E3118DDF3E1211326B64B738 /* SocialMessagesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A7249D237EA7267F0E9E75 /* SocialMessagesModel.swift */; };
+		E423FF08B24489856F846220 /* SocialComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D65BA05333457C650E2CE01 /* SocialComposerView.swift */; };
+		E4C19B90786EC22DE0314AA2 /* SocialNotificationsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D56929C9FCE67DDDC3F2BB8A /* SocialNotificationsModel.swift */; };
+		E70357EDC4AB612CD2B7D7F1 /* SocialProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E936F85E632CD3486732E8DB /* SocialProfileView.swift */; };
+		E9F7005FA69ECA395451E0D4 /* SocialProFeatureGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124EA6F53142F6E138C45A85 /* SocialProFeatureGate.swift */; };
+		EF1BA98CBC7A14400DE7D175 /* SocialFeedSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4328ABAF13BB5B5697E4647B /* SocialFeedSummary.swift */; };
+		F1EE1EC2095B519AE1DCA8CB /* SocialComposerAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B078C15888268591E916381 /* SocialComposerAttachment.swift */; };
+		F32746112106BEEE608CFBD2 /* StandardSiteSocialEmbedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28A546164890391695D4E9DE /* StandardSiteSocialEmbedTests.swift */; };
+		F50BBBEF4A50C4233C95D8F2 /* SocialPostActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F64EB7F57FE1BFBB78E2335 /* SocialPostActionsView.swift */; };
+		FA25521D68499B11AEFBCDED /* SocialStandardSiteExternalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 418AEC205A8AEAB2546104DE /* SocialStandardSiteExternalCard.swift */; };
+		FDC55FAC5FED0FB0321C347A /* SocialTimelineModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041281790901182516751A5E /* SocialTimelineModel.swift */; };
+		4020D6E2CDC30EFC8D77292B /* SocialSessionLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0460FF8F7C5296A7181F9435 /* SocialSessionLifecycleTests.swift */; };
+		8747298E5F8D98C4E9463AF9 /* SocialSessionLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0460FF8F7C5296A7181F9435 /* SocialSessionLifecycleTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1278,6 +1376,55 @@
 		A17600000000000000000000 /* PodcastSubscriptionMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/Podcasts/PodcastSubscriptionMatch.swift; sourceTree = "<group>"; };
 		A17600000000000000000001 /* PodcastUnsubscribeConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Podcasts/PodcastUnsubscribeConfirmation.swift; sourceTree = "<group>"; };
 		A17600000000000000000002 /* PodcastSubscriptionMatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastSubscriptionMatchTests.swift; sourceTree = "<group>"; };
+		041281790901182516751A5E /* SocialTimelineModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialTimelineModel.swift; sourceTree = "<group>"; };
+		06A7249D237EA7267F0E9E75 /* SocialMessagesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialMessagesModel.swift; sourceTree = "<group>"; };
+		0711A9F139D64A12BFB3A88A /* SocialWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialWorkspaceView.swift; sourceTree = "<group>"; };
+		124EA6F53142F6E138C45A85 /* SocialProFeatureGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialProFeatureGate.swift; sourceTree = "<group>"; };
+		208543D5CBEAC47B76F30344 /* SocialWireSocialClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialWireSocialClient.swift; sourceTree = "<group>"; };
+		2600DF0E22411494AD1D7B0B /* SocialProEntitlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialProEntitlement.swift; sourceTree = "<group>"; };
+		27D193EAEA86216BAB9E49A6 /* SocialProEntitlementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialProEntitlementModel.swift; sourceTree = "<group>"; };
+		28A546164890391695D4E9DE /* StandardSiteSocialEmbedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardSiteSocialEmbedTests.swift; sourceTree = "<group>"; };
+		2B078C15888268591E916381 /* SocialComposerAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialComposerAttachment.swift; sourceTree = "<group>"; };
+		2E57CEE99487B734952E9F47 /* SocialConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialConversation.swift; sourceTree = "<group>"; };
+		2EE7F3AE305149362F6A0757 /* SocialEmbedViewerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialEmbedViewerState.swift; sourceTree = "<group>"; };
+		3EB329C391109812A17EB102 /* SocialThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialThreadView.swift; sourceTree = "<group>"; };
+		418AEC205A8AEAB2546104DE /* SocialStandardSiteExternalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialStandardSiteExternalCard.swift; sourceTree = "<group>"; };
+		41963027AD864DE2212564E6 /* SocialNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialNotification.swift; sourceTree = "<group>"; };
+		4328ABAF13BB5B5697E4647B /* SocialFeedSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialFeedSummary.swift; sourceTree = "<group>"; };
+		49656ECEA50001C22B87096F /* SocialPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialPage.swift; sourceTree = "<group>"; };
+		530A9C37D1A0B9698780C6A9 /* SocialPostMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialPostMediaView.swift; sourceTree = "<group>"; };
+		5B26D0E85235ADADA25B8A7D /* SocialWorkspaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialWorkspaceModel.swift; sourceTree = "<group>"; };
+		6885E0B9158A538DA66630BB /* SocialCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialCoreTests.swift; sourceTree = "<group>"; };
+		6ED58CA61DA986306B9C3B0C /* SocialComposerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialComposerModel.swift; sourceTree = "<group>"; };
+		79DC4AD65C71399EBF13C9A7 /* SocialRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialRoute.swift; sourceTree = "<group>"; };
+		7A3CDA8905887DC4AB31D0D4 /* SocialListsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialListsView.swift; sourceTree = "<group>"; };
+		7A533BE7A7B4F56047796773 /* SocialPostRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialPostRow.swift; sourceTree = "<group>"; };
+		7D68AEE272C9C11DC4666159 /* SocialFeedDirectoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialFeedDirectoryView.swift; sourceTree = "<group>"; };
+		7FC9D4F44F3C4D388FF0B13F /* SocialThreadDraftSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialThreadDraftSegment.swift; sourceTree = "<group>"; };
+		817BE761EF1211C783E9AA09 /* SocialNotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialNotificationsView.swift; sourceTree = "<group>"; };
+		890656DB4D659F97D499E211 /* SocialBookmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialBookmarksView.swift; sourceTree = "<group>"; };
+		8D65BA05333457C650E2CE01 /* SocialComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialComposerView.swift; sourceTree = "<group>"; };
+		914D3D077D7CF98B048B5118 /* SocialResponseDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialResponseDTOs.swift; sourceTree = "<group>"; };
+		91E7A8471577300238E039F1 /* SocialMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialMessagesView.swift; sourceTree = "<group>"; };
+		9317C4B4EF8FC522310046E1 /* SocialDiscoveryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialDiscoveryModel.swift; sourceTree = "<group>"; };
+		988C4FAF1A0E413C1C667BF4 /* SocialCatalogModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialCatalogModel.swift; sourceTree = "<group>"; };
+		9F64EB7F57FE1BFBB78E2335 /* SocialPostActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialPostActionsView.swift; sourceTree = "<group>"; };
+		AD1E27C7628F0FD41A242E95 /* SocialFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialFeedView.swift; sourceTree = "<group>"; };
+		BB761123F0057A170D3E9254 /* SocialProToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialProToolsView.swift; sourceTree = "<group>"; };
+		BDA64F2C761D2D43F265E83B /* SocialAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialAvatarView.swift; sourceTree = "<group>"; };
+		CFAFFF0F0BBF33DF3CCAB709 /* SocialTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialTimelineView.swift; sourceTree = "<group>"; };
+		D37EBA083B5ADF965AD3B521 /* StandardSiteSocialEmbed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardSiteSocialEmbed.swift; sourceTree = "<group>"; };
+		D50961F55D8F8A8B4F94D0F1 /* SocialAuthor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialAuthor.swift; sourceTree = "<group>"; };
+		D56929C9FCE67DDDC3F2BB8A /* SocialNotificationsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialNotificationsModel.swift; sourceTree = "<group>"; };
+		D8CE2C3C78A2407A7816406B /* SocialListSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialListSummary.swift; sourceTree = "<group>"; };
+		D8D0E2FDCE73085AA8279811 /* SocialEmbed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialEmbed.swift; sourceTree = "<group>"; };
+		E936F85E632CD3486732E8DB /* SocialProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialProfileView.swift; sourceTree = "<group>"; };
+		F16AB71AE785B79DEE25A7E3 /* SocialPost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialPost.swift; sourceTree = "<group>"; };
+		F3D8D4599DE8C7A688E0619B /* SocialProPaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialProPaywallView.swift; sourceTree = "<group>"; };
+		F7A245DD9B7ED440DA05B754 /* SocialDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialDestination.swift; sourceTree = "<group>"; };
+		FC2E53AEF24AD4FD04F3294F /* SocialExploreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialExploreView.swift; sourceTree = "<group>"; };
+		FF30B8F7BB0FDB1FACA6487B /* SocialProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialProfile.swift; sourceTree = "<group>"; };
+		0460FF8F7C5296A7181F9435 /* SocialSessionLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialSessionLifecycleTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1384,6 +1531,9 @@
 		206EB97A8511039A9F09E35C /* SocialWireTests */ = {
 			isa = PBXGroup;
 			children = (
+				6885E0B9158A538DA66630BB /* SocialCoreTests.swift */,
+				0460FF8F7C5296A7181F9435 /* SocialSessionLifecycleTests.swift */,
+				28A546164890391695D4E9DE /* StandardSiteSocialEmbedTests.swift */,
 				6A634FF8C18290D603D9A66E /* StandardReaderListTests.swift */,
 				519EDD3A08A342ABB9374540 /* PodcastListenerTests.swift */,
 				A17600000000000000000002 /* PodcastSubscriptionMatchTests.swift */,
@@ -1509,6 +1659,7 @@
 		4D407BCC35F7F0C80EA9DC89 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				E7F403015F86391267B66F5B /* Social */,
 				41AA95491B65C64013443D17 /* Lists */,
 				56E8388BAFC7193DCD7E5BCE /* ATProtoOAuthService.swift */,
 				0FB9AEA3371D47E0E344B64B /* ATProtoResolver.swift */,
@@ -1646,6 +1797,7 @@
 		71F75ED212CC8522AA10A74F /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				D7993C676FEF4FC6146EB069 /* Social */,
 				AF4A0B1FE88B385AACB3036B /* Lists */,
 				60F94E68F6A8F8D90DF15CD3 /* JSONValue.swift */,
 				5F040BB571094D427C1733A9 /* Appearance */,
@@ -1931,6 +2083,7 @@
 		DBC6D10AC1BC45968195DB42 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				EB16D87C69CC361A1A98CB9D /* Social */,
 				50459BA302A375DBAD3CB57B /* StandardReaderLists */,
 				50160666ACBE36188557F195 /* AddPublicationView.swift */,
 				CBAB76AF7A801EC162FBE904 /* ArticleBodyUnavailableView.swift */,
@@ -2076,6 +2229,73 @@
 				90D29A197581D7604CF9DF4F /* WireArticleFeedbackValue.swift */,
 			);
 			path = Records;
+			sourceTree = "<group>";
+		};
+		D7993C676FEF4FC6146EB069 /* Social */ = {
+			isa = PBXGroup;
+			children = (
+				D50961F55D8F8A8B4F94D0F1 /* SocialAuthor.swift */,
+				988C4FAF1A0E413C1C667BF4 /* SocialCatalogModel.swift */,
+				2B078C15888268591E916381 /* SocialComposerAttachment.swift */,
+				6ED58CA61DA986306B9C3B0C /* SocialComposerModel.swift */,
+				2E57CEE99487B734952E9F47 /* SocialConversation.swift */,
+				F7A245DD9B7ED440DA05B754 /* SocialDestination.swift */,
+				9317C4B4EF8FC522310046E1 /* SocialDiscoveryModel.swift */,
+				D8D0E2FDCE73085AA8279811 /* SocialEmbed.swift */,
+				2EE7F3AE305149362F6A0757 /* SocialEmbedViewerState.swift */,
+				4328ABAF13BB5B5697E4647B /* SocialFeedSummary.swift */,
+				D8CE2C3C78A2407A7816406B /* SocialListSummary.swift */,
+				06A7249D237EA7267F0E9E75 /* SocialMessagesModel.swift */,
+				41963027AD864DE2212564E6 /* SocialNotification.swift */,
+				D56929C9FCE67DDDC3F2BB8A /* SocialNotificationsModel.swift */,
+				49656ECEA50001C22B87096F /* SocialPage.swift */,
+				F16AB71AE785B79DEE25A7E3 /* SocialPost.swift */,
+				2600DF0E22411494AD1D7B0B /* SocialProEntitlement.swift */,
+				27D193EAEA86216BAB9E49A6 /* SocialProEntitlementModel.swift */,
+				FF30B8F7BB0FDB1FACA6487B /* SocialProfile.swift */,
+				79DC4AD65C71399EBF13C9A7 /* SocialRoute.swift */,
+				7FC9D4F44F3C4D388FF0B13F /* SocialThreadDraftSegment.swift */,
+				041281790901182516751A5E /* SocialTimelineModel.swift */,
+				5B26D0E85235ADADA25B8A7D /* SocialWorkspaceModel.swift */,
+				D37EBA083B5ADF965AD3B521 /* StandardSiteSocialEmbed.swift */,
+			);
+			path = Social;
+			sourceTree = "<group>";
+		};
+		E7F403015F86391267B66F5B /* Social */ = {
+			isa = PBXGroup;
+			children = (
+				914D3D077D7CF98B048B5118 /* SocialResponseDTOs.swift */,
+				208543D5CBEAC47B76F30344 /* SocialWireSocialClient.swift */,
+			);
+			path = Social;
+			sourceTree = "<group>";
+		};
+		EB16D87C69CC361A1A98CB9D /* Social */ = {
+			isa = PBXGroup;
+			children = (
+				BDA64F2C761D2D43F265E83B /* SocialAvatarView.swift */,
+				890656DB4D659F97D499E211 /* SocialBookmarksView.swift */,
+				8D65BA05333457C650E2CE01 /* SocialComposerView.swift */,
+				FC2E53AEF24AD4FD04F3294F /* SocialExploreView.swift */,
+				7D68AEE272C9C11DC4666159 /* SocialFeedDirectoryView.swift */,
+				AD1E27C7628F0FD41A242E95 /* SocialFeedView.swift */,
+				7A3CDA8905887DC4AB31D0D4 /* SocialListsView.swift */,
+				91E7A8471577300238E039F1 /* SocialMessagesView.swift */,
+				817BE761EF1211C783E9AA09 /* SocialNotificationsView.swift */,
+				9F64EB7F57FE1BFBB78E2335 /* SocialPostActionsView.swift */,
+				530A9C37D1A0B9698780C6A9 /* SocialPostMediaView.swift */,
+				7A533BE7A7B4F56047796773 /* SocialPostRow.swift */,
+				124EA6F53142F6E138C45A85 /* SocialProFeatureGate.swift */,
+				E936F85E632CD3486732E8DB /* SocialProfileView.swift */,
+				F3D8D4599DE8C7A688E0619B /* SocialProPaywallView.swift */,
+				BB761123F0057A170D3E9254 /* SocialProToolsView.swift */,
+				418AEC205A8AEAB2546104DE /* SocialStandardSiteExternalCard.swift */,
+				3EB329C391109812A17EB102 /* SocialThreadView.swift */,
+				CFAFFF0F0BBF33DF3CCAB709 /* SocialTimelineView.swift */,
+				0711A9F139D64A12BFB3A88A /* SocialWorkspaceView.swift */,
+			);
+			path = Social;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -2284,6 +2504,52 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DCE8689363B5ABF7C0ED6AA7 /* SocialAuthor.swift in Sources */,
+				4019AD8376BEA037658EFE7F /* SocialAvatarView.swift in Sources */,
+				623A5DAB7F56A0AB5F1B29AA /* SocialBookmarksView.swift in Sources */,
+				DA6782CEF6962DE7F6D8087C /* SocialCatalogModel.swift in Sources */,
+				104B8931C8B64ACF9323E1B7 /* SocialComposerAttachment.swift in Sources */,
+				2D2441161D2DB800EF8B4D3C /* SocialComposerModel.swift in Sources */,
+				A73E0191370314D47898B864 /* SocialComposerView.swift in Sources */,
+				64BA71481B000C5AADBD13C3 /* SocialConversation.swift in Sources */,
+				8EBC94D8B2FC05C3C73EA24E /* SocialDestination.swift in Sources */,
+				6107A052D8DC7A9B1C435DBE /* SocialDiscoveryModel.swift in Sources */,
+				2E34852551C59A77EF3941DE /* SocialEmbed.swift in Sources */,
+				D5F8843B6EB84A5D69F67F73 /* SocialEmbedViewerState.swift in Sources */,
+				639829BE8E0AA9666A5A658B /* SocialExploreView.swift in Sources */,
+				9B940B13C58613894F9370A8 /* SocialFeedDirectoryView.swift in Sources */,
+				A219969E7B03394D326336C7 /* SocialFeedSummary.swift in Sources */,
+				8A71AB5FA94FD3509D179C8E /* SocialFeedView.swift in Sources */,
+				D32D06B5E6822E5A75CDC9F7 /* SocialListSummary.swift in Sources */,
+				53BC81E1A10AE381C7283F55 /* SocialListsView.swift in Sources */,
+				E3118DDF3E1211326B64B738 /* SocialMessagesModel.swift in Sources */,
+				B8A41AC721D4D2BBDDF0E108 /* SocialMessagesView.swift in Sources */,
+				BCB03048C97863DAB97068B9 /* SocialNotification.swift in Sources */,
+				B28033A98A848DEB3E90D73F /* SocialNotificationsModel.swift in Sources */,
+				8634A67A5633EFDC5BD4E945 /* SocialNotificationsView.swift in Sources */,
+				5A4586A43A30B8A0685F4C0C /* SocialPage.swift in Sources */,
+				1F143CEA660FEA135A566E88 /* SocialPost.swift in Sources */,
+				A682D300F58EB714BADF00CE /* SocialPostActionsView.swift in Sources */,
+				676BE9C4D1C136FAB92B65F9 /* SocialPostMediaView.swift in Sources */,
+				B8E24DA13CB7D6970751653E /* SocialPostRow.swift in Sources */,
+				52CF3C3CA261532F17576413 /* SocialProEntitlement.swift in Sources */,
+				05005450C7D9D80DD6CB59A9 /* SocialProEntitlementModel.swift in Sources */,
+				2329AB6E618621E51325816A /* SocialProFeatureGate.swift in Sources */,
+				88EAB3B557184317C49BF658 /* SocialProPaywallView.swift in Sources */,
+				507BBD761669462BFC8C7DEE /* SocialProToolsView.swift in Sources */,
+				E18AC942A61ACDE50EF1101D /* SocialProfile.swift in Sources */,
+				E70357EDC4AB612CD2B7D7F1 /* SocialProfileView.swift in Sources */,
+				5413125541E22B947B2C3B96 /* SocialResponseDTOs.swift in Sources */,
+				47206152960A4BBE26D48A07 /* SocialRoute.swift in Sources */,
+				6CD2B594E096B99C7907AE58 /* SocialStandardSiteExternalCard.swift in Sources */,
+				9BA0EA99755855646DF909D4 /* SocialThreadDraftSegment.swift in Sources */,
+				81450201DD1A63BA91C6357D /* SocialThreadView.swift in Sources */,
+				FDC55FAC5FED0FB0321C347A /* SocialTimelineModel.swift in Sources */,
+				7E54E93067570EFD25415C4F /* SocialTimelineView.swift in Sources */,
+				961CE6B5F90AC5261D401DD6 /* SocialWireSocialClient.swift in Sources */,
+				54EC3584F208420A1A432A1A /* SocialWorkspaceModel.swift in Sources */,
+				B39CD1896F58C76E48C3CDEB /* SocialWorkspaceView.swift in Sources */,
+				942AB2415C04485B4DB16B61 /* StandardSiteSocialEmbed.swift in Sources */,
 				FA9319038118203F561067AF /* StandardReaderListsWorkspace.swift in Sources */,
 				6FF5F1D3EE44113699ECCF2C /* StandardReaderListsManagementView.swift in Sources */,
 				43A249A6BB4B95E3484067C6 /* StandardReaderListPDSService.swift in Sources */,
@@ -2670,6 +2936,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2AF75AA93773DAAD5B9994F7 /* SocialCoreTests.swift in Sources */,
+				4020D6E2CDC30EFC8D77292B /* SocialSessionLifecycleTests.swift in Sources */,
+				F32746112106BEEE608CFBD2 /* StandardSiteSocialEmbedTests.swift in Sources */,
 				CF95A16A5108BBCEF77C7232 /* StandardReaderListTests.swift in Sources */,
 				99E4AA1EB05E47C3BDAE78CC /* PodcastListenerTests.swift in Sources */,
 				B17600000000000000000201 /* PodcastSubscriptionMatchTests.swift in Sources */,
@@ -2712,6 +2981,52 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				64C89E523D893781577C9CAF /* SocialAuthor.swift in Sources */,
+				BF92A4BB71022EF1CF1C1724 /* SocialAvatarView.swift in Sources */,
+				CF0685A58BC9BDE36CCAD180 /* SocialBookmarksView.swift in Sources */,
+				6AD1C8956A2E63E950ADE7D9 /* SocialCatalogModel.swift in Sources */,
+				F1EE1EC2095B519AE1DCA8CB /* SocialComposerAttachment.swift in Sources */,
+				102CCAC0C194EE651B43DCD8 /* SocialComposerModel.swift in Sources */,
+				E423FF08B24489856F846220 /* SocialComposerView.swift in Sources */,
+				D4530C5DF98E320058F2D32F /* SocialConversation.swift in Sources */,
+				C1E75FF8B5AB0EA8E6615CCA /* SocialDestination.swift in Sources */,
+				D561CDF45E3F0F6D0326F535 /* SocialDiscoveryModel.swift in Sources */,
+				8C410AE481A09F61337B7415 /* SocialEmbed.swift in Sources */,
+				9F1418C321A6607F0F6DEF94 /* SocialEmbedViewerState.swift in Sources */,
+				DDD355155F5B1F9FCE4E0072 /* SocialExploreView.swift in Sources */,
+				94BBFCBDA3EA23FBB81B883B /* SocialFeedDirectoryView.swift in Sources */,
+				EF1BA98CBC7A14400DE7D175 /* SocialFeedSummary.swift in Sources */,
+				537C259D9D3FF0D74AE67B58 /* SocialFeedView.swift in Sources */,
+				30AB73BA2F74A4D1EEB263C6 /* SocialListSummary.swift in Sources */,
+				C732F5D3D31B2748ECD25473 /* SocialListsView.swift in Sources */,
+				724A25B666B34EC8A3040E74 /* SocialMessagesModel.swift in Sources */,
+				DEC6FBD069B3E2C34C3E2F8C /* SocialMessagesView.swift in Sources */,
+				56E0F3C418CF6F39699D835E /* SocialNotification.swift in Sources */,
+				E4C19B90786EC22DE0314AA2 /* SocialNotificationsModel.swift in Sources */,
+				D3BCC0474DB263132CDA5040 /* SocialNotificationsView.swift in Sources */,
+				01CE6E255967227178FF0826 /* SocialPage.swift in Sources */,
+				6AB85212D5F593E799898C9F /* SocialPost.swift in Sources */,
+				F50BBBEF4A50C4233C95D8F2 /* SocialPostActionsView.swift in Sources */,
+				4C9E132115F971E4B0F1F9DC /* SocialPostMediaView.swift in Sources */,
+				B9E3D3A9EB237DEAD6324BD1 /* SocialPostRow.swift in Sources */,
+				A466BED0C6A9AB680661E16E /* SocialProEntitlement.swift in Sources */,
+				C1D195AC67E50BA609CAB060 /* SocialProEntitlementModel.swift in Sources */,
+				E9F7005FA69ECA395451E0D4 /* SocialProFeatureGate.swift in Sources */,
+				70BDC6FA326000E2746BB800 /* SocialProPaywallView.swift in Sources */,
+				B80CC8AF5AC11D784E686334 /* SocialProToolsView.swift in Sources */,
+				0E87B83F67E3DFBBF1179D02 /* SocialProfile.swift in Sources */,
+				02E9BA7926BE6501B55B8F43 /* SocialProfileView.swift in Sources */,
+				0BD53EA4C4990ADE8675B7C6 /* SocialResponseDTOs.swift in Sources */,
+				AEF7773F1B33AB37EB60ACDB /* SocialRoute.swift in Sources */,
+				FA25521D68499B11AEFBCDED /* SocialStandardSiteExternalCard.swift in Sources */,
+				00544D7D77D0EE2327A2FC3F /* SocialThreadDraftSegment.swift in Sources */,
+				C584BB5591C738EE7ACF53C3 /* SocialThreadView.swift in Sources */,
+				5A57451E2C253DB21B6417B6 /* SocialTimelineModel.swift in Sources */,
+				2F809DE7E3D827538F683FE2 /* SocialTimelineView.swift in Sources */,
+				E12E79DBA282F391E2089209 /* SocialWireSocialClient.swift in Sources */,
+				7B52DAA63DF607C17669C686 /* SocialWorkspaceModel.swift in Sources */,
+				764E07CBF6BEEEBCE0B1CE94 /* SocialWorkspaceView.swift in Sources */,
+				23B12F4DF4EBB7C49F1BD8AB /* StandardSiteSocialEmbed.swift in Sources */,
 				60F9A5C89D682FC619EAA251 /* StandardReaderListsWorkspace.swift in Sources */,
 				35F37D7F0C491CE9CEFECF14 /* StandardReaderListsManagementView.swift in Sources */,
 				7AE7D89C022479B69FE09AD6 /* StandardReaderListPDSService.swift in Sources */,
@@ -3089,6 +3404,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A68AA5846B3ED1F3493BECE /* SocialCoreTests.swift in Sources */,
+				8747298E5F8D98C4E9463AF9 /* SocialSessionLifecycleTests.swift in Sources */,
+				416DD2933716BDA11CFF8DD3 /* StandardSiteSocialEmbedTests.swift in Sources */,
 				BDA8527088DDAB7D924C5F27 /* StandardReaderListTests.swift in Sources */,
 				6B89B40B1B39404EA17288F5 /* PodcastListenerTests.swift in Sources */,
 				B17600000000000000000200 /* PodcastSubscriptionMatchTests.swift in Sources */,

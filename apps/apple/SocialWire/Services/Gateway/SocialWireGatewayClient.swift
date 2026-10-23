@@ -100,6 +100,18 @@ final class SocialWireGatewayClient {
         self.transport = transport
     }
 
+    func fetchProEntitlement() async throws -> SocialProEntitlement {
+        let result = try await authorizedGET(
+            path: "/v1/subscription/entitlements",
+            query: [:],
+            ifNoneMatch: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Pro access check failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(SocialProEntitlement.self, from: result.body)
+    }
+
     nonisolated static func preferencesSyncRequest(
         ifNoneMatch: String?,
         forceRefresh: Bool
@@ -911,6 +923,19 @@ final class SocialWireGatewayClient {
             throw PodcastGatewayFailure(status: response.statusCode)
         }
         return try JSONDecoder().decode(Value.self, from: response.body)
+    }
+
+    func standardSiteArticleEmbed(url: URL, expectedViewer: String) async throws -> StandardSiteSocialEmbed? {
+        let response = try await authorizedRequest(method: "GET",
+            path: SocialWireXRPCMethod.getArticleEmbed,
+            query: ["url": url.absoluteString], body: nil, contentType: nil, expectedViewer: expectedViewer)
+        if response.statusCode == 404 { return nil }
+        guard response.statusCode == 200 else {
+            throw SocialWireError.badResponse("Article preview could not load (\(response.statusCode)).")
+        }
+        let metadata = try JSONDecoder().decode(StandardSiteSocialEmbed.self, from: response.body)
+        guard metadata.isValid else { throw SocialWireError.invalidURL }
+        return metadata
     }
 
     private struct ListsErrorEnvelope: Decodable { let message: String? }

@@ -57,11 +57,80 @@ final class PublicationService {
         try await xrpc.putRecord(collection: "app.bsky.feed.post", rkey: DeterministicKeys.generateTID(), record: record)
     }
 
+    func createPost(text: String, quote: SocialPostReference? = nil) async throws {
+        var record: [String: JSONValue] = [
+            "$type": .string("app.bsky.feed.post"),
+            "text": .string(text),
+            "createdAt": .string(DateFormatters.string())
+        ]
+        if let quote {
+            record["embed"] = .object([
+                "$type": .string("app.bsky.embed.record"),
+                "record": .object(["uri": .string(quote.uri), "cid": .string(quote.cid)])
+            ])
+        }
+        try await xrpc.putRecord(collection: "app.bsky.feed.post", rkey: DeterministicKeys.generateTID(), record: record)
+    }
+
+    func createPostReference(text: String, recordKey: String, createdAt: String, expectedViewer: String, replyRoot: StrongRef? = nil, replyParent: StrongRef? = nil, quote: SocialPostReference? = nil, embed: [String: JSONValue]? = nil) async throws -> StrongRef {
+        var record: [String: JSONValue] = [
+            "$type": .string("app.bsky.feed.post"),
+            "text": .string(text),
+            "createdAt": .string(createdAt)
+        ]
+        if let replyRoot, let replyParent {
+            record["reply"] = .object([
+                "root": .object(["uri": .string(replyRoot.uri), "cid": .string(replyRoot.cid)]),
+                "parent": .object(["uri": .string(replyParent.uri), "cid": .string(replyParent.cid)])
+            ])
+        }
+        if let embed, let quote {
+            record["embed"] = .object([
+                "$type": .string("app.bsky.embed.recordWithMedia"),
+                "record": .object([
+                    "$type": .string("app.bsky.embed.record"),
+                    "record": .object(["uri": .string(quote.uri), "cid": .string(quote.cid)])
+                ]),
+                "media": .object(embed)
+            ])
+        } else if let embed {
+            record["embed"] = .object(embed)
+        } else if let quote {
+            record["embed"] = .object([
+                "$type": .string("app.bsky.embed.record"),
+                "record": .object(["uri": .string(quote.uri), "cid": .string(quote.cid)])
+            ])
+        }
+        return try await xrpc.createRecordOnce(collection: "app.bsky.feed.post", rkey: recordKey, record: record, expectedViewer: expectedViewer)
+    }
+
+    func createReply(text: String, root: StrongRef, parent: StrongRef) async throws {
+        let record: [String: JSONValue] = [
+            "$type": .string("app.bsky.feed.post"),
+            "text": .string(text),
+            "createdAt": .string(DateFormatters.string()),
+            "reply": .object([
+                "root": .object(["uri": .string(root.uri), "cid": .string(root.cid)]),
+                "parent": .object(["uri": .string(parent.uri), "cid": .string(parent.cid)])
+            ])
+        ]
+        try await xrpc.putRecord(collection: "app.bsky.feed.post", rkey: DeterministicKeys.generateTID(), record: record)
+    }
+
     func createLike(entry: EntryDetail) async throws -> String {
         guard let uri = entry.bskyPostUri, let cid = entry.bskyPostCid else { throw SocialWireError.unsupported }
         let record: [String: JSONValue] = [
             "$type": .string("app.bsky.feed.like"),
             "subject": .object(["uri": .string(uri), "cid": .string(cid)]),
+            "createdAt": .string(DateFormatters.string())
+        ]
+        return try await xrpc.createRecord(collection: "app.bsky.feed.like", record: record)
+    }
+
+    func createLike(subject: StrongRef) async throws -> String {
+        let record: [String: JSONValue] = [
+            "$type": .string("app.bsky.feed.like"),
+            "subject": .object(["uri": .string(subject.uri), "cid": .string(subject.cid)]),
             "createdAt": .string(DateFormatters.string())
         ]
         return try await xrpc.createRecord(collection: "app.bsky.feed.like", record: record)
@@ -76,6 +145,15 @@ final class PublicationService {
         let record: [String: JSONValue] = [
             "$type": .string("app.bsky.feed.repost"),
             "subject": .object(["uri": .string(uri), "cid": .string(cid)]),
+            "createdAt": .string(DateFormatters.string())
+        ]
+        return try await xrpc.createRecord(collection: "app.bsky.feed.repost", record: record)
+    }
+
+    func createRepost(subject: StrongRef) async throws -> String {
+        let record: [String: JSONValue] = [
+            "$type": .string("app.bsky.feed.repost"),
+            "subject": .object(["uri": .string(subject.uri), "cid": .string(subject.cid)]),
             "createdAt": .string(DateFormatters.string())
         ]
         return try await xrpc.createRecord(collection: "app.bsky.feed.repost", record: record)
