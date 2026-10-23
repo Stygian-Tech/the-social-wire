@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
+import { FloatingChromeSurface } from "@/components/shared/FloatingChromeSurface";
 import { appChromeMarginClassName } from "@/components/shared/appChromeStyles";
 import { cn } from "@/lib/utils";
 import { attachFeedHeaderScrollOverlay } from "./feedHeaderScrollOverlay";
@@ -26,11 +26,11 @@ export function FeedHeader({
   leading,
 }: FeedHeaderProps) {
   return (
-    <header
+    <FloatingChromeSurface
+      as="header"
       data-slot="feed-header"
       ref={(header) => header ? attachFeedHeaderScrollOverlay(header) : undefined}
       className={cn(
-        floatingGlassClasses,
         appChromeMarginClassName,
         "relative z-20 flex min-h-12 shrink-0 flex-wrap items-center gap-2 px-2 py-1 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4",
         className,
@@ -48,6 +48,6 @@ export function FeedHeader({
         {children}
       </div>
       {mobileStatus ? <div className="w-full px-1 pb-1 text-[11px] text-muted-foreground sm:hidden">{mobileStatus}</div> : null}
-    </header>
+    </FloatingChromeSurface>
   );
 }

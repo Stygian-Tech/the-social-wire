@@ -3,8 +3,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
+import { ArticleSchedulingNotSubmittedError } from "@/lib/articles/articleSchedulingError";
+import * as Scheduling from "@/hooks/useSkejScheduling";
+import * as Entitlements from "@/hooks/useProEntitlements";
 import * as Auth from "@/hooks/useAuth";
 import * as Drafts from "@/hooks/articles/useArticleDrafts";
+import * as Storage from "@/lib/articles/articleDraftStorage";
 import * as Publishing from "@/lib/articles/articlePublishingClient";
 import type { ArticleDraft } from "@/lib/articles/articleDraftTypes";
 import type { ArticlePublication } from "@/lib/articles/articlePublishingTypes";
@@ -18,6 +22,8 @@ const publications: ArticlePublication[] = [
 let seed: ArticleDraft;
 let storageError: string | undefined;
 let client: QueryClient;
+let scheduleRows: unknown[];
+const scheduleArticle = mock(async (_input: unknown, _time: string): Promise<unknown> => { void _input; void _time; return {}; });
 const persist = mock(async () => {});
 const restores: (() => void)[] = [];
 const originalRAF = Object.getOwnPropertyDescriptor(globalThis, "requestAnimationFrame");
@@ -35,6 +41,10 @@ beforeAll(() => { Object.defineProperty(window, "matchMedia", { configurable: tr
 afterAll(() => { if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia); else Reflect.deleteProperty(window, "matchMedia"); });
 beforeEach(() => {
   seed = { id: "draft", title: "Working Article", markdown: "# Article Body\n\nA private paragraph.", excerpt: "", path: "/working-article", tags: [], publicationUri: publications[0]!.uri, createdAt: "2026-10-10T00:00:00Z", updatedAt: "2026-10-10T00:00:00Z", assets: [], revision: 1 };
+  scheduleRows = [];
+  scheduleArticle.mockReset(); scheduleArticle.mockResolvedValue({ scheduleUri: `at://${did}/at.skej.schedule/current` });
+  const pro = spyOn(Entitlements, "useProEntitlements").mockReturnValue({ isPro: true } as ReturnType<typeof Entitlements.useProEntitlements>); restores.push(() => pro.mockRestore());
+  const schedules = spyOn(Scheduling, "useSkejScheduling").mockReturnValue({ readiness: { data: { connected: true }, refetch: async () => {} }, schedules: { data: scheduleRows, refetch: async () => {} }, scheduleArticle, cancel: async () => {}, reschedule: async () => {}, connectUrl: "https://skej.test", pending: false } as unknown as ReturnType<typeof Scheduling.useSkejScheduling>); restores.push(() => schedules.mockRestore());
   storageError = undefined; persist.mockReset(); persist.mockResolvedValue(undefined);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did }, getOAuthSession: () => ({ did } as unknown as OAuthSession), oauthSessionReloadSeq: 0 } as ReturnType<typeof Auth.useAuth>); restores.push(() => auth.mockRestore());
@@ -43,6 +53,7 @@ beforeEach(() => {
     return { draft, drafts: [draft], loading: false, status: storageError ? "Not Saved" : "Saved in This Browser", error: storageError, update: patch => setDraft(current => ({ ...current, ...patch })), persist, select: async () => {}, create: async () => draft, remove: async () => {} };
   }); restores.push(() => local.mockRestore());
   const pubs = spyOn(Publishing, "listArticlePublications").mockResolvedValue(publications); restores.push(() => pubs.mockRestore());
+  const stored = spyOn(Storage, "getArticleDraft").mockImplementation(async () => seed); restores.push(() => stored.mockRestore());
   const history = spyOn(Publishing, "listPublishedArticles").mockResolvedValue([]); restores.push(() => history.mockRestore());
 });
 afterEach(() => { cleanup(); client.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
@@ -55,6 +66,111 @@ function publishingSpy() {
   return publish;
 }
 describe("article publishing workspace", () => {
+  it("opens Scheduled without publishing or losing the active draft", async () => {
+    const publish = publishingSpy();
+    await show();
+    fireEvent.change(screen.getByLabelText("Article Title"), { target: { value: "Still Private" } });
+    fireEvent.click(screen.getByRole("button", { name: "Scheduled" }));
+    expect(screen.getByText("No Scheduled Articles.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Scheduled" }).getAttribute("aria-pressed")).toBe("true");
+    expect(publish).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Drafts" }));
+    expect((screen.getByLabelText("Article Title") as HTMLInputElement).value).toBe("Still Private");
+    expect(screen.queryByText("No Scheduled Articles.")).toBeNull();
+  });
+  it("requires public-record confirmation and locks a scheduled snapshot", async () => {
+    const publish = publishingSpy();
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Schedule Article" }));
+    expect(await screen.findByText(/Skej stores the full article in a public schedule record immediately/)).toBeTruthy();
+    expect(scheduleArticle).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Publish Article At"), { target: { value: "2099-01-01T12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Schedule" }));
+    await waitFor(() => expect(scheduleArticle).toHaveBeenCalledTimes(1));
+    expect(scheduleArticle.mock.calls[0]?.[0]).toMatchObject({ title: seed.title, markdown: seed.markdown });
+    expect((screen.getByRole("button", { name: "Publish Article" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Article Title") as HTMLInputElement).disabled).toBe(true);
+    expect(persist.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(publish).not.toHaveBeenCalled();
+  });
+  it("retains a duplicate-publication lock after an ambiguous scheduling failure", async () => {
+    scheduleArticle.mockRejectedValue(new Error("Readback Failed"));
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Schedule Article" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Publish Article At"), { target: { value: "2099-01-01T12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Schedule" }));
+    expect(await screen.findByText("Readback Failed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect((screen.getByRole("button", { name: "Publish Article" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("does not unlock a new or uncertain request using a historical cancellation", async () => {
+    const key = await Publishing.articleDraftRecordKey(seed.id, seed.createdAt);
+    scheduleRows.push({ scheduleUri: `at://${did}/at.skej.schedule/old`, status: "canceled", record: { recordType: "site.standard.document", publishRkey: key, status: "canceled", posts: [], shadowRecord: { $type: "site.standard.document", title: seed.title, site: publications[0]!.uri, publishedAt: "2099-01-01T12:00:00Z" } } });
+    scheduleArticle.mockRejectedValue(new Error("Readback Failed"));
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Schedule Article" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Publish Article At"), { target: { value: "2099-01-01T12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Schedule" }));
+    await screen.findByText("Readback Failed");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Unlock Canceled Draft" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Publish Article" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("only unlocks the exact confirmed canceled schedule without an active replacement", async () => {
+    seed.scheduleRecordKey = "stable-key";
+    seed.scheduleUri = `at://${did}/at.skej.schedule/current`;
+    const record = { recordType: "site.standard.document", publishRkey: seed.scheduleRecordKey, status: "canceled", posts: [], shadowRecord: { $type: "site.standard.document", title: seed.title, site: publications[0]!.uri, publishedAt: "2099-01-01T12:00:00Z" } };
+    scheduleRows.push({ scheduleUri: seed.scheduleUri, status: "canceled", record });
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock Canceled Draft" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Publish Article" }) as HTMLButtonElement).disabled).toBe(false));
+  });
+  it("does not unlock a confirmed canceled schedule when a replacement is active", async () => {
+    seed.scheduleRecordKey = "stable-key";
+    seed.scheduleUri = `at://${did}/at.skej.schedule/current`;
+    const record = { recordType: "site.standard.document", publishRkey: seed.scheduleRecordKey, status: "canceled", posts: [], shadowRecord: { $type: "site.standard.document", title: seed.title, site: publications[0]!.uri, publishedAt: "2099-01-01T12:00:00Z" } };
+    scheduleRows.push({ scheduleUri: seed.scheduleUri, status: "canceled", record }, { scheduleUri: `at://${did}/at.skej.schedule/replacement`, status: "scheduled", record: { ...record, status: "scheduled" } });
+    await show();
+    expect(screen.queryByRole("button", { name: "Unlock Canceled Draft" })).toBeNull();
+  });
+  it("unlocks only a confirmed not-submitted scheduling failure", async () => {
+    scheduleArticle.mockRejectedValue(new ArticleSchedulingNotSubmittedError(new Error("Connect Skej")));
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Schedule Article" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Publish Article At"), { target: { value: "2099-01-01T12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Schedule" }));
+    expect(await screen.findByText("Connect Skej")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect((screen.getByRole("button", { name: "Publish Article" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+  it("rejects unsupported image scheduling without publishing or uploading", async () => {
+    seed.markdown = "![private](article-asset://image)";
+    const upload = spyOn(Publishing, "uploadArticleImage"); restores.push(() => upload.mockRestore());
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Schedule Article" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Publish Article At"), { target: { value: "2099-01-01T12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Schedule" }));
+    expect(await screen.findByText(/Scheduling Supports Text Articles/)).toBeTruthy();
+    expect(scheduleArticle).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+  });
+  it("never schedules when persisting the snapshot fails", async () => {
+    persist.mockRejectedValue(new Error("Storage Full"));
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Schedule Article" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Publish Article At"), { target: { value: "2099-01-01T12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Schedule" }));
+    expect(await screen.findByText("Storage Full")).toBeTruthy();
+    expect(scheduleArticle).not.toHaveBeenCalled();
+  });
   it("renders the actual block editor and publishes only after explicit confirmation", async () => {
     const publish = publishingSpy();
     await show();
@@ -71,6 +187,17 @@ describe("article publishing workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish Now" }));
     await waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
     expect(publish.mock.calls[0]![1]).toMatchObject({ title: seed.title, markdown: seed.markdown, publication: publications[0] });
+  });
+  it("blocks immediate publishing when another tab has scheduled the clean draft", async () => {
+    const publish = publishingSpy();
+    await show();
+    // The editor still holds the original object while IndexedDB has the new lock.
+    seed = { ...seed, scheduleRecordKey: "scheduled-in-another-tab" };
+    fireEvent.click(screen.getByRole("button", { name: "Publish Article" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "Publish Now" }));
+    await waitFor(() => expect(screen.getAllByRole("alert").some(alert => alert.textContent?.includes("Reload It Before Publishing"))).toBe(true));
+    expect(publish).not.toHaveBeenCalled();
   });
   it("requires title, content, and a selected owned publication before confirmation", async () => {
     const publish = publishingSpy(); seed.title = ""; seed.publicationUri = "";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ENTRIES_QUERY_KEY } from "@/hooks/useEntries";
@@ -160,7 +160,6 @@ describe("useSidebarUnreadCounts", () => {
       },
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(result.current.get("did:plc:alice")).toBe(1);
+    await waitFor(() => expect(result.current.get("did:plc:alice")).toBe(1));
   });
 });

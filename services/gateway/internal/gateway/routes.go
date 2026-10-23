@@ -7,6 +7,8 @@ type Route struct {
 
 // Routes preserves REST compatibility and canonical XRPC aliases.
 var Routes = []Route{
+	{Method: "GET", Path: "/v1/publications/article-embed", Target: "/xrpc/app.thesocialwire.publication.getArticleEmbed", UpstreamMethod: "GET", Service: "appview"},
+	{Method: "GET", Path: "/xrpc/app.thesocialwire.publication.getArticleEmbed", Target: "/xrpc/app.thesocialwire.publication.getArticleEmbed", UpstreamMethod: "GET", Service: "appview"},
 	{Method: "POST", Path: "/xrpc/app.thesocialwire.socialDraft.reserveAttachment", Target: "/xrpc/app.thesocialwire.socialDraft.reserveAttachment", UpstreamMethod: "POST", Service: "appview", Streaming: false},
 	{Method: "POST", Path: "/xrpc/app.thesocialwire.socialDraft.uploadAttachment", Target: "/xrpc/app.thesocialwire.socialDraft.uploadAttachment", UpstreamMethod: "POST", Service: "appview", Streaming: false},
 	{Method: "GET", Path: "/xrpc/app.thesocialwire.socialDraft.getAttachment", Target: "/xrpc/app.thesocialwire.socialDraft.getAttachment", UpstreamMethod: "GET", Service: "appview", Streaming: true},

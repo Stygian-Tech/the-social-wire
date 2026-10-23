@@ -80,12 +80,13 @@ export function PublicationTabs({
               type="button"
               role="tab"
               aria-label="Your Circle"
+              className="gap-1.5"
               aria-selected={circleActive}
               isActive={circleActive}
               onClick={onCircleSelect}
             >
               <Network />
-              <span>Your Circle</span>
+              <span className="whitespace-nowrap">Your&nbsp;Circle</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}

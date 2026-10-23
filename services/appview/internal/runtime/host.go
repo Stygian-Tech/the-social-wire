@@ -190,7 +190,7 @@ func NewHostWithDatabase(ctx context.Context, c config.Config, db *sql.DB) (h *H
 	socialdrafts.Routes{Service: draftService}.Register(protectedMux)
 
 	analytics.Routes{Store: analyticscore.Store{DB: db, Secret: c.InternalSecret}, Provider: &analytics.CachedProvider{Base: analyticscore.Provider{Repo: repo, HTTP: h.publicHTTP, AppView: repo.AppViewBase()}}, Now: time.Now, Limits: &analytics.Limits{}}.Register(protectedMux)
-	publications.Routes{Service: h.Publications, Resolver: publicationcore.Resolver{Repo: repo, HTTP: getter}}.Register(protectedMux)
+	publications.Routes{Service: h.Publications, Resolver: publicationcore.Resolver{Repo: repo, HTTP: getter}, Articles: publicationcore.NewArticleResolver(repo, getter)}.Register(protectedMux)
 	lists.Routes{Runtime: h.Lists}.Register(protectedMux)
 	semble.Routes{Service: semblecore.Service{Transport: semblecore.NewHTTPTransport(c.EnvironmentValues, h.publicHTTP), Reader: semblecore.PublicReader{Repo: repo}}}.Register(protectedMux)
 	unreadcounts.Routes{DB: db, Publications: h.Publications, Now: time.Now}.Register(protectedMux)

@@ -1,3 +1,6 @@
+import * as Publishing from "@/lib/articles/articlePublishingClient";
+import * as Preparation from "@/lib/articles/articleSchedulingPreparation";
+import { ArticleSchedulingNotSubmittedError } from "@/lib/articles/articleSchedulingError";
 import * as Entitlements from "@/lib/proEntitlements";
 import * as Pro from "@/hooks/useProEntitlements";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
@@ -162,5 +165,36 @@ test("revokes captured scheduling actor guards and writes after downgrade", asyn
   rerender();
   expect(() => actor.assertCurrentActor()).toThrow();
   await act(async () => { await expect(result.current.schedule("Downgraded Draft", "2099-01-01T12:00:00Z")).rejects.toThrow(); });
+  expect(create).not.toHaveBeenCalled();
+});
+
+test("prepares an owned article with fresh publication data before submitting to Skej", async () => {
+  const pub = { uri: `at://${owner}/site.standard.publication/blog`, cid: "fresh", name: "Blog", url: "https://blog.test", host: "leaflet" as const, record: {} };
+  const pubs = spyOn(Publishing, "listArticlePublications").mockResolvedValue([pub]); restores.push(() => pubs.mockRestore());
+  const record = { $type: "site.standard.document" as const, title: "Article", site: pub.uri, publishedAt: "2099-01-01T12:00:00.000Z" };
+  const prepare = spyOn(Preparation, "prepareScheduledArticle").mockResolvedValue({ record, publishRkey: "3mabc234567ab", title: "Article", url: "https://blog.test/article" }); restores.push(() => prepare.mockRestore());
+  const create = spyOn(Client, "createSkejArticleSchedule").mockResolvedValue({} as Client.SkejArticleScheduleSummary); restores.push(() => create.mockRestore());
+  const { result } = renderHook(() => useSkejScheduling(owner, owner), { wrapper });
+  await waitFor(() => expect(result.current.readiness.data?.connected).toBe(true));
+  await act(async () => { await result.current.scheduleArticle({ publication: { ...pub, cid: "stale" }, title: "Article", markdown: "Content", path: "/article", tags: [] }, record.publishedAt); });
+  expect(prepare.mock.calls[0]![0].publication.cid).toBe("fresh");
+  expect(create.mock.calls[0]![0].session.did).toBe(owner);
+  expect(create.mock.calls[0]![1]).toEqual(record);
+});
+
+test("does not submit an article after the account changes during preparation", async () => {
+  const pub = { uri: `at://${owner}/site.standard.publication/blog`, cid: "fresh", name: "Blog", url: "https://blog.test", host: "leaflet" as const, record: {} };
+  const pubs = spyOn(Publishing, "listArticlePublications").mockResolvedValue([pub]); restores.push(() => pubs.mockRestore());
+  let finish!: (value: Awaited<ReturnType<typeof Preparation.prepareScheduledArticle>>) => void;
+  const prepare = spyOn(Preparation, "prepareScheduledArticle").mockImplementation(() => new Promise(resolve => { finish = resolve; })); restores.push(() => prepare.mockRestore());
+  const create = spyOn(Client, "createSkejArticleSchedule").mockResolvedValue({} as Client.SkejArticleScheduleSummary); restores.push(() => create.mockRestore());
+  const { result, rerender } = renderHook(({ actor }) => useSkejScheduling(owner, actor), { wrapper, initialProps: { actor: owner } });
+  await waitFor(() => expect(result.current.readiness.data?.connected).toBe(true));
+  let pending!: Promise<unknown>;
+  await act(async () => { pending = result.current.scheduleArticle({ publication: pub, title: "Article", markdown: "Content", path: "/article", tags: [] }, "2099-01-01T12:00:00Z").catch(error => error); });
+  await waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+  rerender({ actor: brand });
+  await act(async () => { finish({ record: { $type: "site.standard.document", title: "Article", site: pub.uri, publishedAt: "2099-01-01T12:00:00Z" }, publishRkey: "3mabc234567ab", title: "Article", url: "https://blog.test/article" }); });
+  expect(await pending).toBeInstanceOf(ArticleSchedulingNotSubmittedError);
   expect(create).not.toHaveBeenCalled();
 });
