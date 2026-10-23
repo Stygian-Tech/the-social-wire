@@ -19,6 +19,7 @@ final class SocialWireAppModel {
     let podcasts: PodcastLibraryModel
     let sportsTopic: SportsTopicModel
     let standardReaderLists: StandardReaderListsModel
+    let social: SocialWorkspaceModel
     let readStateSync: PDSReadStateSyncService
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
@@ -205,6 +206,7 @@ final class SocialWireAppModel {
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService, urlSession: gatewayURLSession, transport: gatewayTransport)
+        social = SocialWorkspaceModel(xrpc: xrpc, publicationService: publicationsService, gateway: gateway)
         podcasts = PodcastLibraryModel(gateway: gateway, xrpc: xrpc)
         sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
         standardReaderLists = StandardReaderListsModel(gateway: gateway, xrpc: xrpc)
@@ -216,6 +218,7 @@ final class SocialWireAppModel {
             self?.isSignedIn = session != nil
             self?.sportsTopic.bind(viewer: session?.did)
             self?.standardReaderLists.bind(viewer: session?.did)
+            self?.social.bind(session: session)
         }
         readerFilter = ReaderFilter.loadSaved()
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
@@ -3485,6 +3488,7 @@ final class SocialWireAppModel {
     }
 
     func subscribe(to publication: DiscoveredPublication) async {
+        defer { socialEmbedViewerState.invalidate() }
         do {
             if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
                 try await pds.createSkyreaderSubscription(
@@ -3504,6 +3508,7 @@ final class SocialWireAppModel {
     }
 
     func unsubscribe(from publication: DiscoveredPublication) async {
+        defer { socialEmbedViewerState.invalidate() }
         do {
             if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
                 let normalized = rss.normalizeFeedURL(feedURL)
@@ -4325,6 +4330,14 @@ final class SocialWireAppModel {
         return wireFeedbackByCanonicalURL[canonicalURL]
     }
 
+    let socialEmbedViewerState = SocialEmbedViewerState()
+
+    var socialEmbedContextID: UUID { articleSocialStateContextID }
+
+    func socialArticleEmbed(url: URL, viewer: String) async throws -> StandardSiteSocialEmbed? {
+        try await gateway.standardSiteArticleEmbed(url: url, expectedViewer: viewer)
+    }
+
     func isStandardSiteRecommended(_ entry: EntryDetail) -> Bool {
         guard let documentURI = entry.standardSiteDocumentURI else { return false }
         return recommendedStandardSiteDocumentURIs.contains(documentURI)
@@ -4427,6 +4440,7 @@ final class SocialWireAppModel {
     }
 
     func toggleStandardSiteRecommendation(for entry: EntryDetail) async {
+        defer { socialEmbedViewerState.invalidate() }
         guard let documentURI = entry.standardSiteDocumentURI else { return }
         let loadingKey = "recommend:\(documentURI)"
         guard articleSocialStateLoadingKeys.insert(loadingKey).inserted else { return }

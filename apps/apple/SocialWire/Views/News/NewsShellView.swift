@@ -13,7 +13,8 @@ struct NewsShellView: View {
     @State private var sectionSelections: [NewsRootSection: NewsTabSlot] = [
         .readLater: .readLater,
         .feeds: .wire,
-        .topics: .finance
+        .topics: .finance,
+        .social: .wire
     ]
     @State private var slotFeeds: [NewsPrimaryFeed] = []
     @State private var isTabConfigurationLoaded = false
@@ -139,8 +140,11 @@ struct NewsShellView: View {
     }
 
     #if os(iOS)
-    private var regularWidthSplitView: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+    @ViewBuilder private var regularWidthSplitView: some View {
+        if selectedSection == .social {
+            SocialWorkspaceView().id(appModel.social.sessionID)
+        } else {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
             NewsSidebarView(
                 availableTabs: availableTabs,
                 sceneModel: sceneModel,
@@ -164,7 +168,8 @@ struct NewsShellView: View {
                 )
             }
         }
-        .navigationSplitViewStyle(.balanced)
+            .navigationSplitViewStyle(.balanced)
+        }
     }
     #endif
 
@@ -262,6 +267,9 @@ struct NewsShellView: View {
             Tab("Lists", systemImage: "list.bullet", value: NewsRootSection.lists) {
                 listsWorkspace
             }
+            Tab("Social", systemImage: "bubble.left.and.text.bubble.right", value: NewsRootSection.social) {
+                SocialWorkspaceView().id(appModel.social.sessionID)
+            }
         }
     }
 
@@ -311,11 +319,13 @@ struct NewsShellView: View {
             topicDestinations.map(NewsNavigationItem.init(feed:))
         case .lists:
             standardListNavigationItems
+        case .social:
+            []
         }
     }
 
     private func selectedSectionChanged(_ oldValue: NewsRootSection, _ section: NewsRootSection) {
-        guard section != .lists else { return }
+        guard section != .lists, section != .social else { return }
         reconcileSectionSelection(section)
     }
 
@@ -809,6 +819,7 @@ private enum NewsRootSection: String, Hashable {
     case feeds
     case topics
     case lists
+    case social
 
     var systemImage: String {
         switch self {
@@ -816,6 +827,7 @@ private enum NewsRootSection: String, Hashable {
         case .feeds: "newspaper"
         case .topics: "square.grid.2x2"
         case .lists: "list.bullet"
+        case .social: "bubble.left.and.text.bubble.right"
         }
     }
 
@@ -825,6 +837,7 @@ private enum NewsRootSection: String, Hashable {
         case .feeds: .wire
         case .topics: .finance
         case .lists: .standardList("")
+        case .social: .wire
         }
     }
 
@@ -834,6 +847,7 @@ private enum NewsRootSection: String, Hashable {
         case .feeds: "No Feeds"
         case .topics: "No Topics"
         case .lists: "No Lists"
+        case .social: "Social Unavailable"
         }
     }
 
@@ -843,6 +857,7 @@ private enum NewsRootSection: String, Hashable {
         case .feeds: "Available feeds will appear here."
         case .topics: "Available topics will appear here."
         case .lists: "Your reader lists will appear here."
+        case .social: "Your social workspace will appear here."
         }
     }
 }

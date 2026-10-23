@@ -2,6 +2,19 @@ import XCTest
 
 @MainActor
 final class NewsShellSmokeUITests: XCTestCase {
+    func testSocialDestinationOpensItsDetailOnCompactScreens() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell"]
+        app.launch()
+        let social = app.tabBars.buttons["Social"]
+        XCTAssertTrue(social.waitForExistence(timeout: 5))
+        social.tap()
+        let timeline = app.cells["Timeline"]
+        XCTAssertTrue(timeline.waitForExistence(timeout: 3))
+        timeline.tap()
+        XCTAssertTrue(app.buttons["Compose Post"].waitForExistence(timeout: 3))
+    }
+
     func testRealShellNavigationKeepsPublicationAndArchiveActionsReachable() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-news-shell"]
