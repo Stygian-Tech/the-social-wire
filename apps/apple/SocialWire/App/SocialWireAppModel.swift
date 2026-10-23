@@ -218,7 +218,7 @@ final class SocialWireAppModel {
             self?.isSignedIn = session != nil
             self?.sportsTopic.bind(viewer: session?.did)
             self?.standardReaderLists.bind(viewer: session?.did)
-            self?.social.bind(session: session)
+            self?.social.bind(session: session, loginIdentity: self?.authService.loginIdentity)
         }
         readerFilter = ReaderFilter.loadSaved()
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)

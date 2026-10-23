@@ -37,7 +37,7 @@ struct SocialSessionLifecycleTests {
         #expect(model.messages.viewerDID == session.did)
         let oldID = model.sessionID
         var replacement = session
-        replacement.accessToken = "replacement"
+        replacement.pdsURL = URL(string: "https://replacement-pds.example.test")!
         model.bind(session: replacement)
         #expect(model.sessionID != oldID)
         #expect(model.messages.conversations.isEmpty)
@@ -47,6 +47,45 @@ struct SocialSessionLifecycleTests {
         let unchanged = model.sessionID
         model.bind(session: replacement)
         #expect(model.sessionID == unchanged)
+    }
+
+    @Test("Routine token rotation preserves workspace identity and loaded private state")
+    func tokenRefreshPreservesWorkspace() async throws {
+        let (model, transport, session) = try await fixture()
+        let login = UUID()
+        model.bind(session: session, loginIdentity: login)
+        let load = Task { await model.messages.refreshConversations() }
+        await transport.waitForRequest()
+        await transport.complete(.success(#"{"convos":[{"id":"private","members":[],"unreadCount":2,"muted":false}]}"#))
+        await load.value
+        model.discovery.query = "Unsubmitted Search"
+        let identity = model.sessionID
+        var refreshed = session
+        refreshed.accessToken = "rotated-access"
+        refreshed.refreshToken = "rotated-refresh"
+        refreshed.expiresAt = Date().addingTimeInterval(3600)
+        model.bind(session: refreshed, loginIdentity: login)
+        #expect(model.sessionID == identity)
+        #expect(model.messages.conversations.count == 1)
+        #expect(model.discovery.query == "Unsubmitted Search")
+        model.bind(session: refreshed, loginIdentity: UUID())
+        #expect(model.sessionID != identity)
+        #expect(model.messages.conversations.isEmpty)
+        #expect(model.discovery.query.isEmpty)
+    }
+
+    @Test("Logout and login to the same DID start distinct workspace lifetimes")
+    func sameDIDRelogin() async throws {
+        let (model, _, session) = try await fixture()
+        let identity = model.sessionID
+        model.discovery.query = "Private Search"
+        model.bind(session: nil)
+        let signedOut = model.sessionID
+        #expect(signedOut != identity)
+        #expect(model.discovery.query.isEmpty)
+        model.bind(session: session)
+        #expect(model.sessionID != signedOut)
+        #expect(model.sessionID != identity)
     }
 
     @Test("A late conversation response cannot restore the departed viewer")
@@ -70,7 +109,7 @@ struct SocialSessionLifecycleTests {
         let load = Task { await model.messages.select(conversation) }
         await transport.waitForRequest()
         var replacement = session
-        replacement.accessToken = "replacement"
+        replacement.pdsURL = URL(string: "https://replacement-pds.example.test")!
         model.bind(session: replacement)
         await transport.complete(.success(#"{"messages":[{"id":"secret","sender":{"did":"did:plc:other"},"text":"Private","sentAt":"2026-10-22T12:00:00Z"}]}"#))
         await load.value

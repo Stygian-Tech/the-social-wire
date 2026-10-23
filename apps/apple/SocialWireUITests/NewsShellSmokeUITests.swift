@@ -9,7 +9,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         let social = app.tabBars.buttons["Social"]
         XCTAssertTrue(social.waitForExistence(timeout: 5))
         social.tap()
-        let timeline = app.cells["Timeline"]
+        let timeline = app.buttons["social.destination.timeline"]
         XCTAssertTrue(timeline.waitForExistence(timeout: 3))
         timeline.tap()
         XCTAssertTrue(app.buttons["Compose Post"].waitForExistence(timeout: 3))

@@ -5,11 +5,21 @@ import Observation
 @Observable
 final class SocialWorkspaceModel {
     private(set) var sessionID = UUID()
-    @ObservationIgnored private var session: AuthSession?
+    @ObservationIgnored private var viewerDID: String?
+    @ObservationIgnored private var pdsURL: URL?
+    @ObservationIgnored private var tokenEndpoint: URL?
+    @ObservationIgnored private var loginIdentity: UUID?
 
-    func bind(session: AuthSession?) {
-        guard self.session != session else { return }
-        self.session = session
+    func bind(session: AuthSession?, loginIdentity: UUID? = nil) {
+        // Token rotation belongs to the same login. Rebuilding the view tree for it
+        // would discard an open composer and its confirmed publication checkpoints.
+        let activeLogin = session == nil ? nil : loginIdentity
+        guard viewerDID != session?.did || pdsURL != session?.pdsURL
+            || tokenEndpoint != session?.tokenEndpoint || self.loginIdentity != activeLogin else { return }
+        viewerDID = session?.did
+        pdsURL = session?.pdsURL
+        tokenEndpoint = session?.tokenEndpoint
+        self.loginIdentity = activeLogin
         sessionID = UUID()
         timeline.reset()
         discovery.reset()

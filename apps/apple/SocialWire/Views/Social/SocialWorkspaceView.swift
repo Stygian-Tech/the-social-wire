@@ -24,6 +24,7 @@ struct SocialWorkspaceView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("social.destination.\(item.rawValue)")
                     .listRowBackground(destination == item ? Color.accentColor.opacity(0.12) : Color.clear)
                 }
             }
