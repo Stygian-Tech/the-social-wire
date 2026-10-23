@@ -11418,6 +11418,10 @@
           "sha256": "88d0c847fdffb059e210842b125eeb226f9c44c29f8fb70d866893413fec5115"
         },
         {
+          "path": "packages/lexicons/app/thesocialwire/publication/getArticleEmbed.json",
+          "sha256": "e7e97a7647eda997bce77971a02e5f61c6cad673720d6e1fa680fe30384f6d1b"
+        },
+        {
           "path": "packages/lexicons/app/thesocialwire/publication/getSidebar.json",
           "sha256": "fb419bb7982c1cdf4a40b6f6fbbfae66a21e6905e3c97abc37d2345256649cc4"
         },
@@ -11921,11 +11925,11 @@
         },
         {
           "path": "packages/spec/endpoint-manifest.json",
-          "sha256": "d38679c38b6e7f0deaaf496a15c3e6afec17d9b46c8580a1ce3f5081f88c0721"
+          "sha256": "70fa8c6eb53c159a3c0432a5d22ce0037e37c1aa277765292ae838affa65813c"
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "569140b141c4b780b9760e328d54dd8f0d3bdbf855c2d93307c72d9d814ffeac"
+          "sha256": "7496e4b55131a1aeb1268221bb2e04dac54097e55bf446479e9c3b477a1ddb7e"
         },
         {
           "path": "packages/spec/package.json",
