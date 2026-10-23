@@ -1,4 +1,3 @@
-import { CachedImage } from "@/components/shared/CachedImage";
 import {
   AppBskyEmbedExternal,
   AppBskyEmbedImages,
@@ -10,6 +9,7 @@ import {
   type AppBskyFeedDefs,
   type ModerationOpts,
 } from "@atproto/api";
+import { SocialExternalEmbed } from "./SocialExternalEmbed";
 import { moderateSocialPost } from "./socialModeration";
 import { SocialVideoPlayer } from "./SocialVideoPlayer";
 import { SocialImageGallery } from "./SocialImageGallery";
@@ -54,35 +54,7 @@ export function SocialPostEmbed({
     if (gif) return <SocialGifEmbed key={gif.fullsize} external={embed.external} image={gif} />;
     const youtube = socialYouTubePlayerUrl(href);
     if (youtube) return <SocialYouTubeEmbed external={embed.external} href={href} src={youtube} />;
-    const thumb = socialHttpsUrl(embed.external.thumb);
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block overflow-hidden rounded-xl border bg-muted/30 hover:bg-muted/60"
-      >
-        {thumb ? (
-          <CachedImage
-            src={thumb}
-            width={600}
-            height={400}
-            alt=""
-            loading="lazy"
-            className="mx-auto block h-auto max-h-60 w-auto max-w-full"
-          />
-        ) : null}
-        <div className="flex flex-col gap-1 p-3">
-          <p className="text-sm font-medium">{embed.external.title}</p>
-          <p className="line-clamp-3 text-sm text-muted-foreground">
-            {embed.external.description}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {new URL(href).hostname}
-          </p>
-        </div>
-      </a>
-    );
+    return <SocialExternalEmbed external={embed.external} href={href} />;
   }
   if (AppBskyEmbedVideo.isView(embed)) {
     const src = socialHttpsUrl(embed.playlist);

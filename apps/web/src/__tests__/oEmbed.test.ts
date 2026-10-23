@@ -43,6 +43,31 @@ describe("oEmbed helpers", () => {
     expect(extractStandardSiteArticleAtUriFromHtml(html)).toBe(null);
   });
 
+  it("recognizes Leaflet canonical document metadata without selecting its publication", () => {
+    const document = "at://did:plc:qtapiembzpxlzsiagnc7eyy3/site.standard.document/3mdvrts2y7s25";
+    const html = `<head>
+      <meta name="at:alternate" content="at://did:plc:qtapiembzpxlzsiagnc7eyy3/site.standard.publication/3m6apyszppk23" />
+      <meta name="at:canonical" content="${document}" />
+    </head>`;
+    expect(extractStandardSiteArticleAtUriFromHtml(html)).toBe(document);
+  });
+
+  it.each(["site.standard.document", "alternate site.standard.document", "site.standard.entry"])(
+    "recognizes the Standard.site discovery link relation %s",
+    rel => {
+      const uri = "at://did:plc:author/site.standard.document/post123";
+      expect(extractStandardSiteArticleAtUriFromHtml(`<head><link rel="${rel}" href="${uri}" /></head>`)).toBe(uri);
+    }
+  );
+
+  it("does not accept publication identities, arbitrary alternates, or body discovery links as articles", () => {
+    for (const html of [
+      '<head><meta name="at:canonical" content="at://did:plc:author/site.standard.publication/pub" /></head>',
+      '<head><link rel="alternate" href="at://did:plc:author/site.standard.document/post" /></head>',
+      '<head></head><body><link rel="site.standard.document" href="at://did:plc:author/site.standard.document/post" /></body>',
+    ]) expect(extractStandardSiteArticleAtUriFromHtml(html)).toBeNull();
+  });
+
   it("builds WordPress oEmbed endpoint from origin", () => {
     expect(wordPressOEmbedEndpoint("https://blog.example")).toBe(
       "https://blog.example/wp-json/oembed/1.0/embed"

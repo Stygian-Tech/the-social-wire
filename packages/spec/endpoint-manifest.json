@@ -916,6 +916,13 @@
       "path": "/xrpc/app.thesocialwire.socialDraft.getGifFile",
       "classification": "xrpc-migration",
       "xrpcNsid": "app.thesocialwire.socialDraft.getGifFile"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/publications/article-embed",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.publication.getArticleEmbed"
     }
   ]
 }

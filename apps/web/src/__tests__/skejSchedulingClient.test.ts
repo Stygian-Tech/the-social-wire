@@ -1,10 +1,11 @@
+import { ArticleSchedulingNotSubmittedError } from "@/lib/articles/articleSchedulingError";
 import { afterEach, expect, spyOn, test } from "bun:test";
 import type { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Atproto from "@/lib/atprotoClient";
 import * as Social from "@/lib/blueskySocialClient";
 import * as Environment from "@/lib/skej/skejEnvironment";
-import { cancelSkejSchedule, createSkejSchedule, getSkejSchedulingReadiness, listSkejSchedules, rescheduleSkejPost, SkejSchedulingError, type SkejScheduleRecord, type SkejScheduleSummary } from "@/lib/skej/skejSchedulingClient";
+import { cancelSkejSchedule, createSkejArticleSchedule, isSkejArticleSchedule, createSkejSchedule, getSkejSchedulingReadiness, listSkejSchedules, rescheduleSkejPost, SkejSchedulingError, type SkejScheduleRecord, type SkejScheduleSummary } from "@/lib/skej/skejSchedulingClient";
 
 const did = "did:plc:brand", session = { did } as unknown as OAuthSession;
 const future = "2099-01-01T12:00:00.000Z";
@@ -13,7 +14,7 @@ afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup();
 function item(): SkejScheduleSummary {
   return { did, rkey: "schedule-one", scheduleUri: `at://${did}/at.skej.schedule/schedule-one`, scheduledAt: future, status: "scheduled", attempts: 0, record: { $type: "at.skej.schedule", scheduledAt: future, status: "scheduled", createdAt: "2026-10-11T12:00:00Z", updatedAt: "2026-10-11T12:00:00Z", timezonePolicy: "absolute_utc", recordType: "app.bsky.feed.post", publishRkey: "stable-post", retry: { attemptCount: 0, maxAttempts: 8 }, posts: [{ text: "Scheduled", publishRkey: "stable-post" }] } };
 }
-function fixture(options: { status?: number; body?: unknown; afterMint?: () => void } = {}) {
+function fixture(options: { status?: number; body?: unknown; afterMint?: () => void; respond?: (url: URL, payload?: Record<string, unknown>) => Response | Promise<Response> } = {}) {
   const mints: { aud: string; lxm: string; exp: number }[] = [];
   const requests: { url: URL; init: RequestInit; payload?: Record<string, unknown> }[] = [];
   const agent = { com: { atproto: { server: { getServiceAuth: async (input: { aud: string; lxm: string; exp: number }) => { mints.push(input); options.afterMint?.(); return { data: { token: "one-method-grant" } }; } } } } } as unknown as Agent;
@@ -23,6 +24,7 @@ function fixture(options: { status?: number; body?: unknown; afterMint?: () => v
   const fetcher = spyOn(globalThis, "fetch").mockImplementation((async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input)); const payload = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     requests.push({ url, init: init!, payload });
+    if (options.respond) return options.respond(url, payload);
     const body = options.body ?? (payload?.record ? { ...item(), record: payload.record, scheduledAt: (payload.record as SkejScheduleRecord).scheduledAt } : url.pathname.endsWith("getSession") ? { did } : url.pathname.endsWith("list") ? { records: [item()] } : item());
     return Response.json(body, { status: options.status ?? 200 });
   }) as typeof fetch);
@@ -111,4 +113,118 @@ test("schedules native link-label text and retains its external card", async () 
   await createSkejSchedule(f.actor, "[XBOX Labs](labs.xbox.com)", future, linkPreview);
   const record = f.requests[0].payload!.record as SkejScheduleRecord;
   expect(record.posts[0]).toMatchObject({ text: "XBOX Labs", facets: [{ index: { byteStart: 0, byteEnd: 9 }, features: [{ uri: linkPreview.uri }] }], embed: { external: linkPreview } });
+});
+
+const document = { $type: "site.standard.document" as const, title: "An Article", site: `at://${did}/site.standard.publication/pub`, publishedAt: future, textContent: "Long-form content", content: { $type: "site.standard.content.markdown", text: "# Article" } };
+function articleItem(): SkejScheduleSummary {
+  return { ...item(), record: { ...item().record, recordType: "site.standard.document", publishRkey: "stable-article", posts: [], shadowRecord: document } };
+}
+
+test("mixed social and article schedules retain typed article payloads", async () => {
+  const f = fixture({ body: { records: [item(), articleItem()] } });
+  const records = await listSkejSchedules(f.actor);
+  expect(records.map(isSkejArticleSchedule)).toEqual([false, true]);
+  expect(records[1].record.shadowRecord).toEqual(document);
+});
+
+test("malformed articles fail closed without masquerading as blank social posts", async () => {
+  const malformed = articleItem(); malformed.record.shadowRecord = { $type: "site.standard.document" };
+  const f = fixture({ body: { records: [malformed] } });
+  await expect(listSkejSchedules(f.actor)).rejects.toThrow("Invalid Scheduled Article");
+});
+
+test("article creation uses exact prepared content and stable identity; repeat reuses readback", async () => {
+  let saved: SkejScheduleSummary | undefined;
+  const f = fixture({ respond: async (url, payload) => {
+    if (url.pathname.endsWith("list")) return Response.json({ records: saved ? [saved] : [] });
+    saved = { ...articleItem(), record: payload!.record as SkejScheduleRecord };
+    return Response.json(saved);
+  } });
+  const first = await createSkejArticleSchedule(f.actor, document, "stable-article", future);
+  const second = await createSkejArticleSchedule(f.actor, document, "stable-article", future);
+  expect(first).toEqual(second);
+  expect(f.requests.filter(r => r.init.method === "POST")).toHaveLength(1);
+  expect(first.record).toMatchObject({ recordType: "site.standard.document", publishRkey: "stable-article", shadowRecord: document, posts: [] });
+});
+
+test("ambiguous creation reconciles readback without repeating mutation", async () => {
+  let saved: SkejScheduleSummary | undefined;
+  const f = fixture({ respond: async (url, payload) => {
+    if (url.pathname.endsWith("list")) return Response.json({ records: saved ? [saved] : [] });
+    saved = { ...articleItem(), record: payload!.record as SkejScheduleRecord };
+    throw new TypeError("Connection lost after write");
+  } });
+  expect(isSkejArticleSchedule(await createSkejArticleSchedule(f.actor, document, "stable-article", future))).toBe(true);
+  expect(f.requests.filter(r => r.init.method === "POST")).toHaveLength(1);
+});
+
+test("failed creation with no readback does not retry", async () => {
+  const f = fixture({ respond: async url => {
+    if (url.pathname.endsWith("list")) return Response.json({ records: [] });
+    throw new TypeError("Connection lost");
+  } });
+  await expect(createSkejArticleSchedule(f.actor, document, "stable-article", future)).rejects.toThrow("Connection lost");
+  expect(f.requests.filter(r => r.init.method === "POST")).toHaveLength(1);
+});
+
+test("conflicting stable article identity cannot create another schedule", async () => {
+  const f = fixture({ body: { records: [articleItem()] } });
+  await expect(createSkejArticleSchedule(f.actor, { ...document, title: "Different Article" }, "stable-article", future)).rejects.toThrow("Different Schedule");
+  expect(f.requests.every(r => r.init.method === "GET")).toBe(true);
+});
+
+test("article reschedule preserves content and keys while moving publication timestamps", async () => {
+  const f = fixture(), original = articleItem();
+  original.record.shadowRecord = { ...document, updatedAt: future };
+  await rescheduleSkejPost(f.actor, original, "2099-02-01T12:00:00Z");
+  expect(f.requests[0].payload!.record).toMatchObject({ publishRkey: "stable-article", shadowRecord: { ...document, publishedAt: "2099-02-01T12:00:00.000Z", updatedAt: "2099-02-01T12:00:00.000Z" } });
+  expect(original.record.shadowRecord).toEqual({ ...document, updatedAt: future });
+});
+
+test("invalid prepared document and reserved rkey never issue requests", async () => {
+  const f = fixture();
+  await expect(createSkejArticleSchedule(f.actor, { ...document, title: "" }, "stable-article", future)).rejects.toThrow("Invalid");
+  await expect(createSkejArticleSchedule(f.actor, document, "..", future)).rejects.toThrow("Invalid");
+  expect(f.requests).toHaveLength(0);
+});
+
+test("actor switch while reading schedule body prevents creation", async () => {
+  let switched = false;
+  const f = fixture({ respond: async () => {
+    const response = Response.json({ records: [] });
+    response.json = async () => { switched = true; return { records: [] }; };
+    return response;
+  } });
+  await expect(createSkejArticleSchedule({ session, assertCurrentActor: () => { if (switched) throw new Error("Account Changed"); } }, document, "stable-article", future)).rejects.toThrow("Account Changed");
+  expect(f.requests.filter(r => r.init.method === "POST")).toHaveLength(0);
+});
+
+
+test("confirmed canceled article schedule permits a new schedule with the stable document key", async () => {
+  const canceled = articleItem(); canceled.status = "canceled"; canceled.record.status = "canceled";
+  const f = fixture({ respond: async (url, payload) => url.pathname.endsWith("list")
+    ? Response.json({ records: [canceled] })
+    : Response.json({ ...articleItem(), record: payload!.record }) });
+  expect(isSkejArticleSchedule(await createSkejArticleSchedule(f.actor, document, "stable-article", future))).toBe(true);
+  expect(f.requests.filter(r => r.init.method === "POST")).toHaveLength(1);
+});
+
+test("partially canceled article remains locked until both server states agree", async () => {
+  const canceled = articleItem(); canceled.status = "canceled";
+  const f = fixture({ body: { records: [canceled] } });
+  await expect(createSkejArticleSchedule(f.actor, document, "stable-article", future)).rejects.toThrow("Different Schedule");
+  expect(f.requests.filter(r => r.init.method === "POST")).toHaveLength(0);
+});
+
+test("invalid input is definitively not submitted but preflight failure remains ambiguous", async () => {
+  const f = fixture({ respond: async () => { throw new Error("List unavailable"); } });
+  await expect(createSkejArticleSchedule(f.actor, document, "..", future)).rejects.toBeInstanceOf(ArticleSchedulingNotSubmittedError);
+  await expect(createSkejArticleSchedule(f.actor, document, "stable-article", "invalid")).rejects.toBeInstanceOf(ArticleSchedulingNotSubmittedError);
+  try {
+    await createSkejArticleSchedule(f.actor, document, "stable-article", future);
+    throw new Error("Expected preflight failure");
+  } catch (error) {
+    expect(error).not.toBeInstanceOf(ArticleSchedulingNotSubmittedError);
+    expect((error as Error).message).toBe("List unavailable");
+  }
 });

@@ -90,7 +90,7 @@ export function ReadArticleFilterBar() {
     const title = isCircle ? "Your Circle" : "The Wire";
     return (
       <FeedHeader
-        className="xl:mr-[calc(19rem+2rem)]"
+        className="xl:mr-[calc(19rem+3rem)]"
         title={
           <span
             aria-label={`${title}, Beta`}

@@ -14,9 +14,13 @@ import (
 type Routes struct {
 	Service  *publicationcore.Service
 	Resolver publicationcore.Resolver
+	Articles *publicationcore.ArticleResolver
 }
 
 func (a Routes) Register(mux *http.ServeMux) {
+	for _, path := range []string{"/v1/publications/article-embed", "/xrpc/app.thesocialwire.publication.getArticleEmbed"} {
+		mux.HandleFunc("GET "+path, a.articleEmbed)
+	}
 	for _, path := range []string{"/v1/publications/sidebar", "/xrpc/app.thesocialwire.publication.getSidebar"} {
 		mux.HandleFunc("GET "+path, a.sidebar)
 	}
@@ -162,4 +166,28 @@ func (a Routes) bootstrap(w http.ResponseWriter, r *http.Request) {
 		}
 		return controller.Flush()
 	})
+}
+
+func (a Routes) articleEmbed(w http.ResponseWriter, r *http.Request) {
+	if _, ok := auth(w, r); !ok {
+		return
+	}
+	if a.Articles == nil {
+		fail(w, 503, "Article discovery unavailable")
+		return
+	}
+	value, err := a.Articles.Resolve(r.Context(), r.URL.Query().Get("url"))
+	if err != nil {
+		status := 502
+		if errors.Is(err, publicationcore.ErrArticleURL) {
+			status = 400
+		}
+		if errors.Is(err, publicationcore.ErrArticleNotFound) {
+			status = 404
+		}
+		fail(w, status, "Verified article unavailable")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	write(w, value)
 }

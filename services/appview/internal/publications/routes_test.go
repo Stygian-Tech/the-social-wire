@@ -60,7 +60,7 @@ func TestExplicitEnrollmentWaitsForCounters(t *testing.T) {
 func TestPublicationRoutesRequireVerifiedIdentity(t *testing.T) {
 	mux := http.NewServeMux()
 	(Routes{}).Register(mux)
-	for _, route := range []struct{ method, path string }{{"GET", "/v1/publications/sidebar"}, {"POST", "/v1/publications/refresh"}, {"POST", "/v1/publications/resolve"}, {"GET", "/v1/appview/bootstrap-stream"}, {"POST", "/v1/appview/enroll"}, {"GET", "/xrpc/app.thesocialwire.publication.getSidebar"}, {"POST", "/xrpc/app.thesocialwire.publication.resolvePublication"}} {
+	for _, route := range []struct{ method, path string }{{"GET", "/v1/publications/article-embed"}, {"GET", "/xrpc/app.thesocialwire.publication.getArticleEmbed"}, {"GET", "/v1/publications/sidebar"}, {"POST", "/v1/publications/refresh"}, {"POST", "/v1/publications/resolve"}, {"GET", "/v1/appview/bootstrap-stream"}, {"POST", "/v1/appview/enroll"}, {"GET", "/xrpc/app.thesocialwire.publication.getSidebar"}, {"POST", "/xrpc/app.thesocialwire.publication.resolvePublication"}} {
 		for _, anonymous := range []bool{false, true} {
 			req := httptest.NewRequest(route.method, route.path, nil)
 			if anonymous {
@@ -92,5 +92,17 @@ func TestPublicationResolveBoundedBodyAndATURI(t *testing.T) {
 		if want == 200 && !strings.Contains(w.Body.String(), `"kind":"standard-site"`) {
 			t.Fatal(w.Body.String())
 		}
+	}
+}
+
+func TestArticleEmbedRejectsInvalidURL(t *testing.T) {
+	mux := http.NewServeMux()
+	(Routes{Articles: publicationcore.NewArticleResolver(nil, nil)}).Register(mux)
+	req := httptest.NewRequest("GET", "/xrpc/app.thesocialwire.publication.getArticleEmbed?url=http://localhost", nil)
+	req = req.WithContext(gatewaycore.ContextWithAuth(req.Context(), gatewaycore.AuthContext{DID: "did:plc:viewer"}))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != 400 || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 }

@@ -1,0 +1,249 @@
+{
+  "synthetic": true,
+  "verifiedOn": "2026-10-21",
+  "notice": "Illustrative record shapes, not published records or a live integration. Blob CIDs, identities, AT-URIs, byte sizes, and timestamps are synthetic and not fetchable. No schema-validator acceptance or live-service interoperability is claimed. UI assets are separate from these records.",
+  "sourceMap": {
+    "Bluesky": {
+      "recordNSIDs": [
+        "app.bsky.feed.post"
+      ],
+      "mediaNSIDs": [
+        "app.bsky.embed.images",
+        "app.bsky.embed.video",
+        "app.bsky.embed.gallery"
+      ],
+      "status": "schema-verified"
+    },
+    "Spark": {
+      "website": "https://sprk.so",
+      "recordNSIDs": [
+        "so.sprk.feed.post",
+        "so.sprk.story.post"
+      ],
+      "mediaNSIDs": [
+        "so.sprk.media.images",
+        "so.sprk.media.image",
+        "so.sprk.media.video"
+      ],
+      "status": "schema-verified"
+    },
+    "Grain": {
+      "recordNSIDs": [
+        "social.grain.photo",
+        "social.grain.gallery",
+        "social.grain.gallery.item",
+        "social.grain.story"
+      ],
+      "status": "schema-verified"
+    },
+    "Flashes": {
+      "recordNSIDs": [
+        "app.bsky.feed.post"
+      ],
+      "status": "Bluesky-compatible ordinary posts; dedicated story schema unverified",
+      "storyRecordNSID": null
+    }
+  },
+  "fixtures": [
+    {
+      "id": "bluesky-photo",
+      "source": "Bluesky",
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "text": "A synthetic photo for the Media prototype.",
+        "embed": {
+          "$type": "app.bsky.embed.images",
+          "images": [
+            {
+              "image": {
+                "$type": "blob",
+                "ref": {
+                  "$link": "bafkreigh6h3lkw2ktqb2bz3lrjg2ynhvdfh52jk6sf7zrm55jqllptdgui"
+                },
+                "mimeType": "image/jpeg",
+                "size": 128
+              },
+              "alt": "Synthetic prototype photograph",
+              "aspectRatio": {
+                "width": 1080,
+                "height": 1920
+              }
+            }
+          ]
+        },
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "bluesky-video",
+      "source": "Bluesky",
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "text": "A synthetic short video.",
+        "embed": {
+          "$type": "app.bsky.embed.video",
+          "video": {
+            "$type": "blob",
+            "ref": {
+              "$link": "bafkreigh6h3lkw2ktqb2bz3lrjg2ynhvdfh52jk6sf7zrm55jqllptdgui"
+            },
+            "mimeType": "video/mp4",
+            "size": 128
+          },
+          "alt": "Synthetic prototype video",
+          "aspectRatio": {
+            "width": 1080,
+            "height": 1920
+          }
+        },
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "spark-photo",
+      "source": "Spark",
+      "record": {
+        "$type": "so.sprk.feed.post",
+        "caption": {
+          "text": "A synthetic photo set."
+        },
+        "media": {
+          "$type": "so.sprk.media.images",
+          "images": [
+            {
+              "$type": "so.sprk.media.image",
+              "image": {
+                "$type": "blob",
+                "ref": {
+                  "$link": "bafkreigh6h3lkw2ktqb2bz3lrjg2ynhvdfh52jk6sf7zrm55jqllptdgui"
+                },
+                "mimeType": "image/jpeg",
+                "size": 128
+              },
+              "alt": "Synthetic prototype photograph",
+              "aspectRatio": {
+                "width": 1080,
+                "height": 1920
+              }
+            }
+          ]
+        },
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "spark-video",
+      "source": "Spark",
+      "record": {
+        "$type": "so.sprk.feed.post",
+        "caption": {
+          "text": "A synthetic short video."
+        },
+        "media": {
+          "$type": "so.sprk.media.video",
+          "video": {
+            "$type": "blob",
+            "ref": {
+              "$link": "bafkreigh6h3lkw2ktqb2bz3lrjg2ynhvdfh52jk6sf7zrm55jqllptdgui"
+            },
+            "mimeType": "video/mp4",
+            "size": 128
+          },
+          "aspectRatio": {
+            "width": 1080,
+            "height": 1920
+          }
+        },
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "spark-story",
+      "source": "Spark",
+      "record": {
+        "$type": "so.sprk.story.post",
+        "media": {
+          "$type": "so.sprk.media.image",
+          "image": {
+            "$type": "blob",
+            "ref": {
+              "$link": "bafkreigh6h3lkw2ktqb2bz3lrjg2ynhvdfh52jk6sf7zrm55jqllptdgui"
+            },
+            "mimeType": "image/jpeg",
+            "size": 128
+          },
+          "alt": "Synthetic prototype photograph",
+          "aspectRatio": {
+            "width": 1080,
+            "height": 1920
+          }
+        },
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "grain-photo",
+      "source": "Grain",
+      "uri": "at://did:example:prototype/social.grain.photo/3mfixturephoto",
+      "record": {
+        "$type": "social.grain.photo",
+        "photo": {
+          "$type": "blob",
+          "ref": {
+            "$link": "bafkreigh6h3lkw2ktqb2bz3lrjg2ynhvdfh52jk6sf7zrm55jqllptdgui"
+          },
+          "mimeType": "image/jpeg",
+          "size": 128
+        },
+        "alt": "Synthetic prototype photograph",
+        "aspectRatio": {
+          "width": 1080,
+          "height": 1920
+        },
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "grain-gallery",
+      "source": "Grain",
+      "uri": "at://did:example:prototype/social.grain.gallery/3mfixturegallery",
+      "record": {
+        "$type": "social.grain.gallery",
+        "title": "Prototype Photo Walk",
+        "description": "Synthetic gallery for layout exploration.",
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "grain-gallery-item",
+      "source": "Grain",
+      "record": {
+        "$type": "social.grain.gallery.item",
+        "gallery": "at://did:example:prototype/social.grain.gallery/3mfixturegallery",
+        "item": "at://did:example:prototype/social.grain.photo/3mfixturephoto",
+        "position": 0,
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "grain-story",
+      "source": "Grain",
+      "record": {
+        "$type": "social.grain.story",
+        "media": {
+          "$type": "blob",
+          "ref": {
+            "$link": "bafkreigh6h3lkw2ktqb2bz3lrjg2ynhvdfh52jk6sf7zrm55jqllptdgui"
+          },
+          "mimeType": "image/jpeg",
+          "size": 128
+        },
+        "aspectRatio": {
+          "width": 1080,
+          "height": 1920
+        },
+        "createdAt": "2026-10-21T12:00:00.000Z"
+      }
+    }
+  ]
+}

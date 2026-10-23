@@ -9,6 +9,10 @@ export type ArticleDraft = {
   publicationUri: string;
   coverAssetId?: string;
   publishedUri?: string;
+  /** Persisted before scheduling; retained when the remote result is uncertain. */
+  scheduleRecordKey?: string;
+  /** Exact confirmed schedule identity; absent while submission is uncertain. */
+  scheduleUri?: string;
   assets?: { id: string; alt: string; width: number; height: number; mimeType: string; name: string }[];
   createdAt: string;
   updatedAt: string;

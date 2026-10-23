@@ -1,0 +1,16 @@
+meta {
+  name: Get Verified Article Embed
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.publication.getArticleEmbed?url=https%3A%2F%2Fbabesky.leaflet.pub%2F3mdvrts2y7s25
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
