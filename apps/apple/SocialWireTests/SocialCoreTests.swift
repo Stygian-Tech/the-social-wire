@@ -11,6 +11,14 @@ struct SocialCoreTests {
         #expect(!SocialThreadDraftSegment(text: String(repeating: "👨‍👩‍👧‍👦", count: 300)).isValid)
     }
 
+    @Test("Rapid thread segments receive unique sortable TIDs")
+    func uniqueSegmentKeys() {
+        let keys = (0..<1000).map { _ in SocialThreadDraftSegment(text: "Post").recordKey }
+        #expect(Set(keys).count == keys.count)
+        #expect(keys == keys.sorted())
+        #expect(keys.allSatisfy { $0.count == 13 && $0.allSatisfy { "234567abcdefghijklmnopqrstuvwxyz".contains($0) } })
+    }
+
     @Test("Social dates accept equivalent RFC 3339 forms")
     func socialDates() {
         let whole = SocialDate.parse("2026-10-14T12:30:00Z")
