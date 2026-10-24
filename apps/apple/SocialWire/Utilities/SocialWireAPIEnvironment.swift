@@ -44,4 +44,13 @@ enum SocialWireAPIEnvironment {
         return false
         #endif
     }
+
+    /// Mirrors Web's `NEXT_PUBLIC_PRO_GATING_ENABLED` rollout switch.
+    static var proGatingEnabled: Bool {
+        #if SOCIALWIRE_PRO_GATING_ENABLED
+        return true
+        #else
+        return false
+        #endif
+    }
 }

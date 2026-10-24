@@ -1,6 +1,7 @@
 const XRPC_PREFIX = "/xrpc/";
 
 export const socialWireXrpc = {
+  getArticleEmbed: `${XRPC_PREFIX}app.thesocialwire.publication.getArticleEmbed`,
   getPreferences: `${XRPC_PREFIX}app.thesocialwire.sync.getPreferences`,
   getSidebar: `${XRPC_PREFIX}app.thesocialwire.publication.getSidebar`,
   refreshSidebar: `${XRPC_PREFIX}app.thesocialwire.publication.refreshSidebar`,

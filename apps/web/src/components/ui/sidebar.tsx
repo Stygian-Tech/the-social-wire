@@ -15,6 +15,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { useSidebarMounted } from "@/hooks/useSidebarMounted"
 import { cn } from "@/lib/utils"
 import { appChromePaddingClassName } from "@/components/shared/appChromeStyles"
+import { FloatingChromeSurface } from "@/components/shared/FloatingChromeSurface"
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -292,16 +293,17 @@ function Sidebar({
         )}
         {...props}
       >
-        <div
+        <FloatingChromeSurface
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
+          floating={variant === "floating"}
           className={cn(
             "relative flex size-full min-h-0 min-w-0 flex-col overflow-x-hidden",
-            variant === "floating" ? floatingGlassClasses : "bg-sidebar"
+            variant !== "floating" && "bg-sidebar"
           )}
         >
           {children}
-        </div>
+        </FloatingChromeSurface>
       </div>
     </div>
   )

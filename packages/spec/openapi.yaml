@@ -2094,6 +2094,34 @@ security:
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 paths:
+  /v1/publications/article-embed:
+    get:
+      summary: Resolve Verified Standard.site Article Embed
+      tags: [Publications]
+      security: [{ATProtoOAuthDPoP: []}]
+      parameters:
+        - {in: query, name: url, required: true, schema: {type: string, format: uri, maxLength: 4096}}
+      responses:
+        '200':
+          description: Public document and publication metadata verified against the requested article URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documentUri, publicationUri, publicationName, publicationUrl, articleUrl, title, authorDid]
+                properties:
+                  documentUri: {type: string}
+                  publicationUri: {type: string}
+                  publicationName: {type: string}
+                  publicationUrl: {type: string}
+                  articleUrl: {type: string}
+                  title: {type: string}
+                  description: {type: string}
+                  authorDid: {type: string}
+        '400': {description: Invalid HTTPS URL}
+        '401': {description: Authentication Required}
+        '404': {description: Verified Article Not Found}
+        '502': {description: Temporary Source Failure}
   /xrpc/app.thesocialwire.socialDraft.getGifFile:
     get:
       operationId: socialDraftGetGifFile

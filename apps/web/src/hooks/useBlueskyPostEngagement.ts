@@ -6,6 +6,7 @@ import type { AppBskyFeedDefs, ModerationOpts } from "@atproto/api";
 import { useAuth } from "@/hooks/useAuth";
 import { setBlueskyPostEngagement, type SocialEngagementKind, type SocialPostEngagement } from "@/lib/blueskyPostClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
+import { invalidateSocialPostQueries } from "@/lib/invalidateSocialPostQueries";
 
 type Action = { kind: SocialEngagementKind; did: string; key: readonly unknown[]; existingUri?: string; uri: string; cid: string; moderation: ModerationOpts };
 
@@ -39,7 +40,7 @@ export function useBlueskyPostEngagement(post: AppBskyFeedDefs.PostView, moderat
     onSuccess: (uri, action) => {
       if (viewerDid.current !== action.did || getOAuthSession()?.did !== action.did) return;
       client.setQueryData<SocialPostEngagement>(action.key, current => current ? { ...current, [action.kind]: uri } : current);
-      void client.invalidateQueries({ predicate: query => query.queryKey[0] === "blueskySocial" && query.queryKey[1] === action.did && ["timeline", "profileTimeline", "thread"].includes(String(query.queryKey[2])) });
+      void invalidateSocialPostQueries(client, action.did, new Set(["timeline", "profileTimeline", "thread"]));
     },
     onError: (_error, action, previous) => {
       if (previous && viewerDid.current === action.did && getOAuthSession()?.did === action.did) client.setQueryData(action.key, previous);

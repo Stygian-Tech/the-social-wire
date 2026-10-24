@@ -27,6 +27,7 @@ Copy `.env.example` to `.env.local` or create `.env.local` manually (see **Envir
 
 | Variable | Description |
 |----------|-------------|
+| `ANYPUB_API_URL` | Server-only base URL of the AnyPubKit preparation service exposing `POST /xrpc/at.anypub.prepare`. Required for scheduled articles; unset returns a configuration error. |
 | `NEXT_PUBLIC_APP_ENV` | `prod` / `dev` / `local` — banner + OAuth mode (see **Local ATProto OAuth** below). Server also reads `APP_ENV`; `next.config` forwards it to the client bundle when `NEXT_PUBLIC_*` is unset |
 | `NEXT_PUBLIC_ATPROTO_CLIENT_ID` | Optional override for a nonstandard hosted OAuth client ID. Railway Development and Production default to same-origin `/oauth-client-metadata.json` |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN` | Optional: `http://127.0.0.1:PORT` — SSR / first-paint port fallback for loopback redirects |
@@ -244,3 +245,9 @@ Environment banners:
 - **`local`** — blue banner ("Running locally")
 - **`dev`** — amber banner ("You're on the dev server")
 - **`prod`** — no banner
+
+## Scheduled Articles
+
+Scheduled articles use AnyPubKit to prepare the document and Skej to publish it at the selected time. Skej stores the full document in a public schedule record immediately. The initial integration supports text articles only; image blobs, offloaded content, and Offprint/pckt multi-record wrappers are rejected before submission. Immediate publishing keeps its existing path.
+
+The preparation integration tests build and run the pinned AnyPubKit Go service locally and require Go with toolchain download access (`go1.26.6`). They do not publish PDS records.

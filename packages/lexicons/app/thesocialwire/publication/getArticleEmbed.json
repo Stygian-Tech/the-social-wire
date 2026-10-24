@@ -1,0 +1,74 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.publication.getArticleEmbed",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Resolve a verified Standard.site article preview from a public HTTPS page.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "documentUri",
+            "publicationUri",
+            "publicationName",
+            "publicationUrl",
+            "articleUrl",
+            "title",
+            "authorDid"
+          ],
+          "properties": {
+            "documentUri": {
+              "type": "string"
+            },
+            "publicationUri": {
+              "type": "string"
+            },
+            "publicationName": {
+              "type": "string"
+            },
+            "publicationUrl": {
+              "type": "string"
+            },
+            "articleUrl": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "authorDid": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        }
+      ]
+    }
+  }
+}

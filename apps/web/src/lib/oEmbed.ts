@@ -83,11 +83,13 @@ function tagNamesStandardSiteAtUri(tag: string): boolean {
     if (!value) continue;
     if (
       value === "at-uri" ||
+      value === "at:canonical" ||
       value === "at:uri" ||
       value === "atproto:uri" ||
       value === "atproto-uri" ||
       value === "standard-site-at-uri" ||
-      value === "standard.site.at-uri"
+      value === "standard.site.at-uri" ||
+      (attr === "rel" && value.split(/\s+/).some(token => STANDARD_SITE_ARTICLE_COLLECTIONS.has(token)))
     ) {
       return true;
     }
