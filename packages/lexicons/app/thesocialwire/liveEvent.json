@@ -84,6 +84,21 @@
           "endsAt": {
             "type": "string",
             "format": "datetime"
+          },
+          "timestampFormat": {
+            "type": "string",
+            "enum": [
+              "time-24",
+              "time-12",
+              "date-time",
+              "iso"
+            ],
+            "description": "Format for future article update headings. Omitted defaults to 24-hour HH:MM."
+          },
+          "timeZone": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "IANA time zone of the posting user, captured for stable future publishing. Legacy events capture local zone on next update."
           }
         }
       }

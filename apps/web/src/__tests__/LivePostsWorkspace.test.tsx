@@ -7,6 +7,7 @@ import * as Mobile from "@/hooks/use-mobile";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import LivePostPage from "@/app/live-post/page";
 import { LivePostNewEventDialog } from "@/components/LivePosts/LivePostNewEventDialog";
+import { localLiveTimeZone } from "@/lib/livePosts/livePostTimestamp";
 import type { LiveEvent } from "@/lib/livePosts/livePostTypes";
 
 const event: LiveEvent = { $type: "app.thesocialwire.liveEvent", uri: "at://did:plc:alice/app.thesocialwire.liveEvent/event", cid: "cid", title: "Launch", tags: ["Launch"], destination: "both", createdAt: "2026-10-11T12:00:00Z", updatedAt: "2026-10-11T12:00:00Z", articleUrl: "https://blog.test/live", entries: [{ id: "u", text: "Published Earlier", createdAt: "2026-10-11T12:00:00Z", articleRef: { uri: "at://did:plc:alice/site.standard.document/article", cid: "article" }, postRef: { uri: "at://did:plc:alice/app.bsky.feed.post/post", cid: "post" } }] };
@@ -24,7 +25,7 @@ beforeEach(() => {
   }
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did: "did:plc:alice" } } as ReturnType<typeof Auth.useAuth>);
   restores.push(() => auth.mockRestore());
-  state = { events: [event], rsvpEvents: [], rsvpLoading: false, rsvpError: null, loading: false, error: null, pending: false, publications: [], publicationsLoading: false, publicationsError: null, refresh: mock(async () => {}), createEvent: mock(async () => event), publishUpdate: mock(async () => event) };
+  state = { events: [event], rsvpEvents: [], rsvpLoading: false, rsvpError: null, loading: false, error: null, pending: false, publications: [], publicationsLoading: false, publicationsError: null, refresh: mock(async () => {}), createEvent: mock(async () => event), publishUpdate: mock(async () => event), updateTimestampSettings: mock(async () => event) };
   const live = spyOn(Live, "useLivePosts").mockImplementation(() => state);
   restores.push(() => live.mockRestore());
 });
@@ -65,7 +66,7 @@ test("requires a publication for blog events and parses comma-separated hashtags
   expect((screen.getByRole("button", { name: "Create Event" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(screen.getByRole("combobox", { name: "Event Publication" }), { target: { value: "at://did:plc:alice/site.standard.publication/p" } });
   fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
-  await waitFor(() => expect(create).toHaveBeenCalledWith({ title: "New Launch", tags: ["Tech", "Launch"], destination: "both", publicationUri: "at://did:plc:alice/site.standard.publication/p" }));
+  await waitFor(() => expect(create).toHaveBeenCalledWith({ timestampFormat: "time-24", timeZone: localLiveTimeZone(), title: "New Launch", tags: ["Tech", "Launch"], destination: "both", publicationUri: "at://did:plc:alice/site.standard.publication/p" }));
 });
 
 test("disables blog destinations without an eligible viewer publication", async () => {
@@ -97,7 +98,7 @@ test("prepopulates an RSVP event without writing until the user creates its live
   expect((screen.getByRole("textbox", { name: "Event Title" }) as HTMLInputElement).value).toBe("Future Conference");
   expect(screen.getByRole("dialog").querySelector('time[datetime="2100-01-01T09:00:00+01:00"]')).not.toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
-  await waitFor(() => expect(state.createEvent).toHaveBeenCalledWith({ title: "Future Conference", tags: [], destination: "bluesky", publicationUri: undefined, sourceEvent: { uri: "at://did:plc:alice/community.lexicon.calendar.event/rsvp", cid: "source" }, startsAt: "2100-01-01T09:00:00+01:00", endsAt: "2100-01-01T17:00:00+01:00" }));
+  await waitFor(() => expect(state.createEvent).toHaveBeenCalledWith({ timestampFormat: "time-24", timeZone: localLiveTimeZone(), title: "Future Conference", tags: [], destination: "bluesky", publicationUri: undefined, sourceEvent: { uri: "at://did:plc:alice/community.lexicon.calendar.event/rsvp", cid: "source" }, startsAt: "2100-01-01T09:00:00+01:00", endsAt: "2100-01-01T17:00:00+01:00" }));
 });
 
 test("groups events by schedule, keeps undated owned events current, and avoids duplicate RSVP sources", async () => {
@@ -154,4 +155,15 @@ test("bounds long event navigation and event history in separate desktop scroll 
   expect(sidebar.parentElement!.classList.contains("lg:h-full")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: /Event 39/ }));
   expect(screen.getByRole("heading", { name: "Event 39" })).toBeTruthy();
+});
+
+test("existing events expose editable format/timezone with preview and explicit save", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("combobox", { name: "Timestamp Format", hidden: true }), { target: { value: "time-12" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Time Zone", hidden: true }), { target: { value: "America/Chicago" } });
+  expect(screen.getByLabelText("Timestamp Preview").textContent).toMatch(/\d{2}:\d{2} [AP]M/);
+  expect(state.updateTimestampSettings).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Save Timestamp Settings", hidden: true }));
+  await waitFor(() => expect(state.updateTimestampSettings).toHaveBeenCalledWith(event, { timestampFormat: "time-12", timeZone: "America/Chicago" }));
+  expect(state.publishUpdate).not.toHaveBeenCalled();
 });

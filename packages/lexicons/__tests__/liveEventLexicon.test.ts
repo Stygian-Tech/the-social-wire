@@ -11,3 +11,8 @@ test("live events validate actual update refs and bound public record content", 
   for (const invalid of [{ destination: "other" }, { tags: Array(21).fill("tag") }, { createdAt: "today" }, { entries: Array(501).fill(event.entries[0]) }, { entries: [{ ...event.entries[0], postRef: { uri: "https://example.com", cid: "bad" } }] }]) expect(() => lexicons.assertValidRecord(schema.id, { ...event, ...invalid })).toThrow();
   expect(schema.defs.main.key).toBe("tid");
 });
+
+test("optional timestamp settings preserve legacy validity and constrain format/timezone storage", () => {
+  expect(() => lexicons.assertValidRecord(schema.id, { ...event, timestampFormat: "time-24", timeZone: "America/Chicago" })).not.toThrow();
+  for (const invalid of [{ timestampFormat: "raw" }, { timeZone: 5 }, { timeZone: "a".repeat(129) }]) expect(() => lexicons.assertValidRecord(schema.id, { ...event, ...invalid })).toThrow();
+});

@@ -15,6 +15,7 @@ import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { Button } from "@/components/ui/button";
 import { LivePostNewEventDialog, type LivePostNewEventInput } from "./LivePostNewEventDialog";
+import { LivePostTimestampSettings } from "./LivePostTimestampSettings";
 import { LivePostHistory } from "./LivePostHistory";
 import { LivePostEventSections, type LivePostSidebarRow } from "./LivePostEventSections";
 
@@ -78,6 +79,7 @@ function LivePostsViewer() {
           {error ? <div role="alert" className="mb-4 space-y-2 rounded-xl border p-3 text-sm"><p>{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button size="sm" variant="outline" disabled={live.pending} onClick={() => { setFailure(undefined); void live.refresh(); }}>Retry Loading</Button>}</div> : null}
           {!event ? <div className={`${floatingGlassClasses} flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center`}><h2 className="text-lg font-semibold">Start a Live Event</h2><p className="max-w-sm text-sm text-muted-foreground">Publish updates to a new blog article, a Bluesky thread, or both.</p><Button disabled={live.pending || live.loading} onClick={() => openNew()}>New Event</Button></div> : <>
             <header className="mb-4 space-y-2"><h2 className="break-words text-2xl font-semibold">{event.title}</h2><p className="text-sm text-muted-foreground">{destinationLabels[event.destination]}</p>{event.tags.length ? <p className="break-words text-xs text-muted-foreground">{event.tags.map(tag => `#${tag}`).join(" ")}</p> : null}</header>
+            {event.destination !== "bluesky" ? <LivePostTimestampSettings key={`${event.uri}:${event.cid}`} event={event} pending={live.pending} now={new Date(now).toISOString()} onSave={live.updateTimestampSettings} /> : null}
             <form aria-label="Live Update Composer" className={`${floatingGlassClasses} mb-6 flex flex-col gap-3 p-4`} onSubmit={submit => { submit.preventDefault(); void publish(); }}>
               <label htmlFor="live-update" className="text-sm font-medium">Update</label><SocialPeopleTextField id="live-update" value={text} onValueChange={value => setDrafts(previous => ({ ...previous, [event.uri]: value }))} disabled={live.pending} rows={5} placeholder="What Is Happening?" className="min-h-32 w-full resize-y rounded-lg border bg-background/30 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
               <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">{event.destination === "blog" ? "Appends a Timestamped Article Entry" : "Title and Hashtags Are Included in Each Post"}</p><Button type="submit" disabled={live.pending || !valid}>{live.pending ? "Publishing…" : failure ? "Retry Publish" : "Publish Update"}</Button></div>
