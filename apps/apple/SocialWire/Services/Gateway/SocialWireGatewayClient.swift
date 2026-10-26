@@ -925,6 +925,32 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(Value.self, from: response.body)
     }
 
+    /// Classifies already moderated, viewer-scoped Bluesky post views; this does not discover content.
+    /// Callers retain the upstream cursor, including when projection returns no matching URIs.
+    func projectMedia(_ request: MediaProjectionRequest, expectedViewer: String) async throws -> MediaProjectionResponse {
+        guard request.posts.count <= 30 else {
+            throw SocialWireError.badResponse("Media projection accepts at most 30 posts.")
+        }
+        let body = try JSONEncoder().encode(request)
+        guard body.count <= 512 * 1024 else {
+            throw SocialWireError.badResponse("Media projection request is too large.")
+        }
+        let response = try await authorizedRequest(method: "POST", path: "/v1/media/project", query: [:],
+            body: body, contentType: "application/json", expectedViewer: expectedViewer)
+        guard response.statusCode == 200 else {
+            throw SocialWireError.badResponse("Media could not load (\(response.statusCode)).")
+        }
+        let projection = try JSONDecoder().decode(MediaProjectionResponse.self, from: response.body)
+        let expectedSelection = request.mode == .photos ? "images" : "portrait-video"
+        guard projection.source == "bluesky-following", projection.selection == expectedSelection,
+              !projection.durationVerified,
+              Set(projection.uris).isSubset(of: Set(request.posts.map(\.uri))),
+              Set(projection.uris).count == projection.uris.count else {
+            throw SocialWireError.badResponse("Media projection response was invalid.")
+        }
+        return projection
+    }
+
     func standardSiteArticleEmbed(url: URL, expectedViewer: String) async throws -> StandardSiteSocialEmbed? {
         let response = try await authorizedRequest(method: "GET",
             path: SocialWireXRPCMethod.getArticleEmbed,

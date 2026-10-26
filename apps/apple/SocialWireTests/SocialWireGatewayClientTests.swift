@@ -32,6 +32,53 @@ struct SocialWireGatewayClientTests {
         + (0..<5).map { .init(status: 200, body: "{}", headers: ["DPoP-Nonce": "\(receipt)-nonce-\($0)"]) }
     }
 
+    @Test("Media projection sends only candidate embeds and retains explicit source limitations")
+    func mediaProjectionContract() async throws {
+        let body = #"{"uris":["at://did:plc:test/app.bsky.feed.post/one"],"source":"bluesky-following","selection":"images","durationVerified":false,"unsupportedSources":["spark","grain","flashes-attribution"]}"#
+        let (auth, gateway, transport) = try await fixture([.init(status: 200, body: body)])
+        defer { auth.signOut() }
+        let candidate = MediaProjectionCandidate(uri: "at://did:plc:test/app.bsky.feed.post/one",
+            embed: .object(["$type": .string("app.bsky.embed.images#view"), "images": .array([])]))
+        let result = try await gateway.projectMedia(.init(mode: .photos, posts: [candidate]), expectedViewer: "did:plc:test")
+        #expect(result.uris == [candidate.uri])
+        #expect(!result.durationVerified)
+        #expect(result.unsupportedSources.contains("grain"))
+        let requests = await transport.recordedRequests()
+        let sent = try #require(requests.first)
+        #expect(sent.url?.path == "/v1/media/project")
+        #expect(sent.httpMethod == "POST")
+        #expect(sent.value(forHTTPHeaderField: "DPoP") != nil)
+        let json = try JSONDecoder().decode(JSONValue.self, from: #require(sent.httpBody))
+        #expect(Set(try #require(json.object).keys) == ["mode", "posts"])
+        let post = try #require(json.object?["posts"]?.array?.first?.object)
+        #expect(Set(post.keys) == ["uri", "embed"])
+    }
+
+    @Test("Media projection fails closed for changed accounts, oversized batches, and invalid source responses")
+    func mediaProjectionBoundaries() async throws {
+        let badBody = #"{"uris":["at://did:plc:other/app.bsky.feed.post/unrequested"],"source":"bluesky-following","selection":"images","durationVerified":false,"unsupportedSources":[]}"#
+        let (auth, gateway, transport) = try await fixture([.init(status: 200, body: badBody)])
+        defer { auth.signOut() }
+        let candidate = MediaProjectionCandidate(uri: "at://did:plc:test/app.bsky.feed.post/one", embed: .null)
+        await #expect(throws: (any Error).self) {
+            _ = try await gateway.projectMedia(.init(mode: .photos, posts: [candidate]), expectedViewer: "did:plc:other")
+        }
+        #expect(await transport.recordedRequests().isEmpty)
+        await #expect(throws: (any Error).self) {
+            _ = try await gateway.projectMedia(.init(mode: .photos, posts: Array(repeating: candidate, count: 31)), expectedViewer: "did:plc:test")
+        }
+        #expect(await transport.recordedRequests().isEmpty)
+        let oversized = MediaProjectionCandidate(uri: candidate.uri, embed: .string(String(repeating: "x", count: 512 * 1024)))
+        await #expect(throws: (any Error).self) {
+            _ = try await gateway.projectMedia(.init(mode: .photos, posts: [oversized]), expectedViewer: "did:plc:test")
+        }
+        #expect(await transport.recordedRequests().isEmpty)
+        await #expect(throws: (any Error).self) {
+            _ = try await gateway.projectMedia(.init(mode: .photos, posts: [candidate]), expectedViewer: "did:plc:test")
+        }
+        #expect(await transport.recordedRequests().count == 1)
+    }
+
     @Test("Warm feed snapshots and pagination perform no PDS proof probes")
     func warmFeedSkipsPools() async throws {
         let (auth, gateway, transport) = try await fixture([
