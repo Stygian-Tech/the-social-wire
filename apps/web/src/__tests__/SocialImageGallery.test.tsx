@@ -83,6 +83,23 @@ function pointer(target: Element, type: string, x: number, y: number, id = 1) {
 const secondImage = { ...image, thumb: "https://publisher.example/two.jpg", fullsize: "https://publisher.example/two-original.jpg", alt: "Second Photo" };
 
 describe("Social Image Gallery", () => {
+  it("reserves the same uncropped viewport across mixed image ratios and loading", () => {
+    render(<SocialImageGallery images={[image, { ...secondImage, aspectRatio: { width: 1200, height: 600 } }]} />);
+    const viewport = screen.getByRole("button", { name: "Open Image 1: A portrait" });
+    expect(viewport.style.aspectRatio).toBe("600 / 1200");
+    fireEvent.click(screen.getByRole("button", { name: "Next Photo" }));
+    expect(screen.getByRole("button", { name: "Open Image 2: Second Photo" })).toBe(viewport);
+    expect(viewport.style.aspectRatio).toBe("600 / 1200");
+    expect(screen.getByRole("img").classList.contains("object-contain")).toBe(true);
+  });
+
+  it("reserves a fallback viewport when image dimensions are absent or invalid", () => {
+    const view = render(<SocialImageGallery images={[{ ...image, aspectRatio: undefined }]} />);
+    expect(screen.getByRole("button", { name: "Open Image 1: A portrait" }).style.aspectRatio).toBe("1 / 1");
+    view.rerender(<SocialImageGallery images={[{ ...image, aspectRatio: { width: 0, height: 1200 } }]} />);
+    expect(screen.getByRole("button", { name: "Open Image 1: A portrait" }).style.aspectRatio).toBe("1 / 1");
+  });
+
   it("navigates one uncropped photo at a time using arrows, dots, and keyboard", () => {
     render(<SocialImageGallery images={[image, secondImage]} />);
     expect(screen.getAllByRole("img")).toHaveLength(1);
@@ -195,9 +212,12 @@ describe("Social Image Gallery", () => {
     render(<SocialImageGallery images={[image, secondImage]} />);
     fireEvent.click(screen.getByRole("button", { name: "Open Image 1: A portrait" }));
     let dialog = await screen.findByRole("dialog");
+    const originalDialog = dialog;
     fireEvent.keyDown(within(dialog).getByRole("group", { name: "Image Viewer" }), { key: "ArrowRight" });
     await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("img").getAttribute("src")).toBe(secondImage.fullsize));
     dialog = screen.getByRole("dialog");
+    expect(dialog).toBe(originalDialog);
+    expect(document.activeElement).toBe(within(dialog).getByRole("group", { name: "Image Viewer" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Zoom In" }));
     fireEvent.keyDown(within(dialog).getByRole("group", { name: "Image Viewer" }), { key: "ArrowLeft" });
     expect(within(dialog).getByRole("img").getAttribute("src")).toBe(secondImage.fullsize);
@@ -218,7 +238,8 @@ describe("Social Image Gallery", () => {
     expect(one).not.toContain("Next Photo");
     expect(one).not.toContain("grid-cols-2");
     expect(one).toContain('width="600" height="1200"');
-    expect(one).toContain("h-auto w-full");
+    expect(one).toContain("h-full w-full object-contain");
+    expect(one).toContain("aspect-ratio:600 / 1200");
     expect(one).not.toContain("object-cover");
     expect(one).not.toContain("max-h-96");
     const many = renderToStaticMarkup(
