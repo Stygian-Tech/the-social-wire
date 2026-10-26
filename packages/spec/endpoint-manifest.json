@@ -2,6 +2,7 @@
   "version": 1,
   "description": "Authoritative classification and XRPC migration mapping for first-party and integrated HTTP endpoints.",
   "entries": [
+    {"surface": "openapi", "method": "POST", "path": "/v1/media/project", "classification": "first-party-rest"},
     {
       "surface": "openapi",
       "method": "GET",

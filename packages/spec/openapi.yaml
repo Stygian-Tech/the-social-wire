@@ -2392,6 +2392,46 @@ paths:
           "application/json":
             schema:
               "$ref": "#/components/schemas/SocialDraftDeleteManifestInput"
+  /v1/media/project:
+    post:
+      summary: Project a viewer-authorized Bluesky Following candidate page into Media
+      description: Stateless classification only. Clients supply their existing viewer-aware timeline page after moderation and retain its upstream cursor, including when no candidates match. No discovery, fetching, storage, or third-party app attribution occurs here. Photos supports images and image-only galleries, including recordWithMedia. Short Videos selects known portrait video dimensions; duration is unavailable and is never verified. Unknown embeds, unsafe media URLs, GIF presentation, and unknown video dimensions fail closed. Spark, Grain and Flashes attribution are unsupported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mode, posts]
+              properties:
+                mode: {type: string, enum: [photos, short-videos]}
+                posts:
+                  type: array
+                  maxItems: 30
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [uri, embed]
+                    properties:
+                      uri: {type: string, maxLength: 2048}
+                      embed: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: Matching post URIs in input order, deduplicated; no cursor is consumed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uris, source, selection, durationVerified, unsupportedSources]
+                properties:
+                  uris: {type: array, items: {type: string}}
+                  source: {type: string, enum: [bluesky-following]}
+                  selection: {type: string, enum: [images, portrait-video]}
+                  durationVerified: {type: boolean, enum: [false]}
+                  unsupportedSources: {type: array, items: {type: string}}
+        '400': {description: Invalid input or body exceeds 512 KiB}
+        '401': {description: Authentication required}
   /v1/media/gifs:
     get:
       summary: Search or resolve KLIPY GIFs through the authenticated Gateway
