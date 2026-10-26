@@ -2395,7 +2395,7 @@ paths:
   /v1/media/project:
     post:
       summary: Project a viewer-authorized Bluesky Following candidate page into Media
-      description: Stateless classification only. Clients supply their existing viewer-aware timeline page after moderation and retain its upstream cursor, including when no candidates match. No discovery, fetching, storage, or third-party app attribution occurs here. Photos supports images and image-only galleries, including recordWithMedia. Short Videos selects known portrait video dimensions; duration is unavailable and is never verified. Unknown embeds, unsafe media URLs, GIF presentation, and unknown video dimensions fail closed. Spark, Grain and Flashes attribution are unsupported.
+      description: Stateless classification only. Clients supply their existing viewer-aware timeline page, enforce moderation before display, and retain its upstream cursor, including when no candidates match. No discovery, fetching, storage, or third-party app attribution occurs here. Photos supports images and image-only galleries, including recordWithMedia. Short Videos selects known portrait video dimensions; duration is unavailable and is never verified. Unknown embeds, unsafe media URLs, GIF presentation, and unknown video dimensions fail closed. Spark, Grain and Flashes attribution are unsupported.
       requestBody:
         required: true
         content:

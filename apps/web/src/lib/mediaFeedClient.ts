@@ -10,7 +10,7 @@ export async function projectMediaPage(session: OAuthSession, page: BlueskySocia
   const response = await gatewayFetch(session, "/v1/media/project", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode, posts: page.feed.map(({ post }) => ({ uri: post.uri, embed: post.embed })) }),
+    body: JSON.stringify({ mode, posts: page.feed.map(({ post }) => ({ uri: post.uri, embed: post.embed ?? {} })) }),
     signal,
   });
   signal?.throwIfAborted();

@@ -46,3 +46,12 @@ describe("live Media projection", () => {
     expect(uniqueMediaPosts([{ feed: [a, a] }, { feed: [b, a] }])).toEqual([a, b]);
   });
 });
+
+it("represents text-only source candidates with an empty embed object", async () => {
+  const text = post("text");
+  delete text.post.embed;
+  const fetch = spyOn(Gateway, "gatewayFetch").mockResolvedValue(Response.json({ uris: [] }));
+  restore = () => fetch.mockRestore();
+  await projectMediaPage(session, { feed: [text] }, "photos");
+  expect(JSON.parse(String(fetch.mock.calls[0][2]?.body)).posts).toEqual([{ uri: text.post.uri, embed: {} }]);
+});
