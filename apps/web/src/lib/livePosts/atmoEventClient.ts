@@ -12,6 +12,25 @@ function eventUri(uri: string): { did: string; rkey: string } {
   return { did: match[1], rkey: match[2] };
 }
 function datetime(value: unknown): value is string { return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value)); }
+const articleMirrorFields = new Set(["$type", "name", "startsAt", "createdAt", "status", "mode", "description", "uris"]);
+function isLegacyArticleMirror(record: RecordResult): boolean {
+  const value = record.value as Record<string, unknown>;
+  // AnyPub's legacy article publisher also wrote a calendar record with this
+  // exact link pair. Its start is publication time, not a live event schedule.
+  // Keep richer events, including calendar-client records and companion articles.
+  if (value.mode !== `${EVENT}#virtual` || value.status !== `${EVENT}#scheduled`
+    || Object.keys(value).some(key => !articleMirrorFields.has(key)) || !Array.isArray(value.uris) || value.uris.length !== 2) return false;
+  const links = value.uris as { name?: unknown; uri?: unknown }[];
+  if (links.some(link => !link || typeof link !== "object")) return false;
+  const article = links.find(link => link.name === "Article URL"), document = links.find(link => link.name === "ATProto record");
+  if (typeof article?.uri !== "string" || typeof document?.uri !== "string") return false;
+  const prefix = `at://${eventUri(record.uri).did}/site.standard.document/`;
+  if (!document.uri.startsWith(prefix) || !/^[a-zA-Z0-9._~:-]+$/.test(document.uri.slice(prefix.length))) return false;
+  try {
+    const url = new URL(article.uri);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+  } catch { return false; }
+}
 export function parseAtmoEvent(record: RecordResult): AtmoEvent {
   eventUri(record.uri);
   if (!ComAtprotoRepoStrongRef.validateMain({ uri: record.uri, cid: record.cid }).success) throw new Error("Invalid atmo.rsvp event identity.");
@@ -97,5 +116,8 @@ export async function listViewerAtmoEvents(session: OAuthSession, signal?: Abort
     signal?.throwIfAborted();
     try { records.set(uri, await getPublicEvent(uri, signal)); } catch (error) { if (!(error instanceof MissingCalendarEvent)) throw error; }
   }
-  return [...records.values()].map(parseAtmoEvent).filter(event => event.status !== `${EVENT}#cancelled`).sort((a, b) => ((a.startsAt ? Date.parse(a.startsAt) : Infinity) - (b.startsAt ? Date.parse(b.startsAt) : Infinity)) || a.uri.localeCompare(b.uri));
+  return [...records.values()].flatMap(record => {
+    const event = parseAtmoEvent(record);
+    return isLegacyArticleMirror(record) || event.status === `${EVENT}#cancelled` ? [] : [event];
+  }).sort((a, b) => ((a.startsAt ? Date.parse(a.startsAt) : Infinity) - (b.startsAt ? Date.parse(b.startsAt) : Infinity)) || a.uri.localeCompare(b.uri));
 }

@@ -11,7 +11,7 @@ const restores: (() => void)[] = [];
 const mockFetch = (fn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): typeof fetch => Object.assign(fn, { preconnect: globalThis.fetch.preconnect });
 const oldAllowed = process.env.NEXT_PUBLIC_LOCAL_ATPROTO_CALENDAR_PDS_URLS;
 afterEach(() => { if (oldAllowed === undefined) delete process.env.NEXT_PUBLIC_LOCAL_ATPROTO_CALENDAR_PDS_URLS; else process.env.NEXT_PUBLIC_LOCAL_ATPROTO_CALENDAR_PDS_URLS = oldAllowed; while (restores.length) restores.pop()!(); });
-function fakePDS(records: ReturnType<typeof event>[], rsvps: unknown[] = [], repeat = false) {
+function fakePDS(records: { uri: string; cid: string; value: unknown }[], rsvps: unknown[] = [], repeat = false) {
   const spy = spyOn(Atproto, "createOAuthAgent").mockReturnValue({ com: { atproto: { repo: { listRecords: async (args: { repo: string; collection: string }) => { expect(args.repo).toBe(did); return { data: { records: args.collection === collection ? records : rsvps, ...(repeat ? { cursor: "same" } : {}) } }; } } } } } as unknown as Agent);
   restores.push(() => spy.mockRestore());
 }
@@ -75,4 +75,48 @@ test("explicitly ended sessions group as past regardless of their calendar sched
   const endedAt = "2026-10-26T22:00:00Z";
   expect(liveEventPhase({ endedAt })).toBe("past");
   expect(liveEventPhase({ startsAt: "2100-01-01T00:00:00Z", endsAt: "2100-01-02T00:00:00Z", endedAt })).toBe("past");
+});
+
+function articleMirror(key: string) {
+  return { uri: `at://${did}/${collection}/${key}`, cid, value: { $type: collection, name: key, createdAt: "2026-08-12T22:02:07Z", startsAt: "2026-08-12T22:02:07Z", mode: `${collection}#virtual`, status: `${collection}#scheduled`, description: "A published article", uris: [{ name: "Article URL", uri: `https://blog.test/${key}` }, { name: "ATProto record", uri: `at://${did}/site.standard.document/${key}` }] } };
+}
+
+test("discovery excludes legacy article mirrors shown in the annotated event list", async () => {
+  const titles = ["First Offprint Test", "Another Article", "This Is Another One", "Creating Another Test Document", "Testing Leaflet", "Another pckt Test"];
+  const mirrors = titles.map((title, index) => { const record = articleMirror(`article-${index}`); record.value.name = title; return record; });
+  const scheduled = articleMirror("scheduled-article"); scheduled.value.startsAt = "2100-01-01T00:00:00Z";
+  const conference = event(did, "real-conference"); conference.value.name = "Real Conference";
+  fakePDS([...mirrors, scheduled, conference]);
+  const before = JSON.stringify(mirrors);
+  expect((await listViewerAtmoEvents(session)).map(row => row.title)).toEqual(["Real Conference"]);
+  expect(JSON.stringify(mirrors)).toBe(before);
+});
+
+test("preserves genuine start-only events and events with companion articles or calendar metadata", async () => {
+  const base = articleMirror("companion");
+  const startOnly = { ...event(did, "start-only"), value: { $type: collection, name: "Start Only", createdAt: base.value.createdAt, startsAt: base.value.startsAt, mode: `${collection}#virtual`, status: `${collection}#scheduled` } };
+  const candidates = [
+    startOnly,
+    { ...base, uri: `${base.uri}-end`, value: { ...base.value, endsAt: "2026-08-12T23:02:07Z" } },
+    { ...base, uri: `${base.uri}-client`, value: { ...base.value, createdWith: "https://atmo.rsvp" } },
+    { ...base, uri: `${base.uri}-venue`, value: { ...base.value, locations: [{ name: "Conference Hall" }] } },
+    { ...base, uri: `${base.uri}-stream`, value: { ...base.value, uris: [...base.value.uris, { name: "Stream", uri: "https://stream.place/conference" }] } },
+    { ...base, uri: `${base.uri}-article-link`, value: { ...base.value, uris: [base.value.uris[0]] } },
+  ];
+  fakePDS(candidates);
+  expect((await listViewerAtmoEvents(session)).map(row => row.uri).sort()).toEqual(candidates.map(row => row.uri).sort());
+});
+
+test("article mirror exclusion applies to RSVP subjects", async () => {
+  const mirror = articleMirror("rsvp-article");
+  fakePDS([], [{ uri: `at://${did}/${rsvp}/one`, cid, value: { $type: rsvp, status: `${rsvp}#interested`, subject: { uri: mirror.uri, cid } } }]);
+  const network = spyOn(Network, "getAtprotoNetwork").mockReturnValue({ plcDirectory: "https://plc.directory", publicAppView: "https://public.api.bsky.app", handleResolver: "https://public.api.bsky.app", appViewDid: "did:web:api.bsky.app" }); restores.push(() => network.mockRestore());
+  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(mockFetch(async input => String(input).includes("plc.directory") ? Response.json({ id: did, service: [{ id: "#atproto_pds", type: "AtprotoPersonalDataServer", serviceEndpoint: "https://alice.pds.example" }] }) : Response.json(mirror))); restores.push(() => fetchSpy.mockRestore());
+  expect(await listViewerAtmoEvents(session)).toEqual([]);
+});
+
+test("malformed calendar data still fails validation when it resembles an article mirror", async () => {
+  const malformed = articleMirror("malformed"); malformed.value.createdAt = "yesterday";
+  fakePDS([malformed]);
+  await expect(listViewerAtmoEvents(session)).rejects.toThrow("Invalid atmo.rsvp calendar event");
 });
