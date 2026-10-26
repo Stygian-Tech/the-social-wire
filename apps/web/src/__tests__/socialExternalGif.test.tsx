@@ -16,7 +16,8 @@ describe("External GIF embeds", () => {
     expect(html).not.toContain("still.jpg");
     expect(html).toContain('width="280" height="498"');
     expect(html).toContain("Open Image 1: Cooking with Fire");
-    expect(html).toContain("h-auto w-full");
+    expect(html).toContain("h-full w-full object-contain");
+    expect(html).toContain("aspect-ratio:280 / 498");
     expect(html).not.toContain("object-cover");
   });
   it("uses natural dimensions for absent or invalid hints", () => {

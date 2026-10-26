@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
@@ -25,10 +25,20 @@ export function FeedHeader({
   className,
   leading,
 }: FeedHeaderProps) {
+  const header = useRef<HTMLElement>(null);
+  const overlay = useRef<{ pane: Element | null; detach: (() => void) | undefined } | undefined>(undefined);
+  // Keep geometry through state updates; reattach only when navigation replaces the pane.
+  useLayoutEffect(() => {
+    const node = header.current;
+    if (!node || overlay.current?.pane === node.nextElementSibling) return;
+    overlay.current?.detach?.();
+    overlay.current = { pane: node.nextElementSibling, detach: attachFeedHeaderScrollOverlay(node) };
+  });
+  useLayoutEffect(() => () => { overlay.current?.detach?.(); overlay.current = undefined; }, []);
   return (
     <header
       data-slot="feed-header"
-      ref={(header) => header ? attachFeedHeaderScrollOverlay(header) : undefined}
+      ref={header}
       className={cn(
         floatingGlassClasses,
         appChromeMarginClassName,

@@ -4,6 +4,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent,
@@ -42,21 +43,26 @@ import {
   saveSocialImageBlob,
 } from "./socialImageActions";
 
-export function SocialImageDialog({
-  image,
-  index,
-  total,
-  onClose,
-  onPrevious,
-  onNext,
-}: {
+type SocialImageDialogProps = {
   image: AppBskyEmbedImages.ViewImage;
   index: number;
   total: number;
   onClose: () => void;
   onPrevious?: () => void;
   onNext?: () => void;
-}) {
+};
+
+export function SocialImageDialog(props: SocialImageDialogProps) {
+  return <Dialog open onOpenChange={open => { if (!open) props.onClose(); }}>
+    <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] flex-col gap-3 sm:max-w-5xl"
+      onClick={event => event.stopPropagation()}>
+      <SocialImageDialogContent key={`${props.image.fullsize}:${props.index}`} {...props} />
+    </DialogContent>
+  </Dialog>;
+}
+
+// Reset image gestures and loading without recreating the dialog's focus/scroll lock.
+function SocialImageDialogContent({ image, index, total, onPrevious, onNext }: SocialImageDialogProps) {
   const source = socialHttpsUrl(image.fullsize) ?? socialHttpsUrl(image.thumb)!;
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
@@ -79,6 +85,7 @@ export function SocialImageDialog({
   const [busy, setBusy] = useState<"save" | "copy" | null>(null);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  useLayoutEffect(() => { viewportRef.current?.focus({ preventScroll: true }); }, []);
 
   function update(value: ImageTransform) {
     const clamped = clampImageTransform(
@@ -237,16 +244,7 @@ export function SocialImageDialog({
     }
   }
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent
-        className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] flex-col gap-3 sm:max-w-5xl"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <>
         <DialogTitle className="pr-8">
           Image {index + 1} of {total}
         </DialogTitle>
@@ -406,7 +404,6 @@ export function SocialImageDialog({
             {message}
           </p>
         ) : null}
-      </DialogContent>
-    </Dialog>
+    </>
   );
 }

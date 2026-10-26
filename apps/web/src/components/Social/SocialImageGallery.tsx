@@ -45,6 +45,10 @@ export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedIm
   if (!safeImages.length) return null;
   const index = Math.min(active, safeImages.length - 1);
   const image = safeImages[index];
+  // Keep the feed row fixed while paging or loading differently sized photos.
+  const ratio = safeImages[0].aspectRatio;
+  const aspectRatio = ratio && Number.isFinite(ratio.width) && Number.isFinite(ratio.height) && ratio.width > 0 && ratio.height > 0
+    ? `${ratio.width} / ${ratio.height}` : "1 / 1";
   const multiple = safeImages.length > 1;
   const navigate = (next: number) => setActive(Math.max(0, Math.min(next, safeImages.length - 1)));
   const select = (next: number) => { navigate(next); setSelected(next); };
@@ -90,10 +94,11 @@ export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedIm
       }}>
       <div className="relative min-w-0">
         <button type="button" data-gallery-image aria-label={`Open Image ${index + 1}${image.alt ? `: ${image.alt}` : ""}`}
+          style={{ aspectRatio }}
           className="block w-full min-w-0 overflow-hidden rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
           onClick={event => { event.stopPropagation(); setSelected(index); }}>
           <img src={socialHttpsUrl(image.thumb)} alt={image.alt} width={image.aspectRatio?.width} height={image.aspectRatio?.height}
-            loading="lazy" referrerPolicy="no-referrer" draggable={false} className="block h-auto w-full" />
+            loading="lazy" referrerPolicy="no-referrer" draggable={false} className="block h-full w-full object-contain" />
         </button>
         <SocialAltTextBadge key={`${image.thumb}:${index}`} alt={image.alt} label={`View Image ${index + 1} Alt Text`} />
       </div>
@@ -105,7 +110,7 @@ export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedIm
         <button type="button" aria-label="Next Photo" disabled={index === safeImages.length - 1} className="rounded-md p-1 hover:bg-muted disabled:opacity-40" onClick={event => { event.stopPropagation(); navigate(index + 1); }}><ChevronRight aria-hidden="true" className="size-5" /></button>
       </div> : null}
     </div>
-    {selectedIndex !== null ? <SocialImageDialog key={`${safeImages[selectedIndex].fullsize}:${selectedIndex}`} image={safeImages[selectedIndex]} index={selectedIndex} total={safeImages.length}
+    {selectedIndex !== null ? <SocialImageDialog image={safeImages[selectedIndex]} index={selectedIndex} total={safeImages.length}
       onClose={() => setSelected(null)} onPrevious={selectedIndex > 0 ? () => select(selectedIndex - 1) : undefined} onNext={selectedIndex < safeImages.length - 1 ? () => select(selectedIndex + 1) : undefined} /> : null}
   </>;
 }
