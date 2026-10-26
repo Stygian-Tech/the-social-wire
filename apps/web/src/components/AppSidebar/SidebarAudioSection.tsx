@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { Headphones } from "lucide-react";
+import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
+import { Clapperboard, Images, Headphones } from "lucide-react";
 import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { useOptionalPodcastPlayer } from "@/components/Podcasts/PodcastPlayerProvider";
@@ -10,7 +11,7 @@ import { PodcastPlaybackWaveform } from "@/components/Podcasts/PodcastPlaybackWa
 import { PodcastSidebarMiniPlayer } from "@/components/Podcasts/PodcastSidebarMiniPlayer";
 import { useClientHydrated } from "@/hooks/useClientHydrated";
 
-export function SidebarAudioSection({ enabled, active, onSelect }: { enabled: boolean; active: boolean; onSelect: () => void }) {
+export function SidebarAudioSection({ enabled, active, onSelect, mediaEnabled = false, mediaActive, onSelectMedia }: { enabled: boolean; active: boolean; onSelect: () => void; mediaEnabled?: boolean; mediaActive?: ReaderNavigationFeed | null; onSelectMedia?: (feed: "shortVideos" | "photos") => void }) {
   const restoredPlayer = useOptionalPodcastPlayer();
   const hydrated = useClientHydrated();
   // Cached playback can restore before this sidebar hydrates. Keep its first
@@ -30,7 +31,7 @@ export function SidebarAudioSection({ enabled, active, onSelect }: { enabled: bo
     press.current = null;
   };
   useEffect(() => cancelHold, [enabled, player?.episode?.id]);
-  if (!enabled) return null;
+  if (!enabled && !mediaEnabled) return null;
   const tab = <SidebarMenuButton type="button" role="tab" aria-label="Podcasts, Beta" aria-describedby={player?.episode ? instructionsId : undefined} aria-selected={active} isActive={active}
     onClick={event => {
       if (suppressClick.current) { event.preventDefault(); suppressClick.current = false; return; }
@@ -59,9 +60,9 @@ export function SidebarAudioSection({ enabled, active, onSelect }: { enabled: bo
     <WireBetaBadge className="ml-auto" />
   </SidebarMenuButton>;
   return <SidebarGroup className="pb-1 pt-1">
-    <SidebarGroupLabel>Audio</SidebarGroupLabel>
-    <SidebarMenu role="tablist" aria-label="Audio">
-      <SidebarMenuItem ref={anchor}>
+    <SidebarGroupLabel>Media</SidebarGroupLabel>
+    <SidebarMenu role="tablist" aria-label="Media">
+      {enabled ? <SidebarMenuItem ref={anchor}>
         {player?.episode ? <Popover.Root triggerId={triggerId} open={open} onOpenChange={(nextOpen, details) => {
           // Selecting Podcasts navigates; only hover, focus, or a touch hold previews controls.
           if (details.reason === "trigger-press") { details.cancel(); return; }
@@ -71,7 +72,8 @@ export function SidebarAudioSection({ enabled, active, onSelect }: { enabled: bo
           <span id={instructionsId} className="sr-only">Hover, Focus, or Touch and Hold for Playback Controls</span>
           <PodcastSidebarMiniPlayer player={player} anchor={anchor} />
         </Popover.Root> : tab}
-      </SidebarMenuItem>
+      </SidebarMenuItem> : null}
+      {mediaEnabled ? ([{ feed: "shortVideos", label: "Short Videos", icon: Clapperboard }, { feed: "photos", label: "Photos", icon: Images }] as const).map(({ feed, label, icon: Icon }) => <SidebarMenuItem key={feed}><SidebarMenuButton type="button" role="tab" aria-selected={mediaActive === feed} isActive={mediaActive === feed} onClick={() => onSelectMedia?.(feed)} className="pointer-coarse:min-h-11"><Icon aria-hidden="true" /><span>{label}</span></SidebarMenuButton></SidebarMenuItem>) : null}
     </SidebarMenu>
   </SidebarGroup>;
 }

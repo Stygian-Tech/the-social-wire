@@ -7,14 +7,19 @@ import { useAuth } from "@/hooks/useAuth";
 import { getBlueskySocialPage, hydrateBlueskySocialPage, nextSocialCursor, type SocialFeed, type BlueskySocialPage } from "@/lib/blueskySocialClient";
 import { coalesceFeedFirstPage } from "@/lib/feedRefreshCoordinator";
 import { socialModerationScope, socialTimelineKey } from "@/lib/socialQueryScope";
+import { projectMediaPage, type MediaMode } from "@/lib/mediaFeedClient";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 
-export function useBlueskySocialTimeline(feed: SocialFeed, moderation: ModerationOpts | undefined) {
+export function useBlueskySocialTimeline(feed: SocialFeed, moderation: ModerationOpts | undefined, mediaMode?: MediaMode) {
   const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
   const client = useQueryClient();
-  const key = socialTimelineKey(session?.did ?? "", feed, moderation);
+  const timelineKey = (did: string, options: ModerationOpts | undefined) => {
+    const base = socialTimelineKey(did, feed, options);
+    return mediaMode ? [...base, "media", mediaMode] : base;
+  };
+  const key = timelineKey(session?.did ?? "", moderation);
   const moderationScope = socialModerationScope(moderation);
-  const routeScope = JSON.stringify([session?.did, feed.kind, feed.uri, oauthSessionReloadSeq]);
+  const routeScope = JSON.stringify([session?.did, feed.kind, feed.uri, mediaMode, oauthSessionReloadSeq]);
   // Occurrence identity also retires work across A -> B -> A navigation.
   const route = useMemo(() => ({ scope: routeScope }), [routeScope]);
   const [safety, setSafety] = useState({ scope: moderationScope, generation: 0 });
@@ -33,6 +38,7 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
   const query = useInfiniteQuery({
     queryKey: key,
     initialData: () => {
+      if (mediaMode) return undefined;
       const legacy = client.getQueryCache().findAll({ queryKey: key.slice(0, 6) }).find(candidate => {
         const labelers = candidate.queryKey[6];
         return !!candidate.state.data && candidate.queryKey.length === key.length && Array.isArray(labelers) && labelers.every(did => typeof did === "string")
@@ -47,7 +53,10 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
       const oauth = getOAuthSession();
       if (!oauth) throw new Error(SCOPE_RECOVERY_MESSAGE);
       if (oauth.did !== session?.did || !moderation) throw new Error("Your account changed. Please reload this feed.");
-      const fetchPage = () => getBlueskySocialPage({ session: oauth, feed, moderation, cursor: pageParam, signal, deferReplyHydration: true });
+      const fetchPage = async () => {
+        const page = await getBlueskySocialPage({ session: oauth, feed, moderation, cursor: pageParam, signal, deferReplyHydration: true });
+        return mediaMode ? projectMediaPage(oauth, page, mediaMode, signal) : page;
+      };
       return pageParam === undefined ? coalesceFeedFirstPage(client, requestOwner(route, oauth), [...key, moderationScope, safety.generation], fetchPage, signal) : fetchPage();
     },
     getNextPageParam: (lastPage, _pages, _lastParam, pageParams) => nextSocialCursor(lastPage, pageParams),
@@ -97,8 +106,11 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
       if (!oauth || !freshModeration || freshModeration.userDid !== oauth.did) throw new Error(SCOPE_RECOVERY_MESSAGE);
       owner.target = socialModerationScope(freshModeration);
       if (getOAuthSession() !== oauth || !ownsRefresh(owner)) return;
-      const freshKey = socialTimelineKey(oauth.did, feed, freshModeration);
-      const page = await coalesceFeedFirstPage(client, requestOwner(route, oauth), [...freshKey, owner.target, owner.generation + (owner.target === owner.source ? 0 : 1)], () => getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true }));
+      const freshKey = timelineKey(oauth.did, freshModeration);
+      const page = await coalesceFeedFirstPage(client, requestOwner(route, oauth), [...freshKey, owner.target, owner.generation + (owner.target === owner.source ? 0 : 1)], async () => {
+        const fresh = await getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true });
+        return mediaMode ? projectMediaPage(oauth, fresh, mediaMode) : fresh;
+      });
       // Allow the verified catalog target, but retire further settings changes.
       const catalogScope = socialModerationScope(client.getQueryData<{ moderation: ModerationOpts }>(["blueskySocial", oauth.did, "catalog", "cache-v1"])?.moderation);
       const targetIsCurrent = current.current.safety.scope === owner.target

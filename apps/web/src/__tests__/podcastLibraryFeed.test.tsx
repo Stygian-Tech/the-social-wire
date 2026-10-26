@@ -10,18 +10,22 @@ import type { PodcastEpisode } from "@/lib/podcasts/client";
 const episode = (id: string): PodcastEpisode => ({ id, showId: "show", title: id, publishedAt: "2026-10-05", audioUrl: "/audio", transcripts: [] });
 afterEach(cleanup);
 describe("Podcast library feed selection", () => {
-  it("places Podcasts in Audio even when article feeds and Topics are hidden", () => {
+  it("places Podcasts in Media even when article feeds and Topics are hidden", () => {
     const media = Object.getOwnPropertyDescriptor(window, "matchMedia");
     Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
     const calls: string[] = [];
-    const { container } = render(<SidebarProvider><SidebarAudioSection enabled active onSelect={() => calls.push("podcasts")} /><PublicationTabs visibleFeeds={new Set()} activeTab={null} onTabChange={() => {}} /><SidebarTopicsSection visibleFeeds={new Set()} /></SidebarProvider>);
-    expect(screen.getByText("Audio")).toBeTruthy();
+    const { container } = render(<SidebarProvider><SidebarAudioSection enabled active={false} onSelect={() => calls.push("podcasts")} mediaEnabled mediaActive="photos" onSelectMedia={feed => calls.push(feed)} /><PublicationTabs visibleFeeds={new Set()} activeTab={null} onTabChange={() => {}} /><SidebarTopicsSection visibleFeeds={new Set()} /></SidebarProvider>);
+    expect(screen.getByText("Media")).toBeTruthy();
     expect(screen.getByText("Beta")).toBeTruthy();
     expect(screen.queryByText("News")).toBeNull();
     expect(screen.queryByText("Topics")).toBeNull();
-    expect(container.querySelector('[aria-label="Audio"]')?.contains(screen.getByRole("tab", { name: "Podcasts, Beta" }))).toBe(true);
+    expect(container.querySelector('[aria-label="Media"]')?.contains(screen.getByRole("tab", { name: "Podcasts, Beta" }))).toBe(true);
     fireEvent.click(screen.getByRole("tab", { name: "Podcasts, Beta" }));
     expect(calls).toEqual(["podcasts"]);
+    expect(screen.getByRole("tab", { name: "Photos" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Short Videos" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Photos" }));
+    expect(calls).toEqual(["podcasts", "shortVideos", "photos"]);
     cleanup();
     if (media) Object.defineProperty(window, "matchMedia", media);
     else Reflect.deleteProperty(window, "matchMedia");
