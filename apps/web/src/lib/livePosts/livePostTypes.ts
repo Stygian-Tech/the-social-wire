@@ -1,10 +1,12 @@
+import type { PreparedLivePostMedia } from "./livePostMedia";
+
 export type LiveDestination = "blog" | "bluesky" | "both";
 export type LiveReference = { uri: string; cid: string };
-export type LiveUpdate = { id: string; createdAt: string; text: string; articleRef?: LiveReference; postRef?: LiveReference };
+export type LiveUpdate = { id: string; createdAt: string; text: string; articleRef?: LiveReference; postRef?: LiveReference; media?: PreparedLivePostMedia; attachmentsFingerprint?: string };
 export type LiveEvent = {
   $type: "app.thesocialwire.liveEvent";
   uri: string; cid: string; title: string; tags: string[]; destination: LiveDestination;
-  publicationUri?: string; sourceEvent?: LiveReference; startsAt?: string; endsAt?: string; articleRef?: LiveReference; articleUrl?: string;
+  publicationUri?: string; sourceEvent?: LiveReference; startsAt?: string; endsAt?: string; endedAt?: string; articleRef?: LiveReference; articleUrl?: string;
   threadRoot?: LiveReference; threadLast?: LiveReference;
   createdAt: string; updatedAt: string; entries: LiveUpdate[];
 };

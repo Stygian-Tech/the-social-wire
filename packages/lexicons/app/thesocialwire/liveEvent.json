@@ -84,6 +84,11 @@
           "endsAt": {
             "type": "string",
             "format": "datetime"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When the author closed the live post session, independent of its scheduled end."
           }
         }
       }
@@ -115,6 +120,158 @@
         "postRef": {
           "type": "ref",
           "ref": "com.atproto.repo.strongRef"
+        },
+        "attachmentsFingerprint": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "media": {
+          "type": "ref",
+          "ref": "#media"
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "properties": {
+        "images": {
+          "type": "array",
+          "maxLength": 4,
+          "items": {
+            "type": "ref",
+            "ref": "#image"
+          }
+        },
+        "video": {
+          "type": "ref",
+          "ref": "#video"
+        },
+        "gif": {
+          "type": "ref",
+          "ref": "#gif"
+        },
+        "external": {
+          "type": "ref",
+          "ref": "#external"
+        },
+        "pdsUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "blob",
+        "alt"
+      ],
+      "properties": {
+        "blob": {
+          "type": "blob",
+          "accept": [
+            "image/*"
+          ],
+          "maxSize": 2000000
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "aspectRatio": {
+          "type": "ref",
+          "ref": "#aspectRatio"
+        }
+      }
+    },
+    "video": {
+      "type": "object",
+      "required": [
+        "blob",
+        "alt"
+      ],
+      "properties": {
+        "blob": {
+          "type": "blob",
+          "accept": [
+            "video/mp4"
+          ],
+          "maxSize": 100000000
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 10000
+        }
+      }
+    },
+    "gif": {
+      "type": "object",
+      "required": [
+        "url",
+        "alt"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 10000
+        }
+      }
+    },
+    "external": {
+      "type": "object",
+      "required": [
+        "external"
+      ],
+      "properties": {
+        "external": {
+          "type": "object",
+          "required": [
+            "uri",
+            "title",
+            "description"
+          ],
+          "properties": {
+            "uri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 3000
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 10000
+            },
+            "thumb": {
+              "type": "blob",
+              "accept": [
+                "image/*"
+              ],
+              "maxSize": 1000000
+            }
+          }
+        }
+      }
+    },
+    "aspectRatio": {
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }

@@ -120,3 +120,64 @@ test("keeps RSVP discovery account-scoped while retaining owned events during di
   await waitFor(() => expect(result.current.rsvpError?.message).toBe("RSVP Discovery Failed"), { timeout: 2500 });
   expect(result.current.events).toEqual([event]);
 });
+
+
+test("ending reads the fresh record and replaces the cached session with its closed state", async () => {
+  const closed = { ...event, cid: "ended", endedAt: "2026-10-26T23:00:00Z" };
+  const end = spyOn(Client, "endLiveEvent").mockResolvedValue(closed);
+  restores.push(() => end.mockRestore());
+  const { result } = await mount();
+  // Keep this assertion about the mutation result independent of the mocked list refresh.
+  const refresh = spyOn(cache, "invalidateQueries").mockResolvedValue();
+  restores.push(() => refresh.mockRestore());
+  await act(async () => { expect(await result.current.endEvent(event.uri)).toEqual(closed); });
+  expect(end.mock.calls[0]![1]).toEqual(event);
+  expect(end.mock.calls[0]![2]?.assertCurrentAccount).toBeFunction();
+  expect(cache.getQueryData<LiveEvent[]>(["livePosts", viewer])).toEqual([closed]);
+  expect(result.current.pending).toBe(false);
+});
+
+test("ending shares the operation lock and keeps failed sessions editable", async () => {
+  const gate = deferred();
+  const end = spyOn(Client, "endLiveEvent").mockImplementation(async () => { await gate.promise; throw new Error("End Failed"); });
+  restores.push(() => end.mockRestore());
+  const { result } = await mount();
+  let outcome!: Promise<unknown>;
+  act(() => { outcome = result.current.endEvent(event.uri).catch(error => error); });
+  expect(result.current.pending).toBe(true);
+  await expect(result.current.publishUpdate(event.uri, "Still Live")).rejects.toThrow("Wait For The Current Live Post Operation.");
+  await act(async () => { gate.resolve(); await outcome; });
+  expect(result.current.error?.message).toBe("End Failed");
+  expect(result.current.events[0].endedAt).toBeUndefined();
+  expect(result.current.pending).toBe(false);
+});
+
+test("ending cannot write after the account changes", async () => {
+  const gate = deferred();
+  const end = spyOn(Client, "endLiveEvent").mockImplementation(async (_session, _event, options) => { await gate.promise; options?.assertCurrentAccount?.(); return event; });
+  restores.push(() => end.mockRestore());
+  const { result, rerender } = await mount();
+  let outcome!: Promise<unknown>;
+  act(() => { outcome = result.current.endEvent(event.uri).catch(error => error); });
+  await waitFor(() => expect(end).toHaveBeenCalledTimes(1));
+  viewer = oauth = "did:plc:bob";
+  rerender();
+  await act(async () => { gate.resolve(); await outcome; });
+  expect((await outcome as Error).message).toContain("Sign In Again");
+  expect(result.current.error).toBeNull();
+});
+
+
+test("media retry identity includes bytes and alt text while preserving unchanged failed attempts", async () => {
+  const publish = spyOn(Client, "publishLiveUpdate").mockRejectedValue(new Error("Connection Lost"));
+  restores.push(() => publish.mockRestore());
+  const { result } = await mount();
+  const image = { file: new Blob(["first"], { type: "image/png" }), alt: "Launch" };
+  for (const attachments of [{ images: [image] }, { images: [{ ...image }] }, { images: [{ ...image, alt: "New Description" }] }, { images: [{ ...image, file: new Blob(["other"], { type: "image/png" }) }] }]) {
+    await act(async () => { await expect(result.current.publishUpdate(event.uri, "Photo", attachments)).rejects.toThrow("Connection Lost"); });
+  }
+  expect(publish.mock.calls[0]![3].operationId).toBe(publish.mock.calls[1]![3].operationId);
+  expect(publish.mock.calls[2]![3].operationId).not.toBe(publish.mock.calls[1]![3].operationId);
+  expect(publish.mock.calls[3]![3].operationId).not.toBe(publish.mock.calls[0]![3].operationId);
+  expect(publish.mock.calls[0]![4]?.images?.[0]).toEqual(image);
+});
