@@ -1,7 +1,7 @@
 "use client";
 
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
-import { Headphones, Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MessagesSquare, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
+import { Images, Clapperboard, Headphones, Trophy, Archive, Bookmark, ChartNoAxesCombined, List, MessagesSquare, MoreHorizontal, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -17,6 +17,8 @@ import { PodcastPlaybackWaveform } from "@/components/Podcasts/PodcastPlaybackWa
 
 const FEED_ITEMS = [
   { feed: "social", label: "Social", icon: MessagesSquare },
+  { feed: "shortVideos", label: "Short Videos", icon: Clapperboard },
+  { feed: "photos", label: "Photos", icon: Images },
   { feed: "podcasts", label: "Podcasts", icon: Headphones },
   { feed: "wire", label: "The Wire", icon: Rss },
   { feed: "circle", label: "Your Circle", icon: Network },

@@ -11796,6 +11796,10 @@
           "sha256": "990aa6a84578426c8ec4d49484dbee5a65ff6b20bcb862f35b31b35fd50dd359"
         },
         {
+          "path": "packages/spec/__tests__/media-contract.test.ts",
+          "sha256": "14b8c99e9c92f1fb7422fa0b4559473783682a5cd16f14f5a934d4d1bf16c27a"
+        },
+        {
           "path": "packages/spec/__tests__/migration-duplicate-bodies.test.ts",
           "sha256": "9a29ff963ef23e70f0b646cf46f86440b3aaedabeb24befbe279d78a86e96ea3"
         },
@@ -11925,11 +11929,11 @@
         },
         {
           "path": "packages/spec/endpoint-manifest.json",
-          "sha256": "70fa8c6eb53c159a3c0432a5d22ce0037e37c1aa277765292ae838affa65813c"
+          "sha256": "7495230ed82a584e4d560c9da33f8e1ce772182b8a2795ff7d37abb19919768d"
         },
         {
           "path": "packages/spec/openapi.yaml",
-          "sha256": "7496e4b55131a1aeb1268221bb2e04dac54097e55bf446479e9c3b477a1ddb7e"
+          "sha256": "e26edee866357379d322cf1d7ab9ccdd4f54fafa974a37f94d48a662da98ca90"
         },
         {
           "path": "packages/spec/package.json",

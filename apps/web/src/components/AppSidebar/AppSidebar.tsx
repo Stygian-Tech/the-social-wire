@@ -473,9 +473,10 @@ export function AppSidebar({
   if (topicNavigationIsVisible(displayPreferences.showFinance, financeCatalog.data?.enabled)) visible.add("finance");
 
   if (displayPreferences.showPodcasts && podcastsEnabled()) visible.add("podcasts");
-  if (displayPreferences.showSocial) visible.add("social");
+  if (displayPreferences.showSocial) { visible.add("social"); visible.add("shortVideos"); visible.add("photos"); }
 
   const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
+    if (feed === "shortVideos" || feed === "photos") { setOpenMobile(false); router.push(feed === "photos" ? "/media/photos" : "/media/short-videos"); return; }
     if (feed === "social") { setOpenMobile(false); router.push("/social"); return; }
     if (feed === "podcasts") { setOpenMobile(false); router.push("/podcasts"); return; }
     setSelectedFolderUri(null);
@@ -520,7 +521,7 @@ export function AppSidebar({
 
   const publicationsRail = showPublicationsRail && (selectedListUri || (
         currentFeed !== "wire" &&
-        currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "social" && currentFeed !== "podcasts")) ? (
+        currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "social" && currentFeed !== "podcasts" && currentFeed !== "shortVideos" && currentFeed !== "photos")) ? (
         <FloatingChromeSurface className={`${floatingSidebarLayoutClassName} mx-2 flex flex-col self-stretch lg:self-start gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:mx-0 lg:bottom-4 lg:right-4 lg:top-[calc(var(--environment-banner-height,0px)+1rem)] lg:z-30 lg:w-60 lg:h-auto lg:max-h-[calc(100svh-var(--environment-banner-height,0px)-2rem)] lg:overflow-y-auto lg:overscroll-contain`}>
           <div className="hidden shrink-0 items-center px-2 pb-2 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">
@@ -528,7 +529,7 @@ export function AppSidebar({
             </p>
           </div>
           <SidebarGroup className="p-0">
-            {!selectedListUri && currentFeed && currentFeed !== "wire" && currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "social" && currentFeed !== "podcasts" ? (
+            {!selectedListUri && currentFeed && currentFeed !== "wire" && currentFeed !== "circle" && currentFeed !== "finance" && currentFeed !== "sports" && currentFeed !== "social" && currentFeed !== "podcasts" && currentFeed !== "shortVideos" && currentFeed !== "photos" ? (
               <AllFeedSidebarButton
                 feed={currentFeed}
                 isActive={allFeedSelected}
@@ -693,7 +694,7 @@ export function AppSidebar({
             onNavigate={href => { setOpenMobile(false); router.push(href); }}
             onHome={() => { setOpenMobile(false); router.push("/social"); }}
           /> : null}
-          <SidebarAudioSection enabled={visible.has("podcasts")} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} />
+          <SidebarAudioSection enabled={visible.has("podcasts")} active={currentFeed === "podcasts"} onSelect={() => selectTopLevelFeed("podcasts")} mediaEnabled={visible.has("photos")} mediaActive={currentFeed} onSelectMedia={selectTopLevelFeed} />
           <PublicationTabs
             visibleFeeds={visible}
             activeTab={

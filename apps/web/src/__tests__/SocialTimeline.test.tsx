@@ -525,3 +525,54 @@ describe("Social timeline page", () => {
     expect(posts).not.toHaveBeenCalled();
   });
 });
+
+describe("live Media timeline", () => {
+  it("keeps Media modes isolated from the Social cache and preserves empty-page continuation", async () => {
+    serveCatalog();
+    const photo = item("photo", "Live media caption");
+    const fetch = servePage({ feed: [photo], cursor: "next" });
+    const media = await import("@/lib/mediaFeedClient");
+    const projection = spyOn(media, "projectMediaPage").mockImplementation(async (_session, page, mode) => ({ ...page, feed: mode === "photos" ? page.feed : [] }));
+    restores.push(() => projection.mockRestore());
+    const { default: ShortVideosPage } = await import("@/app/media/short-videos/page");
+    const { default: PhotosPage } = await import("@/app/media/photos/page");
+    const view = render(<QueryClientProvider client={queryClient}><SidebarProvider><ShortVideosPage /></SidebarProvider></QueryClientProvider>);
+    await screen.findByText("No Short Videos on These Pages");
+    expect(screen.getByRole("button", { name: "Load More" })).toBeTruthy();
+    view.rerender(<QueryClientProvider client={queryClient}><SidebarProvider><PhotosPage /></SidebarProvider></QueryClientProvider>);
+    await screen.findByText("Live media caption");
+    expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(queryClient.getQueryData(["blueskySocial", did, "timeline", "cache-v1", "following", "", []])).toBeUndefined();
+    expect(queryClient.getQueryData(["blueskySocial", did, "timeline", "cache-v1", "following", "", [], "media", "short-videos"])).toBeTruthy();
+  });
+  it("withholds blocked and hidden media through the existing moderation path", async () => {
+    const blocked = item("blocked-media", "Blocked media caption");
+    blocked.post.author.viewer = { blocking: "at://did:plc:viewer/app.bsky.graph.block/x" };
+    const hidden = item("hidden-media", "Hidden media caption");
+    serveCatalog({ feeds: [], moderation: { ...safety, prefs: { ...safety.prefs, hiddenPosts: [hidden.post.uri] } } });
+    servePage({ feed: [blocked, hidden] });
+    const media = await import("@/lib/mediaFeedClient");
+    const projection = spyOn(media, "projectMediaPage").mockImplementation(async (_session, page) => page);
+    restores.push(() => projection.mockRestore());
+    const { MediaTimeline } = await import("@/components/Media/MediaTimeline");
+    render(<QueryClientProvider client={queryClient}><SidebarProvider><MediaTimeline mode="photos" /></SidebarProvider></QueryClientProvider>);
+    await screen.findByText("No Photos on These Pages");
+    expect(screen.queryByText("Blocked media caption")).toBeNull();
+    expect(screen.queryByText("Hidden media caption")).toBeNull();
+  });
+});
+
+it("gates Media routes until account restoration and redirects signed-out viewers", async () => {
+  const { default: MediaLayout } = await import("@/app/media/layout");
+  const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: null, isLoading: true } as unknown as ReturnType<typeof Auth.useAuth>);
+  const replace = mock(() => {});
+  const router = spyOn(Navigation, "useRouter").mockReturnValue({ replace } as unknown as ReturnType<typeof Navigation.useRouter>);
+  restores.push(() => auth.mockRestore(), () => router.mockRestore());
+  const view = render(<MediaLayout><p>Private Media</p></MediaLayout>);
+  expect(screen.queryByText("Private Media")).toBeNull();
+  expect(replace).not.toHaveBeenCalled();
+  auth.mockReturnValue({ session: null, isLoading: false } as unknown as ReturnType<typeof Auth.useAuth>);
+  view.rerender(<MediaLayout><p>Private Media</p></MediaLayout>);
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
+  expect(screen.queryByText("Private Media")).toBeNull();
+});

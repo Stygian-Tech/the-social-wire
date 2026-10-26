@@ -228,3 +228,14 @@ describe("MobileFeedNavigation", () => {
   });
 
 });
+
+it("keeps Short Videos and Photos reachable in mobile More alongside Podcasts", () => {
+  const onSelect = mock(() => undefined);
+  render(<MobileFeedNavigation currentFeed="photos" visibleFeeds={new Set(["photos", "shortVideos", "podcasts", "wire", "circle", "subscribed", "following"])} onSelect={onSelect} />);
+  expect(screen.getByRole("button", { name: "More Feeds" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.click(screen.getByRole("button", { name: "More Feeds" }));
+  expect(screen.getByRole("menuitem", { name: "Podcasts, Beta" })).toBeTruthy();
+  expect(screen.getByRole("menuitem", { name: "Photos" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Short Videos" }));
+  expect(onSelect).toHaveBeenCalledWith("shortVideos");
+});

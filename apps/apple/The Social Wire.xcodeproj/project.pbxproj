@@ -7,6 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4E79F45079F12646E2A6EFC9 /* MediaProjectionResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C47964A94B4D233C0BCC37E /* MediaProjectionResponse.swift */; };
+		C9490C1C96CB1EB8B2A789B4 /* MediaProjectionResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C47964A94B4D233C0BCC37E /* MediaProjectionResponse.swift */; };
+
+		4310C78B49C356487DCF89C2 /* MediaProjectionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CFFB9D5DA63BA1B1B3A31CD /* MediaProjectionRequest.swift */; };
+		0782908EFC8892AA445AA5FE /* MediaProjectionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CFFB9D5DA63BA1B1B3A31CD /* MediaProjectionRequest.swift */; };
+
+		6D9100E7E62F902918683F72 /* MediaProjectionCandidate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA85D3518E4F119B8E0DC733 /* MediaProjectionCandidate.swift */; };
+		EC3EED052E4C3B12D415CFCF /* MediaProjectionCandidate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA85D3518E4F119B8E0DC733 /* MediaProjectionCandidate.swift */; };
+
+		6966A48D769D50BD7EEF81C3 /* MediaProjectionMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F8379F86B8347BFD78EDB9 /* MediaProjectionMode.swift */; };
+		C023F6652133EBE321431480 /* MediaProjectionMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F8379F86B8347BFD78EDB9 /* MediaProjectionMode.swift */; };
+
 		C94B6C749389CBF58005474E /* StandardReaderList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2620A6EED3C084723947C142 /* StandardReaderList.swift */; };
 		396743768B819655FBFCFDB0 /* StandardReaderList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2620A6EED3C084723947C142 /* StandardReaderList.swift */; };
 		CEAB4C191DAE26F0058C1BF5 /* StandardReaderListContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732181E991BB4F2BFC844814 /* StandardReaderListContract.swift */; };
@@ -958,6 +970,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1C47964A94B4D233C0BCC37E /* MediaProjectionResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaProjectionResponse.swift; sourceTree = "<group>"; };
+		5CFFB9D5DA63BA1B1B3A31CD /* MediaProjectionRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaProjectionRequest.swift; sourceTree = "<group>"; };
+		EA85D3518E4F119B8E0DC733 /* MediaProjectionCandidate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaProjectionCandidate.swift; sourceTree = "<group>"; };
+		C4F8379F86B8347BFD78EDB9 /* MediaProjectionMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaProjectionMode.swift; sourceTree = "<group>"; };
 		2620A6EED3C084723947C142 /* StandardReaderList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderList.swift; sourceTree = "<group>"; };
 		732181E991BB4F2BFC844814 /* StandardReaderListContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListContract.swift; sourceTree = "<group>"; };
 		783A2C04F82FC4F66A28BD07 /* StandardReaderListPublication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardReaderListPublication.swift; sourceTree = "<group>"; };
@@ -1449,6 +1465,17 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		D1ED6DCFAB0B6BF9C591CF7B /* Media */ = {
+			isa = PBXGroup;
+			children = (
+				C4F8379F86B8347BFD78EDB9 /* MediaProjectionMode.swift */,
+				EA85D3518E4F119B8E0DC733 /* MediaProjectionCandidate.swift */,
+				5CFFB9D5DA63BA1B1B3A31CD /* MediaProjectionRequest.swift */,
+				1C47964A94B4D233C0BCC37E /* MediaProjectionResponse.swift */,
+			);
+			path = Media;
+			sourceTree = "<group>";
+		};
 		AF4A0B1FE88B385AACB3036B /* Lists */ = {
 			isa = PBXGroup;
 			children = (
@@ -1797,6 +1824,7 @@
 		71F75ED212CC8522AA10A74F /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				D1ED6DCFAB0B6BF9C591CF7B /* Media */,
 				D7993C676FEF4FC6146EB069 /* Social */,
 				AF4A0B1FE88B385AACB3036B /* Lists */,
 				60F94E68F6A8F8D90DF15CD3 /* JSONValue.swift */,
@@ -2550,6 +2578,10 @@
 				54EC3584F208420A1A432A1A /* SocialWorkspaceModel.swift in Sources */,
 				B39CD1896F58C76E48C3CDEB /* SocialWorkspaceView.swift in Sources */,
 				942AB2415C04485B4DB16B61 /* StandardSiteSocialEmbed.swift in Sources */,
+				4E79F45079F12646E2A6EFC9 /* MediaProjectionResponse.swift in Sources */,
+				4310C78B49C356487DCF89C2 /* MediaProjectionRequest.swift in Sources */,
+				6D9100E7E62F902918683F72 /* MediaProjectionCandidate.swift in Sources */,
+				6966A48D769D50BD7EEF81C3 /* MediaProjectionMode.swift in Sources */,
 				FA9319038118203F561067AF /* StandardReaderListsWorkspace.swift in Sources */,
 				6FF5F1D3EE44113699ECCF2C /* StandardReaderListsManagementView.swift in Sources */,
 				43A249A6BB4B95E3484067C6 /* StandardReaderListPDSService.swift in Sources */,
@@ -3027,6 +3059,10 @@
 				7B52DAA63DF607C17669C686 /* SocialWorkspaceModel.swift in Sources */,
 				764E07CBF6BEEEBCE0B1CE94 /* SocialWorkspaceView.swift in Sources */,
 				23B12F4DF4EBB7C49F1BD8AB /* StandardSiteSocialEmbed.swift in Sources */,
+				C9490C1C96CB1EB8B2A789B4 /* MediaProjectionResponse.swift in Sources */,
+				0782908EFC8892AA445AA5FE /* MediaProjectionRequest.swift in Sources */,
+				EC3EED052E4C3B12D415CFCF /* MediaProjectionCandidate.swift in Sources */,
+				C023F6652133EBE321431480 /* MediaProjectionMode.swift in Sources */,
 				60F9A5C89D682FC619EAA251 /* StandardReaderListsWorkspace.swift in Sources */,
 				35F37D7F0C491CE9CEFECF14 /* StandardReaderListsManagementView.swift in Sources */,
 				7AE7D89C022479B69FE09AD6 /* StandardReaderListPDSService.swift in Sources */,
