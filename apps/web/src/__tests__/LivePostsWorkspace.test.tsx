@@ -25,7 +25,7 @@ beforeEach(() => {
   }
   const auth = spyOn(Auth, "useAuth").mockReturnValue({ session: { did: "did:plc:alice" } } as ReturnType<typeof Auth.useAuth>);
   restores.push(() => auth.mockRestore());
-  state = { events: [event], rsvpEvents: [], rsvpLoading: false, rsvpError: null, loading: false, error: null, pending: false, publications: [], publicationsLoading: false, publicationsError: null, refresh: mock(async () => {}), createEvent: mock(async () => event), publishUpdate: mock(async () => event), updateTimestampSettings: mock(async () => event) };
+  state = { events: [event], rsvpEvents: [], rsvpLoading: false, rsvpError: null, loading: false, error: null, pending: false, publications: [], publicationsLoading: false, publicationsError: null, refresh: mock(async () => {}), createEvent: mock(async () => event), publishUpdate: mock(async () => event), updateTimestampSettings: mock(async () => event), endEvent: mock(async () => ({ ...event, endedAt: new Date().toISOString() })) };
   const live = spyOn(Live, "useLivePosts").mockImplementation(() => state);
   restores.push(() => live.mockRestore());
 });
@@ -42,7 +42,7 @@ test("publishes explicitly, retains failed update for retry, and clears only aft
   fireEvent.click(screen.getByRole("button", { name: "Publish Update" }));
   await screen.findByRole("button", { name: "Retry Publish" });
   expect((input as HTMLTextAreaElement).value).toBe("New Update");
-  expect(publish).toHaveBeenCalledWith(event.uri, "New Update");
+  expect(publish).toHaveBeenCalledWith(event.uri, "New Update", undefined);
   state.publishUpdate = mock(async () => event);
   fireEvent.click(screen.getByRole("button", { name: "Retry Publish" }));
   await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(""));
@@ -166,4 +166,70 @@ test("existing events expose editable format/timezone with preview and explicit 
   fireEvent.click(screen.getByRole("button", { name: "Save Timestamp Settings", hidden: true }));
   await waitFor(() => expect(state.updateTimestampSettings).toHaveBeenCalledWith(event, { timestampFormat: "time-12", timeZone: "America/Chicago" }));
   expect(state.publishUpdate).not.toHaveBeenCalled();
+});
+
+test("confirms ending a session, warns about unpublished drafts, and preserves published history", async () => {
+  const ended = { ...event, endedAt: "2026-10-26T23:00:00Z" };
+  state.endEvent = mock(async () => { state.events = [ended]; return ended; });
+  await mount();
+  fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Unpublished Draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "End Live Post" }));
+  expect(state.endEvent).not.toHaveBeenCalled();
+  expect(screen.getByText(/You have an unpublished draft/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(state.endEvent).not.toHaveBeenCalled();
+  expect((screen.getByRole("textbox", { name: "Update" }) as HTMLTextAreaElement).value).toBe("Unpublished Draft");
+  fireEvent.click(screen.getByRole("button", { name: "End Live Post" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm End Live Post" }));
+  await waitFor(() => expect(screen.getByText(/Live Post Ended/)).toBeTruthy());
+  expect(state.endEvent).toHaveBeenCalledWith(event.uri);
+  expect(screen.queryByRole("form", { name: "Live Update Composer" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "End Live Post" })).toBeNull();
+  expect(screen.getByText("Published Earlier")).toBeTruthy();
+  expect(screen.getByText("Past").closest("details")?.textContent).toContain("Launch");
+});
+
+test("failed session ending retains the draft and allows an explicit retry", async () => {
+  const end = mock(async () => { throw new Error("Connection Lost"); });
+  state.endEvent = end;
+  await mount();
+  fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Keep Me" } });
+  fireEvent.click(screen.getByRole("button", { name: "End Live Post" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm End Live Post" }));
+  await screen.findByText("Connection Lost");
+  expect((screen.getByLabelText("Update") as HTMLTextAreaElement).value).toBe("Keep Me");
+  expect(screen.getByRole("button", { name: "Confirm End Live Post" })).toBeTruthy();
+  expect(end).toHaveBeenCalledTimes(1);
+});
+
+test("a persisted ended event is read-only after reopening", async () => {
+  state.events = [{ ...event, endedAt: "2026-10-26T23:00:00Z" }];
+  await mount();
+  expect(screen.queryByRole("textbox", { name: "Update" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Publish Update" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "End Live Post" })).toBeNull();
+  expect(screen.getByRole("link", { name: "View Bluesky Update" })).toBeTruthy();
+});
+
+
+test("passes GIF attachments to publishing, retains failed media drafts, and renders saved media", async () => {
+  const gif = { url: "https://media.test/countdown.gif", alt: "Countdown" };
+  const publish = mock(async () => { throw new Error("Offline"); });
+  state.publishUpdate = publish;
+  await mount();
+  fireEvent.click(screen.getByRole("button", { name: "Add GIF" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "GIF URL" }), { target: { value: gif.url } });
+  fireEvent.change(screen.getByRole("textbox", { name: "GIF Alt Text" }), { target: { value: gif.alt } });
+  fireEvent.click(screen.getByRole("button", { name: "Publish Update" }));
+  await screen.findByRole("button", { name: "Retry Publish" });
+  expect(publish).toHaveBeenCalledWith(event.uri, "", { gif });
+  expect((screen.getByRole("textbox", { name: "GIF URL" }) as HTMLInputElement).value).toBe(gif.url);
+  state.publishUpdate = mock(async () => {
+    const updated = { ...event, entries: [...event.entries, { id: "gif", text: "", createdAt: "2026-10-26T23:00:00Z", media: { gif } }] };
+    state.events = [updated];
+    return updated;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Retry Publish" }));
+  await waitFor(() => expect(screen.queryByRole("textbox", { name: "GIF URL" })).toBeNull());
+  expect(screen.getByRole("img", { name: "Countdown" }).getAttribute("src")).toBe(gif.url);
 });

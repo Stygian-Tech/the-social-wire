@@ -22,7 +22,8 @@ export function parseAtmoEvent(record: RecordResult): AtmoEvent {
   const { did, rkey } = eventUri(record.uri);
   return { uri: record.uri, cid: record.cid, title: value.name.trim(), ...(typeof value.description === "string" ? { description: value.description } : {}), ...(typeof value.startsAt === "string" ? { startsAt: value.startsAt } : {}), ...(typeof value.endsAt === "string" ? { endsAt: value.endsAt } : {}), ...(typeof value.status === "string" ? { status: value.status } : {}), url: `https://atmo.rsvp/p/${encodeURIComponent(did)}/e/${encodeURIComponent(rkey)}` };
 }
-export function liveEventPhase(event: { startsAt?: string; endsAt?: string }, now = Date.now()): "current" | "upcoming" | "past" {
+export function liveEventPhase(event: { startsAt?: string; endsAt?: string; endedAt?: string }, now = Date.now()): "current" | "upcoming" | "past" {
+  if (event.endedAt) return "past";
   const start = event.startsAt ? Date.parse(event.startsAt) : undefined, end = event.endsAt ? Date.parse(event.endsAt) : undefined;
   if (end !== undefined && Number.isFinite(end) && end <= now) return "past";
   if (start !== undefined && Number.isFinite(start) && start > now) return "upcoming";

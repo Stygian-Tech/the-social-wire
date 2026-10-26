@@ -11099,7 +11099,7 @@
         },
         {
           "path": "packages/lexicons/__tests__/liveEventLexicon.test.ts",
-          "sha256": "0c9dc9257a7afd2223a38c6fdabb78c6f067edd00a04cc714ad3a68f5f3cca0c"
+          "sha256": "4481fdb44bdb260edbb6d67c1b04f7c6c4f90f0ba08fc77e2e2a55f0f782ee8f"
         },
         {
           "path": "packages/lexicons/__tests__/podcastLexicons.test.ts",
@@ -11295,7 +11295,7 @@
         },
         {
           "path": "packages/lexicons/app/thesocialwire/liveEvent.json",
-          "sha256": "a8ad7a2a2729c789e490abb5fe50a90133ea9cf2752946add2ac948b4136e9a6"
+          "sha256": "3e9e5296441ced572696309e615b5ead6def49777a812910df77681e6d222685"
         },
         {
           "path": "packages/lexicons/app/thesocialwire/operations/acknowledgeAlert.json",

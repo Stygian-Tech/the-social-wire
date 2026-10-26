@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Lexicons } from "@atproto/lexicon";
+import { jsonStringToLex, Lexicons } from "@atproto/lexicon";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 const schema = JSON.parse(readFileSync(join(import.meta.dir, "../app/thesocialwire/liveEvent.json"), "utf8"));
@@ -15,4 +15,19 @@ test("live events validate actual update refs and bound public record content", 
 test("optional timestamp settings preserve legacy validity and constrain format/timezone storage", () => {
   expect(() => lexicons.assertValidRecord(schema.id, { ...event, timestampFormat: "time-24", timeZone: "America/Chicago" })).not.toThrow();
   for (const invalid of [{ timestampFormat: "raw" }, { timeZone: 5 }, { timeZone: "a".repeat(129) }]) expect(() => lexicons.assertValidRecord(schema.id, { ...event, ...invalid })).toThrow();
+});
+test("actual session closure is optional and distinct from the scheduled end", () => {
+  expect(() => lexicons.assertValidRecord(schema.id, { ...event, endsAt: "2026-10-11T13:00:00Z", endedAt: "2026-10-11T12:30:00Z" })).not.toThrow();
+  expect(() => lexicons.assertValidRecord(schema.id, { ...event, endedAt: "yesterday" })).toThrow();
+  expect(schema.defs.main.record.properties.endedAt).toMatchObject({ type: "string", format: "datetime" });
+});
+test("live update media schema validates blobs and bounds attachments", () => {
+  const image = { alt: "Event photo", blob: { $type: "blob", ref: { $link: "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku" }, mimeType: "image/png", size: 100 } };
+  const record = (media: unknown) => jsonStringToLex(JSON.stringify({ ...event, entries: [{ ...event.entries[0], attachmentsFingerprint: "a".repeat(64), media }] }));
+  expect(() => lexicons.assertValidRecord(schema.id, record({ images: [image] }))).not.toThrow();
+  expect(() => lexicons.assertValidRecord(schema.id, record({ gif: { url: "https://example.com/live.gif", alt: "Event animation" } }))).not.toThrow();
+  expect(() => lexicons.assertValidRecord(schema.id, record({ images: Array(5).fill(image) }))).toThrow();
+  expect(() => lexicons.assertValidRecord(schema.id, record({ images: [{ alt: "Missing blob" }] }))).toThrow();
+  expect(schema.defs.image.properties.blob.maxSize).toBe(2_000_000);
+  expect(schema.defs.video.properties.blob.accept).toEqual(["video/mp4"]);
 });
