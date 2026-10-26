@@ -7,13 +7,14 @@ import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
 import { articleDraftRecordKey, articlePublicationHost, listArticlePublications } from "@/lib/articles/articlePublishingClient";
 import type { ArticleRecord } from "@/lib/articles/articlePublishingTypes";
+import { formatLiveTimestamp, liveTimestampSettings, validateLiveTimestampSettings, type LiveTimestampSettings } from "./livePostTimestamp";
 import { appendLiveArticleContent, livePostText } from "./livePostContent";
 import type { CreateLiveEventInput, LiveEvent, LiveReference } from "./livePostTypes";
 export type { LiveEventInput, CreateLiveEventInput, LiveDestination, LiveEvent, LiveUpdate, LiveReference } from "./livePostTypes";
 export const LIVE_EVENT_COLLECTION = "app.thesocialwire.liveEvent";
 const DOCUMENT = "site.standard.document", POST = "app.bsky.feed.post";
 type Write = { $type: "com.atproto.repo.applyWrites#create" | "com.atproto.repo.applyWrites#update"; collection: string; rkey: string; value: ArticleRecord };
-export type LiveUpdateOperation = { operationId: string; createdAt: string; signal?: AbortSignal; assertCurrentAccount?: () => void };
+export type LiveUpdateOperation = { operationId: string; createdAt: string; timestampSettings?: LiveTimestampSettings; signal?: AbortSignal; assertCurrentAccount?: () => void };
 function recordKey(uri: string, did: string, collection: string): string {
   const prefix = `at://${did}/${collection}/`, result = uri.slice(prefix.length);
   if (!uri.startsWith(prefix) || !/^[a-zA-Z0-9._~:-]+$/.test(result)) throw new Error("This live event does not belong to the signed-in account.");
@@ -31,6 +32,7 @@ function parseEvent(value: unknown, uri: string, cid: string, did: string): Live
   const r = value as Partial<LiveEvent>;
   if (!r || r.$type !== LIVE_EVENT_COLLECTION || typeof r.title !== "string" || !r.title.trim() || utf8Length(r.title) > 500 || !["blog", "bluesky", "both"].includes(r.destination ?? "") || !Array.isArray(r.tags) || r.tags.length > 20 || !r.tags.every(t => typeof t === "string" && !!t.trim() && utf8Length(t) <= 128) || !Array.isArray(r.entries) || r.entries.length > 500 || !validTime(r.createdAt) || !validTime(r.updatedAt)) throw new Error("Invalid live event record.");
   validateEventSchedule(r);
+  validateLiveTimestampSettings(r);
   const ids = new Set<string>();
   for (const entry of r.entries) {
     if (!entry.id || ids.has(entry.id) || !validTime(entry.createdAt) || typeof entry.text !== "string" || !entry.text.trim() || utf8Length(entry.text) > 30_000) throw new Error("Invalid live event update.");
@@ -69,6 +71,7 @@ export async function listEvents(session: OAuthSession, signal?: AbortSignal): P
 }
 export async function createEvent(session: OAuthSession, input: CreateLiveEventInput, operation?: LiveUpdateOperation): Promise<LiveEvent> {
   validateEventSchedule(input);
+  const settings = liveTimestampSettings(input);
   const signal = operation?.signal;
   if (operation && (!/^[a-zA-Z0-9._~-]{1,100}$/.test(operation.operationId) || !validTime(operation.createdAt))) throw new Error("Invalid live event operation.");
   operation?.assertCurrentAccount?.();
@@ -77,10 +80,10 @@ export async function createEvent(session: OAuthSession, input: CreateLiveEventI
   if (tags.length > 20 || tags.some(t => utf8Length(t) > 128 || /[\r\n]/.test(t))) throw new Error("Use at most 20 tags of 128 characters each.");
   if (input.destination !== "bluesky" && !(await listArticlePublications(session, signal)).some(p => p.uri === input.publicationUri)) throw new Error("Select one of your publications.");
   const rkey = operation ? await articleDraftRecordKey(operation.operationId, operation.createdAt) : TID.nextStr(), now = operation?.createdAt ?? new Date().toISOString();
-  const event: LiveEvent = { $type: LIVE_EVENT_COLLECTION, uri: `at://${session.did}/${LIVE_EVENT_COLLECTION}/${rkey}`, cid: "", title: input.title.trim(), tags, destination: input.destination, ...(input.destination !== "bluesky" ? { publicationUri: input.publicationUri } : {}), ...(input.sourceEvent ? { sourceEvent: input.sourceEvent } : {}), ...(input.startsAt ? { startsAt: input.startsAt } : {}), ...(input.endsAt ? { endsAt: input.endsAt } : {}), entries: [], createdAt: now, updatedAt: now };
+  const event: LiveEvent = { $type: LIVE_EVENT_COLLECTION, uri: `at://${session.did}/${LIVE_EVENT_COLLECTION}/${rkey}`, cid: "", title: input.title.trim(), tags, destination: input.destination, ...(input.destination !== "bluesky" ? { publicationUri: input.publicationUri } : {}), ...(input.sourceEvent ? { sourceEvent: input.sourceEvent } : {}), ...(input.startsAt ? { startsAt: input.startsAt } : {}), ...(input.endsAt ? { endsAt: input.endsAt } : {}), ...settings, entries: [], createdAt: now, updatedAt: now };
   if (operation) {
     operation.assertCurrentAccount?.();
-    try { const existing = await getEvent(session, event.uri, signal); if (existing.title !== event.title || existing.destination !== event.destination || existing.publicationUri !== event.publicationUri || JSON.stringify(existing.tags) !== JSON.stringify(event.tags) || JSON.stringify(existing.sourceEvent) !== JSON.stringify(event.sourceEvent) || existing.startsAt !== event.startsAt || existing.endsAt !== event.endsAt) throw new Error("This event identifier was already used for different settings."); return existing; } catch (error) { if (!(error && typeof error === "object" && "error" in error && error.error === "RecordNotFound")) throw error; }
+    try { const existing = await getEvent(session, event.uri, signal); if (existing.title !== event.title || existing.destination !== event.destination || existing.publicationUri !== event.publicationUri || JSON.stringify(existing.tags) !== JSON.stringify(event.tags) || JSON.stringify(existing.sourceEvent) !== JSON.stringify(event.sourceEvent) || existing.startsAt !== event.startsAt || existing.endsAt !== event.endsAt || existing.timestampFormat !== event.timestampFormat || existing.timeZone !== event.timeZone) throw new Error("This event identifier was already used for different settings."); return existing; } catch (error) { if (!(error && typeof error === "object" && "error" in error && error.error === "RecordNotFound")) throw error; }
   }
   return commitEvent(session, event, [{ $type: "com.atproto.repo.applyWrites#create", collection: LIVE_EVENT_COLLECTION, rkey, value: eventRecord(event) }], undefined, signal, operation?.assertCurrentAccount);
 }
@@ -110,7 +113,9 @@ export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent,
   if (already) { if (already.text !== text.trim()) throw new Error("This update identifier was already used for different text."); return current; }
   if (current.cid !== event.cid) throw new Error("This event changed elsewhere. Refresh before publishing.");
   if (current.entries.length >= 500) throw new Error("This live event has reached its 500-update limit.");
-  const next = { ...current, updatedAt: operation.createdAt }, entry = { id: operation.operationId, createdAt: operation.createdAt, text: text.trim() } as LiveEvent["entries"][number];
+  const settings = liveTimestampSettings(operation.timestampSettings ?? current);
+  const heading = formatLiveTimestamp(operation.createdAt, settings);
+  const next = { ...current, ...liveTimestampSettings({ timestampFormat: current.timestampFormat ?? settings.timestampFormat, timeZone: current.timeZone ?? settings.timeZone }), updatedAt: operation.createdAt }, entry = { id: operation.operationId, createdAt: operation.createdAt, text: text.trim() } as LiveEvent["entries"][number];
   const writes: Write[] = [];
   // Each operation uses one stable identity across post/article/event retries.
   const updateKey = await articleDraftRecordKey(operation.operationId, operation.createdAt);
@@ -121,7 +126,7 @@ export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent,
     let previous: ArticleRecord = {};
     if (current.articleRef) { const { data } = await agent.com.atproto.repo.getRecord({ repo: session.did, collection: DOCUMENT, rkey: docKey }, { signal }); if (data.cid !== current.articleRef.cid) throw new Error("The article changed outside this event. Refresh and reconcile it before publishing."); previous = data.value as ArticleRecord; if (previous.site !== current.publicationUri) throw new Error("The article publication changed."); }
     const path = previous.path ?? (host === "offprint" ? `/a/${docKey}-live` : `/live-${docKey}`);
-    const record: ArticleRecord = { ...previous, $type: DOCUMENT, site: publication.uri, title: current.title, path, publishedAt: previous.publishedAt ?? operation.createdAt, updatedAt: operation.createdAt, tags: current.tags, content: appendLiveArticleContent(host, previous.content as ArticleRecord | undefined, operation.createdAt, text.trim()), textContent: [previous.textContent, operation.createdAt, text.trim()].filter(Boolean).join("\n\n") };
+    const record: ArticleRecord = { ...previous, $type: DOCUMENT, site: publication.uri, title: current.title, path, publishedAt: previous.publishedAt ?? operation.createdAt, updatedAt: operation.createdAt, tags: current.tags, content: appendLiveArticleContent(host, previous.content as ArticleRecord | undefined, heading, text.trim()), textContent: [previous.textContent, heading, text.trim()].filter(Boolean).join("\n\n") };
     if (new TextEncoder().encode(JSON.stringify(record)).length > 900_000) throw new Error("The live article has reached its safe record size limit.");
     if (host === "pckt" && !record.langs) record.langs = ["en"];
     entry.articleRef = await reference(session.did, DOCUMENT, docKey, record); next.articleRef = entry.articleRef; next.articleUrl = `${publication.url}${path}`;
@@ -146,4 +151,19 @@ export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent,
   next.entries = [...current.entries, entry];
   writes.push({ $type: "com.atproto.repo.applyWrites#update", collection: LIVE_EVENT_COLLECTION, rkey, value: eventRecord(next) });
   return commitEvent(session, next, writes, commit.data.cid, signal, operation.assertCurrentAccount);
+}
+
+/** Change future headings only; never touch the article or its published entries. */
+export async function updateEventTimestampSettings(session: OAuthSession, event: LiveEvent, settings: LiveTimestampSettings, operation: LiveUpdateOperation): Promise<LiveEvent> {
+  const rkey = recordKey(event.uri, session.did, LIVE_EVENT_COLLECTION);
+  validateLiveTimestampSettings(settings);
+  if (!settings.timestampFormat || !settings.timeZone || !validTime(operation.createdAt)) throw new Error("Choose a timestamp format and time zone.");
+  operation.assertCurrentAccount?.(); operation.signal?.throwIfAborted();
+  const agent = createOAuthAgent(session);
+  const { data: commit } = await agent.com.atproto.sync.getLatestCommit({ did: session.did }, { signal: operation.signal });
+  const current = await getEvent(session, event.uri, operation.signal);
+  if (current.timestampFormat === settings.timestampFormat && current.timeZone === settings.timeZone) return current;
+  if (current.cid !== event.cid) throw new Error("This event changed elsewhere. Refresh before saving settings.");
+  const next = { ...current, ...settings, updatedAt: operation.createdAt };
+  return commitEvent(session, next, [{ $type: "com.atproto.repo.applyWrites#update", collection: LIVE_EVENT_COLLECTION, rkey, value: eventRecord(next) }], commit.cid, operation.signal, operation.assertCurrentAccount);
 }
