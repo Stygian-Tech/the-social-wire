@@ -4,8 +4,9 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { listArticlePublications } from "@/lib/articles/articlePublishingClient";
-import { createEvent, getEvent, listEvents, publishLiveUpdate } from "@/lib/livePosts/livePostClient";
+import { createEvent, getEvent, listEvents, publishLiveUpdate, updateEventTimestampSettings } from "@/lib/livePosts/livePostClient";
 import { listViewerAtmoEvents } from "@/lib/livePosts/atmoEventClient";
+import { liveTimestampSettings, type LiveTimestampSettings } from "@/lib/livePosts/livePostTimestamp";
 import type { LiveEvent, LiveEventInput } from "@/lib/livePosts/livePostTypes";
 
 export function useLivePosts() {
@@ -14,7 +15,7 @@ export function useLivePosts() {
   const activeDid = useRef(did);
   const mounted = useRef(true);
   const lock = useRef(false);
-  const retryIds = useRef(new Map<string, { operationId: string; createdAt: string }>());
+  const retryIds = useRef(new Map<string, { operationId: string; createdAt: string; timestampSettings?: LiveTimestampSettings }>());
   const [operation, setOperation] = useState<{ did?: string; pending: boolean; error?: Error }>({ pending: false });
   const cache = useQueryClient();
   const queryKey = ["livePosts", did] as const;
@@ -52,7 +53,7 @@ export function useLivePosts() {
   }, [cache, did, requireSession]);
   const create = useCallback((input: LiveEventInput) => run(async () => {
     const key = JSON.stringify(["create", did, input]);
-    const attempt = retryIds.current.get(key) ?? { operationId: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    const attempt: { operationId: string; createdAt: string; timestampSettings?: LiveTimestampSettings } = retryIds.current.get(key) ?? { operationId: crypto.randomUUID(), createdAt: new Date().toISOString() };
     retryIds.current.set(key, attempt);
     const result = await createEvent(requireSession(), input, { ...attempt, assertCurrentAccount: () => { requireSession(); } });
     retryIds.current.delete(key);
@@ -62,12 +63,18 @@ export function useLivePosts() {
   const publish = useCallback((eventUri: string, text: string) => run(async () => {
     const oauth = requireSession();
     const key = JSON.stringify([did, eventUri, text]);
-    const attempt = retryIds.current.get(key) ?? { operationId: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    const attempt: { operationId: string; createdAt: string; timestampSettings?: LiveTimestampSettings } = retryIds.current.get(key) ?? { operationId: crypto.randomUUID(), createdAt: new Date().toISOString() };
     retryIds.current.set(key, attempt);
     const event = await getEvent(oauth, eventUri);
+    attempt.timestampSettings ??= liveTimestampSettings(event);
     const result = await publishLiveUpdate(oauth, event, text, { ...attempt, assertCurrentAccount: () => { requireSession(); } });
     retryIds.current.delete(key);
     cache.setQueryData<LiveEvent[]>(["livePosts", did], previous => [result, ...(previous ?? []).filter(event => event.uri !== result.uri)]);
+    return result;
+  }), [cache, did, requireSession, run]);
+  const updateSettings = useCallback((event: LiveEvent, settings: LiveTimestampSettings) => run(async () => {
+    const result = await updateEventTimestampSettings(requireSession(), event, settings, { operationId: crypto.randomUUID(), createdAt: new Date().toISOString(), assertCurrentAccount: () => { requireSession(); } });
+    cache.setQueryData<LiveEvent[]>(["livePosts", did], previous => [result, ...(previous ?? []).filter(row => row.uri !== result.uri)]);
     return result;
   }), [cache, did, requireSession, run]);
   return {
@@ -78,6 +85,6 @@ export function useLivePosts() {
     publicationsError: publications.error,
     rsvpEvents: rsvp.data ?? [], rsvpLoading: rsvp.isPending && !!did, rsvpError: rsvp.error,
     refresh: async () => { await Promise.all([events.refetch(), publications.refetch(), rsvp.refetch()]); },
-    createEvent: create, publishUpdate: publish,
+    createEvent: create, publishUpdate: publish, updateTimestampSettings: updateSettings,
   };
 }

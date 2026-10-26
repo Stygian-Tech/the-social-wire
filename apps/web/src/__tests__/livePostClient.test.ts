@@ -5,7 +5,8 @@ import { cidForLex } from "@atproto/lex-cbor";
 import { lexParse } from "@atproto/lex-json";
 import * as Atproto from "@/lib/atprotoClient";
 import * as Social from "@/lib/blueskySocialClient";
-import { createEvent, getEvent, listEvents, publishLiveUpdate } from "@/lib/livePosts/livePostClient";
+import { createEvent, getEvent, listEvents, publishLiveUpdate, updateEventTimestampSettings } from "@/lib/livePosts/livePostClient";
+import { formatLiveTimestamp, liveTimestampSettings } from "@/lib/livePosts/livePostTimestamp";
 import { appendLiveArticleContent } from "@/lib/livePosts/livePostContent";
 import type { LiveEvent } from "@/lib/livePosts/livePostTypes";
 const did = "did:plc:alice", session = { did } as unknown as OAuthSession;
@@ -14,8 +15,8 @@ const op = { operationId: "operation-one", createdAt: "2026-10-11T12:01:00.000Z"
 let restore: (() => void) | undefined;
 let restoreSocial: (() => void) | undefined;
 afterEach(() => { restoreSocial?.(); restoreSocial = undefined; restore?.(); restore = undefined; });
-function fixture(options: { ambiguous?: boolean; changed?: boolean; repeated?: boolean; blog?: boolean; fresh?: boolean } = {}) {
-  const publication = { uri: `at://${did}/site.standard.publication/pub`, cid: "pubcid", value: { $type: "site.standard.publication", name: "Blog", url: "https://example.com", theme: "markpub" } };
+function fixture(options: { ambiguous?: boolean; changed?: boolean; repeated?: boolean; blog?: boolean; fresh?: boolean; host?: "leaflet" | "markpub" } = {}) {
+  const publication = { uri: `at://${did}/site.standard.publication/pub`, cid: "pubcid", value: { $type: "site.standard.publication", name: "Blog", url: "https://example.com", theme: options.host ?? "markpub" } };
   const docs = new Map<string, { value: Record<string, unknown>; cid: string }>();
   let current = { ...initial, ...(options.blog ? { destination: "both" as const, publicationUri: publication.uri } : {}), cid: options.changed ? "changed" : initial.cid }; const batches: Record<string, unknown>[] = [];
   const getRecord = async (args: { collection: string; rkey: string }) => {
@@ -69,7 +70,7 @@ test("both destinations and native article append commit together", async () => 
   expect(writes.map(w => w.collection)).toEqual(["site.standard.document", "app.bsky.feed.post", "app.thesocialwire.liveEvent"]);
   expect(writes[0].$type).toBe("com.atproto.repo.applyWrites#update");
   const markdown = ((writes[0].value.content as Record<string, unknown>).text as Record<string, unknown>).markdown;
-  expect(markdown).toBe("## 2026-10-11T12:01:00.000Z\n\nFirst block\n\n## 2026-10-11T12:02:00Z\n\nSecond block");
+  expect(markdown).toBe(`## ${formatLiveTimestamp(op.createdAt, liveTimestampSettings())}\n\nFirst block\n\n## ${formatLiveTimestamp("2026-10-11T12:02:00Z", liveTimestampSettings())}\n\nSecond block`);
   expect(second.articleRef?.uri).toBe(first.articleRef?.uri); expect(second.entries).toHaveLength(2);
 });
 
@@ -138,4 +139,42 @@ test("calendar prepopulation persists source identity and offset schedule on eve
   const event = await createEvent(session, { title: "Hosted", tags: [], destination: "bluesky", sourceEvent, startsAt, endsAt }, op);
   expect(event).toMatchObject({ sourceEvent, startsAt, endsAt });
   await expect(createEvent(session, { title: "Invalid", tags: [], destination: "bluesky", startsAt, endsAt: "2026-10-10T09:00:00Z" }, op)).rejects.toThrow("schedule");
+});
+
+const timestampSettings = { timestampFormat: "time-24" as const, timeZone: "America/Chicago" };
+test.each(["leaflet", "markpub"] as const)("%s publishing keeps ISO metadata and matches text/native headings", async host => {
+  const f = fixture({ blog: true, host }); Object.assign(f.current(), timestampSettings);
+  const result = await publishLiveUpdate(session, f.current(), "First", op);
+  const doc = f.docs.values().next().value!.value;
+  expect(doc.textContent).toBe("07:01\n\nFirst");
+  expect(JSON.stringify(doc.content)).toContain(host === "leaflet" ? '"plaintext":"07:01"' : "## 07:01");
+  expect(doc.updatedAt).toBe(op.createdAt); expect(result.entries[0].createdAt).toBe(op.createdAt);
+  expect(result.timeZone).toBe("America/Chicago");
+});
+test("legacy publish captures the local default in its atomic event record", async () => {
+  const f = fixture({ blog: true });
+  const result = await publishLiveUpdate(session, f.current(), "Legacy", op);
+  expect(result).toMatchObject(liveTimestampSettings());
+});
+test("settings only update the event with CAS, preserve published content, and reconcile retries", async () => {
+  const f = fixture({ blog: true, ambiguous: true });
+  const first = await publishLiveUpdate(session, f.current(), "Old", op);
+  const original = structuredClone([...f.docs]);
+  const updated = await updateEventTimestampSettings(session, first, timestampSettings, { ...op, createdAt: "2026-10-11T12:02:00Z" });
+  expect(updated.entries).toEqual(first.entries); expect([...f.docs]).toEqual(original);
+  expect(f.batches[1]).toMatchObject({ swapCommit: "commit", writes: [{ collection: "app.thesocialwire.liveEvent" }] });
+  expect(await updateEventTimestampSettings(session, first, timestampSettings, op)).toEqual(updated);
+  expect(f.batches).toHaveLength(2);
+  const next = await publishLiveUpdate(session, updated, "New", { ...op, operationId: "next" });
+  const doc = f.docs.values().next().value!.value;
+  expect(doc.textContent).toBe(`${original[0][1].value.textContent}\n\n07:01\n\nNew`);
+  expect(next.entries).toHaveLength(2);
+});
+test("settings fail closed for invalid values, stale events and account changes", async () => {
+  const f = fixture({ changed: true });
+  await expect(updateEventTimestampSettings(session, initial, timestampSettings, op)).rejects.toThrow("changed elsewhere");
+  await expect(updateEventTimestampSettings(session, f.current(), { ...timestampSettings, timeZone: "Invalid/Zone" }, op)).rejects.toThrow("IANA");
+  await expect(updateEventTimestampSettings({ did: "did:plc:bob" } as unknown as OAuthSession, initial, timestampSettings, op)).rejects.toThrow("signed-in");
+  await expect(updateEventTimestampSettings(session, f.current(), timestampSettings, { ...op, assertCurrentAccount: () => { throw new Error("Switched"); } })).rejects.toThrow("Switched");
+  expect(f.batches).toHaveLength(0);
 });

@@ -39,6 +39,8 @@ test("retains update operation ID and timestamp across failures and renews them 
   const { result } = await mount();
   await act(async () => { await expect(result.current.publishUpdate(event.uri, "First")).rejects.toThrow("Connection Lost"); });
   fail = false;
+  const changed = spyOn(Client, "getEvent").mockResolvedValue({ ...event, timestampFormat: "iso", timeZone: "Asia/Tokyo" });
+  restores.push(() => changed.mockRestore());
   await act(async () => { await result.current.publishUpdate(event.uri, "First"); });
   const first = publish.mock.calls[0]![3];
   const retry = publish.mock.calls[1]![3];
@@ -46,6 +48,8 @@ test("retains update operation ID and timestamp across failures and renews them 
   expect(Number.isFinite(Date.parse(first.createdAt))).toBe(true);
   expect(retry.operationId).toBe(first.operationId);
   expect(retry.createdAt).toBe(first.createdAt);
+  expect(retry.timestampSettings).toEqual(first.timestampSettings);
+  expect(retry.timestampSettings?.timestampFormat).toBe("time-24");
   await act(async () => { await result.current.publishUpdate(event.uri, "Second"); });
   expect(publish.mock.calls[2]![3].operationId).not.toBe(first.operationId);
 });
