@@ -6,6 +6,7 @@ import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRec
 import type { SocialModerationOpts } from "@/lib/socialModerationTypes";
 import { hydrateSocialReplies } from "./hydrateSocialReplies";
 import { socialModerationScope } from "./socialQueryScope";
+import { configureSocialVideoViewValidation } from "./socialVideoViewValidation";
 
 export type SocialFeed = {
   kind: "following" | "feed" | "list";
@@ -34,7 +35,9 @@ export type BlueskySocialPage = {
 export function createAuthenticatedAppViewAgent(session: OAuthSession): Agent {
   const network = getAtprotoNetwork();
   const agent = network.appLabelers === undefined ? new Agent(session) : new LocalAppViewAgent(session, network.appLabelers);
-  return agent.withProxy("bsky_appview", network.appViewDid);
+  const proxied = agent.withProxy("bsky_appview", network.appViewDid);
+  configureSocialVideoViewValidation(proxied);
+  return proxied;
 }
 
 function validFeedUri(uri: string, kind: "feed" | "list"): boolean {
