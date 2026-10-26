@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppBskyFeedPost } from "@atproto/api";
 import { Plus, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useLivePosts } from "@/hooks/useLivePosts";
 import { liveEventPhase, type AtmoEvent } from "@/lib/livePosts/atmoEventClient";
-import { livePostText } from "@/lib/livePosts/livePostContent";
+import type { LiveUpdateAttachmentsDraft } from "@/lib/livePosts/livePostMedia";
+import type { ComposeLinkPreview } from "@/lib/blueskyExternalEmbed";
 import { socialErrorMessage } from "@/lib/blueskySocialClient";
+import { livePostErrorMessage } from "@/lib/livePosts/livePostErrorMessage";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { SocialPermissionRecovery } from "@/components/Social/SocialPermissionRecovery";
-import { SocialPeopleTextField } from "@/components/Social/SocialPeopleTextField";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { floatingGlassClasses } from "@/components/shared/floatingChromeStyles";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { LivePostUpdateComposer } from "./LivePostUpdateComposer";
 import { LivePostNewEventDialog, type LivePostNewEventInput } from "./LivePostNewEventDialog";
 import { LivePostTimestampSettings } from "./LivePostTimestampSettings";
 import { LivePostHistory } from "./LivePostHistory";
@@ -38,21 +40,33 @@ function LivePostsViewer() {
   const [initialEvent, setInitialEvent] = useState<Partial<LivePostNewEventInput>>();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string>();
+  const [attachments, setAttachments] = useState<Record<string, LiveUpdateAttachmentsDraft>>({});
+  const [confirmEndUri, setConfirmEndUri] = useState<string>();
+  const [endFailure, setEndFailure] = useState<string>();
   const event = live.events.find(value => value.uri === selectedUri) ?? live.events[0];
   const text = event ? drafts[event.uri] ?? "" : "";
-  const blueskyText = event ? livePostText(`${event.title}\n\n${text}`, event.tags) : "";
-  const valid = !!text.trim() && (event?.destination === "blog" || AppBskyFeedPost.validateRecord({ $type: "app.bsky.feed.post", text: blueskyText, createdAt: new Date().toISOString() }).success);
   const failureSource = failure ?? live.error ?? live.publicationsError;
-  const error = failureSource ? typeof failureSource === "string" ? failureSource : socialErrorMessage(failureSource) : undefined;
+  const error = failureSource ? typeof failureSource === "string" ? failureSource : livePostErrorMessage(failureSource) : undefined;
   async function create(input: LivePostNewEventInput) {
     const created = await live.createEvent(input);
     setSelectedUri(created.uri); setNewEvent(false); setFailure(undefined);
   }
-  async function publish() {
-    if (!event || live.pending || !valid) return;
+  async function publish(linkPreview?: ComposeLinkPreview) {
+    if (!event || event.endedAt || live.pending) return;
     const uri = event.uri;
-    try { await live.publishUpdate(uri, text); setDrafts(previous => ({ ...previous, [uri]: "" })); setFailure(undefined); }
-    catch (failure) { setFailure(socialErrorMessage(failure)); }
+    try {
+      const media = { ...attachments[uri], ...(linkPreview ? { linkPreview } : {}) };
+      await live.publishUpdate(uri, text, Object.keys(media).length ? media : undefined);
+      setDrafts(previous => ({ ...previous, [uri]: "" }));
+      setAttachments(previous => ({ ...previous, [uri]: {} }));
+      setFailure(undefined);
+    }
+    catch (failure) { setFailure(livePostErrorMessage(failure)); }
+  }
+  async function end() {
+    if (!confirmEndUri || live.pending) return;
+    try { await live.endEvent(confirmEndUri); setConfirmEndUri(undefined); setEndFailure(undefined); setFailure(undefined); }
+    catch (failure) { setEndFailure(livePostErrorMessage(failure)); }
   }
   function select(uri: string) { setSelectedUri(uri); setFailure(undefined); }
   function openNew(source?: AtmoEvent) {
@@ -61,7 +75,7 @@ function LivePostsViewer() {
   }
   const linkedSources = new Set(live.events.flatMap(row => row.sourceEvent ? [row.sourceEvent.uri] : []));
   const rows: LivePostSidebarRow[] = [
-    ...live.events.map(row => ({ key: row.uri, title: row.title, description: `${destinationLabels[row.destination]} · ${row.entries.length} Updates`, section: liveEventPhase(row, now), selected: row.uri === event?.uri, onSelect: () => select(row.uri) })),
+    ...live.events.map(row => ({ key: row.uri, title: row.title, description: `${destinationLabels[row.destination]} · ${row.entries.length} Updates${row.endedAt ? " · Ended" : ""}`, section: liveEventPhase(row, now), selected: row.uri === event?.uri, onSelect: () => select(row.uri) })),
     ...live.rsvpEvents.filter(row => !linkedSources.has(row.uri)).map(row => ({ key: row.uri, title: row.title, description: `atmo.rsvp${row.startsAt ? ` · ${new Date(row.startsAt).toLocaleString()}` : ""}`, section: liveEventPhase(row, now), selected: false, onSelect: () => openNew(row) })),
   ];
   const rsvpError = live.rsvpError ? socialErrorMessage(live.rsvpError) : undefined;
@@ -78,18 +92,23 @@ function LivePostsViewer() {
         <section aria-label="Live Event Workspace" className="min-w-0 lg:min-h-0 lg:col-start-1 lg:row-start-1 lg:overflow-y-auto lg:overscroll-contain">
           {error ? <div role="alert" className="mb-4 space-y-2 rounded-xl border p-3 text-sm"><p>{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button size="sm" variant="outline" disabled={live.pending} onClick={() => { setFailure(undefined); void live.refresh(); }}>Retry Loading</Button>}</div> : null}
           {!event ? <div className={`${floatingGlassClasses} flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center`}><h2 className="text-lg font-semibold">Start a Live Event</h2><p className="max-w-sm text-sm text-muted-foreground">Publish updates to a new blog article, a Bluesky thread, or both.</p><Button disabled={live.pending || live.loading} onClick={() => openNew()}>New Event</Button></div> : <>
-            <header className="mb-4 space-y-2"><h2 className="break-words text-2xl font-semibold">{event.title}</h2><p className="text-sm text-muted-foreground">{destinationLabels[event.destination]}</p>{event.tags.length ? <p className="break-words text-xs text-muted-foreground">{event.tags.map(tag => `#${tag}`).join(" ")}</p> : null}</header>
-            {event.destination !== "bluesky" ? <LivePostTimestampSettings key={`${event.uri}:${event.cid}`} event={event} pending={live.pending} now={new Date(now).toISOString()} onSave={live.updateTimestampSettings} /> : null}
-            <form aria-label="Live Update Composer" className={`${floatingGlassClasses} mb-6 flex flex-col gap-3 p-4`} onSubmit={submit => { submit.preventDefault(); void publish(); }}>
-              <label htmlFor="live-update" className="text-sm font-medium">Update</label><SocialPeopleTextField id="live-update" value={text} onValueChange={value => setDrafts(previous => ({ ...previous, [event.uri]: value }))} disabled={live.pending} rows={5} placeholder="What Is Happening?" className="min-h-32 w-full resize-y rounded-lg border bg-background/30 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">{event.destination === "blog" ? "Appends a Timestamped Article Entry" : "Title and Hashtags Are Included in Each Post"}</p><Button type="submit" disabled={live.pending || !valid}>{live.pending ? "Publishing…" : failure ? "Retry Publish" : "Publish Update"}</Button></div>
-              {text.trim() && !valid ? <p role="status" className="text-xs text-destructive">This update exceeds Bluesky’s post limit, including its title and hashtags.</p> : null}
-            </form>
+            <header className="mb-4 space-y-2"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="break-words text-2xl font-semibold">{event.title}</h2>{!event.endedAt ? <Button variant="outline" disabled={live.pending} onClick={() => { setEndFailure(undefined); setConfirmEndUri(event.uri); }}>End Live Post</Button> : null}</div><p className="text-sm text-muted-foreground">{destinationLabels[event.destination]}</p>{event.tags.length ? <p className="break-words text-xs text-muted-foreground">{event.tags.map(tag => `#${tag}`).join(" ")}</p> : null}</header>
+            {!event.endedAt && event.destination !== "bluesky" ? <LivePostTimestampSettings key={`${event.uri}:${event.cid}`} event={event} pending={live.pending} now={new Date(now).toISOString()} onSave={live.updateTimestampSettings} /> : null}
+            {event.endedAt ? <p role="status" className={`${floatingGlassClasses} mb-6 p-4 text-sm`}>Live Post Ended. Published Updates Remain Available.</p> : <LivePostUpdateComposer key={event.uri} event={event} text={text} onTextChange={value => setDrafts(previous => ({ ...previous, [event.uri]: value }))} attachments={attachments[event.uri] ?? {}} onAttachmentsChange={value => setAttachments(previous => ({ ...previous, [event.uri]: value }))} pending={live.pending} failure={failure} onPublish={publish} />}
             <LivePostHistory event={event} />
           </>}
         </section>
       </div>
     </div>
+    <Dialog open={!!confirmEndUri} onOpenChange={open => { if (!open && !live.pending) { setConfirmEndUri(undefined); setEndFailure(undefined); } }}>
+      <DialogContent showCloseButton={!live.pending}>
+        <DialogTitle>End Live Post?</DialogTitle>
+        <DialogDescription>This closes the live post session. Published updates stay available, and you cannot publish more updates to this session.</DialogDescription>
+        {confirmEndUri && (drafts[confirmEndUri]?.trim() || Object.keys(attachments[confirmEndUri] ?? {}).length) ? <p className="text-sm">You have an unpublished draft. It will not be published when you end this live post.</p> : null}
+        {endFailure ? <div role="alert" className="space-y-2 text-sm text-destructive"><p>{endFailure}</p>{endFailure === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : null}</div> : null}
+        <DialogFooter><DialogClose disabled={live.pending} className="rounded-xl border px-3 py-2">Cancel</DialogClose><Button disabled={live.pending} onClick={() => { void end(); }}>{live.pending ? "Ending…" : "Confirm End Live Post"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
     <LivePostNewEventDialog key={`${newEvent ? "open" : "closed"}:${initialEvent?.sourceEvent?.uri ?? "custom"}`} initialEvent={initialEvent} open={newEvent} onOpenChange={setNewEvent} publications={live.publications} publicationsLoading={live.publicationsLoading} pending={live.pending} onCreate={create} />
   </div>;
 }

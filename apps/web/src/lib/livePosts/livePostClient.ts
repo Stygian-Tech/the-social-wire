@@ -1,7 +1,8 @@
-import { AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichText } from "@atproto/api";
+import { AppBskyEmbedExternal, AppBskyEmbedImages, AppBskyEmbedVideo, AppBskyRichtextFacet, ComAtprotoRepoStrongRef, RichText } from "@atproto/api";
 import { TID } from "@atproto/common-web";
 import { cidForLex } from "@atproto/lex-cbor";
 import { lexParse } from "@atproto/lex-json";
+import { jsonStringToLex } from "@atproto/lexicon";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { createOAuthAgent } from "@/lib/atprotoClient";
 import { createAuthenticatedAppViewAgent } from "@/lib/blueskySocialClient";
@@ -9,12 +10,15 @@ import { articleDraftRecordKey, articlePublicationHost, listArticlePublications 
 import type { ArticleRecord } from "@/lib/articles/articlePublishingTypes";
 import { formatLiveTimestamp, liveTimestampSettings, validateLiveTimestampSettings, type LiveTimestampSettings } from "./livePostTimestamp";
 import { appendLiveArticleContent, livePostText } from "./livePostContent";
+import { LIVE_POST_IMAGE_MAX_BYTES, LIVE_POST_VIDEO_MAX_BYTES, livePostAttachmentsFingerprint, livePostMediaEmbed, prepareLivePostMedia, type LiveUpdateAttachments, type PreparedLivePostMedia } from "./livePostMedia";
 import type { CreateLiveEventInput, LiveEvent, LiveReference } from "./livePostTypes";
 export type { LiveEventInput, CreateLiveEventInput, LiveDestination, LiveEvent, LiveUpdate, LiveReference } from "./livePostTypes";
+export type { LiveUpdateAttachments } from "./livePostMedia";
 export const LIVE_EVENT_COLLECTION = "app.thesocialwire.liveEvent";
 const DOCUMENT = "site.standard.document", POST = "app.bsky.feed.post";
 type Write = { $type: "com.atproto.repo.applyWrites#create" | "com.atproto.repo.applyWrites#update"; collection: string; rkey: string; value: ArticleRecord };
 export type LiveUpdateOperation = { operationId: string; createdAt: string; timestampSettings?: LiveTimestampSettings; signal?: AbortSignal; assertCurrentAccount?: () => void };
+export type EndLiveEventOptions = { signal?: AbortSignal; assertCurrentAccount?: () => void };
 function recordKey(uri: string, did: string, collection: string): string {
   const prefix = `at://${did}/${collection}/`, result = uri.slice(prefix.length);
   if (!uri.startsWith(prefix) || !/^[a-zA-Z0-9._~:-]+$/.test(result)) throw new Error("This live event does not belong to the signed-in account.");
@@ -23,20 +27,41 @@ function recordKey(uri: string, did: string, collection: string): string {
 function eventRecord(event: LiveEvent): ArticleRecord { const { uri: _uri, cid: _cid, ...record } = event; void _uri; void _cid; return record; }
 const utf8Length = (value: string) => new TextEncoder().encode(value).length;
 function validTime(value: unknown): value is string { return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value)); }
+function validatePreparedLivePostMedia(media: PreparedLivePostMedia) {
+  if (!media || typeof media !== "object" || [media.images !== undefined, media.video !== undefined, media.gif !== undefined].filter(Boolean).length > 1) throw new Error("Invalid live update media.");
+  const valid = (value: unknown, check: (value: unknown) => { success: boolean }) => check(jsonStringToLex(JSON.stringify(value))).success;
+  if (media.images !== undefined && (!Array.isArray(media.images) || !media.images.length || media.images.some(image => typeof image.alt !== "string" || utf8Length(image.alt) > 10_000 || !["image/jpeg", "image/png", "image/webp"].includes(image.blob.mimeType) || !Number.isSafeInteger(image.blob.size) || image.blob.size <= 0 || image.blob.size > LIVE_POST_IMAGE_MAX_BYTES) || !valid({ $type: "app.bsky.embed.images", images: media.images.map(image => ({ image: image.blob, alt: image.alt, ...(image.aspectRatio ? { aspectRatio: image.aspectRatio } : {}) })) }, AppBskyEmbedImages.validateMain))) throw new Error("Invalid live update images.");
+  if (media.video !== undefined && !valid({ $type: "app.bsky.embed.video", video: media.video.blob, alt: media.video.alt }, AppBskyEmbedVideo.validateMain)) throw new Error("Invalid live update video.");
+  if (media.video && (media.video.blob.mimeType !== "video/mp4" || !Number.isSafeInteger(media.video.blob.size) || media.video.blob.size <= 0 || media.video.blob.size > LIVE_POST_VIDEO_MAX_BYTES)) throw new Error("Invalid live update video.");
+  if (media.pdsUrl !== undefined || media.images?.length || media.video) {
+    const url = new URL(media.pdsUrl!);
+    if (url.protocol !== "https:" || url.username || url.password || url.origin !== media.pdsUrl) throw new Error("Invalid live update media PDS.");
+  }
+  if (media.external !== undefined && !valid(media.external, AppBskyEmbedExternal.validateMain)) throw new Error("Invalid live update link preview.");
+  if (media.gif !== undefined) {
+    const url = new URL(media.gif.url);
+    if (url.protocol !== "https:" || url.username || url.password || typeof media.gif.alt !== "string" || utf8Length(media.gif.alt) > 10_000) throw new Error("Invalid live update GIF.");
+  }
+}
 function validateEventSchedule(value: { sourceEvent?: LiveReference; startsAt?: string; endsAt?: string }) {
   if ((value.startsAt !== undefined && !validTime(value.startsAt)) || (value.endsAt !== undefined && !validTime(value.endsAt)) || (value.startsAt && value.endsAt && Date.parse(value.endsAt) < Date.parse(value.startsAt))) throw new Error("Invalid live event schedule.");
   if (value.sourceEvent && (!ComAtprotoRepoStrongRef.validateMain(value.sourceEvent).success || !/^at:\/\/did:[^/?#]+\/community\.lexicon\.calendar\.event\/[^/?#]+$/.test(value.sourceEvent.uri))) throw new Error("Invalid source calendar event.");
 }
 function parseEvent(value: unknown, uri: string, cid: string, did: string): LiveEvent {
   recordKey(uri, did, LIVE_EVENT_COLLECTION);
-  const r = value as Partial<LiveEvent>;
+  // The SDK decodes blobs into BlobRef/CID instances. Keep the event model in
+  // its portable JSON shape, matching successful writes and persisted caches.
+  const r = JSON.parse(JSON.stringify(value ?? null)) as Partial<LiveEvent>;
   if (!r || r.$type !== LIVE_EVENT_COLLECTION || typeof r.title !== "string" || !r.title.trim() || utf8Length(r.title) > 500 || !["blog", "bluesky", "both"].includes(r.destination ?? "") || !Array.isArray(r.tags) || r.tags.length > 20 || !r.tags.every(t => typeof t === "string" && !!t.trim() && utf8Length(t) <= 128) || !Array.isArray(r.entries) || r.entries.length > 500 || !validTime(r.createdAt) || !validTime(r.updatedAt)) throw new Error("Invalid live event record.");
   validateEventSchedule(r);
   validateLiveTimestampSettings(r);
+  if (r.endedAt !== undefined && !validTime(r.endedAt)) throw new Error("Invalid live event end time.");
   const ids = new Set<string>();
   for (const entry of r.entries) {
-    if (!entry.id || ids.has(entry.id) || !validTime(entry.createdAt) || typeof entry.text !== "string" || !entry.text.trim() || utf8Length(entry.text) > 30_000) throw new Error("Invalid live event update.");
+    if (!entry.id || ids.has(entry.id) || !validTime(entry.createdAt) || typeof entry.text !== "string" || (!entry.text.trim() && !entry.media?.images?.length && !entry.media?.video && !entry.media?.gif) || utf8Length(entry.text) > 30_000) throw new Error("Invalid live event update.");
     ids.add(entry.id);
+    if (entry.attachmentsFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(entry.attachmentsFingerprint)) throw new Error("Invalid live update media identity.");
+    if (entry.media) validatePreparedLivePostMedia(entry.media);
     for (const ref of [entry.postRef, entry.articleRef]) if (ref && !ComAtprotoRepoStrongRef.validateMain(ref).success) throw new Error("Invalid live update reference.");
     if (entry.postRef) recordKey(entry.postRef.uri, did, POST);
     if (entry.articleRef) recordKey(entry.articleRef.uri, did, DOCUMENT);
@@ -103,19 +128,38 @@ async function commitEvent(session: OAuthSession, event: LiveEvent, writes: Writ
   }
   return { ...event, cid: expected.cid };
 }
-export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent, text: string, operation: LiveUpdateOperation): Promise<LiveEvent> {
+export async function endLiveEvent(session: OAuthSession, event: LiveEvent, options: EndLiveEventOptions = {}): Promise<LiveEvent> {
+  const rkey = recordKey(event.uri, session.did, LIVE_EVENT_COLLECTION), { signal, assertCurrentAccount } = options;
+  assertCurrentAccount?.(); signal?.throwIfAborted();
+  // Capture the repo commit before reading so concurrent updates cannot be overwritten.
+  const commit = await createOAuthAgent(session).com.atproto.sync.getLatestCommit({ did: session.did }, { signal });
+  const current = await getEvent(session, event.uri, signal);
+  assertCurrentAccount?.(); signal?.throwIfAborted();
+  if (current.endedAt) return current;
+  if (current.cid !== event.cid) throw new Error("This event changed elsewhere. Refresh before ending it.");
+  const now = new Date().toISOString(), next = { ...current, endedAt: now, updatedAt: now };
+  return commitEvent(session, next, [{ $type: "com.atproto.repo.applyWrites#update", collection: LIVE_EVENT_COLLECTION, rkey, value: eventRecord(next) }], commit.data.cid, signal, assertCurrentAccount);
+}
+export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent, text: string, operation: LiveUpdateOperation, attachments?: LiveUpdateAttachments): Promise<LiveEvent> {
   const rkey = recordKey(event.uri, session.did, LIVE_EVENT_COLLECTION), signal = operation.signal;
-  if (!text.trim() || new TextEncoder().encode(text).length > 30_000 || !/^[a-zA-Z0-9._~-]{1,100}$/.test(operation.operationId) || !validTime(operation.createdAt)) throw new Error("Write a valid live update and timestamp.");
+  if ((!text.trim() && !attachments?.images?.length && !attachments?.video && !attachments?.gif) || new TextEncoder().encode(text).length > 30_000 || !/^[a-zA-Z0-9._~-]{1,100}$/.test(operation.operationId) || !validTime(operation.createdAt)) throw new Error("Write a valid live update and timestamp.");
   operation.assertCurrentAccount?.(); signal?.throwIfAborted();
+  const attachmentsFingerprint = await livePostAttachmentsFingerprint(attachments);
   const agent = createOAuthAgent(session), commit = await agent.com.atproto.sync.getLatestCommit({ did: session.did }, { signal });
   const current = await getEvent(session, event.uri, signal);
   const already = current.entries.find(e => e.id === operation.operationId);
-  if (already) { if (already.text !== text.trim()) throw new Error("This update identifier was already used for different text."); return current; }
+  if (already) { if (already.text !== text.trim()) throw new Error("This update identifier was already used for different text."); if (already.attachmentsFingerprint !== attachmentsFingerprint) throw new Error("This update identifier was already used for different media."); return current; }
+  if (current.endedAt) throw new Error("This live post has ended. Start a new live post to publish more updates.");
   if (current.cid !== event.cid) throw new Error("This event changed elsewhere. Refresh before publishing.");
   if (current.entries.length >= 500) throw new Error("This live event has reached its 500-update limit.");
+  const rich = current.destination !== "blog" ? new RichText({ text: livePostText(`${current.title}\n\n${text}`, current.tags) }) : undefined;
+  if (rich && (rich.graphemeLength > 300 || utf8Length(rich.text) > 3000)) throw new Error("Bluesky updates including event tags must fit 300 characters and 3,000 bytes.");
   const settings = liveTimestampSettings(operation.timestampSettings ?? current);
   const heading = formatLiveTimestamp(operation.createdAt, settings);
   const next = { ...current, ...liveTimestampSettings({ timestampFormat: current.timestampFormat ?? settings.timestampFormat, timeZone: current.timeZone ?? settings.timeZone }), updatedAt: operation.createdAt }, entry = { id: operation.operationId, createdAt: operation.createdAt, text: text.trim() } as LiveEvent["entries"][number];
+  const media = await prepareLivePostMedia({ session, draft: { text, ...attachments }, signal, assertCurrentAccount: operation.assertCurrentAccount });
+  if (media) validatePreparedLivePostMedia(media);
+  if (attachmentsFingerprint) { entry.attachmentsFingerprint = attachmentsFingerprint; entry.media = media; }
   const writes: Write[] = [];
   // Each operation uses one stable identity across post/article/event retries.
   const updateKey = await articleDraftRecordKey(operation.operationId, operation.createdAt);
@@ -126,7 +170,7 @@ export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent,
     let previous: ArticleRecord = {};
     if (current.articleRef) { const { data } = await agent.com.atproto.repo.getRecord({ repo: session.did, collection: DOCUMENT, rkey: docKey }, { signal }); if (data.cid !== current.articleRef.cid) throw new Error("The article changed outside this event. Refresh and reconcile it before publishing."); previous = data.value as ArticleRecord; if (previous.site !== current.publicationUri) throw new Error("The article publication changed."); }
     const path = previous.path ?? (host === "offprint" ? `/a/${docKey}-live` : `/live-${docKey}`);
-    const record: ArticleRecord = { ...previous, $type: DOCUMENT, site: publication.uri, title: current.title, path, publishedAt: previous.publishedAt ?? operation.createdAt, updatedAt: operation.createdAt, tags: current.tags, content: appendLiveArticleContent(host, previous.content as ArticleRecord | undefined, heading, text.trim()), textContent: [previous.textContent, heading, text.trim()].filter(Boolean).join("\n\n") };
+    const record: ArticleRecord = { ...previous, $type: DOCUMENT, site: publication.uri, title: current.title, path, publishedAt: previous.publishedAt ?? operation.createdAt, updatedAt: operation.createdAt, tags: current.tags, content: appendLiveArticleContent(host, previous.content as ArticleRecord | undefined, heading, text.trim(), media, session.did), textContent: [previous.textContent, heading, text.trim()].filter(Boolean).join("\n\n") };
     if (new TextEncoder().encode(JSON.stringify(record)).length > 900_000) throw new Error("The live article has reached its safe record size limit.");
     if (host === "pckt" && !record.langs) record.langs = ["en"];
     entry.articleRef = await reference(session.did, DOCUMENT, docKey, record); next.articleRef = entry.articleRef; next.articleUrl = `${publication.url}${path}`;
@@ -139,12 +183,11 @@ export async function publishLiveUpdate(session: OAuthSession, event: LiveEvent,
       writes.push({ $type: `com.atproto.repo.applyWrites#${current.articleRef ? "update" : "create"}`, collection, rkey: docKey, value: { ...wrapper, $type: collection, document: { ...(host === "offprint" ? { $type: "com.atproto.repo.strongRef" } : {}), ...entry.articleRef } } });
     }
   }
-  if (current.destination !== "blog") {
-    const rich = new RichText({ text: livePostText(`${current.title}\n\n${text}`, current.tags) });
-    if (rich.graphemeLength > 300 || new TextEncoder().encode(rich.text).length > 3000) throw new Error("Bluesky updates including event tags must fit 300 characters and 3,000 bytes.");
+  if (rich) {
     await rich.detectFacets(createAuthenticatedAppViewAgent(session));
     rich.facets = rich.facets?.map(f => ({ ...f, features: f.features.filter(feature => !AppBskyRichtextFacet.isMention(feature) || feature.did.startsWith("did:")) })).filter(f => f.features.length);
-    const value: ArticleRecord = { $type: POST, text: rich.text, createdAt: operation.createdAt, ...(rich.facets?.length ? { facets: rich.facets } : {}), ...(current.threadRoot && current.threadLast ? { reply: { root: current.threadRoot, parent: current.threadLast } } : {}) };
+    const embed = livePostMediaEmbed(media);
+    const value: ArticleRecord = { $type: POST, text: rich.text, createdAt: operation.createdAt, ...(rich.facets?.length ? { facets: rich.facets } : {}), ...(embed ? { embed } : {}), ...(current.threadRoot && current.threadLast ? { reply: { root: current.threadRoot, parent: current.threadLast } } : {}) };
     entry.postRef = await reference(session.did, POST, updateKey, value); next.threadRoot = current.threadRoot ?? entry.postRef; next.threadLast = entry.postRef;
     writes.push({ $type: "com.atproto.repo.applyWrites#create", collection: POST, rkey: updateKey, value });
   }

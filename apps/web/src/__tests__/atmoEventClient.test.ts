@@ -69,3 +69,10 @@ test("deleted RSVP subjects skip without hiding hosted events; auth failures rem
   expect((await listViewerAtmoEvents(session)).map(e => e.title)).toEqual(["hosted"]);
   status = 403; await expect(listViewerAtmoEvents(session)).rejects.toThrow("403");
 });
+
+
+test("explicitly ended sessions group as past regardless of their calendar schedule", () => {
+  const endedAt = "2026-10-26T22:00:00Z";
+  expect(liveEventPhase({ endedAt })).toBe("past");
+  expect(liveEventPhase({ startsAt: "2100-01-01T00:00:00Z", endsAt: "2100-01-02T00:00:00Z", endedAt })).toBe("past");
+});
