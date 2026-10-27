@@ -1,3 +1,4 @@
+import { useProactiveFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 /**
  * Tests for useEntries and useEntry hooks (Thin AppView gateway path).
  */
@@ -474,6 +475,40 @@ describe("reader lifecycle refreshes", () => {
       await waitFor(() => expect(ids(hook.result.current.data)).toEqual(["recovered-visible", "cached-head", "cached-tail"]));
       await act(async () => { finishOld(json([row("late-stalled")])); });
       expect(ids(hook.result.current.data)).toEqual(["recovered-visible", "cached-head", "cached-tail"]);
+    } finally {
+      hook.unmount(); timeout.mockRestore();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
+
+  it("uses guarded publication polling and can retry a stalled visible refresh", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    seed("publication");
+    client.setQueryData(keyFor("publication"), client.getQueryData(keyFor("publication")));
+    let finishOld!: (response: Response) => void;
+    respond = () => new Promise(resolve => { finishOld = resolve; });
+    const hook = renderHook(() => {
+      const feed = useEntries(publication);
+      useProactiveFeedRefresh(publication, "all", true, feed.refetch);
+      return feed;
+    }, { wrapper: Wrapper });
+    try {
+      await settle();
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(1));
+      await act(async () => { deadline.abort(); });
+      await waitFor(() => expect(hook.result.current.isFetching).toBe(false));
+      timeout.mockRestore();
+      respond = async () => json([row("recovered-publication")]);
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(2));
+      await waitFor(() => expect(ids(hook.result.current.data)).toEqual(["recovered-publication", "cached-head", "cached-tail"]));
+      await act(async () => { finishOld(json([row("late-publication")])); });
+      expect(ids(hook.result.current.data)).toEqual(["recovered-publication", "cached-head", "cached-tail"]);
     } finally {
       hook.unmount(); timeout.mockRestore();
       if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);

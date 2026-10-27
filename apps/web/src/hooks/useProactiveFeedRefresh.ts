@@ -18,21 +18,14 @@ import {
 export function useProactiveFeedRefresh(
   publicationKey: string | null,
   articleFilter: ArticleListFilter = "all",
-  enabled = true
+  enabled = true,
+  refresh: (signal: AbortSignal) => Promise<unknown>,
 ) {
-  const queryClient = useQueryClient();
-  const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
+  const { session, oauthSessionReloadSeq } = useAuth();
 
   useVisibleFeedRefresh(
     enabled && publicationKey && session ? JSON.stringify([session.did, oauthSessionReloadSeq, publicationKey, articleFilter]) : null,
-    async (signal) => {
-      const oauth = getOAuthSession();
-      if (!oauth || !publicationKey || !session) return;
-      await refreshPublicationFeedFirstPage({
-        queryClient, publicationKey, articleFilter, oauthSession: oauth,
-        viewerDid: session.did, skipEnroll: true, signal,
-      });
-    },
+    refresh,
     FEED_PROACTIVE_REFRESH_INTERVAL_MS,
   );
 }
