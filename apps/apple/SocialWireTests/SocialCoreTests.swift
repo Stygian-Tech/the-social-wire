@@ -50,6 +50,53 @@ struct SocialCoreTests {
         #expect(SocialDestination.proTools.requiresPro)
         #expect(SocialDestination.allCases.filter(\.requiresPro) == [.proTools])
     }
+    @Test("The native rollout gate blocks Pro plans and disabled entitlement enforcement")
+    func unreleasedProAccess() {
+        for gating in [false, true] {
+            for plan: SocialProEntitlement.Plan? in [nil, .free, .pro] {
+                #expect(!SocialProEntitlement.permitsFeatureAccess(
+                    featuresReleased: false, entitlementGatingEnabled: gating,
+                    viewerDID: "did:plc:alice", plan: plan
+                ))
+            }
+        }
+    }
+
+    @Test("Future released Pro features still enforce viewer and entitlement boundaries")
+    func releasedProAccess() {
+        #expect(SocialProEntitlement.permitsFeatureAccess(
+            featuresReleased: true, entitlementGatingEnabled: true,
+            viewerDID: "did:plc:alice", plan: .pro
+        ))
+        for plan: SocialProEntitlement.Plan? in [nil, .free] {
+            #expect(!SocialProEntitlement.permitsFeatureAccess(
+                featuresReleased: true, entitlementGatingEnabled: true,
+                viewerDID: "did:plc:alice", plan: plan
+            ))
+        }
+        #expect(SocialProEntitlement.permitsFeatureAccess(
+            featuresReleased: true, entitlementGatingEnabled: false,
+            viewerDID: "did:plc:alice", plan: .free
+        ))
+        for gating in [false, true] {
+            #expect(!SocialProEntitlement.permitsFeatureAccess(
+                featuresReleased: true, entitlementGatingEnabled: gating,
+                viewerDID: nil, plan: .pro
+            ))
+        }
+    }
+
+    @MainActor
+    @Test("Unreleased Pro refresh does not synthesize access for signed-in viewers")
+    func unreleasedProModel() async {
+        let model = SocialProEntitlementModel(gateway: SocialWireGatewayClient(auth: ATProtoOAuthService()))
+        model.bind(viewerDID: "did:plc:alice")
+        await model.refresh()
+        #expect(!model.isPro)
+        #expect(model.plan == nil)
+        #expect(!model.isLoading)
+        #expect(model.error == nil)
+    }
 }
 
 @Suite("Native Social Publishing Recovery")

@@ -1,0 +1,81 @@
+import UIKit
+import XCTest
+
+@MainActor
+final class ReaderNavigationReliabilityUITests: XCTestCase {
+    private func launch(sidebarPublications: Bool = false) throws -> XCUIApplication {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "Phone aggregate shortcut navigation")
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-shell-routing", "--ui-testing-reset-tabs"]
+        if sidebarPublications { app.launchArguments.append("--ui-testing-sidebar-publications") }
+        app.launch()
+        XCTAssertTrue(app.buttons["fixture-select-publication"].waitForExistence(timeout: 5))
+        return app
+    }
+
+    func testSelectedSubscribedShortcutReturnsFromPublicationToFullFeed() throws {
+        let app = try launch()
+        app.buttons["fixture-select-publication"].tap()
+        assertScope("One Publication", in: app)
+        XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
+
+        let subscribed = app.navigationBars.buttons["Subscribed"].firstMatch
+        XCTAssertTrue(subscribed.isSelected)
+        XCTAssertTrue(subscribed.isHittable)
+        subscribed.tap()
+        assertScope("All Subscribed", in: app)
+    }
+
+    func testPreferenceUpdatesAndTabChangesPreserveChosenPublication() throws {
+        let app = try launch()
+        app.buttons["fixture-select-publication"].tap()
+        assertScope("One Publication", in: app)
+        app.buttons["fixture-refresh-preferences"].tap()
+        assertScope("One Publication", in: app)
+        XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Social"].tap()
+        app.tabBars.buttons["News"].tap()
+        assertScope("One Publication", in: app)
+        XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
+    }
+
+    func testSidebarDropdownsExpandWithoutChangingTheActiveFeed() throws {
+        let app = try launch(sidebarPublications: true)
+        app.tabBars.buttons["Browse"].tap()
+        let subscribed = app.buttons["news-source-disclosure-subscribed"].firstMatch
+        reveal(subscribed, in: app)
+        // XCTest merges the native disclosure arrow into its row. Target its trailing edge.
+        subscribed.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        reveal(app.buttons["Subscribed Publication"], in: app)
+        XCTAssertTrue(app.buttons["Subscribed Publication"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Browse"].isSelected)
+        assertScope("All Subscribed", in: app)
+
+        let following = app.buttons["news-source-disclosure-following"].firstMatch
+        reveal(following, in: app)
+        following.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        reveal(app.buttons["Following Publication"], in: app)
+        XCTAssertTrue(app.buttons["Following Publication"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Browse"].isSelected)
+        assertScope("All Subscribed", in: app)
+
+        app.descendants(matching: .any)["news-source-following"].firstMatch.tap()
+        assertScope("All Following", in: app)
+        XCTAssertTrue(app.tabBars.buttons["News"].isSelected)
+    }
+
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        let sidebar = app.descendants(matching: .any)["news-sidebar"].firstMatch
+        for _ in 0..<8 {
+            if element.exists && element.isHittable { return }
+            sidebar.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable)
+    }
+
+    private func assertScope(_ expected: String, in app: XCUIApplication) {
+        let scope = app.staticTexts["fixture-reader-scope"]
+        let matches = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expected), object: scope)
+        XCTAssertEqual(XCTWaiter.wait(for: [matches], timeout: 5), .completed)
+    }
+}

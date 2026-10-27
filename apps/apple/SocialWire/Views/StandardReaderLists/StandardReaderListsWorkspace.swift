@@ -3,6 +3,7 @@ import SwiftUI
 struct StandardReaderListsWorkspace: View {
     @Environment(SocialWireAppModel.self) private var appModel
     var usesExternalSidebar = false
+    var onShowSidebar: (() -> Void)?
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showingManagement = false
@@ -74,7 +75,7 @@ struct StandardReaderListsWorkspace: View {
     @ViewBuilder
     private var workspaceColumns: some View {
         if usesExternalSidebar {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
+            NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
                 Group {
                     if model.selectedList == nil { listsColumn }
                     else { articlesColumn }
@@ -83,6 +84,11 @@ struct StandardReaderListsWorkspace: View {
                 .toolbar { managementButton }
             } detail: {
                 readerColumn
+                    .toolbar {
+                        ToolbarItem(placement: sidebarLeadingPlacement) {
+                            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
+                        }
+                    }
             }
         } else {
             NavigationSplitView(preferredCompactColumn: $compactColumn) {
@@ -92,16 +98,37 @@ struct StandardReaderListsWorkspace: View {
                     .toolbar { managementButton }
             } content: {
                 articlesColumn
+                    .toolbar {
+                        ToolbarItem(placement: sidebarLeadingPlacement) {
+                            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
+                        }
+                    }
                     .navigationTitle(model.selectedList?.name ?? "Articles")
                     .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
             } detail: {
                 readerColumn
+                    .toolbar {
+                        ToolbarItem(placement: sidebarLeadingPlacement) {
+                            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
+                        }
+                    }
             }
         }
     }
 
+    private var sidebarLeadingPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
     @ToolbarContentBuilder
     private var managementButton: some ToolbarContent {
+        ToolbarItem(placement: sidebarLeadingPlacement) {
+            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
+        }
         ToolbarItem(placement: .primaryAction) {
             Button("Manage Lists", systemImage: "plus") { showingManagement = true }
                 .disabled(!model.signedIn)

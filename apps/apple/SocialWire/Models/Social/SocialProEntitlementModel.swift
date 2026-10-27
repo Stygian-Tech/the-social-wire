@@ -12,8 +12,12 @@ final class SocialProEntitlementModel {
     private(set) var error: String?
 
     var isPro: Bool {
-        guard SocialWireAPIEnvironment.proGatingEnabled else { return viewerDID != nil }
-        return plan == .pro
+        SocialProEntitlement.permitsFeatureAccess(
+            featuresReleased: SocialWireAPIEnvironment.proFeaturesReleased,
+            entitlementGatingEnabled: SocialWireAPIEnvironment.proGatingEnabled,
+            viewerDID: viewerDID,
+            plan: plan
+        )
     }
 
     init(gateway: SocialWireGatewayClient) {
@@ -35,7 +39,7 @@ final class SocialProEntitlementModel {
 
     func refresh() async {
         let current = generation
-        guard let viewerDID else {
+        guard SocialWireAPIEnvironment.proFeaturesReleased, let viewerDID else {
             plan = nil
             return
         }

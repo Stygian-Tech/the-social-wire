@@ -45,7 +45,11 @@ enum SocialWireAPIEnvironment {
         #endif
     }
 
-    /// Mirrors Web's `NEXT_PUBLIC_PRO_GATING_ENABLED` rollout switch.
+    /// Native Pro workflows are unreleased, regardless of entitlement or billing flags.
+    /// Enable deliberately when the native release is ready; no runtime preference can bypass this gate.
+    static let proFeaturesReleased = false
+
+    /// Controls entitlement enforcement after native Pro workflows have been released.
     static var proGatingEnabled: Bool {
         #if SOCIALWIRE_PRO_GATING_ENABLED
         return true

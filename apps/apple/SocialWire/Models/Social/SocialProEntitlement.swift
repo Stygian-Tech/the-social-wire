@@ -8,4 +8,14 @@ struct SocialProEntitlement: Decodable, Equatable, Sendable {
         case free
         case pro
     }
+
+    static func permitsFeatureAccess(
+        featuresReleased: Bool,
+        entitlementGatingEnabled: Bool,
+        viewerDID: String?,
+        plan: Plan?
+    ) -> Bool {
+        guard featuresReleased, viewerDID != nil else { return false }
+        return !entitlementGatingEnabled || plan == .pro
+    }
 }

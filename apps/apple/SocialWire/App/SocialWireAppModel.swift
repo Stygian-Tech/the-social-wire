@@ -19,7 +19,9 @@ final class SocialWireAppModel {
     let podcasts: PodcastLibraryModel
     let sportsTopic: SportsTopicModel
     let standardReaderLists: StandardReaderListsModel
-    let social: SocialWorkspaceModel
+    private(set) var social: SocialWorkspaceModel
+    @ObservationIgnored private var socialSessionScope: SocialSessionScope
+    @ObservationIgnored private let socialTransport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
     let readStateSync: PDSReadStateSyncService
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
@@ -125,6 +127,40 @@ final class SocialWireAppModel {
     private var unreadDeferredEntryId: String?
     /// Bumped when publication selection clears the reader; stale `selectEntry` tasks must not reopen it.
     private var entrySelectionGeneration = 0
+    private var readerNavigationRevision = 0
+    private var readerRequestRevision = 0
+    private var sidebarRefreshRevision = 0
+    private var restoredFeedViewerDID: String?
+    private var pendingRestorationRevision: Int?
+
+    private func invalidateReaderRequests() {
+        readerNavigationRevision += 1
+        readerRequestRevision += 1
+        entrySelectionGeneration += 1
+        cancelWireRequest(epoch: wireRequestEpoch)
+        isLoadingEntries = false
+        isLoadingMoreEntries = false
+    }
+
+    private func beginReaderRequest() -> ReaderFeedRequestContext {
+        readerRequestRevision += 1
+        isLoadingEntries = false
+        isLoadingMoreEntries = false
+        return ReaderFeedRequestContext(
+            revision: readerRequestRevision, viewerDID: viewerDID,
+            selection: feedSelection, filter: readerFilter
+        )
+    }
+
+    private func ownsReaderRequest(_ context: ReaderFeedRequestContext) -> Bool {
+        !Task.isCancelled && isCurrentReaderRequest(context)
+    }
+
+    private func isCurrentReaderRequest(_ context: ReaderFeedRequestContext) -> Bool {
+        context.revision == readerRequestRevision
+            && context.viewerDID == viewerDID
+            && context.selection == feedSelection && context.filter == readerFilter
+    }
     /// AppView scope keys from **`app.thesocialwire.publication.getSidebar`**.
     private var sidebarScopesByPublicationId: [String: PublicationAppViewScopeDTO] = [:]
     /// Server unread counts keyed by publication id (sidebar projection + optional refresh).
@@ -157,6 +193,7 @@ final class SocialWireAppModel {
     private let sidebarProjection = SidebarProjectionStore()
     private let sidebarUnread = SidebarUnreadController()
     private let bootstrapCoordinator = BootstrapStreamCoordinator()
+    private var bootstrapSelectionNavigationRevision = 0
     private var bootstrapSawSidebarSection = false
     private var bootstrapCompletedAt: Date?
     private var wireRequestEpoch = 0
@@ -192,7 +229,8 @@ final class SocialWireAppModel {
         authService: ATProtoOAuthService = ATProtoOAuthService(),
         gatewayTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
         gatewayURLSession: URLSession = .shared,
-        xrpcTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
+        xrpcTransport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
+        initialReaderListSource: ReaderListSource? = nil
     ) {
         self.authService = authService
         resolver = ATProtoResolver()
@@ -206,22 +244,38 @@ final class SocialWireAppModel {
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService, urlSession: gatewayURLSession, transport: gatewayTransport)
-        social = SocialWorkspaceModel(xrpc: xrpc, publicationService: publicationsService, gateway: gateway)
+        let socialTransport = xrpcTransport ?? { try await URLSession.shared.data(for: $0) }
+        self.socialTransport = socialTransport
+        let socialScope = SocialSessionScope(viewerDID: authService.session?.did, auth: authService)
+        socialSessionScope = socialScope
+        let socialXRPC = XRPCClient(auth: authService, resolver: resolver, transport: socialScope.transport(using: socialTransport))
+        social = SocialWorkspaceModel(xrpc: socialXRPC, publicationService: PublicationService(xrpc: socialXRPC), gateway: gateway, viewerDID: authService.session?.did)
         podcasts = PodcastLibraryModel(gateway: gateway, xrpc: xrpc)
         sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
         standardReaderLists = StandardReaderListsModel(gateway: gateway, xrpc: xrpc)
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         authService.setSessionChangeHandler { [weak self] session in
+            if self?.socialSessionScope.viewerDID != session?.did {
+                self?.invalidateReaderRequests()
+                self?.sidebarRefreshRevision += 1
+                self?.restoredFeedViewerDID = nil
+                self?.pendingRestoredFeedSelection = nil
+                self?.pendingRestorationRevision = nil
+                self?.bootstrapCoordinator.reset()
+                self?.isLoading = false
+                self?.sidebarFetching = false
+                self?.folderPublicationsLoading = false
+            }
             self?.articleSocialStateContextID = UUID()
             self?.articleSocialStateLoadingKeys = []
             self?.isSignedIn = session != nil
             self?.sportsTopic.bind(viewer: session?.did)
             self?.standardReaderLists.bind(viewer: session?.did)
-            self?.social.bind(session: session, loginIdentity: self?.authService.loginIdentity)
+            self?.bindSocialWorkspace(viewerDID: session?.did)
         }
         readerFilter = ReaderFilter.loadSaved()
-        applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
+        applyReaderListSource(initialReaderListSource ?? ReaderListSourceStorage.load(), persist: false)
         readStateSync.onPendingChanged = { [weak self] viewer in
             guard let self, self.viewerDID == viewer else { return }
             for (uri, state) in self.readStateSync.pendingExactOverrides {
@@ -797,7 +851,23 @@ final class SocialWireAppModel {
         }
     }
 
+    private func bindSocialWorkspace(viewerDID: String?) {
+        if socialSessionScope.viewerDID != viewerDID {
+            socialSessionScope.invalidate()
+            let scope = SocialSessionScope(viewerDID: viewerDID, auth: authService)
+            socialSessionScope = scope
+            let client = XRPCClient(auth: authService, resolver: resolver, transport: scope.transport(using: socialTransport))
+            social = SocialWorkspaceModel(xrpc: client, publicationService: PublicationService(xrpc: client), gateway: gateway, viewerDID: viewerDID)
+        }
+        social.proEntitlement.bind(viewerDID: viewerDID)
+    }
+
     func signOut() {
+        invalidateReaderRequests()
+        sidebarRefreshRevision += 1
+        restoredFeedViewerDID = nil
+        pendingRestoredFeedSelection = nil
+        pendingRestorationRevision = nil
         readStateSync.reset()
         readAtByEntryId = [:]
         if let viewerDID {
@@ -1015,6 +1085,7 @@ final class SocialWireAppModel {
     }
 
     func openMyPublications() {
+        invalidateReaderRequests()
         selectedSidebar = .myPublications
         selectedPublication = nil
         selectedEntry = nil
@@ -1024,6 +1095,7 @@ final class SocialWireAppModel {
     }
 
     func selectReaderListSource(_ source: ReaderListSource) {
+        readerNavigationRevision += 1
         guard readerListSource != source || feedSelection != .topLevel(source) else { return }
         selectedEntry = nil
         unreadDeferredEntryId = nil
@@ -1031,6 +1103,8 @@ final class SocialWireAppModel {
     }
 
     private func applyReaderListSource(_ source: ReaderListSource, persist: Bool) {
+        let changesScope = feedSelection != .topLevel(source)
+        if changesScope { invalidateReaderRequests() }
         if readerListSource != source {
             cancelWireRequest(epoch: wireRequestEpoch)
             cancelCircleRequest(epoch: circleRequestEpoch)
@@ -1050,36 +1124,45 @@ final class SocialWireAppModel {
             selectedSidebar = nil
             selectedPublication = nil
             selectedSavedLink = nil
-            entries = []
+            if changesScope { entries = [] }
             // NewsShellView's destination task owns and cancels the initial load.
         case .readLater, .archive:
             selectedSidebar = .saved
             selectedPublication = nil
             selectedSavedLink = nil
-            entries = []
+            if changesScope { entries = [] }
             Task { await refreshSavedLinks() }
         case .subscribed:
             publicationSidebarTab = .subscribed
             selectedSidebar = nil
             selectedPublication = nil
             selectedSavedLink = nil
-            entries = []
-            if persist {
-                Task { await loadAggregateFeed(kind: "subscribed") }
+            if changesScope { entries = [] }
+            if persist, changesScope {
+                let revision = readerNavigationRevision
+                Task {
+                    guard revision == readerNavigationRevision else { return }
+                    await loadAggregateFeed(kind: "subscribed")
+                }
             }
         case .following:
             publicationSidebarTab = .following
             selectedSidebar = nil
             selectedPublication = nil
             selectedSavedLink = nil
-            entries = []
-            if persist {
-                Task { await loadAggregateFeed(kind: "following") }
+            if changesScope { entries = [] }
+            if persist, changesScope {
+                let revision = readerNavigationRevision
+                Task {
+                    guard revision == readerNavigationRevision else { return }
+                    await loadAggregateFeed(kind: "following")
+                }
             }
         }
     }
 
     func selectFolderFeed(folderRkey: String) async {
+        let changesScope = feedSelection != .folder(folderRkey)
         prepareForPublicationSelection()
         readerListSource = .subscribed
         publicationSidebarTab = .subscribed
@@ -1089,11 +1172,12 @@ final class SocialWireAppModel {
         }
         selectedSidebar = nil
         selectedPublication = nil
-        entries = []
+        if changesScope { entries = [] }
         await loadAggregateFeed(kind: "folder", id: folderRkey)
     }
 
     func selectStandardReaderList(_ list: StandardReaderList) async {
+        let changesScope = feedSelection != .standardList(list.uri)
         prepareForPublicationSelection()
         readerListSource = .subscribed
         publicationSidebarTab = .subscribed
@@ -1103,7 +1187,7 @@ final class SocialWireAppModel {
         }
         selectedSidebar = nil
         selectedPublication = nil
-        entries = []
+        if changesScope { entries = [] }
         await loadAggregateFeed(kind: "list", id: list.uri)
     }
 
@@ -1112,6 +1196,16 @@ final class SocialWireAppModel {
         id: String? = nil,
         cursor: String? = nil
     ) async {
+        let expectedSelection: FeedSelection
+        switch kind {
+        case "subscribed": expectedSelection = .topLevel(.subscribed)
+        case "following": expectedSelection = .topLevel(.following)
+        case "folder": expectedSelection = .folder(id ?? "")
+        case "list": expectedSelection = .standardList(id ?? "")
+        default: return
+        }
+        guard feedSelection == expectedSelection else { return }
+        let context = beginReaderRequest()
         if cursor == nil {
             entriesNextCursor = nil
             entriesPaginationTriggeredForEntryId = nil
@@ -1120,10 +1214,11 @@ final class SocialWireAppModel {
             isLoadingMoreEntries = true
         }
         defer {
-            if cursor == nil { isLoadingEntries = false }
-            else { isLoadingMoreEntries = false }
+            if isCurrentReaderRequest(context) {
+                if cursor == nil { isLoadingEntries = false }
+                else { isLoadingMoreEntries = false }
+            }
         }
-        let requestViewer = viewerDID
         do {
             let page = try await gateway.fetchAggregateAppViewFeed(
                 kind: kind,
@@ -1132,7 +1227,7 @@ final class SocialWireAppModel {
                 cursor: cursor,
                 limit: Self.aggregateFeedPageSize
             )
-            guard viewerDID == requestViewer else { return }
+            guard ownsReaderRequest(context) else { return }
             applyAuthoritativeReadState(from: page.entries)
             entries = cursor == nil
                 ? page.entries
@@ -1142,6 +1237,7 @@ final class SocialWireAppModel {
                 persistAggregateEntriesByPublication(page.entries)
             }
         } catch {
+            guard ownsReaderRequest(context) else { return }
             markAppViewUnavailableIfNeeded(error)
             if entries.isEmpty, !ATProtoOAuthService.isUserCancellation(error) {
                 errorMessage = error.localizedDescription
@@ -1207,7 +1303,7 @@ final class SocialWireAppModel {
     }
 
     func loadWireFeed(cursor: String? = nil, restoringCache: Bool = true) async {
-        guard wireCatalog?.isAvailable == true, let viewerDID else { return }
+        guard feedSelection == .topLevel(.wire), wireCatalog?.isAvailable == true, let viewerDID else { return }
         let language = preferredWireLanguage
         let source = readerListSource
         let requestKey = "loadWireFeed:\(viewerDID):\(language):\(cursor ?? "first"):\(source)"
@@ -1316,7 +1412,7 @@ final class SocialWireAppModel {
     }
 
     func loadWireEdition(cursor: String? = nil, restoringCache: Bool = true) async {
-        guard wireCatalog?.isAvailable == true, let viewerDID else { return }
+        guard feedSelection == .topLevel(.wire), wireCatalog?.isAvailable == true, let viewerDID else { return }
         if let cursor, entriesNextCursor != cursor { return }
         let language = preferredWireLanguage
         let source = readerListSource
@@ -2054,7 +2150,20 @@ final class SocialWireAppModel {
                 applyReaderListSource(replacement, persist: true)
             }
         }
-        pendingRestoredFeedSelection = FeedSelectionStorage.load(viewerDid: viewerDID)
+        sidebarRefreshRevision += 1
+        let refreshRevision = sidebarRefreshRevision
+        if restoredFeedViewerDID != viewerDID {
+            restoredFeedViewerDID = viewerDID
+            pendingRestoredFeedSelection = FeedSelectionStorage.load(viewerDid: viewerDID)
+            pendingRestorationRevision = readerNavigationRevision
+        }
+        defer {
+            if sidebarRefreshRevision == refreshRevision {
+                isLoading = false
+                sidebarFetching = false
+                folderPublicationsLoading = false
+            }
+        }
         loadSidebarExpandedKeys(for: viewerDID)
         isLoading = true
         sidebarFetching = true
@@ -2070,6 +2179,7 @@ final class SocialWireAppModel {
 
         do {
             try await refreshPublicationSidebarFromBootstrapStream(viewerDID: viewerDID)
+            guard sidebarRefreshRevision == refreshRevision, self.viewerDID == viewerDID else { return }
             await restorePersistedFeedSelectionIfPossible()
             bootstrapCompletedAt = Date()
             persistSidebarSnapshot(viewerDid: viewerDID)
@@ -2095,16 +2205,21 @@ final class SocialWireAppModel {
     }
 
     private func refreshPublicationSidebarFromBootstrapStream(viewerDID: String) async throws {
+        bootstrapSelectionNavigationRevision = readerNavigationRevision
         bootstrapCoordinator.reset()
         bootstrapSawSidebarSection = false
         let streamStarted = Date()
+        let refreshRevision = sidebarRefreshRevision
 
         try await gateway.consumeBootstrapStream { [weak self] event in
-            Task { @MainActor in
-                self?.applyBootstrapStreamEvent(event, streamStarted: streamStarted)
+            await MainActor.run {
+                guard let self, self.sidebarRefreshRevision == refreshRevision,
+                      self.viewerDID == viewerDID else { return }
+                self.applyBootstrapStreamEvent(event, streamStarted: streamStarted)
             }
         }
 
+        guard sidebarRefreshRevision == refreshRevision, self.viewerDID == viewerDID else { return }
         await applyPendingStreamedBootstrapSelectionIfNeeded()
         logBootstrapPhase("streamReady", startedAt: streamStarted)
     }
@@ -2123,7 +2238,7 @@ final class SocialWireAppModel {
         #endif
     }
 
-    private func applyBootstrapStreamEvent(_ event: BootstrapStreamEventDTO, streamStarted: Date = Date()) {
+    func applyBootstrapStreamEvent(_ event: BootstrapStreamEventDTO, streamStarted: Date = Date()) {
         switch event.kind {
         case .sidebarPriority:
             guard let projection = event.sidebarPriority else { return }
@@ -2211,8 +2326,20 @@ final class SocialWireAppModel {
         }
     }
 
-    private func applyPendingStreamedBootstrapSelectionIfNeeded() async {
+    func applyPendingStreamedBootstrapSelectionIfNeeded() async {
         guard let publicationId = bootstrapCoordinator.pendingStreamSelectedPublicationId else { return }
+        guard bootstrapSelectionNavigationRevision == readerNavigationRevision else {
+            bootstrapCoordinator.pendingStreamedEntriesPage = nil
+            bootstrapCoordinator.pendingStreamSelectedPublicationId = nil
+            return
+        }
+        guard case let .publication(selectedId) = feedSelection,
+              PublicationUnreadCountLookup.publicationIdsMatch(selectedId, publicationId)
+        else {
+            bootstrapCoordinator.pendingStreamedEntriesPage = nil
+            bootstrapCoordinator.pendingStreamSelectedPublicationId = nil
+            return
+        }
         guard let publication = publicationMatchingId(publicationId) else { return }
 
         let matchesCurrentSelection = selectedPublication.map {
@@ -2226,17 +2353,16 @@ final class SocialWireAppModel {
                 bootstrapCoordinator.pendingStreamSelectedPublicationId = nil
                 return
             }
-        applyStreamedPublicationSelection(publication: publication, entries: page.entries, cursor: page.cursor)
-        bootstrapCoordinator.pendingStreamedEntriesPage = nil
-        bootstrapCoordinator.pendingStreamSelectedPublicationId = nil
-        if page.entries.isEmpty {
-            scheduleBootstrapFeedRefresh()
-        }
-        return
+            applyStreamedPublicationSelection(publication: publication, entries: page.entries, cursor: page.cursor)
+            bootstrapCoordinator.pendingStreamedEntriesPage = nil
+            bootstrapCoordinator.pendingStreamSelectedPublicationId = nil
+            if page.entries.isEmpty {
+                scheduleBootstrapFeedRefresh()
+            }
+            return
         }
 
-        guard selectedPublication == nil else { return }
-        await selectPublication(publication)
+        // A later entriesPage may hydrate this explicit scope; sidebar events never navigate.
     }
 
     func publication(forId publicationId: String) -> DiscoveredPublication? {
@@ -2291,7 +2417,7 @@ final class SocialWireAppModel {
         entries: [EntryListItem],
         cursor: String?
     ) {
-        prepareForPublicationSelection()
+        invalidateReaderRequests()
         selectedPublication = publication
         selectedSidebar = .publication(publication.publicationId)
         self.entries = entries
@@ -2771,7 +2897,8 @@ final class SocialWireAppModel {
         for publication: DiscoveredPublication,
         cursor: String?,
         filter: ReaderFilter? = nil,
-        maxEntries: Int? = nil
+        maxEntries: Int? = nil,
+        requestContext: ReaderFeedRequestContext? = nil
     ) async throws -> AppViewEntryListResponse {
         guard useAppViewEntryTimelines else {
             throw SocialWireError.appViewUnavailable
@@ -2787,6 +2914,7 @@ final class SocialWireAppModel {
             maxEntries: maxEntries
         )
         guard viewerDID == requestViewer else { throw ReadStateSyncFailure.accountChanged }
+        if let requestContext, !ownsReaderRequest(requestContext) { throw CancellationError() }
         applyAuthoritativeReadState(from: page.entries)
         return page
     }
@@ -2891,7 +3019,7 @@ final class SocialWireAppModel {
 
     /// Synchronously invalidate in-flight entry loads before switching publications.
     func prepareForPublicationSelection() {
-        entrySelectionGeneration += 1
+        invalidateReaderRequests()
         unreadDeferredEntryId = nil
         selectedEntry = nil
         selectedSavedLink = nil
@@ -2903,9 +3031,12 @@ final class SocialWireAppModel {
             publication.publicationId,
             forKey: Self.lastSelectedPublicationKey
         )
+        let changesScope = feedSelection != .publication(publication.publicationId)
         prepareForPublicationSelection()
+        if changesScope { entries = [] }
         selectedPublication = publication
         selectedSidebar = .publication(publication.publicationId)
+        if readerListSource != .following { readerListSource = .subscribed }
         feedSelection = .publication(publication.publicationId)
         if let viewerDID {
             FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
@@ -2922,23 +3053,28 @@ final class SocialWireAppModel {
     }
 
     func loadEntries(for publication: DiscoveredPublication, forceNetworkRefresh: Bool = false) async {
+        guard feedSelection == .publication(publication.publicationId),
+              selectedPublication?.publicationId == publication.publicationId else { return }
+        let context = beginReaderRequest()
         entriesNextCursor = nil
         entriesPaginationTriggeredForEntryId = nil
         var hadCachedEntries = false
         if let coordinator = readerCacheCoordinator,
-           let snapshot = try? coordinator.publicationEntries(publication.publicationId) {
-            entries = snapshot
-            hadCachedEntries = !snapshot.isEmpty
-            await prefetchThumbnailImages(for: snapshot)
+           let snapshot = try? coordinator.publicationEntries(publication.publicationId),
+           !snapshot.isEmpty {
+            if entries.isEmpty { entries = snapshot }
+            hadCachedEntries = true
         }
 
         if !hadCachedEntries {
             isLoadingEntries = true
         }
-        defer { isLoadingEntries = false }
+        defer { if isCurrentReaderRequest(context) { isLoadingEntries = false } }
 
         if hadCachedEntries && !forceNetworkRefresh && readerFilter == .all {
+            let revision = readerNavigationRevision
             Task(priority: .utility) {
+                guard revision == self.readerNavigationRevision else { return }
                 await self.refreshPublicationEntriesInBackground(for: publication)
             }
             return
@@ -2946,7 +3082,9 @@ final class SocialWireAppModel {
 
         do {
             await refreshPublicationIndex(for: publication)
-            let page = try await fetchEntriesPage(for: publication, cursor: nil)
+            guard ownsReaderRequest(context) else { return }
+            let page = try await fetchEntriesPage(for: publication, cursor: nil, requestContext: context)
+            guard ownsReaderRequest(context) else { return }
             entries = page.entries
             entriesNextCursor = page.cursor
             if readerFilter == .all {
@@ -2954,6 +3092,7 @@ final class SocialWireAppModel {
             }
             await prefetchThumbnailImages(for: page.entries)
         } catch {
+            guard ownsReaderRequest(context) else { return }
             markAppViewUnavailableIfNeeded(error)
             if entries.isEmpty, !ATProtoOAuthService.isUserCancellation(error) {
                 errorMessage = error.localizedDescription
@@ -2966,11 +3105,14 @@ final class SocialWireAppModel {
         skipEnroll: Bool = true
     ) async {
         guard selectedPublication?.publicationId == publication.publicationId else { return }
+        let context = beginReaderRequest()
         do {
             if !skipEnroll {
                 await refreshPublicationIndex(for: publication)
+                guard ownsReaderRequest(context) else { return }
             }
-            let page = try await fetchEntriesPage(for: publication, cursor: nil)
+            let page = try await fetchEntriesPage(for: publication, cursor: nil, requestContext: context)
+            guard ownsReaderRequest(context) else { return }
             if readerFilter == .unread {
                 entries = page.entries
                 entriesNextCursor = page.cursor
@@ -2983,14 +3125,14 @@ final class SocialWireAppModel {
             }
             await prefetchThumbnailImages(for: page.entries)
         } catch {
+            guard ownsReaderRequest(context) else { return }
             markAppViewUnavailableIfNeeded(error)
         }
     }
 
     private func restoreLastSelectedPublicationEntriesIfCached() {
         guard selectedPublication == nil,
-              let publicationId = UserDefaults.standard.string(forKey: Self.lastSelectedPublicationKey),
-              !publicationId.isEmpty,
+              case let .publication(publicationId) = feedSelection,
               let coordinator = readerCacheCoordinator,
               let snapshot = try? coordinator.publicationEntries(publicationId),
               !snapshot.isEmpty
@@ -3012,12 +3154,14 @@ final class SocialWireAppModel {
         guard !isLoadingEntries, !isLoadingMoreEntries else { return }
         guard selectedPublication?.publicationId == publication.publicationId else { return }
 
+        let context = beginReaderRequest()
         isLoadingMoreEntries = true
-        defer { isLoadingMoreEntries = false }
+        defer { if isCurrentReaderRequest(context) { isLoadingMoreEntries = false } }
 
         let cursor = entriesNextCursor
         do {
-            let page = try await fetchEntriesPage(for: publication, cursor: cursor)
+            let page = try await fetchEntriesPage(for: publication, cursor: cursor, requestContext: context)
+            guard ownsReaderRequest(context) else { return }
             entries = mergeEntryPages(existing: entries, newPage: page.entries)
             entriesNextCursor = page.cursor
             if readerFilter == .all {
@@ -3025,6 +3169,7 @@ final class SocialWireAppModel {
             }
             await prefetchThumbnailImages(for: page.entries)
         } catch {
+            guard ownsReaderRequest(context) else { return }
             if entryId != nil {
                 entriesPaginationTriggeredForEntryId = nil
             }
@@ -3036,6 +3181,7 @@ final class SocialWireAppModel {
         guard readerListSource.supportsReadState else { return }
         let old = readerFilter
         guard old != newValue else { return }
+        invalidateReaderRequests()
         readerFilter = newValue
         newValue.save()
 
@@ -3603,6 +3749,7 @@ final class SocialWireAppModel {
     }
 
     func selectSavedFeedSource(_ source: SavedFeedSource) {
+        invalidateReaderRequests()
         selectedSavedSourceKey = source.id
         selectedSavedLink = nil
         feedSelection = .savedSource(readerListSource, source.id)
@@ -3612,6 +3759,7 @@ final class SocialWireAppModel {
     }
 
     func clearSavedFeedSource() {
+        invalidateReaderRequests()
         selectedSavedSourceKey = nil
         selectedSavedLink = nil
         feedSelection = .topLevel(readerListSource)
@@ -3631,6 +3779,12 @@ final class SocialWireAppModel {
 
     private func restorePersistedFeedSelectionIfPossible() async {
         guard let selection = pendingRestoredFeedSelection else { return }
+        guard pendingRestorationRevision == readerNavigationRevision else {
+            pendingRestoredFeedSelection = nil
+            pendingRestorationRevision = nil
+            return
+        }
+        pendingRestorationRevision = nil
         switch selection {
         case .topLevel(let source):
             guard visibleReaderListSources.contains(source) else {
@@ -3659,7 +3813,9 @@ final class SocialWireAppModel {
                 return
             }
             pendingRestoredFeedSelection = nil
-            await selectPublication(publication)
+            if feedSelection != selection || selectedPublication == nil {
+                await selectPublication(publication)
+            }
         case .savedSource(let source, let sourceId):
             guard source == .readLater || source == .archive,
                   feedPreferences.visibleFeeds.contains(source)
@@ -3667,8 +3823,13 @@ final class SocialWireAppModel {
                 pendingRestoredFeedSelection = nil
                 return
             }
+            pendingRestoredFeedSelection = nil
             applyReaderListSource(source, persist: true)
+            let navigationRevision = readerNavigationRevision
+            let restoringViewer = viewerDID
             await refreshSavedLinks()
+            guard !Task.isCancelled, readerNavigationRevision == navigationRevision,
+                  viewerDID == restoringViewer, feedSelection == .topLevel(source) else { return }
             guard let savedSource = currentSavedFeedSources.first(where: { $0.id == sourceId }) else {
                 pendingRestoredFeedSelection = nil
                 return

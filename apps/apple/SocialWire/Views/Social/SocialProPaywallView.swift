@@ -7,7 +7,9 @@ struct SocialProPaywallView: View {
         ContentUnavailableView {
             Label("Social Wire Pro", systemImage: "lock.fill")
         } description: {
-            if entitlement.isLoading {
+            if !SocialWireAPIEnvironment.proFeaturesReleased {
+                Text("Pro features are not available in this release.")
+            } else if entitlement.isLoading {
                 Text("Checking Pro Access…")
             } else if entitlement.error != nil {
                 Text("Pro access could not be verified. Please retry.")
@@ -15,7 +17,7 @@ struct SocialProPaywallView: View {
                 Text("Tools and multi-account support are available with Pro. Subscriptions are coming soon.")
             }
         } actions: {
-            if !entitlement.isLoading {
+            if SocialWireAPIEnvironment.proFeaturesReleased, !entitlement.isLoading {
                 Button("Retry Pro Access") { Task { await entitlement.refresh() } }
                     .buttonStyle(.bordered)
             }

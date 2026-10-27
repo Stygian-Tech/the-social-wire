@@ -18,7 +18,8 @@ extension View {
     /// Compact source-list spacing for the macOS-style navigation sidebar.
     func readerSidebarListRow() -> some View {
         listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 3, leading: 20, bottom: 3, trailing: 12))
     }
 
     /// Expand button/list row labels to the full row width for reliable taps.

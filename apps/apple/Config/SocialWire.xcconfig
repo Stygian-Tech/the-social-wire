@@ -1,0 +1,2 @@
+// Provider credentials are supplied locally or by the build environment.
+#include? "Local.xcconfig"

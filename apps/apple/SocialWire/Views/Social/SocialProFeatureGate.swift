@@ -13,7 +13,9 @@ struct SocialProFeatureGate<Content: View>: View {
             }
         }
         .task(id: entitlement.viewerDID) {
-            if entitlement.plan == nil { await entitlement.refresh() }
+            if SocialWireAPIEnvironment.proFeaturesReleased, entitlement.plan == nil {
+                await entitlement.refresh()
+            }
         }
     }
 }
