@@ -92,7 +92,7 @@ function LivePostsViewer() {
           <LivePostEventSections rows={rows} pending={live.pending} />
         </aside>
         {/* The desktop editor owns the glass overlap when its mobile wrappers have no box. */}
-        <section aria-label="Live Event Workspace" className="min-w-0 lg:min-h-0 lg:col-start-1 lg:row-start-2 lg:mt-[calc(-1*var(--floating-glass-top-extent,0px))] lg:pt-[var(--floating-glass-top-extent,0px)] lg:overflow-y-auto lg:overscroll-contain">
+        <section aria-label="Live Event Workspace" className="min-w-0 lg:px-4 lg:min-h-0 lg:col-start-1 lg:row-start-2 lg:mt-[calc(-1*var(--floating-glass-top-extent,0px))] lg:pt-[var(--floating-glass-top-extent,0px)] lg:overflow-y-auto lg:overscroll-contain">
           {error ? <div role="alert" className="mb-4 space-y-2 rounded-xl border p-3 text-sm"><p>{error}</p>{error === SCOPE_RECOVERY_MESSAGE ? <SocialPermissionRecovery /> : <Button size="sm" variant="outline" disabled={live.pending} onClick={() => { setFailure(undefined); void live.refresh(); }}>Retry Loading</Button>}</div> : null}
           {!event ? <LivePostSchedule rows={rows} loading={live.loading || live.rsvpLoading} pending={live.pending} onNewEvent={() => openNew()} /> : <>
             <Button variant="ghost" size="sm" className="mb-3" disabled={live.pending} onClick={() => { setSelectedUri(undefined); setFailure(undefined); }}>View Schedule</Button>
