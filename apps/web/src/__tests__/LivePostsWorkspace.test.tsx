@@ -3,7 +3,7 @@ import type { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Atproto from "@/lib/atprotoClient";
 import { listViewerAtmoEvents } from "@/lib/livePosts/atmoEventClient";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Auth from "@/hooks/useAuth";
 import * as Live from "@/hooks/useLivePosts";
@@ -35,11 +35,101 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); client.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
 async function mount() { await act(async () => { render(<QueryClientProvider client={client}><SidebarProvider><LivePostPage /></SidebarProvider></QueryClientProvider>); }); }
+function selectEvent(title = "Launch") { fireEvent.click(within(screen.getByRole("complementary", { name: "Live Events" })).getByRole("button", { name: new RegExp(title) })); }
+
+test("renders an empty schedule with a create action when there are no events", async () => {
+  state.events = [];
+  await mount();
+  const schedule = within(screen.getByRole("region", { name: "Live Post Schedule" }));
+  expect(schedule.getByRole("heading", { name: /^Current$/ })).toBeTruthy();
+  expect(schedule.getByRole("heading", { name: /^Upcoming$/ })).toBeTruthy();
+  expect(screen.queryByRole("form", { name: "Live Update Composer" })).toBeNull();
+  fireEvent.click(schedule.getByRole("button", { name: "New Event" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(state.createEvent).not.toHaveBeenCalled();
+});
+
+test("opens the schedule without selecting an ended session and keeps history in Your Events", async () => {
+  state.events = [{ ...event, endedAt: "2026-10-26T23:00:00Z" }];
+  await mount();
+  const schedule = within(screen.getByRole("region", { name: "Live Post Schedule" }));
+  expect(schedule.getByRole("heading", { name: "Live Post Schedule" })).toBeTruthy();
+  expect(schedule.getByRole("heading", { name: /^Current$/ })).toBeTruthy();
+  expect(schedule.getByRole("heading", { name: /^Upcoming$/ })).toBeTruthy();
+  expect(schedule.queryByText("Launch")).toBeNull();
+  expect(screen.queryByText("Published Earlier")).toBeNull();
+  expect(screen.queryByRole("form", { name: "Live Update Composer" })).toBeNull();
+  expect(within(screen.getByRole("complementary", { name: "Live Events" })).getByRole("button", { name: /Launch.*Ended/ })).toBeTruthy();
+});
+
+test("shows current and upcoming events in the schedule while leaving past events in the sidebar", async () => {
+  state.events = [event, { ...event, uri: `${event.uri}-past`, title: "Ended Session", endedAt: "2000-01-01T17:00:00Z" }];
+  state.rsvpEvents = [
+    { uri: "at://did:plc:alice/community.lexicon.calendar.event/future", cid: "future", title: "Future Conference", startsAt: "2100-01-01T09:00:00Z", endsAt: "2100-01-01T17:00:00Z", url: "https://atmo.rsvp/e/future" },
+    { uri: "at://did:plc:alice/community.lexicon.calendar.event/past", cid: "past", title: "Past Conference", startsAt: "2000-01-01T09:00:00Z", endsAt: "2000-01-01T17:00:00Z", url: "https://atmo.rsvp/e/past" },
+  ];
+  await mount();
+  const schedule = within(screen.getByRole("region", { name: "Live Post Schedule" }));
+  expect(schedule.getByRole("button", { name: /Launch/ })).toBeTruthy();
+  expect(schedule.getByRole("button", { name: /Future Conference/ })).toBeTruthy();
+  expect(schedule.queryByText("Ended Session")).toBeNull();
+  expect(schedule.queryByText("Past Conference")).toBeNull();
+  const sidebar = within(screen.getByRole("complementary", { name: "Live Events" }));
+  expect(sidebar.getByRole("button", { name: /Ended Session/ })).toBeTruthy();
+  expect(sidebar.getByRole("button", { name: /Past Conference/ })).toBeTruthy();
+  fireEvent.click(schedule.getByRole("button", { name: /Launch/ }));
+  expect(screen.getByRole("textbox", { name: "Update" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Live Post Schedule" })).toBeNull();
+});
+
+test("orders upcoming owned and RSVP events by their scheduled start", async () => {
+  state.events = [{ ...event, title: "Late Session", startsAt: "2100-01-03T09:00:00Z", endsAt: "2100-01-03T17:00:00Z" }];
+  state.rsvpEvents = [
+    { uri: "at://did:plc:alice/community.lexicon.calendar.event/middle", cid: "middle", title: "Middle Conference", startsAt: "2100-01-02T09:00:00Z", endsAt: "2100-01-02T17:00:00Z", url: "https://atmo.rsvp/e/middle" },
+    { uri: "at://did:plc:alice/community.lexicon.calendar.event/first", cid: "first", title: "First Conference", startsAt: "2100-01-01T09:00:00Z", endsAt: "2100-01-01T17:00:00Z", url: "https://atmo.rsvp/e/first" },
+  ];
+  await mount();
+  const upcoming = within(screen.getByRole("region", { name: "Upcoming Schedule" }));
+  const buttons = upcoming.getAllByRole("button");
+  expect(buttons[0].textContent).toContain("First Conference");
+  expect(buttons[1].textContent).toContain("Middle Conference");
+  expect(buttons[2].textContent).toContain("Late Session");
+  expect(buttons).toHaveLength(3);
+  expect(buttons[0].querySelector("time")?.getAttribute("datetime")).toBe("2100-01-01T09:00:00Z");
+});
+
+test("waits for event discovery before showing the empty schedule action", async () => {
+  state.events = [];
+  state.rsvpLoading = true;
+  await mount();
+  const schedule = within(screen.getByRole("region", { name: "Live Post Schedule" }));
+  expect(schedule.getByRole("status").textContent).toBe("Loading Schedule…");
+  expect(schedule.queryByText("No Live Events Scheduled")).toBeNull();
+  expect(schedule.queryByRole("button", { name: "New Event" })).toBeNull();
+  state.rsvpLoading = false;
+  fireEvent.click(screen.getByRole("button", { name: "New Event" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(schedule.queryByRole("status")).toBeNull();
+  expect(schedule.getByRole("button", { name: "New Event" })).toBeTruthy();
+});
+
+test("View Schedule returns from the editor and preserves the event draft", async () => {
+  await mount();
+  selectEvent();
+  fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Keep This Draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "View Schedule" }));
+  expect(screen.getByRole("heading", { name: "Live Post Schedule" })).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Update" })).toBeNull();
+  selectEvent();
+  expect((screen.getByRole("textbox", { name: "Update" }) as HTMLTextAreaElement).value).toBe("Keep This Draft");
+  expect(state.publishUpdate).not.toHaveBeenCalled();
+});
 
 test("publishes explicitly, retains failed update for retry, and clears only after success", async () => {
   const publish = mock(async () => { throw new Error("Network Failed"); });
   state.publishUpdate = publish;
   await mount();
+  selectEvent();
   const input = screen.getByRole("textbox", { name: "Update" });
   fireEvent.change(input, { target: { value: "New Update" } });
   expect(publish).toHaveBeenCalledTimes(0);
@@ -54,6 +144,7 @@ test("publishes explicitly, retains failed update for retry, and clears only aft
 
 test("shows published destination links and validates Bluesky limits including event metadata", async () => {
   await mount();
+  selectEvent();
   expect(screen.getByRole("link", { name: "View Bluesky Update" }).getAttribute("href")).toContain("/social/post?");
   expect(screen.getByRole("link", { name: "View Article" }).getAttribute("href")).toBe("https://blog.test/live");
   fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "x".repeat(300) } });
@@ -83,11 +174,12 @@ test("keeps update drafts separate between events and disables publishing while 
   const other = { ...event, uri: `${event.uri}-other`, title: "Another Event", entries: [] };
   state.events = [event, other];
   await mount();
+  selectEvent();
   fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Launch Draft" } });
-  fireEvent.click(screen.getByRole("button", { name: /Another Event/ }));
+  selectEvent("Another Event");
   expect((screen.getByRole("textbox", { name: "Update" }) as HTMLTextAreaElement).value).toBe("");
   fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Other Draft" } });
-  fireEvent.click(screen.getByRole("button", { name: /Launch.*Updates/ }));
+  selectEvent();
   expect((screen.getByRole("textbox", { name: "Update" }) as HTMLTextAreaElement).value).toBe("Launch Draft");
   state.pending = true;
   fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Next Draft" } });
@@ -97,7 +189,7 @@ test("keeps update drafts separate between events and disables publishing while 
 test("prepopulates an RSVP event without writing until the user creates its live event", async () => {
   state.rsvpEvents = [{ uri: "at://did:plc:alice/community.lexicon.calendar.event/rsvp", cid: "source", title: "Future Conference", startsAt: "2100-01-01T09:00:00+01:00", endsAt: "2100-01-01T17:00:00+01:00", url: "https://atmo.rsvp/e/source" }];
   await mount();
-  fireEvent.click(screen.getByRole("button", { name: /Future Conference/ }));
+  fireEvent.click(within(screen.getByRole("region", { name: "Live Post Schedule" })).getByRole("button", { name: /Future Conference/ }));
   expect(state.createEvent).not.toHaveBeenCalled();
   expect((screen.getByRole("textbox", { name: "Event Title" }) as HTMLInputElement).value).toBe("Future Conference");
   expect(screen.getByRole("dialog").querySelector('time[datetime="2100-01-01T09:00:00+01:00"]')).not.toBeNull();
@@ -114,8 +206,9 @@ test("groups events by schedule, keeps undated owned events current, and avoids 
   ];
   await mount();
   expect(screen.queryByText("Duplicate Source")).toBeNull();
-  const current = screen.getByText("Current").closest("details");
-  const past = screen.getByText("Past").closest("details");
+  const sidebar = within(screen.getByRole("complementary", { name: "Live Events" }));
+  const current = sidebar.getByText("Current").closest("details");
+  const past = sidebar.getByText("Past").closest("details");
   expect(current?.open).toBe(true);
   expect(current?.textContent).toContain("Launch");
   expect(past?.open).toBe(false);
@@ -132,17 +225,18 @@ test("refreshes scheduled event sections each minute and cleans up its clock", a
   restores.push(() => clock.mockRestore(), () => interval.mockRestore(), () => clear.mockRestore());
   state.rsvpEvents = [{ uri: "at://did:plc:alice/community.lexicon.calendar.event/boundary", cid: "source", title: "Scheduled Event", startsAt: "2026-10-11T12:01:00Z", endsAt: "2026-10-11T12:03:00Z", url: "https://atmo.rsvp/e/boundary" }];
   await mount();
-  const upcoming = screen.getByText("Upcoming").closest("details")!;
+  const sidebar = within(screen.getByRole("complementary", { name: "Live Events" }));
+  const upcoming = sidebar.getByText("Upcoming").closest("details")!;
   expect(upcoming.textContent).toContain("Scheduled Event");
   // Native details retains its user-controlled state during React renders.
   upcoming.open = false;
   now += 60_000;
   act(() => { tick?.(); });
-  expect(screen.getByText("Current").closest("details")?.textContent).toContain("Scheduled Event");
+  expect(sidebar.getByText("Current").closest("details")?.textContent).toContain("Scheduled Event");
   expect(upcoming.open).toBe(false);
   now += 120_000;
   act(() => { tick?.(); });
-  expect(screen.getByText("Past").closest("details")?.textContent).toContain("Scheduled Event");
+  expect(within(screen.getByRole("complementary", { name: "Live Events" })).getByText("Past").closest("details")?.textContent).toContain("Scheduled Event");
   cleanup();
   expect(clear).toHaveBeenCalledWith(42);
 });
@@ -155,14 +249,26 @@ test("bounds long event navigation and event history in separate desktop scroll 
   const workspace = screen.getByRole("region", { name: "Live Event Workspace" });
   expect(sidebar.classList.contains("lg:overflow-y-auto")).toBe(true);
   expect(workspace.classList.contains("lg:overflow-y-auto")).toBe(true);
-  expect(sidebar.parentElement!.classList.contains("lg:grid-rows-[minmax(0,1fr)]")).toBe(true);
-  expect(sidebar.parentElement!.classList.contains("lg:h-full")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: /Event 39/ }));
+  const header = screen.getByRole("heading", { name: "Live Post", level: 1 }).closest("header")!;
+  const shell = header.parentElement!;
+  expect(shell.classList.contains("lg:grid-cols-[minmax(0,1fr)_18rem]")).toBe(true);
+  expect(shell.classList.contains("lg:grid-rows-[auto_minmax(0,1fr)]")).toBe(true);
+  expect(header.classList.contains("lg:col-start-1")).toBe(true);
+  expect(workspace.classList.contains("lg:col-start-1")).toBe(true);
+  expect(workspace.classList.contains("lg:row-start-2")).toBe(true);
+  expect(sidebar.classList.contains("lg:row-span-2")).toBe(true);
+  // One shared header keeps the same adjacent mobile scroll pane and overlay.
+  expect(header.nextElementSibling?.contains(sidebar)).toBe(true);
+  expect(header.nextElementSibling?.contains(workspace)).toBe(true);
+  expect(sidebar.compareDocumentPosition(workspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getAllByRole("heading", { name: "Live Post", level: 1 })).toHaveLength(1);
+  selectEvent("Event 39");
   expect(screen.getByRole("heading", { name: "Event 39" })).toBeTruthy();
 });
 
 test("existing events expose editable format/timezone with preview and explicit save", async () => {
   await mount();
+  selectEvent();
   fireEvent.change(screen.getByRole("combobox", { name: "Timestamp Format", hidden: true }), { target: { value: "time-12" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Time Zone", hidden: true }), { target: { value: "America/Chicago" } });
   expect(screen.getByLabelText("Timestamp Preview").textContent).toMatch(/\d{2}:\d{2} [AP]M/);
@@ -176,6 +282,7 @@ test("confirms ending a session, warns about unpublished drafts, and preserves p
   const ended = { ...event, endedAt: "2026-10-26T23:00:00Z" };
   state.endEvent = mock(async () => { state.events = [ended]; return ended; });
   await mount();
+  selectEvent();
   fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Unpublished Draft" } });
   fireEvent.click(screen.getByRole("button", { name: "End Live Post" }));
   expect(state.endEvent).not.toHaveBeenCalled();
@@ -185,18 +292,22 @@ test("confirms ending a session, warns about unpublished drafts, and preserves p
   expect((screen.getByRole("textbox", { name: "Update" }) as HTMLTextAreaElement).value).toBe("Unpublished Draft");
   fireEvent.click(screen.getByRole("button", { name: "End Live Post" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm End Live Post" }));
-  await waitFor(() => expect(screen.getByText(/Live Post Ended/)).toBeTruthy());
+  await screen.findByRole("heading", { name: "Live Post Schedule" });
   expect(state.endEvent).toHaveBeenCalledWith(event.uri);
   expect(screen.queryByRole("form", { name: "Live Update Composer" })).toBeNull();
   expect(screen.queryByRole("button", { name: "End Live Post" })).toBeNull();
+  expect(screen.queryByText("Published Earlier")).toBeNull();
+  expect(within(screen.getByRole("complementary", { name: "Live Events" })).getByText("Past").closest("details")?.textContent).toContain("Launch");
+  selectEvent();
+  expect(screen.getByText(/Live Post Ended/)).toBeTruthy();
   expect(screen.getByText("Published Earlier")).toBeTruthy();
-  expect(screen.getByText("Past").closest("details")?.textContent).toContain("Launch");
 });
 
 test("failed session ending retains the draft and allows an explicit retry", async () => {
   const end = mock(async () => { throw new Error("Connection Lost"); });
   state.endEvent = end;
   await mount();
+  selectEvent();
   fireEvent.change(screen.getByRole("textbox", { name: "Update" }), { target: { value: "Keep Me" } });
   fireEvent.click(screen.getByRole("button", { name: "End Live Post" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm End Live Post" }));
@@ -209,6 +320,7 @@ test("failed session ending retains the draft and allows an explicit retry", asy
 test("a persisted ended event is read-only after reopening", async () => {
   state.events = [{ ...event, endedAt: "2026-10-26T23:00:00Z" }];
   await mount();
+  selectEvent();
   expect(screen.queryByRole("textbox", { name: "Update" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Publish Update" })).toBeNull();
   expect(screen.queryByRole("button", { name: "End Live Post" })).toBeNull();
@@ -221,6 +333,7 @@ test("passes GIF attachments to publishing, retains failed media drafts, and ren
   const publish = mock(async () => { throw new Error("Offline"); });
   state.publishUpdate = publish;
   await mount();
+  selectEvent();
   fireEvent.click(screen.getByRole("button", { name: "Add GIF" }));
   fireEvent.change(screen.getByRole("textbox", { name: "GIF URL" }), { target: { value: gif.url } });
   fireEvent.change(screen.getByRole("textbox", { name: "GIF Alt Text" }), { target: { value: gif.alt } });

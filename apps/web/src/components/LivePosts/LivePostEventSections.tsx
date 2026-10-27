@@ -7,6 +7,8 @@ export type LivePostSidebarRow = {
   key: string;
   title: string;
   description: string;
+  startsAt?: string;
+  endsAt?: string;
   section: "current" | "upcoming" | "past";
   selected: boolean;
   onSelect: () => void;
