@@ -83,6 +83,45 @@ function pointer(target: Element, type: string, x: number, y: number, id = 1) {
 const secondImage = { ...image, thumb: "https://publisher.example/two.jpg", fullsize: "https://publisher.example/two-original.jpg", alt: "Second Photo" };
 
 describe("Social Image Gallery", () => {
+  it("preloads every slide and retains the loaded image until the next slide finishes", () => {
+    render(<SocialImageGallery images={[image, secondImage]} />);
+    const slides = screen.getAllByRole("img", { hidden: true });
+    expect(slides.map(img => img.getAttribute("src"))).toEqual([image.thumb, secondImage.thumb]);
+    expect(slides.every(img => img.getAttribute("loading") === "eager")).toBe(true);
+    fireEvent.load(slides[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Next Photo" }));
+    expect(screen.getByRole("img")).toBe(slides[0]);
+    expect(slides[0].classList.contains("pointer-events-auto")).toBe(true);
+    expect(slides[1].classList.contains("pointer-events-none")).toBe(true);
+    expect(screen.getByRole("button", { name: "Open Image 2: Second Photo" }).getAttribute("aria-busy")).toBe("true");
+    fireEvent.load(slides[1]);
+    expect(screen.getByRole("img")).toBe(slides[1]);
+    expect(slides[0].classList.contains("pointer-events-none")).toBe(true);
+    expect(slides[1].classList.contains("pointer-events-auto")).toBe(true);
+    expect(screen.getByRole("button", { name: "Open Image 2: Second Photo" }).getAttribute("aria-busy")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Previous Photo" }));
+    expect(screen.getByRole("img")).toBe(slides[0]);
+    expect(screen.getAllByRole("img", { hidden: true })).toEqual(slides);
+  });
+
+  it("ignores late slide loads after navigating ahead and settles failed image loads", () => {
+    const third = { ...image, thumb: "https://publisher.example/three.jpg", alt: "Third Photo" };
+    render(<SocialImageGallery images={[image, secondImage, third]} />);
+    const slides = screen.getAllByRole("img", { hidden: true });
+    fireEvent.load(slides[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Show Photo 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show Photo 3" }));
+    fireEvent.load(slides[1]);
+    expect(screen.getByRole("img")).toBe(slides[0]);
+    fireEvent.load(slides[2]);
+    expect(screen.getByRole("img")).toBe(slides[2]);
+    fireEvent.click(screen.getByRole("button", { name: "Show Photo 2" }));
+    expect(screen.getByRole("img")).toBe(slides[1]);
+    fireEvent.error(slides[1]);
+    expect(screen.getByRole("status").textContent).toBe("Image Couldn’t Be Loaded");
+    expect(screen.getByRole("button", { name: "Open Image 2: Second Photo" }).getAttribute("aria-busy")).toBe("false");
+  });
+
   it("reserves the same uncropped viewport across mixed image ratios and loading", () => {
     render(<SocialImageGallery images={[image, { ...secondImage, aspectRatio: { width: 1200, height: 600 } }]} />);
     const viewport = screen.getByRole("button", { name: "Open Image 1: A portrait" });
@@ -102,6 +141,7 @@ describe("Social Image Gallery", () => {
 
   it("navigates one uncropped photo at a time using arrows, dots, and keyboard", () => {
     render(<SocialImageGallery images={[image, secondImage]} />);
+    screen.getAllByRole("img", { hidden: true }).forEach(img => fireEvent.load(img));
     expect(screen.getAllByRole("img")).toHaveLength(1);
     expect(screen.getByText("1 / 2")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Previous Photo" }) as HTMLButtonElement).disabled).toBe(true);
@@ -252,7 +292,9 @@ describe("Social Image Gallery", () => {
     );
     expect(many).toContain("carousel");
     expect(many).toContain("Next Photo");
-    expect(many.match(/<img /g)?.length).toBe(1);
+    expect(many.match(/<img /g)?.length).toBe(2);
+    expect(many.match(/loading="eager"/g)?.length).toBe(2);
+    expect(many).toContain("absolute inset-0");
   });
   it("opens the full-size dialog, resets zoom on reopen and does not navigate the post", async () => {
     imageFetch();
