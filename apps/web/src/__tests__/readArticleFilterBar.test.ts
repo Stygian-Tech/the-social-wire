@@ -17,9 +17,10 @@ const restores: (() => void)[] = [];
 let feed = "wire";
 const retryWire = mock(async () => undefined);
 const retryCircle = mock(async () => undefined);
+let refreshPending = false;
 
 beforeEach(() => {
-  retryWire.mockClear(); retryCircle.mockClear();
+  retryWire.mockClear(); retryCircle.mockClear(); refreshPending = false;
   const media = Object.getOwnPropertyDescriptor(window, "matchMedia");
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -35,7 +36,7 @@ beforeEach(() => {
     spyOn(Navigation, "useSearchParams").mockImplementation(() => new URLSearchParams({ feed }) as unknown as ReturnType<typeof Navigation.useSearchParams>),
     spyOn(ReadRoute, "useReadRoute").mockReturnValue({ articleListFilter: "all" } as unknown as ReturnType<typeof ReadRoute.useReadRoute>),
     spyOn(ReadScope, "useReadSidebarScope").mockReturnValue({ activeFeedScope: { publications: [], displayName: "" } } as unknown as ReturnType<typeof ReadScope.useReadSidebarScope>),
-    spyOn(Bootstrap, "useSidebarBootstrap").mockReturnValue({ refresh: { mutate: mock(() => undefined) } } as unknown as ReturnType<typeof Bootstrap.useSidebarBootstrap>),
+    spyOn(Bootstrap, "useSidebarBootstrap").mockImplementation(() => ({ refresh: { mutate: mock(() => undefined), isPending: refreshPending } }) as unknown as ReturnType<typeof Bootstrap.useSidebarBootstrap>),
     spyOn(BulkRead, "useCachedBulkReadActions").mockReturnValue({ bulkDisabled: true, applyMarkAllRead: mock(() => undefined) } as unknown as ReturnType<typeof BulkRead.useCachedBulkReadActions>),
     spyOn(Hydration, "useClientHydrated").mockReturnValue(true),
     spyOn(WireEdition, "useWireEdition").mockReturnValue(wireState as unknown as ReturnType<typeof WireEdition.useWireEdition>),
@@ -48,6 +49,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); restores.splice(0).reverse().forEach(restore => restore()); });
 
 describe("read feed header", () => {
+  it("shows visible progress before publication refresh progress arrives", () => {
+    feed = "subscribed";
+    refreshPending = true;
+    render(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));
+    const refresh = screen.getByRole("button", { name: "Refreshing Publications" }) as HTMLButtonElement;
+    expect(refresh.disabled).toBe(true);
+    expect(refresh.getAttribute("aria-busy")).toBe("true");
+    expect(refresh.querySelector(".animate-spin")).not.toBeNull();
+    expect(screen.getAllByRole("status").some(status => status.textContent === "Refreshing Publications…")).toBe(true);
+  });
   it.each([["finance", "Finance"], ["sports", "Sports"]])("provides the shared route header for %s without unrelated reader actions", (routeFeed, title) => {
     feed = routeFeed;
     const { container } = render(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));

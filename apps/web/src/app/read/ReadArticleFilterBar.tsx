@@ -130,7 +130,9 @@ export function ReadArticleFilterBar() {
     );
   }
 
-  const refreshStatus = refresh.isError ? "Refresh Incomplete — Try Again" : refreshMessage;
+  const refreshStatus = refresh.isPending
+    ? refreshMessage || "Refreshing Publications…"
+    : refresh.isError ? "Refresh Incomplete — Try Again" : refreshMessage;
   return (
     <FeedHeader title={feedTitle} subtitle={
       refreshStatus ? <span role="status" aria-live="polite" aria-atomic="true" className={cn("hidden sm:inline", refresh.isError && "text-destructive")}>{refreshStatus}</span> : undefined
