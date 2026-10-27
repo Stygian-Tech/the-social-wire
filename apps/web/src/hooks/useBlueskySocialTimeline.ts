@@ -93,7 +93,11 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
       owner.target = socialModerationScope(freshModeration);
       if (getOAuthSession() !== oauth || !ownsRefresh(owner)) return;
       const freshKey = socialTimelineKey(oauth.did, feed, freshModeration);
-      const page = await coalesceFeedFirstPage(client, requestOwner(route, oauth), [...freshKey, owner.target, owner.generation + (owner.target === owner.source ? 0 : 1)], () => getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true }));
+      const page = await coalesceFeedFirstPage(client, requestOwner(route, oauth), [...freshKey, owner.target, owner.generation + (owner.target === owner.source ? 0 : 1)], async () => {
+        // Retire pagination before replacing the head, retaining moderation ownership.
+        await client.cancelQueries({ queryKey: freshKey, exact: true });
+        return getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true });
+      });
       // Allow the verified catalog target, but retire further settings changes.
       const catalogScope = socialModerationScope(client.getQueryData<{ moderation: ModerationOpts }>(["blueskySocial", oauth.did, "catalog", "cache-v1"])?.moderation);
       const targetIsCurrent = current.current.safety.scope === owner.target

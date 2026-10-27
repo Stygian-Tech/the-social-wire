@@ -178,7 +178,8 @@ export function EntryList({
       !wireFeed &&
       !isLoading &&
       !scopePending &&
-      (data?.pages.length ?? 0) > 0
+      (data?.pages.length ?? 0) > 0,
+    refetch,
   );
 
   const aggregateAccumulator = useMemo(() => {

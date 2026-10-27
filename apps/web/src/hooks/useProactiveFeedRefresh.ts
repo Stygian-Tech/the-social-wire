@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/hooks/useAuth";
+import { useVisibleFeedRefresh } from "@/hooks/useVisibleFeedRefresh";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import {
@@ -18,60 +18,16 @@ import {
 export function useProactiveFeedRefresh(
   publicationKey: string | null,
   articleFilter: ArticleListFilter = "all",
-  enabled = true
+  enabled = true,
+  refresh: (signal: AbortSignal) => Promise<unknown>,
 ) {
-  const queryClient = useQueryClient();
-  const { session, getOAuthSession } = useAuth();
+  const { session, oauthSessionReloadSeq } = useAuth();
 
-  useEffect(() => {
-    if (!enabled || !publicationKey || !session) return;
-
-    let cancelled = false;
-
-    const refresh = async () => {
-      if (cancelled || document.visibilityState !== "visible") return;
-      const oauth = getOAuthSession();
-      if (!oauth) return;
-      try {
-        await refreshPublicationFeedFirstPage({
-          queryClient,
-          publicationKey,
-          articleFilter,
-          oauthSession: oauth,
-          viewerDid: session.did,
-          skipEnroll: true,
-        });
-      } catch {
-        /* best-effort background refresh */
-      }
-    };
-
-    const interval = window.setInterval(() => {
-      void refresh();
-    }, FEED_PROACTIVE_REFRESH_INTERVAL_MS);
-
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      void refresh();
-    };
-
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, [
-    enabled,
-    publicationKey,
-    articleFilter,
-    session,
-    getOAuthSession,
-    queryClient,
-  ]);
+  useVisibleFeedRefresh(
+    enabled && publicationKey && session ? JSON.stringify([session.did, oauthSessionReloadSeq, publicationKey, articleFilter]) : null,
+    refresh,
+    FEED_PROACTIVE_REFRESH_INTERVAL_MS,
+  );
 }
 
 const pendingBootstrapRefreshes = new WeakMap<

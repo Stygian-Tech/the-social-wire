@@ -1,3 +1,4 @@
+import { useProactiveFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 /**
  * Tests for useEntries and useEntry hooks (Thin AppView gateway path).
  */
@@ -146,6 +147,7 @@ describe("useEntries", () => {
   });
 
   afterEach(() => {
+    cleanup();
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
   });
@@ -290,6 +292,7 @@ describe("useEntry", () => {
   });
 
   afterEach(() => {
+    cleanup();
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
   });
@@ -314,6 +317,27 @@ describe("useEntry", () => {
 
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeUndefined();
+  });
+
+  it("refreshes the Subscribed head when returning to the visible tab", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, unmount } = renderHook(() => useAggregateFeedEntries({ kind: "subscribed" }), {
+      wrapper: ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    try {
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      const requests = () => mockFetchHandler.mock.calls.filter(([url]) => url.includes("app.thesocialwire.appview.getFeed"));
+      const previous = requests().length;
+      act(() => window.dispatchEvent(new window.Event("focus")));
+      await waitFor(() => expect(requests().length).toBe(previous + 1));
+      expect(result.current.data?.pages).toHaveLength(1);
+    } finally {
+      unmount(); client.clear();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
   });
   it("refreshes only the resolved list metadata after its prepared first page", async () => {
     const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
@@ -425,6 +449,110 @@ describe("reader lifecycle refreshes", () => {
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
   });
+
+  it("retires a stalled visible refresh at its deadline and retries on the next focus", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const scope = "subscribed";
+    seed(scope);
+    client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)));
+    let finishOld!: (response: Response) => void;
+    respond = () => new Promise(resolve => { finishOld = resolve; });
+    const hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+    try {
+      await settle();
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(1));
+      await act(async () => { deadline.abort(); });
+      await waitFor(() => expect(hook.result.current.isFetching).toBe(false));
+      expect(ids(hook.result.current.data)).toEqual(["cached-head", "cached-tail"]);
+      timeout.mockRestore();
+      respond = async () => json([row("recovered-visible")]);
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(2));
+      await waitFor(() => expect(ids(hook.result.current.data)).toEqual(["recovered-visible", "cached-head", "cached-tail"]));
+      await act(async () => { finishOld(json([row("late-stalled")])); });
+      expect(ids(hook.result.current.data)).toEqual(["recovered-visible", "cached-head", "cached-tail"]);
+    } finally {
+      hook.unmount(); timeout.mockRestore();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
+
+  it("uses guarded publication polling and can retry a stalled visible refresh", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    seed("publication");
+    client.setQueryData(keyFor("publication"), client.getQueryData(keyFor("publication")));
+    let finishOld!: (response: Response) => void;
+    respond = () => new Promise(resolve => { finishOld = resolve; });
+    const hook = renderHook(() => {
+      const feed = useEntries(publication);
+      useProactiveFeedRefresh(publication, "all", true, feed.refetch);
+      return feed;
+    }, { wrapper: Wrapper });
+    try {
+      await settle();
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(1));
+      await act(async () => { deadline.abort(); });
+      await waitFor(() => expect(hook.result.current.isFetching).toBe(false));
+      timeout.mockRestore();
+      respond = async () => json([row("recovered-publication")]);
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(2));
+      await waitFor(() => expect(ids(hook.result.current.data)).toEqual(["recovered-publication", "cached-head", "cached-tail"]));
+      await act(async () => { finishOld(json([row("late-publication")])); });
+      expect(ids(hook.result.current.data)).toEqual(["recovered-publication", "cached-head", "cached-tail"]);
+    } finally {
+      hook.unmount(); timeout.mockRestore();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
+
+  for (const supersede of ["read", "account", "generation", "unmount"] as const) {
+    it(`visible aggregate refresh preserves Production guards after ${supersede}`, async () => {
+      const scope = "subscribed";
+      const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      seed(scope);
+      client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)));
+      let finish!: (response: Response) => void;
+      respond = () => new Promise(resolve => { finish = resolve; });
+      const hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      try {
+        await settle();
+        expect(requests).toEqual([]);
+        act(() => { window.dispatchEvent(new window.Event("focus")); });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        if (supersede === "read") {
+          recordReadEntryMutations(client, activeOAuthSession, ["cached-head"]);
+          client.setQueryData<InfiniteData<EntriesPage>>(keyFor(scope), current => ({ ...current!, pages: current!.pages.map(page => ({ ...page, entries: page.entries.map(entry => ({ ...entry, isRead: true })) })) }));
+        } else if (supersede === "account") {
+          activeOAuthSession = Object.assign({}, mockOAuthSession) as never;
+          activeReloadSeq++;
+        } else if (supersede === "generation") {
+          advanceFeedRefreshRevision(client, keyFor(scope));
+        } else hook.unmount();
+        const updatedAt = client.getQueryState(keyFor(scope))?.dataUpdatedAt;
+        await act(async () => { finish(json([row("late-visible")])); });
+        await settle();
+        expect(ids(client.getQueryData(keyFor(scope)))).toEqual(["cached-head", "cached-tail"]);
+        expect(client.getQueryState(keyFor(scope))?.dataUpdatedAt).toBe(updatedAt);
+        if (supersede === "read") expect(client.getQueryData<InfiniteData<EntriesPage>>(keyFor(scope))?.pages[0].entries[0].isRead).toBe(true);
+      } finally {
+        hook.unmount();
+        if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+        else Reflect.deleteProperty(document, "visibilityState");
+      }
+    });
+  }
 
   for (const transition of ["filter", "disable", "unmount"] as const) {
     it(`does not restart a cold replacement after ${transition} during cancellation`, async () => {

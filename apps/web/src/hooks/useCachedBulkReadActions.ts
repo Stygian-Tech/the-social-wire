@@ -1,14 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-import {
-  useQueryClient,
-  type InfiniteData,
-  type QueryKey,
-} from "@tanstack/react-query";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 
 import { acquireBulkRead, bulkReadPending, readEntryMutationRevision, readFeedRefreshRevision, recordReadEntryMutations, releaseBulkRead, subscribeBulkReadPending } from "@/lib/feedRefreshCoordinator";
-import { invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
 import { pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 import { useAuth } from "@/hooks/useAuth";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
@@ -16,11 +11,12 @@ import { useEntriesCacheEpoch } from "@/hooks/useEntriesCacheEpoch";
 import {
   markAllReadOnGateway,
   type GatewayMarkAllReadScope,
+  type PublicationSidebarProjection,
 } from "@/lib/publicationProjectionClient";
 import { distinctCachedEntryIdsForPublications } from "@/lib/unreadCounts";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 import { applyUnreadCountsEvent } from "@/lib/bootstrapStreamState";
-import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
+import { invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { EntriesPage } from "@/hooks/useEntries";
 
@@ -32,18 +28,20 @@ export function useCachedBulkReadActions(
   const entriesEpoch = useEntriesCacheEpoch();
   const { session, getOAuthSession } = useAuth();
   const viewerDid = session?.did;
+  const { markEntriesRead, markEntriesUnread } = useReadRoute();
   const oauthSession = getOAuthSession();
-  const pendingBulk = useSyncExternalStore(
+  const isMarkingRead = useSyncExternalStore(
     useCallback(listener => subscribeBulkReadPending(queryClient, listener), [queryClient]),
     useCallback(() => bulkReadPending(queryClient, oauthSession), [queryClient, oauthSession]),
     () => false,
   );
-  const {
-    markEntriesRead,
-    markEntriesUnread,
-    isEntryRead,
-    pendingEntryReadState,
-  } = useReadRoute();
+  const [error, setError] = useState<string | null>(null);
+  const owner = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    const scope = {};
+    owner.current = scope;
+    return () => { if (owner.current === scope) owner.current = null; };
+  }, [viewerDid, oauthSession]);
 
   const cachedEntryIds = useMemo(() => {
     void entriesEpoch;
@@ -52,174 +50,90 @@ export function useCachedBulkReadActions(
       : [];
   }, [queryClient, publications, entriesEpoch, viewerDid]);
 
-  const bulkDisabled = pendingBulk ||
-    cachedEntryIds.length === 0 &&
+  const bulkDisabled =
+    isMarkingRead || (cachedEntryIds.length === 0 &&
     publications.length === 0 &&
-    (options?.gatewayScopes?.length ?? 0) === 0;
+    (options?.gatewayScopes?.length ?? 0) === 0);
 
-  const applyMarkAllRead = useCallback(() => {
+  const applyMarkAllRead = useCallback(async (): Promise<boolean> => {
     const oauth = getOAuthSession();
-    const scopes = options?.gatewayScopes ?? publications.map(publication => ({
-      kind: "publication" as const, publicationId: publication.publicationId,
+    if (!oauth || !viewerDid) {
+      setError("Sign in again to mark this feed as read.");
+      return false;
+    }
+    const scopes = options?.gatewayScopes ?? publications.map((publication) => ({
+      kind: "publication" as const,
+      publicationId: publication.publicationId,
     }));
-    const operation = oauth && scopes.length ? acquireBulkRead(queryClient, oauth) : null;
-    if (oauth && scopes.length && !operation) return;
-    const revision = oauth ? recordReadEntryMutations(queryClient, oauth, cachedEntryIds) : 0;
-    const sameSession = () => getOAuthSession() === oauth;
-    const stillOwnsEntry = (entryId: string) => sameSession() &&
-      (!oauth || readEntryMutationRevision(queryClient, oauth, entryId) <= revision);
-    const countsAreCurrent = () => sameSession() &&
-      (!oauth || readFeedRefreshRevision(queryClient, oauth) === revision);
-    const deferOptimism = pdsReadStateEnabled();
-    const cacheSnapshots = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
-      predicate: ({ queryKey }) =>
-        (queryKey[0] === "entries" || queryKey[0] === "aggregateEntries") && queryKey[1] === viewerDid,
-    });
-    const serverReadIds = new Set(cacheSnapshots.flatMap(([, data]) =>
-      data?.pages.flatMap(page => page.entries.filter(entry => entry.isRead).map(entry => entry.entryId)) ?? []));
-    const entryWasRead = (entryId: string) => pendingEntryReadState?.(entryId) ??
-      (serverReadIds.has(entryId) || isEntryRead(entryId));
-    const previouslyRead = cachedEntryIds.filter(entryWasRead);
-    const newlyRead = cachedEntryIds.filter(entryId => !entryWasRead(entryId));
-    if (!deferOptimism) markEntriesRead(cachedEntryIds, {
-      publications,
-      syncToAppView: false,
-    });
-    for (const [queryKey, data] of deferOptimism ? [] : cacheSnapshots) {
-      if (!data) continue;
-      queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, {
-        ...data,
-        pages: data.pages.map((page) => ({
-          ...page,
-          entries: page.entries.map((entry) =>
-            cachedEntryIds.includes(entry.entryId)
-              ? { ...entry, isRead: true }
-              : entry
-          ),
-        })),
-      });
-    }
-    const rollback = () => {
-      if (deferOptimism || !sameSession()) return;
-      const ownedIds = new Set(cachedEntryIds.filter(stillOwnsEntry));
-      const countPublications = countsAreCurrent() ? publications : undefined;
-      for (const [queryKey, snapshot] of cacheSnapshots) {
-        const prior = new Map(snapshot?.pages.flatMap(page => page.entries.map(entry => [entry.entryId, entry] as const)) ?? []);
-        queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, current => current ? {
-          ...current,
-          pages: current.pages.map(page => ({ ...page, entries: page.entries.map(entry =>
-            ownedIds.has(entry.entryId) && prior.has(entry.entryId) ? { ...entry, isRead: prior.get(entry.entryId)?.isRead } : entry) })),
-        } : current);
+    if (scopes.length === 0) return false;
+    // Read the live cache at the click, rather than the last throttled cache epoch.
+    const selectedEntryIds = distinctCachedEntryIdsForPublications(queryClient, viewerDid, publications);
+    const operation = acquireBulkRead(queryClient, oauth);
+    if (!operation) return false;
+    const scopeOwner = owner.current;
+    const sameSession = () => owner.current === scopeOwner && scopeOwner !== null && getOAuthSession() === oauth;
+    const revision = recordReadEntryMutations(queryClient, oauth, selectedEntryIds);
+    const stillOwnsEntry = (entryId: string) => readEntryMutationRevision(queryClient, oauth, entryId) <= revision;
+    const countsAreCurrent = () => readFeedRefreshRevision(queryClient, oauth) === revision;
+    setError(null);
+    try {
+      // Settle every scope before allowing a retry; a rejected Promise.all can
+      // otherwise leave old mutations running behind the next attempt.
+      const results = await Promise.allSettled(scopes.map((scope) => pdsReadStateEnabled()
+        ? markAllReadOnGateway(oauth, scope, selectedEntryIds.slice(0, 1000))
+        : markAllReadOnGateway(oauth, scope)));
+      if (!sameSession()) return false;
+      const confirmations = results.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
+      const failed = results.some(result => result.status === "rejected");
+      // Do not roll back server mutations with per-entry unread writes or restore
+      // old query snapshots over articles fetched while the request was running.
+      if (failed) {
+        void invalidateConfirmedReadStateQueries(queryClient, viewerDid).catch(() => undefined);
+        setError("Some stories could not be marked as read. Please try again.");
+        return false;
       }
-      markEntriesUnread(newlyRead.filter(entryId => ownedIds.has(entryId)), { publications: countPublications });
-      const restoreRead = previouslyRead.filter(entryId => ownedIds.has(entryId));
-      if (restoreRead.length) markEntriesRead(restoreRead, { syncToAppView: false });
-    };
-    if (oauth && scopes.length > 0) {
-      void Promise.all(scopes.map((scope) => pdsReadStateEnabled()
-        ? markAllReadOnGateway(oauth, scope, cachedEntryIds.slice(0, 1000)) : markAllReadOnGateway(oauth, scope)))
-        .then((confirmations) => {
-          if (!sameSession() || !viewerDid || confirmations.some(confirmation => confirmation.pendingSync)) return;
-          const confirmedCounts = Object.assign(
-            {},
-            ...confirmations.map((confirmation) => confirmation.unreadCounts ?? {})
-          ) as Record<string, number>;
-          const replacePublicationIds = [
-            ...new Set([
-              ...publications.map((publication) => publication.publicationId),
-              ...confirmations.flatMap((confirmation) =>
-                (confirmation.boundaries ?? []).map(
-                  (boundary) => boundary.publicationId
-                )
-              ),
-              ...Object.keys(confirmedCounts),
-            ]),
-          ];
-          const confirmedAt = confirmations
-            .map((confirmation) => confirmation.confirmedAt)
-            .filter(Boolean)
-            .sort()
-            .at(-1);
-          if (countsAreCurrent()) queryClient.setQueryData<PublicationSidebarProjection>(
-            PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
-            (current) =>
-              current
-                ? applyUnreadCountsEvent(current, confirmedCounts, {
-                    replacePublicationIds,
-                    accuracy: "exact",
-                    countedAt: confirmedAt,
-                  })
-                : current
-          );
-          // Entries that landed in the cache between the initial snapshot and
-          // the gateway confirming (e.g. a background prefetch mid-flight)
-          // never got an explicit local read mark. effectivePublicationUnreadCount
-          // still counts those against isEntryRead, so without this they keep
-          // showing up as unread even though the server's mark-all-read floor
-          // now covers them. Re-snapshot and mark whatever's cached now.
-          const settledEntryIds = distinctCachedEntryIdsForPublications(
-            queryClient,
-            viewerDid,
-            publications
-          ).filter(stillOwnsEntry);
-          if (settledEntryIds.length > 0) {
-            markEntriesRead(settledEntryIds, {
-              publications: countsAreCurrent() ? publications : undefined,
-              syncToAppView: false,
-            });
-          }
-          // Persist the authoritative response immediately, then refetch to
-          // reconcile any entries that arrived after the server boundary.
-          void queryClient.invalidateQueries({
-            queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
-          });
-          // Invalidation alone only refetches *active* queries, and useEntries
-          // opts out of refetchOnMount/refetchOnWindowFocus — so an invalidated
-          // unread feed that isn't currently mounted would be served verbatim
-          // from cache the next time the user opens it. Drop inactive unread
-          // caches outright; the mounted one (if any) refetches via the
-          // invalidation below.
-          const isUnreadFeedQuery = ({ queryKey }: { queryKey: QueryKey }) =>
-            (queryKey[0] === "entries" ||
-              queryKey[0] === "aggregateEntries") &&
-            queryKey[1] === viewerDid &&
-            queryKey[queryKey.length - 1] === "unread";
-          queryClient.removeQueries({
-            predicate: isUnreadFeedQuery,
-            type: "inactive",
-          });
-          void queryClient.invalidateQueries({ predicate: isUnreadFeedQuery });
-        })
-        .catch(() => {
-          rollback();
-          if (sameSession() && viewerDid) void invalidateConfirmedReadStateQueries(queryClient, viewerDid).catch(() => {});
-        }).finally(() => {
-          if (operation) releaseBulkRead(queryClient, oauth, operation);
-        }).catch(() => {});
-    } else if (scopes.length > 0) {
-      rollback();
+      if (confirmations.some(confirmation => confirmation.pendingSync)) return true;
+
+      const ownedEntryIds = selectedEntryIds.filter(stillOwnsEntry);
+      const selectedIds = new Set(ownedEntryIds);
+      markEntriesRead(ownedEntryIds, { publications: countsAreCurrent() ? publications : undefined, syncToAppView: false });
+      queryClient.setQueriesData<InfiniteData<EntriesPage>>({
+        predicate: ({ queryKey }) =>
+          (queryKey[0] === "entries" || queryKey[0] === "aggregateEntries") && queryKey[1] === viewerDid,
+      }, current => current ? {
+        ...current,
+        pages: current.pages.map(page => ({
+          ...page,
+          entries: page.entries.map(entry => selectedIds.has(entry.entryId) ? { ...entry, isRead: true } : entry),
+        })),
+      } : current);
+
+      const confirmedCounts = Object.assign({}, ...confirmations.map(confirmation => confirmation.unreadCounts ?? {})) as Record<string, number>;
+      const replacePublicationIds = [...new Set([
+        ...publications.map(publication => publication.publicationId),
+        ...confirmations.flatMap(confirmation => (confirmation.boundaries ?? []).map(boundary => boundary.publicationId)),
+        ...Object.keys(confirmedCounts),
+      ])];
+      const confirmedAt = confirmations.map(confirmation => confirmation.confirmedAt).filter(Boolean).sort().at(-1);
+      if (countsAreCurrent()) queryClient.setQueryData<PublicationSidebarProjection>(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid), current => current
+        ? applyUnreadCountsEvent(current, confirmedCounts, { replacePublicationIds, accuracy: "exact", countedAt: confirmedAt })
+        : current);
+      // Newly fetched rows need authoritative read state, including All feeds.
+      // The server freezes membership using created_at, which publishedAt cannot
+      // reconstruct; never mark every row arriving mid-flight locally read.
+      void invalidateConfirmedReadStateQueries(queryClient, viewerDid).catch(() => undefined);
+      return true;
+    } catch {
+      if (sameSession()) setError("Stories could not be marked as read. Please try again.");
+      return false;
+    } finally {
+      releaseBulkRead(queryClient, oauth, operation);
     }
-  }, [
-    markEntriesRead,
-    cachedEntryIds,
-    publications,
-    getOAuthSession,
-    options?.gatewayScopes,
-    isEntryRead,
-    pendingEntryReadState,
-    markEntriesUnread,
-    queryClient,
-    viewerDid,
-  ]);
+  }, [markEntriesRead, publications, getOAuthSession, options?.gatewayScopes, queryClient, viewerDid]);
 
   const applyMarkAllUnread = useCallback(() => {
-    markEntriesUnread(cachedEntryIds, { publications });
-  }, [markEntriesUnread, cachedEntryIds, publications]);
+    if (!bulkReadPending(queryClient, getOAuthSession())) markEntriesUnread(cachedEntryIds, { publications });
+  }, [markEntriesUnread, cachedEntryIds, publications, queryClient, getOAuthSession]);
 
-  return {
-    cachedEntryIds,
-    bulkDisabled,
-    applyMarkAllRead,
-    applyMarkAllUnread,
-  };
+  return { cachedEntryIds, bulkDisabled, isMarkingRead, error, applyMarkAllRead, applyMarkAllUnread };
 }

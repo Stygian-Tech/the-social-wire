@@ -56,7 +56,7 @@ function fixture(previouslyRead = false) {
 for (const outcome of ["success", "failure"] as const) {
   it(`keeps a newer single unread through stale bulk ${outcome} and navigation`, async () => {
     const env = fixture(true); const hook = env.mount(); await act(async () => {});
-    act(() => hook.result.current.bulk.applyMarkAllRead());
+    act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
     act(() => hook.result.current.state.markEntryUnread(entryId));
     await waitFor(() => expect(hook.result.current.state.pendingEntryReadState(entryId)).toBeUndefined());
     expect(hook.result.current.state.isEntryRead(entryId)).toBe(false);
@@ -69,7 +69,7 @@ for (const outcome of ["success", "failure"] as const) {
 }
 it("ignores a late bulk completion after switching OAuth accounts", async () => {
   const env = fixture(); const hook = env.mount(); await act(async () => {});
-  act(() => hook.result.current.bulk.applyMarkAllRead());
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
   act(() => hook.result.current.state.markEntryUnread(entryId));
   await waitFor(() => expect(hook.result.current.state.pendingEntryReadState(entryId)).toBeUndefined());
   act(() => { env.switchAccount(); hook.rerender(); });
@@ -78,15 +78,15 @@ it("ignores a late bulk completion after switching OAuth accounts", async () => 
   expect(env.client.getQueryData<InfiniteData<EntriesPage>>(env.key)?.pages[0].entries[0].isRead).toBe(false);
 });
 
-it("rolls back unaffected bulk optimism while preserving the newer unread and fresh cache rows", async () => {
+it("defers bulk changes until confirmation while preserving the newer unread and fresh cache rows", async () => {
   const env = fixture(true);
   const otherId = "at://did:plc:author/site.standard.document/other";
   env.client.setQueryData<InfiniteData<EntriesPage>>(env.key, { ...env.page, pages: [{ entries: [
     ...env.page.pages[0].entries, { entryId: otherId, title: "Other", publishedAt: "2026-10-16T00:00:00Z", isRead: false },
   ] }] });
   const hook = env.mount(); await act(async () => {});
-  act(() => hook.result.current.bulk.applyMarkAllRead());
-  expect(hook.result.current.state.isEntryRead(otherId)).toBe(true);
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
+  expect(hook.result.current.state.isEntryRead(otherId)).toBe(false);
   act(() => hook.result.current.state.markEntryUnread(entryId));
   await waitFor(() => expect(hook.result.current.state.pendingEntryReadState(entryId)).toBeUndefined());
   act(() => env.client.setQueryData<InfiniteData<EntriesPage>>(env.key, current => ({ ...current!, pages: [{ entries: [
@@ -102,7 +102,7 @@ it("rolls back unaffected bulk optimism while preserving the newer unread and fr
 });
 it("applies confirmed bulk authority to untouched entries while excluding a newly cached explicit unread", async () => {
   const env = fixture(); const hook = env.mount(); await act(async () => {});
-  act(() => hook.result.current.bulk.applyMarkAllRead());
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
   const lateId = "at://did:plc:author/site.standard.document/late";
   act(() => env.client.setQueryData<InfiniteData<EntriesPage>>(env.key, current => ({ ...current!, pages: [{ entries: [
     ...current!.pages[0].entries, { entryId: lateId, title: "Late", publishedAt: "2026-10-16T00:00:00Z", isRead: false },
@@ -130,7 +130,7 @@ it("preserves an authoritative cached read baseline when no local read mark exis
   env.client.setQueryData<InfiniteData<EntriesPage>>(env.key, { ...env.page, pages: [{ entries: [{ ...env.page.pages[0].entries[0], isRead: true }] }] });
   const hook = env.mount(); await act(async () => {});
   expect(hook.result.current.state.isEntryRead(entryId)).toBe(false);
-  act(() => hook.result.current.bulk.applyMarkAllRead());
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
   await act(async () => env.bulk.reject(new Error("bulk failed")));
   expect(env.unread).not.toHaveBeenCalled();
   expect(effectiveEntryReadState(entryId, env.client.getQueryData<InfiniteData<EntriesPage>>(env.key)?.pages[0].entries[0].isRead,
@@ -142,19 +142,19 @@ it("uses pending explicit unread ahead of an older authoritative-looking cached 
   act(() => hook.result.current.state.markEntryUnread(entryId));
   await waitFor(() => expect(env.unread).toHaveBeenCalledTimes(1));
   act(() => env.client.setQueryData<InfiniteData<EntriesPage>>(env.key, { ...env.page, pages: [{ entries: [{ ...env.page.pages[0].entries[0], isRead: true }] }] }));
-  act(() => hook.result.current.bulk.applyMarkAllRead());
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
   await act(async () => env.bulk.reject(new Error("bulk failed")));
   await act(async () => pending.resolve());
   await waitFor(() => expect(hook.result.current.state.pendingEntryReadState(entryId)).toBeUndefined());
   expect(hook.result.current.state.isEntryRead(entryId)).toBe(false);
-  expect(env.unread).toHaveBeenCalledTimes(2);
+  expect(env.unread).toHaveBeenCalledTimes(1);
 });
 
 it("shares pending ownership across toolbar/sidebar hooks while a newer unread survives failure", async () => {
   const env = fixture(true); const hook = env.mount(); await act(async () => {});
-  act(() => hook.result.current.bulk.applyMarkAllRead());
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
   expect(hook.result.current.otherBulk.bulkDisabled).toBe(true);
-  act(() => hook.result.current.otherBulk.applyMarkAllRead());
+  act(() => { void hook.result.current.otherBulk.applyMarkAllRead(); });
   expect(env.gateway).toHaveBeenCalledTimes(1);
   act(() => hook.result.current.state.markEntryUnread(entryId));
   await waitFor(() => expect(hook.result.current.state.pendingEntryReadState(entryId)).toBeUndefined());
@@ -165,12 +165,12 @@ it("shares pending ownership across toolbar/sidebar hooks while a newer unread s
 });
 it("isolates renewed OAuth ownership and an old session's eventual release", async () => {
   const env = fixture(); const hook = env.mount(); await act(async () => {});
-  act(() => hook.result.current.bulk.applyMarkAllRead());
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
   const next = deferred<Awaited<ReturnType<typeof Projection.markAllReadOnGateway>>>();
   env.gateway.mockReturnValue(next.promise);
   act(() => { env.renewSession(); hook.rerender(); });
   expect(hook.result.current.bulk.bulkDisabled).toBe(false);
-  act(() => hook.result.current.otherBulk.applyMarkAllRead());
+  act(() => { void hook.result.current.otherBulk.applyMarkAllRead(); });
   expect(env.gateway).toHaveBeenCalledTimes(2);
   expect(hook.result.current.bulk.bulkDisabled).toBe(true);
   await act(async () => env.bulk.resolve(env.confirmation));
@@ -185,7 +185,7 @@ it("does not replace a fresh publication badge with stale mixed-rollback deltas"
     ...env.page.pages[0].entries, { entryId: otherId, title: "Other", publishedAt: "2026-10-16T00:00:00Z", isRead: false },
   ] }] });
   const hook = env.mount(); await act(async () => {});
-  act(() => hook.result.current.bulk.applyMarkAllRead());
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
   act(() => hook.result.current.state.markEntryUnread(entryId));
   await waitFor(() => expect(hook.result.current.state.pendingEntryReadState(entryId)).toBeUndefined());
   const badgeKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(alice.did);
@@ -199,4 +199,13 @@ it("does not replace a fresh publication badge with stale mixed-rollback deltas"
   expect(env.client.getQueryData<PublicationSidebarProjection>(badgeKey)?.unreadCountsByPublicationId?.[publication.publicationId]).toBe(9);
   expect(hook.result.current.state.isEntryRead(entryId)).toBe(false);
   expect(hook.result.current.state.isEntryRead(otherId)).toBe(false);
+});
+
+it("ignores a bulk confirmation after its initiating hook unmounts", async () => {
+  const env = fixture(); const hook = env.mount(); await act(async () => {});
+  act(() => { void hook.result.current.bulk.applyMarkAllRead(); });
+  hook.unmount();
+  await act(async () => env.bulk.resolve(env.confirmation));
+  expect(env.client.getQueryData<InfiniteData<EntriesPage>>(env.key)).toEqual(env.page);
+  expect(env.unread).not.toHaveBeenCalled();
 });

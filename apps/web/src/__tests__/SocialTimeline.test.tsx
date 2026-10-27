@@ -13,7 +13,7 @@ import SocialPage from "@/app/social/page";
 import { useBlueskySocialTimeline } from "@/hooks/useBlueskySocialTimeline";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
-import { requestSocialHomeRefresh } from "@/lib/socialHomeRefresh";
+import { consumeSocialHomeRefresh, requestSocialHomeRefresh } from "@/lib/socialHomeRefresh";
 
 const did = "did:plc:viewer";
 const safety: ModerationOpts = { userDid: did, prefs: { adultContentEnabled: false, labels: {}, labelers: [], mutedWords: [], hiddenPosts: [] } };
@@ -49,6 +49,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  consumeSocialHomeRefresh();
   queryClient.clear();
   restores.splice(0).reverse().forEach(restore => restore());
 });
@@ -100,6 +101,77 @@ describe("Social timeline page", () => {
     await screen.findByText("New post from background refresh");
     expect(screen.getByText("Cached post on reload").closest("[data-analytics-subject]")).toBe(row);
     expect(posts.mock.calls[0][0].cursor).toBeUndefined();
+  });
+
+  it("refreshes cached Home when its navigation request preceded timeline mount", async () => {
+    serveCatalog();
+    const posts = servePage({ feed: [item("cached-home", "Cached Home post")] });
+    await show();
+    await screen.findByText("Cached Home post");
+    cleanup();
+    posts.mockResolvedValueOnce({ feed: [item("fresh-home", "Fresh Home post")] });
+    requestSocialHomeRefresh();
+    await show();
+    await screen.findByText("Fresh Home post");
+    expect(posts).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Cached Home post")).toBeNull();
+  });
+
+  it("delivers Home refresh to Following after leaving a custom feed", async () => {
+    serveCatalog();
+    const posts = servePage({ feed: [item("cached-following", "Cached Following post")] });
+    await show();
+    await screen.findByText("Cached Following post");
+    cleanup();
+    params = new URLSearchParams("feed=at://did:plc:other/app.bsky.feed.generator/custom");
+    posts.mockResolvedValueOnce({ feed: [item("custom", "Custom feed post")] });
+    await show();
+    await screen.findByText("Custom feed post");
+    await act(async () => { requestSocialHomeRefresh(); });
+    expect(posts).toHaveBeenCalledTimes(2);
+    cleanup();
+    params = new URLSearchParams();
+    posts.mockResolvedValueOnce({ feed: [item("new-following", "New Following post")] });
+    await show();
+    await screen.findByText("New Following post");
+    expect(posts).toHaveBeenCalledTimes(3);
+    expect(posts.mock.calls[2]?.[0].feed.kind).toBe("following");
+  });
+
+  it("does not let old pagination overwrite a completed Home refresh", async () => {
+    serveCatalog();
+    const older = deferred<Client.BlueskySocialPage>();
+    const posts = servePage({ feed: [item("original", "Original head")], cursor: "older" });
+    await show();
+    await screen.findByText("Original head");
+    posts.mockReturnValueOnce(older.promise);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Load More" })); });
+    await waitFor(() => expect(posts).toHaveBeenCalledTimes(2));
+    posts.mockResolvedValueOnce({ feed: [item("fresh", "Fresh head")] });
+    await act(async () => { requestSocialHomeRefresh(); });
+    await screen.findByText("Fresh head");
+    await act(async () => { older.resolve({ feed: [item("stale", "Stale older page")] }); });
+    expect(screen.getByText("Fresh head")).toBeTruthy();
+    expect(screen.queryByText("Original head")).toBeNull();
+    expect(screen.queryByText("Stale older page")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load More" })).toBeNull();
+  });
+
+  it("keeps loaded posts and retries the same cursor after a pagination failure", async () => {
+    serveCatalog();
+    const posts = servePage({ feed: [item("retained-head", "Retained head")], cursor: "retry-older" });
+    await show();
+    await screen.findByText("Retained head");
+    posts.mockRejectedValueOnce(new Error("Network unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Older posts could not be loaded"));
+    expect(screen.getByText("Retained head")).toBeTruthy();
+    posts.mockResolvedValueOnce({ feed: [item("recovered-older", "Recovered older post")] });
+    fireEvent.click(screen.getByRole("button", { name: "Load More" }));
+    await screen.findByText("Recovered older post");
+    expect(screen.getByText("Retained head")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(posts.mock.calls.map(([args]) => args.cursor)).toEqual([undefined, "retry-older", "retry-older"]);
   });
 
   it("returns to the top and reloads only the first page on Home refresh", async () => {

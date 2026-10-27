@@ -40,6 +40,7 @@ import { recordClientPerformance } from "@/lib/clientPerformanceTelemetry";
 import { useAuth } from "./useAuth";
 import { coalesceFeedFirstPage, getFeedRefreshRevision, readFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { refreshPublicationUnreadCount } from "@/lib/feedRefresh";
+import { useVisibleFeedRefresh } from "./useVisibleFeedRefresh";
 import { useFeedFirstContentTiming } from "./useFeedFirstContentTiming";
 
 export type { EntryListItem, EntryDetail };
@@ -178,13 +179,13 @@ function useGuardedFeedRefresh(args: {
     oauthSession: OAuthSession;
     reloadSeq: number;
   } | null>(null);
-  const refresh = useCallback(async (replaceSession = false) => {
+  const refresh = useCallback(async (replaceSession = false, callerSignal?: AbortSignal) => {
     const oauth = getOAuthSession();
-    if (!enabled || !oauth || !feed) return false;
+    if (!enabled || !oauth || !feed || callerSignal?.aborted) return false;
     const cachedQuery = queryClient.getQueryCache().find({ queryKey, exact: true });
     const revision = getFeedRefreshRevision(queryClient, queryKey);
     const readRevision = readFeedRefreshRevision(queryClient, oauth);
-    const isCurrent = () => currentScope.current?.queryKey === queryKey &&
+    const isCurrent = () => !callerSignal?.aborted && currentScope.current?.queryKey === queryKey &&
       currentScope.current.enabled && getOAuthSession() === oauth &&
       reloadSeq.current === oauthSessionReloadSeq &&
       getFeedRefreshRevision(queryClient, queryKey) === revision &&
@@ -211,6 +212,14 @@ function useGuardedFeedRefresh(args: {
     }
     const owner = { isCurrent };
     pending.set(scope, owner);
+    // Visible refresh deadlines must retire Query's retryer as well as the
+    // listener's wait, so the next focus can start a fresh request.
+    const onCallerAbort = () => {
+      if (pending.get(scope) === owner) void queryClient.cancelQueries({ queryKey, exact: true });
+    };
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+    if (callerSignal?.aborted) onCallerAbort();
+    let operationSettled = false;
     const fetchMerged = async (signal: AbortSignal): Promise<InfiniteData<EntriesPage>> => {
       // Query.fetch(undefined) can reuse this installed function after a read
       // confirmation. Snapshots belong to this request, not the installing call.
@@ -225,6 +234,9 @@ function useGuardedFeedRefresh(args: {
         signal,
       );
       assertCurrent();
+      // The installed query function can be reused by later confirmations.
+      // Only this invocation belongs to the visible-refresh caller lifetime.
+      if (!operationSettled && !isCurrent()) throw new SupersededFeedRefreshError();
       if (reloadSeq.current !== requestReloadSeq) throw new SupersededFeedRefreshError();
       const current = queryClient.getQueryData<InfiniteData<EntriesPage>>(queryKey);
       return mergeFeedRefreshForFilter(current, fresh, articleFilter);
@@ -244,6 +256,8 @@ function useGuardedFeedRefresh(args: {
       if (isCancelledError(error) || error instanceof SupersededFeedRefreshError) return false;
       throw error;
     } finally {
+      callerSignal?.removeEventListener("abort", onCallerAbort);
+      operationSettled = true;
       if (pending.get(scope) === owner) pending.delete(scope);
     }
     if (!isCurrent()) return false;
@@ -283,7 +297,7 @@ function useGuardedFeedRefresh(args: {
     }
   }), [enabled, queryClient, queryKey, refresh]);
 
-  return useCallback(() => refresh(), [refresh]);
+  return useCallback((signal?: AbortSignal) => refresh(false, signal), [refresh]);
 }
 
 /**
@@ -683,6 +697,11 @@ export function useAggregateFeedEntries(
     query.isPlaceholderData,
   ]);
 
+  useVisibleFeedRefresh(
+    !dummyReaderDataEnabled && viewerDid && feedKind && query.data?.pages.length && !query.isPlaceholderData
+      ? JSON.stringify([paintKey, oauthSessionReloadSeq]) : null,
+    refetch,
+  );
   return { ...query, refetch: async () => { await refetch(); } };
 }
 

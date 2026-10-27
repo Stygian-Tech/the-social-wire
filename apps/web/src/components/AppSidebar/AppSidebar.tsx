@@ -132,7 +132,7 @@ export function AppSidebar({
     toggleSidebarExpandedKey,
     syncSidebarFolderExpandKeys,
   } = useSidebarChrome();
-  const { isEntryRead, readEpoch } = useReadState();
+  const { isEntryRead, pendingEntryReadState, readEpoch } = useReadState();
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -290,6 +290,7 @@ export function AppSidebar({
       ? unreadCountsByPublicationId
       : SERVER_PUBLICATION_UNREAD_COUNTS,
     isEntryRead: clientHydrated ? isEntryRead : undefined,
+    pendingEntryReadState: clientHydrated ? pendingEntryReadState : undefined,
     readEpoch,
     viewerDid: session?.did,
   });
