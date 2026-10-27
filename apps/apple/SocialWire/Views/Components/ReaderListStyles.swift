@@ -18,6 +18,7 @@ extension View {
     /// Compact source-list spacing for the macOS-style navigation sidebar.
     func readerSidebarListRow() -> some View {
         listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
     }
 

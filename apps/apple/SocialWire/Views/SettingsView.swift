@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import QuillSocialUI
+#endif
 
 struct SettingsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
@@ -6,6 +9,7 @@ struct SettingsView: View {
 
     /// When pushed from **Profile**, use the navigation back button instead of **Done**.
     var showsDoneButton: Bool = true
+    @AppStorage(AppAccentColor.storageKey) private var accentRaw = AppAccentColor.indigo.rawValue
     @AppStorage("the-social-wire.theme.v1") private var themeRaw = AppThemePreference.system.rawValue
     @AppStorage("the-social-wire.font.v1") private var fontRaw = AppFontPreference.sans.rawValue
     @AppStorage("the-social-wire.bold-text.v1") private var boldText = false
@@ -19,6 +23,19 @@ struct SettingsView: View {
                         Text(theme.title).tag(theme.rawValue)
                     }
                 }
+                Picker("Theme Color", selection: $accentRaw) {
+                    ForEach(AppAccentColor.allCases) { accent in
+                        Label {
+                            Text(accent.title)
+                        } icon: {
+                            Circle()
+                                .fill(accent.color)
+                                .frame(width: 16, height: 16)
+                        }
+                        .tag(accent.rawValue)
+                    }
+                }
+                .accessibilityIdentifier("settings-theme-color")
                 Picker("Typography", selection: $fontRaw) {
                     ForEach(AppFontPreference.allCases) { font in
                         Text(font.title).tag(font.rawValue)
@@ -26,6 +43,16 @@ struct SettingsView: View {
                 }
                 Toggle("Bold Text", isOn: $boldText)
             }
+
+            #if os(iOS)
+            if let socialModel = appModel.social.quill {
+                Section("Social") {
+                    NavigationLink("Social Settings") {
+                        QuillSocialSettingsView(model: socialModel)
+                    }
+                }
+            }
+            #endif
 
             Section("Articles") {
                 Picker(

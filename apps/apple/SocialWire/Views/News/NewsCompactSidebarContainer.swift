@@ -1,12 +1,16 @@
 import SwiftUI
 
-/// A compact-width, slide-over sidebar that leaves the active feed in place.
+/// A compact-width sidebar that leaves the current destination in place.
 struct NewsCompactSidebarContainer<Sidebar: View, Content: View>: View {
+    @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var isSidebarPresented: Bool
     @GestureState private var dragTranslation: CGFloat = 0
 
     @ViewBuilder let sidebar: () -> Sidebar
     @ViewBuilder let content: () -> Content
+
+    private var direction: CGFloat { layoutDirection == .rightToLeft ? -1 : 1 }
 
     var body: some View {
         GeometryReader { geometry in
@@ -15,67 +19,57 @@ struct NewsCompactSidebarContainer<Sidebar: View, Content: View>: View {
             ZStack(alignment: .leading) {
                 content()
                     .allowsHitTesting(!isSidebarPresented)
+                    .accessibilityHidden(isSidebarPresented)
 
                 if isSidebarPresented {
                     Button {
-                        withAnimation(.snappy) {
-                            isSidebarPresented = false
-                        }
+                        isSidebarPresented = false
                     } label: {
                         Color.black.opacity(0.24)
                             .ignoresSafeArea()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close Sidebar")
+                    .accessibilityIdentifier("news-sidebar-scrim")
                     .transition(.opacity)
                 }
 
-                NavigationStack {
-                    sidebar()
-                }
-                .frame(width: sidebarWidth)
-                .frame(maxHeight: .infinity)
-                .background(.regularMaterial)
-                .shadow(color: .black.opacity(isSidebarPresented ? 0.22 : 0), radius: 18, x: 8)
-                .offset(x: sidebarOffset(width: sidebarWidth))
-                .accessibilityHidden(!isSidebarPresented)
-                .gesture(isSidebarPresented ? sidebarGesture(width: sidebarWidth) : nil)
-
-                if !isSidebarPresented {
-                    Color.clear
-                        .contentShape(.rect)
-                        .frame(width: 24)
-                        .frame(maxHeight: .infinity)
-                        .gesture(sidebarGesture(width: sidebarWidth))
-                        .accessibilityHidden(true)
+                if isSidebarPresented {
+                    NavigationStack {
+                        sidebar()
+                    }
+                    .frame(width: sidebarWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(.regularMaterial)
+                    .shadow(color: .black.opacity(isSidebarPresented ? 0.22 : 0), radius: 18, x: 8 * direction)
+                    .offset(x: sidebarOffset(width: sidebarWidth))
+                    .allowsHitTesting(isSidebarPresented)
+                    .accessibilityHidden(!isSidebarPresented)
+                    .accessibilityAddTraits(.isModal)
+                    .accessibilityAction(.escape) { isSidebarPresented = false }
+                    .gesture(sidebarGesture(width: sidebarWidth))
+                    .transition(.move(edge: .leading))
                 }
             }
-            .animation(.snappy, value: isSidebarPresented)
+            .animation(reduceMotion ? nil : .snappy, value: isSidebarPresented)
         }
     }
 
     private func sidebarOffset(width: CGFloat) -> CGFloat {
-        if isSidebarPresented {
-            return min(0, dragTranslation)
-        }
-        return -width + max(0, dragTranslation)
+        direction * (isSidebarPresented ? min(0, dragTranslation) : -width)
     }
 
+    // Only dismiss from inside the open sidebar; preserve the reader's system back gesture.
     private func sidebarGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10)
+        DragGesture(minimumDistance: 20)
             .updating($dragTranslation) { value, state, _ in
-                if isSidebarPresented || value.startLocation.x <= 24 {
-                    state = value.translation.width
-                }
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                state = value.translation.width * direction
             }
             .onEnded { value in
-                if isSidebarPresented {
-                    if value.translation.width < -(width * 0.2) {
-                        isSidebarPresented = false
-                    }
-                } else if value.startLocation.x <= 24,
-                          value.translation.width > width * 0.2 {
-                    isSidebarPresented = true
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                if value.translation.width * direction < -(width * 0.2) {
+                    isSidebarPresented = false
                 }
             }
     }

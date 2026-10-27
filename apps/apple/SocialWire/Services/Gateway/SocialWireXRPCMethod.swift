@@ -4,6 +4,7 @@ enum SocialWireXRPCMethod {
     static let getPreferences = prefix + "app.thesocialwire.sync.getPreferences"
     static let getSidebar = prefix + "app.thesocialwire.publication.getSidebar"
     static let refreshSidebar = prefix + "app.thesocialwire.publication.refreshSidebar"
+    static let getArticleEmbed = prefix + "app.thesocialwire.publication.getArticleEmbed"
     static let resolvePublication = prefix + "app.thesocialwire.publication.resolvePublication"
     static let getFeed = prefix + "app.thesocialwire.appview.getFeed"
     static let listEntries = prefix + "app.thesocialwire.appview.listEntries"

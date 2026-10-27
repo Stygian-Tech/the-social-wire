@@ -29,7 +29,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         readLater.tap()
         XCTAssertTrue(readLater.isSelected)
 
-        app.tabBars.buttons["Feeds"].tap()
+        app.tabBars.buttons["News"].tap()
         subscribed.tap()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
         XCTAssertTrue(add.waitForExistence(timeout: 3))
@@ -176,9 +176,25 @@ final class NewsShellSmokeUITests: XCTestCase {
 
     /// Follow compact root sections or regular-width sidebar destinations.
     private func selectDestination(_ label: String, in app: XCUIApplication) {
+        if label == "Lists", !app.tabBars.buttons["Lists"].exists {
+            let browse = app.tabBars.buttons["Browse"]
+            if browse.exists && browse.isHittable { browse.tap() }
+            let lists = app.buttons["news-tab-button-standardLists"]
+            let sidebar = app.collectionViews.firstMatch
+            for _ in 0..<8 {
+                if lists.exists && lists.isHittable { break }
+                if sidebar.exists { sidebar.swipeUp() }
+            }
+            guard lists.exists && lists.isHittable else {
+                XCTFail("Reader Lists is not reachable in the sidebar")
+                return
+            }
+            lists.tap()
+            return
+        }
         let root: String? = switch label {
         case "Finance", "Sports": "Topics"
-        case "Subscribed", "Following", "The Wire", "Your Circle": "Feeds"
+        case "Subscribed", "Following", "The Wire", "Your Circle": "News"
         case "Archive": "Read Later"
         default: nil
         }
@@ -234,6 +250,10 @@ final class NewsShellSmokeUITests: XCTestCase {
             if let toggle = toggles.first(where: { $0.exists && $0.isHittable }) {
                 toggle.tap()
             }
+        }
+        if !destination().exists {
+            let browse = app.tabBars.buttons["Browse"]
+            if browse.exists && browse.isHittable { browse.tap() }
         }
         if !destination().exists {
             let more = app.tabBars.buttons["More"]

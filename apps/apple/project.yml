@@ -20,6 +20,8 @@ settings:
     DEVELOPMENT_TEAM: G39TU2R26A
     CODE_SIGN_STYLE: Automatic
 packages:
+  QuillSocialKit:
+    path: ../../packages/swift/QuillSocialKit
   ReadStateCore:
     path: ../../packages/swift/ReadStateCore
   LatrKit:
@@ -29,11 +31,17 @@ targets:
   SocialWire:
     type: application
     platform: iOS
+    configFiles:
+      Debug: Config/SocialWire.xcconfig
+      Beta: Config/SocialWire.xcconfig
+      Release: Config/SocialWire.xcconfig
     sources:
       - path: SocialWire
       # `.xcassets` outside this folder — e.g. `apps/apple/Media.xcassets` — will NOT be merged in; move it under
       # `SocialWire/` or add a second `- path:` entry with `type: folder.assetcatalog`, then run `xcodegen generate`.
     dependencies:
+      - package: QuillSocialKit
+        product: QuillSocialUI
       - package: ReadStateCore
       - package: LatrKit
     info:
@@ -42,6 +50,8 @@ targets:
         CFBundleDisplayName: The Social Wire
         # Short bundle name (Settings, Spotlight, etc.); **`PRODUCT_NAME`** stays `SocialWire` for module / binary paths.
         CFBundleName: The Social Wire
+        NSCameraUsageDescription: Take photos to share in stories.
+        KLIPY_API_KEY: $(KLIPY_API_KEY)
         CFBundleURLTypes:
           - CFBundleURLName: com.samclemente.the-social-wire.oauth
             CFBundleURLSchemes:
@@ -50,6 +60,8 @@ targets:
               - app.thesocialwire.testing.api
         LSRequiresIPhoneOS: true
         UIApplicationSupportsIndirectInputEvents: true
+        UIBackgroundModes:
+          - audio
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

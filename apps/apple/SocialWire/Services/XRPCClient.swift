@@ -26,6 +26,85 @@ final class XRPCClient {
         try await auth.validSession().did
     }
 
+    /// Raw XRPC envelopes let Quill's shared sources decode their own lexicon models while
+    /// keeping signing, service proxying, nonce recovery, and account ownership here.
+    func socialServiceGetData(method: String, service: String, query: [String: String] = [:], labelers: [String] = [], expectedViewer: String) async throws -> Data {
+        try await socialRequestData(method: method, service: service, query: query, labelers: labelers, expectedViewer: expectedViewer)
+    }
+
+    func socialServicePostData(method: String, service: String, body: Data, expectedViewer: String) async throws -> Data {
+        try await socialRequestData(method: method, service: service, body: body, expectedViewer: expectedViewer)
+    }
+
+    func socialPDSGetData(method: String, query: [String: String] = [:], expectedViewer: String) async throws -> Data {
+        try await socialRequestData(method: method, query: query, expectedViewer: expectedViewer)
+    }
+
+    func socialPDSPostData(method: String, body: Data, expectedViewer: String) async throws -> Data {
+        try await socialRequestData(method: method, body: body, expectedViewer: expectedViewer)
+    }
+
+    func socialUploadBlobData(data: Data, mimeType: String, expectedViewer: String) async throws -> Data {
+        try await socialRequestData(method: "com.atproto.repo.uploadBlob", body: data,
+                                    contentType: mimeType, expectedViewer: expectedViewer)
+    }
+
+    func socialPublicPDSGetData(repo: String, method: String, query: [String: String], expectedViewer: String) async throws -> Data {
+        try requireSocialViewer(expectedViewer)
+        let base = try await resolver.resolvePDSURL(did: repo)
+        try requireSocialViewer(expectedViewer)
+        var request = URLRequest(url: try xrpcURL(base: base, method: method, query: query.mapValues(Optional.some)))
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await transport(request)
+        try requireSocialViewer(expectedViewer)
+        guard let http = response as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing response.") }
+        return try checkedSocialData(data, response: http, method: method)
+    }
+
+    private func socialRequestData(method: String, service: String? = nil, query: [String: String] = [:], labelers: [String] = [],
+                                   body: Data? = nil, contentType: String = "application/json",
+                                   expectedViewer: String) async throws -> Data {
+        try requireSocialViewer(expectedViewer)
+        let session = try await auth.validSession()
+        guard session.did == expectedViewer else { throw ReadStateSyncFailure.accountChanged }
+        var request = URLRequest(url: try xrpcURL(base: session.pdsURL, method: method, query: query.mapValues(Optional.some)))
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let service { request.setValue(service, forHTTPHeaderField: "atproto-proxy") }
+        if !labelers.isEmpty { request.setValue(labelers.joined(separator: ", "), forHTTPHeaderField: "atproto-accept-labelers") }
+        if let body {
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        }
+        do {
+            let (data, response) = try await sendAuthorized(request, session: session)
+            try requireSocialViewer(expectedViewer)
+            return try checkedSocialData(data, response: response, method: method)
+        } catch {
+            let failure = error as NSError
+            Self.logger.error("Social XRPC \(method, privacy: .public) failed before decoding: \(failure.domain, privacy: .public) \(failure.code)")
+            throw error
+        }
+    }
+
+    private func requireSocialViewer(_ expectedViewer: String) throws {
+        guard auth.session?.did == expectedViewer else { throw ReadStateSyncFailure.accountChanged }
+        try Task.checkCancellation()
+    }
+
+    private func checkedSocialData(_ data: Data, response: HTTPURLResponse, method: String) throws -> Data {
+        guard (200..<300).contains(response.statusCode) else {
+            // Log only the method/status and a bounded protocol error code, never credentials
+            // or the response body (which may include private social content).
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let rawCode = object?["error"] as? String ?? "Unknown"
+            let code = String(rawCode.prefix(64).filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") })
+            Self.logger.error("Social XRPC \(method, privacy: .public) failed: HTTP \(response.statusCode), code \(code, privacy: .public)")
+            throw SocialWireError.badResponse("XRPC request failed with HTTP \(response.statusCode).")
+        }
+        return data
+    }
+
     func publicGet<T: Decodable>(_ base: URL, method: String, query: [String: String?] = [:]) async throws -> T {
         let url = try xrpcURL(base: base, method: method, query: query)
         var request = URLRequest(url: url)
@@ -52,6 +131,25 @@ final class XRPCClient {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(service, forHTTPHeaderField: "atproto-proxy")
+        try await sign(&request, session: session)
+        return try await sendWithDPoPRetry(request, session: session)
+    }
+
+    func authorizedServiceProxyPost<Body: Encodable, T: Decodable>(
+        method: String,
+        service: String,
+        body: Body,
+        expectedViewer: String? = nil
+    ) async throws -> T {
+        let session = try await auth.validSession()
+        if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
+        let url = try xrpcURL(base: session.pdsURL, method: method)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(service, forHTTPHeaderField: "atproto-proxy")
+        request.httpBody = try jsonEncoder.encode(body)
         try await sign(&request, session: session)
         return try await sendWithDPoPRetry(request, session: session)
     }

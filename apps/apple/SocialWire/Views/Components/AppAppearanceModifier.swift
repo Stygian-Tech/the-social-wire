@@ -1,15 +1,23 @@
 import SwiftUI
 
 struct AppAppearanceModifier: ViewModifier {
+    @AppStorage(AppAccentColor.storageKey) private var accentRaw = AppAccentColor.indigo.rawValue
     @AppStorage("the-social-wire.theme.v1") private var themeRaw = AppThemePreference.system.rawValue
     @AppStorage("the-social-wire.font.v1") private var fontRaw = AppFontPreference.sans.rawValue
     @AppStorage("the-social-wire.bold-text.v1") private var boldText = false
 
     func body(content: Content) -> some View {
         content
+            .tint(accent.color)
+            .accentColor(accent.color)
+            .environment(\.appAccentColor, accent.color)
             .preferredColorScheme(theme.colorScheme)
             .fontDesign(font.design)
             .fontWeight(boldText ? .bold : nil)
+    }
+
+    private var accent: AppAccentColor {
+        AppAccentColor(storedRawValue: accentRaw)
     }
 
     private var theme: AppThemePreference {

@@ -95,6 +95,7 @@ filter_changed operations_web \
 filter_changed apple \
   'apps/apple/**' \
   'packages/swift/ReadStateCore/**' \
+  'packages/swift/QuillSocialKit/**' \
   '.github/workflows/ci.yml'
 
 # Retained Swift package contracts remain independent from retired service runtimes.

@@ -3,6 +3,7 @@ import SwiftUI
 
 /// Deterministic shell used only by UI automation so navigation chrome can be tested without live OAuth.
 struct NewsShellUITestHarness: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var fixtureModel = SocialWireAppModel(gatewayURLSession: NewsShellUITestTransport.session())
     @State private var isShellConfigured = false
     @State private var lastFeedAction = "Ready"
@@ -54,33 +55,58 @@ struct NewsShellUITestHarness: View {
             if isShellConfigured {
                 NewsShellView()
                     .environment(fixtureModel)
+                    .environment(\.horizontalSizeClass,
+                                 ProcessInfo.processInfo.arguments.contains("--ui-testing-compact-window")
+                                    ? .compact : ProcessInfo.processInfo.arguments.contains("--ui-testing-regular-window")
+                                        ? .regular : horizontalSizeClass)
                     .safeAreaInset(edge: .top) {
                         if ProcessInfo.processInfo.arguments.contains("--ui-testing-shell-routing") {
-                            HStack {
-                                Button("Hide Following") {
-                                    fixtureModel.feedPreferences.visibleFeeds = [.readLater, .archive, .subscribed]
+                            VStack {
+                                HStack {
+                                    Button("Hide Following") {
+                                        fixtureModel.feedPreferences.visibleFeeds = [.readLater, .archive, .subscribed]
+                                    }
+                                    .accessibilityIdentifier("fixture-hide-following")
+                                    Button("Select Publication") {
+                                        // Same completed selection observed after Profile/sidebar selection;
+                                        // no live OAuth, repository, or feed network dependency.
+                                        let publication = Self.fixturePublication
+                                        fixtureModel.selectedPublication = publication
+                                        fixtureModel.feedSelection = .publication(publication.publicationId)
+                                        fixtureModel.selectedSidebar = .publication(publication.publicationId)
+                                        fixtureModel.entries = [Self.entry(index: 1)]
+                                    }
+                                    .accessibilityIdentifier("fixture-select-publication")
                                 }
-                                .accessibilityIdentifier("fixture-hide-following")
-                                Button("Select Publication") {
-                                    // Same completed selection observed after Profile/sidebar selection;
-                                    // no live OAuth, repository, or feed network dependency.
-                                    let publication = Self.fixturePublication
-                                    fixtureModel.selectedPublication = publication
-                                    fixtureModel.feedSelection = .publication(publication.publicationId)
-                                    fixtureModel.selectedSidebar = .publication(publication.publicationId)
-                                    fixtureModel.entries = [Self.entry(index: 1)]
+                                .buttonStyle(.bordered)
+                                HStack {
+                                    Button("Refresh Preferences") {
+                                        fixtureModel.feedPreferences.feedsWithUnreadCounts = fixtureModel.feedPreferences.feedsWithUnreadCounts.isEmpty ? [.subscribed] : []
+                                    }
+                                    .accessibilityIdentifier("fixture-refresh-preferences")
+                                    Text(fixtureScopeLabel)
+                                        .accessibilityIdentifier("fixture-reader-scope")
                                 }
-                                .accessibilityIdentifier("fixture-select-publication")
                             }
-                            .buttonStyle(.bordered)
+                            .padding(.top, 50)
                         }
                     }
             } else {
                 ProgressView()
                     .task {
+                        if ProcessInfo.processInfo.arguments.contains("--ui-testing-reset-tabs") {
+                            NewsSectionPreferences().save(viewerDID: nil)
+                        }
                         fixtureModel.feedPreferences = ReaderFeedPreferences(
                             visibleFeeds: [.readLater, .archive, .subscribed, .following],
                             feedsWithUnreadCounts: [], showWire: false, showCircle: false)
+                        if ProcessInfo.processInfo.arguments.contains("--ui-testing-quill-social") {
+                            do { try fixtureModel.social.configureQuillFixture() }
+                            catch { assertionFailure("Quill fixture failed: \(error)") }
+                        }
+                        if ProcessInfo.processInfo.arguments.contains("--ui-testing-sidebar-publications") {
+                            configureSidebarPublications()
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--ui-testing-topics-lists") {
                             fixtureModel.wireCatalog = WireFeedCatalog(
                                 financeAvailable: true, sportsAvailable: true,
@@ -104,6 +130,39 @@ struct NewsShellUITestHarness: View {
                     }
             }
         }
+    }
+
+    private var fixtureScopeLabel: String {
+        switch fixtureModel.feedSelection {
+        case .topLevel(let source): "All \(source.rawValue)"
+        case .publication: "One Publication"
+        case .folder: "One Folder"
+        case .standardList: "One List"
+        case .savedSource: "One Saved Source"
+        }
+    }
+
+    private func configureSidebarPublications() {
+        let rows = ["Subscribed Publication", "Following Publication"].enumerated().map { index, title in
+            SidebarPublicationRowDTO(
+                publicationId: "at://did:plc:fixture/site.standard.publication/\(index)",
+                subscriptionPublicationId: nil, authorDid: "did:plc:fixture", authorHandle: "fixture.example",
+                title: title, iconUrl: nil, avatarUrl: nil, discoveredAt: "2026-10-26T00:00:00Z",
+                appViewScope: PublicationAppViewScopeDTO(
+                    authorDid: "did:plc:fixture", publicationAtUri: nil,
+                    publicationScopeAtUris: [], publicationSiteUrls: []), unreadCount: 0)
+        }
+        let projection = PublicationSidebarResponseDTO(
+            viewerDid: "did:plc:fixture", folders: nil, publicationPrefs: nil, folderSections: nil,
+            allPublicationRows: rows, myPublications: [], subscribedUnfoldered: [rows[0]],
+            followingTabPublications: [rows[1]], enrollAuthorDids: [],
+            refreshedAt: "2026-10-26T00:00:00Z", unreadCountsByPublicationId: nil)
+        fixtureModel.applyBootstrapStreamEvent(BootstrapStreamEventDTO(
+            kind: .sidebarPriority, sidebarPriority: projection, sidebarSection: nil, unreadCounts: nil,
+            selectedPublication: nil, entriesPage: nil, sidebarFolders: nil, lists: nil,
+            warning: nil, error: nil, done: nil))
+        fixtureModel.sidebarSubscribedPublicationsSectionExpanded = true
+        fixtureModel.sidebarFollowingPublicationsSectionExpanded = true
     }
 
     private static let fixturePublication = DiscoveredPublication(
