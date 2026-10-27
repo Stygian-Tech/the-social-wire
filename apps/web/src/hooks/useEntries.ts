@@ -181,7 +181,7 @@ function useGuardedFeedRefresh(args: {
   } | null>(null);
   const refresh = useCallback(async (replaceSession = false, callerSignal?: AbortSignal) => {
     const oauth = getOAuthSession();
-    if (!enabled || !oauth || !feed) return false;
+    if (!enabled || !oauth || !feed || callerSignal?.aborted) return false;
     const cachedQuery = queryClient.getQueryCache().find({ queryKey, exact: true });
     const revision = getFeedRefreshRevision(queryClient, queryKey);
     const readRevision = readFeedRefreshRevision(queryClient, oauth);
@@ -212,6 +212,13 @@ function useGuardedFeedRefresh(args: {
     }
     const owner = { isCurrent };
     pending.set(scope, owner);
+    // Visible refresh deadlines must retire Query's retryer as well as the
+    // listener's wait, so the next focus can start a fresh request.
+    const onCallerAbort = () => {
+      if (pending.get(scope) === owner) void queryClient.cancelQueries({ queryKey, exact: true });
+    };
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+    if (callerSignal?.aborted) onCallerAbort();
     let operationSettled = false;
     const fetchMerged = async (signal: AbortSignal): Promise<InfiniteData<EntriesPage>> => {
       // Query.fetch(undefined) can reuse this installed function after a read
@@ -249,6 +256,7 @@ function useGuardedFeedRefresh(args: {
       if (isCancelledError(error) || error instanceof SupersededFeedRefreshError) return false;
       throw error;
     } finally {
+      callerSignal?.removeEventListener("abort", onCallerAbort);
       operationSettled = true;
       if (pending.get(scope) === owner) pending.delete(scope);
     }

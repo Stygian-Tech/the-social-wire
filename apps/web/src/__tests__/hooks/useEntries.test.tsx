@@ -146,6 +146,7 @@ describe("useEntries", () => {
   });
 
   afterEach(() => {
+    cleanup();
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
   });
@@ -290,6 +291,7 @@ describe("useEntry", () => {
   });
 
   afterEach(() => {
+    cleanup();
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
   });
@@ -445,6 +447,38 @@ describe("reader lifecycle refreshes", () => {
     activeOAuthSession = mockOAuthSession;
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
+  });
+
+  it("retires a stalled visible refresh at its deadline and retries on the next focus", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const scope = "subscribed";
+    seed(scope);
+    client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)));
+    let finishOld!: (response: Response) => void;
+    respond = () => new Promise(resolve => { finishOld = resolve; });
+    const hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+    try {
+      await settle();
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(1));
+      await act(async () => { deadline.abort(); });
+      await waitFor(() => expect(hook.result.current.isFetching).toBe(false));
+      expect(ids(hook.result.current.data)).toEqual(["cached-head", "cached-tail"]);
+      timeout.mockRestore();
+      respond = async () => json([row("recovered-visible")]);
+      act(() => { window.dispatchEvent(new window.Event("focus")); });
+      await waitFor(() => expect(requests).toHaveLength(2));
+      await waitFor(() => expect(ids(hook.result.current.data)).toEqual(["recovered-visible", "cached-head", "cached-tail"]));
+      await act(async () => { finishOld(json([row("late-stalled")])); });
+      expect(ids(hook.result.current.data)).toEqual(["recovered-visible", "cached-head", "cached-tail"]);
+    } finally {
+      hook.unmount(); timeout.mockRestore();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
   });
 
   for (const supersede of ["read", "account", "generation", "unmount"] as const) {
