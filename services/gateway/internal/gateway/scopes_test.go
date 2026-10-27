@@ -53,7 +53,7 @@ func TestNativeMetadataMatchesAuthorizationRequest(t *testing.T) {
 func TestPodcastDisabledMetadataKeepsProductionScope(t *testing.T) {
 	for _, fixture := range []struct{ path, scope, digest string }{
 		{"/oauth-client-metadata.json", webScope, "2bd81d479140135ab6b49aa91eff2b99991f9ae08008fe70ac5b2449b2796f5f"},
-		{"/ios-client-metadata.json", iosScope, "f2a5d9a041bf093f429f1c93a00388a9de332f3ae38cea7245070d0066cd79b3"},
+		{"/ios-client-metadata.json", iosScope, "653a030dc0ca652baa58019ebb0f61ff8ce05cb27575ac7d40e3a4f06eb8c0a5"},
 	} {
 		for _, enabled := range []bool{false, true} {
 			s := Server{Config: Config{PodcastsEnabled: enabled}}

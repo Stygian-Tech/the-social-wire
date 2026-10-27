@@ -41,7 +41,6 @@ struct ATProtoOAuthServiceTests {
     func scopesIncludeViewerModerationRPCs() {
         let audience = "?aud=did:web:api.bsky.app%23bsky_appview"
         let expected = [
-            "app.bsky.actor.getPreferences",
             "app.bsky.graph.getBlocks",
             "app.bsky.graph.getMutes",
             "app.bsky.graph.getListMutes",
@@ -50,6 +49,8 @@ struct ATProtoOAuthServiceTests {
         ].map { "rpc:\($0)\(audience)" }
         let actual = Set(ATProtoOAuthService.scopes.split(separator: " ").map(String.init))
         #expect(expected.allSatisfy(actual.contains))
+        // Quill reads preferences from the selected App View, including custom providers.
+        #expect(actual.contains("rpc:app.bsky.actor.getPreferences?aud=*"))
     }
 
     @Test("Existing scopes restore normally while PDS writes require explicit reauthorization")
