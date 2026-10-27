@@ -4,7 +4,7 @@ import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query"
 import type { EntriesPage } from "@/hooks/useEntries";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import { awaitWithAbort } from "@/lib/awaitWithAbort";
-import { advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { advanceFeedRefreshRevision, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { mergeFeedRefreshForFilter } from "@/lib/feedCacheMerge";
 import {
   listAggregateFeedFromAppView,
@@ -62,8 +62,9 @@ export async function refreshReaderFeeds({
 
   // Cancellation can restore pre-request data/state. Await it before invalidating
   // or reading the merge baseline so an older request cannot undo the refresh.
+  const revisions = new Map<string, number>();
   for (const query of queryClient.getQueryCache().findAll(filters)) {
-    advanceFeedRefreshRevision(queryClient, query.queryKey);
+    revisions.set(query.queryHash, advanceFeedRefreshRevision(queryClient, query.queryKey));
   }
   await queryClient.cancelQueries(filters);
   signal?.throwIfAborted();
@@ -90,6 +91,7 @@ export async function refreshReaderFeeds({
           signal,
         }), signal);
         signal?.throwIfAborted();
+        if (getFeedRefreshRevision(queryClient, query.queryKey) !== revisions.get(query.queryHash)) continue;
         queryClient.setQueryData<InfiniteData<EntriesPage>>(query.queryKey, current =>
           mergeFeedRefreshForFilter(current, freshPage, scope.filter)
         );

@@ -91,6 +91,24 @@ it("returns false when a revision changes during the background count update", a
   expect(client.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual(data("manual"));
 });
 
+it("releases publication singleflight when unread badge transport ignores cancellation", async () => {
+  client.setQueryData(queryKey, data("cached"));
+  const { fetch, counts } = mockFeed();
+  fetch.mockResolvedValue(page("fresh"));
+  const badge = deferred<{ counts: Record<string, number> }>();
+  counts.mockReturnValue(badge.promise);
+  const controller = new AbortController();
+  const args = { queryClient: client, publicationKey, viewerDid, oauthSession: oauth, articleFilter: "unread" as const };
+  const pending = refreshPublicationFeedFirstPage({ ...args, signal: controller.signal });
+  await waitFor(() => expect(counts).toHaveBeenCalledTimes(1));
+  controller.abort();
+  await expect(pending).rejects.toHaveProperty("name", "AbortError");
+  counts.mockResolvedValue({ counts: {} });
+  expect(await refreshPublicationFeedFirstPage(args)).toBe(true);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  badge.resolve({ counts: { [publicationKey]: 99 } });
+});
+
 it("guards the aggregate custom refetch write and allows the next revision to finish", async () => {
   const feed = { kind: "following" as const };
   const key = ["aggregateEntries", viewerDid, feed.kind, "", "unread"];
@@ -99,6 +117,7 @@ it("guards the aggregate custom refetch write and allows the next revision to fi
   const { result } = renderHook(() => useAggregateFeedEntries(feed, "unread"), { wrapper });
   let pending!: Promise<void>;
   act(() => { pending = result.current.refetch(); });
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   advanceFeedRefreshRevision(client, key);
   fetch.mockResolvedValue(page("new"));
   await act(async () => { await result.current.refetch(); });

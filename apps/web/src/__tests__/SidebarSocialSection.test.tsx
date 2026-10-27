@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { SidebarSocialSection } from "@/components/AppSidebar/SidebarSocialSection";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import * as catalogHooks from "@/hooks/useBlueskySocialCatalog";
-import { SOCIAL_HOME_REFRESH_EVENT } from "@/lib/socialHomeRefresh";
+import { consumeSocialHomeRefresh, SOCIAL_HOME_REFRESH_EVENT } from "@/lib/socialHomeRefresh";
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
@@ -12,27 +12,28 @@ afterAll(() => {
   if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia);
   else Reflect.deleteProperty(window, "matchMedia");
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); consumeSocialHomeRefresh(); });
 async function renderSection(overrides: Partial<React.ComponentProps<typeof SidebarSocialSection>> = {}) {
   const onHome = mock(() => undefined);
   await act(async () => { render(<SidebarProvider><SidebarSocialSection active={false} onHome={onHome} {...overrides} /></SidebarProvider>); });
   return { onHome };
 }
 describe("SidebarSocialSection", () => {
-  it("requests a refresh only when Home is double-clicked while selected", async () => {
+  it("requests a refresh with one Home activation, including before navigation", async () => {
     const refresh = mock(() => {});
     window.addEventListener(SOCIAL_HOME_REFRESH_EVENT, refresh);
     try {
-      await renderSection({ active: true });
+      const { onHome } = await renderSection({ active: true });
       const home = screen.getByRole("button", { name: "Social Home" });
       fireEvent.click(home);
-      expect(refresh).not.toHaveBeenCalled();
-      fireEvent.doubleClick(home);
       expect(refresh).toHaveBeenCalledTimes(1);
+      expect(onHome).toHaveBeenCalledTimes(1);
+      expect(consumeSocialHomeRefresh()).toBe(true);
       cleanup();
       await renderSection({ active: false });
-      fireEvent.doubleClick(screen.getByRole("button", { name: "Social Home" }));
-      expect(refresh).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "Social Home" }));
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(consumeSocialHomeRefresh()).toBe(true);
     } finally { window.removeEventListener(SOCIAL_HOME_REFRESH_EVENT, refresh); }
   });
   it("shows enabled destinations without expansion controls or settings", async () => {

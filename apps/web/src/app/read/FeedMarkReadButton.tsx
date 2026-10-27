@@ -29,7 +29,7 @@ type FeedMarkReadButtonProps = {
   scope: GatewayMarkAllReadScope | null;
   displayName: string;
   disabled?: boolean;
-  onMarkAllRead: () => void;
+  onMarkAllRead: () => boolean | void | Promise<boolean | void>;
 };
 
 export function FeedMarkReadButton(props: FeedMarkReadButtonProps) {
@@ -121,7 +121,7 @@ function ScopedFeedMarkReadButton({
               type="button"
               variant="ghost"
               size="sm"
-              className="min-w-0 shrink-0 rounded-md border-0 bg-transparent px-2 text-[11px] font-semibold text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground"
+              className="min-h-11 min-w-0 shrink-0 rounded-md border-0 bg-transparent px-2 text-[11px] font-semibold text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground sm:min-h-8"
               disabled={disabled || pending}
               title="Right-Click or Long-Press to Mark Older Stories As Read"
               onClick={() => confirm("all")}
@@ -185,17 +185,15 @@ function ScopedFeedMarkReadButton({
             <Button
               type="button"
               disabled={disabled || pending}
+              aria-busy={pending}
               onClick={async () => {
-                if (!age) {
-                  onMarkAllRead();
-                  setConfirmation(null);
-                  return;
-                }
+                if (pending) return;
                 setPending(true);
                 setMutationError(false);
                 try {
-                  await markBefore(age.before);
-                  setConfirmation(null);
+                  const accepted = age ? await markBefore(age.before) : await onMarkAllRead();
+                  if (accepted === false) setMutationError(true);
+                  else setConfirmation(null);
                 } catch {
                   setMutationError(true);
                 } finally {

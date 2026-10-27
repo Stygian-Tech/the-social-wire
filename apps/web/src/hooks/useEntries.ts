@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import {
   useInfiniteQuery,
@@ -38,6 +38,8 @@ import { recordClientPerformance } from "@/lib/clientPerformanceTelemetry";
 import { useAuth } from "./useAuth";
 import { coalesceFeedFirstPage, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { refreshPublicationFeedFirstPage } from "@/lib/feedRefresh";
+import { useVisibleFeedRefresh } from "./useVisibleFeedRefresh";
+import { refreshAggregateFeed } from "@/lib/refreshAggregateFeed";
 import { useFeedFirstContentTiming } from "./useFeedFirstContentTiming";
 
 export type { EntryListItem, EntryDetail };
@@ -582,14 +584,25 @@ export function useAggregateFeedEntries(
     query.isPlaceholderData,
   ]);
 
-  return { ...query, refetch: async () => {
+  const refreshHead = useCallback(async (signal?: AbortSignal) => {
     const oauth = getOAuthSession();
-    if (!oauth || !feed) return;
-    const revision = getFeedRefreshRevision(queryClient, aggregateQueryKey);
-    const fresh = await coalesceFeedFirstPage(queryClient, oauth, aggregateQueryKey, () => listAggregateFeedFromAppView({ feed, filter: articleFilter, oauthSession: oauth }));
-    if (getOAuthSession() !== oauth || getFeedRefreshRevision(queryClient, aggregateQueryKey) !== revision) return;
-    queryClient.setQueryData<InfiniteData<EntriesPage>>(aggregateQueryKey, current => mergeFeedRefreshForFilter(current, fresh, articleFilter));
-  } };
+    if (!oauth || !feedKind) return;
+    await refreshAggregateFeed({
+      queryClient,
+      queryKey: aggregateQueryKey,
+      feed: { kind: feedKind, id: feedId },
+      filter: articleFilter,
+      oauthSession: oauth,
+      isCurrentSession: () => getOAuthSession() === oauth,
+      signal,
+    });
+  }, [aggregateQueryKey, articleFilter, feedId, feedKind, getOAuthSession, queryClient]);
+  useVisibleFeedRefresh(
+    !dummyReaderDataEnabled && viewerDid && feedKind && query.data?.pages.length && !query.isPlaceholderData
+      ? JSON.stringify([paintKey, oauthSessionReloadSeq]) : null,
+    refreshHead,
+  );
+  return { ...query, refetch: () => refreshHead() };
 }
 
 /**

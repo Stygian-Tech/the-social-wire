@@ -73,7 +73,12 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
     setRefreshState({ context: refreshContext, scope: requestScope, pending: true });
     try {
       if (!oauth || !freshModeration || freshModeration.userDid !== oauth.did) throw new Error(SCOPE_RECOVERY_MESSAGE);
-      const page = await coalesceFeedFirstPage(client, oauth, freshKey, () => getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true }));
+      const page = await coalesceFeedFirstPage(client, oauth, freshKey, async () => {
+        // Infinite-query pagination writes the entire page list when it settles.
+        // Cancel that older work before replacing membership with a fresh head.
+        await client.cancelQueries({ queryKey: freshKey, exact: true });
+        return getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true });
+      });
       if (getOAuthSession() !== oauth || currentRefreshContext.current !== refreshContext || refreshContext.scope !== requestScope) return;
       client.setQueryData<InfiniteData<BlueskySocialPage>>(freshKey, { pages: [page], pageParams: [undefined] });
       setRefreshState({ context: refreshContext, scope: requestScope, pending: false });

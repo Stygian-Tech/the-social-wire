@@ -1,4 +1,5 @@
 import { coalesceFeedFirstPage, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
+import { awaitWithAbort } from "@/lib/awaitWithAbort";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 import {
@@ -35,12 +36,15 @@ export async function refreshPublicationUnreadCount(args: {
   viewerDid: string;
   publicationId: string;
   oauthSession: OAuthSession;
+  signal?: AbortSignal;
 }): Promise<void> {
   const { queryClient, viewerDid, publicationId, oauthSession } = args;
+  const signal = args.signal ?? AbortSignal.timeout(30_000);
   try {
-    const countSnapshot = await fetchAppViewUnreadCounts(oauthSession, [
+    const countSnapshot = await awaitWithAbort(fetchAppViewUnreadCounts(oauthSession, [
       publicationId,
-    ]);
+    ], signal), signal);
+    signal.throwIfAborted();
     queryClient.setQueryData<PublicationSidebarProjection>(
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
       (current) =>
@@ -99,9 +103,10 @@ async function performPublicationFeedRefresh(args: FeedRefreshArgs): Promise<boo
     oauthSession,
     viewerDid,
     skipEnroll = false,
-    signal,
+    signal: callerSignal,
     allowCacheMiss = false,
   } = args;
+  const signal = callerSignal ?? AbortSignal.timeout(30_000);
 
   if (!viewerDid) return false;
   const queryKey = [
@@ -134,7 +139,7 @@ async function performPublicationFeedRefresh(args: FeedRefreshArgs): Promise<boo
     return isCurrent();
   }
 
-  const freshPage = await coalesceFeedFirstPage(queryClient, oauthSession, queryKey, () => fetchEntriesInfinitePage({
+  const freshPage = await coalesceFeedFirstPage(queryClient, oauthSession, queryKey, () => awaitWithAbort(fetchEntriesInfinitePage({
     normalizedPublicationKey: publicationKey,
     pageParam: undefined,
     signal,
@@ -143,8 +148,9 @@ async function performPublicationFeedRefresh(args: FeedRefreshArgs): Promise<boo
     articleFilter,
     queryClient,
     skipEnroll,
-  }));
+  }), signal));
 
+  signal?.throwIfAborted();
   if (!isCurrent()) return false;
   queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, (current) =>
     mergeFeedRefreshForFilter(current, freshPage, articleFilter)
@@ -156,7 +162,9 @@ async function performPublicationFeedRefresh(args: FeedRefreshArgs): Promise<boo
       viewerDid,
       publicationId: normalizeAtRepoParam(publicationKey),
       oauthSession,
+      signal,
     });
   }
+  signal.throwIfAborted();
   return isCurrent();
 }

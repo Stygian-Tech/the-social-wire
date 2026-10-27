@@ -13,6 +13,7 @@ import { useSidebarBootstrap } from "@/contexts/PublicationSidebarContext";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { Button } from "@/components/ui/button";
 import { FeedMarkReadButton } from "./FeedMarkReadButton";
+import { ArticleReadFilter } from "@/components/FeedHeader/ArticleReadFilter";
 import { cn } from "@/lib/utils";
 import { useWireEdition } from "@/hooks/useWireEdition";
 import { useWireFeedEntries } from "@/hooks/useWireFeed";
@@ -53,7 +54,7 @@ export function ReadArticleFilterBar() {
   const circle = useCircleEdition({ enabled: isCircle });
 
   const { activeFeedScope } = useReadSidebarScope();
-  const { bulkDisabled, applyMarkAllRead } =
+  const { bulkDisabled, applyMarkAllRead, isMarkingRead, error: markReadError } =
     useCachedBulkReadActions(activeFeedScope.publications, {
       gatewayScopes: activeFeedScope.gatewayScope
         ? [activeFeedScope.gatewayScope]
@@ -61,7 +62,7 @@ export function ReadArticleFilterBar() {
     });
 
   const markAllReadDisabled =
-    bulkDisabled || !activeFeedScope.displayName.trim();
+    bulkDisabled || isMarkingRead || !activeFeedScope.displayName.trim();
   const routeFeedTitle = pathname === "/read"
     ? searchParams.get("folder")
       ? "Folder"
@@ -105,7 +106,7 @@ export function ReadArticleFilterBar() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="size-8 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 hover:text-foreground"
+          className="size-11 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 hover:text-foreground sm:size-8"
           disabled={isRefreshDisabled}
           aria-label={`Refresh ${title}`}
           title={`Refresh ${title}`}
@@ -136,7 +137,7 @@ export function ReadArticleFilterBar() {
     } mobileStatus={
       refreshStatus ? <span role="status" aria-live="polite" aria-atomic="true" className={refresh.isError ? "text-destructive" : undefined}>{refreshStatus}</span> : undefined
     }>
-      <div className="ml-auto flex shrink-0 items-center gap-1">
+      <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1">
         {isTabletPortrait ? (
           <Button
             type="button"
@@ -165,47 +166,12 @@ export function ReadArticleFilterBar() {
           disabled={clientHydrated ? markAllReadDisabled : undefined}
           onMarkAllRead={applyMarkAllRead}
         />
-        <div
-          role="tablist"
-          aria-label="Articles filter"
-          className="flex shrink-0 items-center gap-1"
-        >
-          <button
-            type="button"
-            role="tab"
-            id="read-shell-filter-all"
-            aria-selected={articleListFilter === "all"}
-            className={cn(
-              "relative min-h-7 rounded-md px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition-colors after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent hover:bg-muted/50 hover:text-foreground",
-              articleListFilter === "all"
-                ? "text-[var(--purple-foreground)] after:bg-primary"
-                : "",
-            )}
-            onClick={() => setArticleListFilter("all")}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="read-shell-filter-unread"
-            aria-selected={articleListFilter === "unread"}
-            className={cn(
-              "relative min-h-7 rounded-md px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition-colors after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent hover:bg-muted/50 hover:text-foreground",
-              articleListFilter === "unread"
-                ? "text-[var(--purple-foreground)] after:bg-primary"
-                : "",
-            )}
-            onClick={() => setArticleListFilter("unread")}
-          >
-            Unread
-          </button>
-        </div>
+        <ArticleReadFilter value={articleListFilter} onChange={setArticleListFilter} />
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="size-8 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 hover:text-foreground"
+          className="size-11 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 hover:text-foreground sm:size-8"
           onClick={() => refresh.mutate()}
           disabled={refresh.isPending}
           aria-label={refresh.isPending ? "Refreshing Publications" : refresh.isError ? "Retry Refresh Publications" : "Refresh Publications"}
@@ -218,6 +184,7 @@ export function ReadArticleFilterBar() {
           />
         </Button>
       </div>
+      {markReadError ? <p role="alert" className="w-full text-xs text-destructive">{markReadError}</p> : null}
     </FeedHeader>
   );
 }

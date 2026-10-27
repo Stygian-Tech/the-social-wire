@@ -302,6 +302,27 @@ describe("useEntry", () => {
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeUndefined();
   });
+
+  it("refreshes the Subscribed head when returning to the visible tab", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, unmount } = renderHook(() => useAggregateFeedEntries({ kind: "subscribed" }), {
+      wrapper: ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    try {
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      const requests = () => mockFetchHandler.mock.calls.filter(([url]) => url.includes("app.thesocialwire.appview.getFeed"));
+      const previous = requests().length;
+      act(() => window.dispatchEvent(new window.Event("focus")));
+      await waitFor(() => expect(requests().length).toBe(previous + 1));
+      expect(result.current.data?.pages).toHaveLength(1);
+    } finally {
+      unmount(); client.clear();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
   it("refreshes only the resolved list metadata after its prepared first page", async () => {
     const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
     const invalidate = mock(client.invalidateQueries.bind(client));
