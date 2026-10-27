@@ -20,6 +20,37 @@ const restores: (() => void)[] = [];
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 beforeAll(() => { Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }); });
 afterAll(() => { if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia); else Reflect.deleteProperty(window, "matchMedia"); });
+// Control only the dwell timers; React Query and Testing Library keep real timers.
+function pageReadClock() {
+  let now = 0;
+  let nextId = -1;
+  const scheduled = new Map<number, { due: number; callback: () => void }>();
+  const originalTimeout = globalThis.setTimeout;
+  const originalClear = globalThis.clearTimeout;
+  const visibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  restores.push(() => { if (visibility) Object.defineProperty(document, "visibilityState", visibility); else Reflect.deleteProperty(document, "visibilityState"); });
+  globalThis.setTimeout = ((callback: () => void, delay?: number, ...args: unknown[]) => {
+    if (delay !== 2_000) return originalTimeout(callback, delay, ...args);
+    const id = nextId--; scheduled.set(id, { due: now + delay, callback });
+    return id;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = (id => {
+    if (!scheduled.delete(Number(id))) originalClear(id as Parameters<typeof clearTimeout>[0]);
+  }) as typeof clearTimeout;
+  restores.push(() => { globalThis.setTimeout = originalTimeout; globalThis.clearTimeout = originalClear; });
+  return {
+    get pending() { return scheduled.size; },
+    async advance(milliseconds: number) {
+      now += milliseconds;
+      await act(async () => {
+        for (const [id, timer] of scheduled) {
+          if (timer.due <= now) { scheduled.delete(id); timer.callback(); }
+        }
+      });
+    },
+  };
+}
 beforeEach(() => {
   viewer = alice; oauth = alice;
   for (const [name, value] of Object.entries({ HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, Element: window.Element, Node: window.Node, MutationObserver: window.MutationObserver, DOMRect: window.DOMRect, getComputedStyle: window.getComputedStyle.bind(window), requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0), cancelAnimationFrame: clearTimeout })) {
@@ -39,6 +70,84 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); client.clear(); restores.splice(0).reverse().forEach(restore => restore()); });
 async function mount() { await act(async () => { render(<QueryClientProvider client={client}><SidebarProvider><SocialMessages /></SidebarProvider></QueryClientProvider>); }); }
+it("automatically reads the selected accepted conversation after two seconds through its newest loaded message", async () => {
+  const clock = pageReadClock();
+  let current = convo;
+  const newest = { $type: "chat.bsky.convo.defs#messageView" as const, id: "newest", rev: "3", text: "Newest loaded message", sender: { did: bob }, sentAt: "2026-10-10T01:00:00Z" };
+  const older = { ...newest, id: "older", text: "Older loaded message", sentAt: "2026-10-10T00:00:00Z" };
+  const list = spyOn(Chat, "getBlueskyConversations").mockImplementation(async args => ({ convos: args.status === "request" ? [] : [current] })); restores.push(() => list.mockRestore());
+  const messages = spyOn(Chat, "getBlueskyMessages").mockResolvedValue({ messages: [newest, older] }); restores.push(() => messages.mockRestore());
+  const write = spyOn(Chat, "performBlueskyChatAction").mockImplementation(async () => { current = { ...convo, unreadCount: 0 }; return { convo: current }; }); restores.push(() => write.mockRestore());
+  await mount();
+  expect(clock.pending).toBe(0);
+  fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*bob\.test/ }));
+  await screen.findByText("Newest loaded message");
+  await waitFor(() => expect(clock.pending).toBe(1));
+  await clock.advance(1_999);
+  expect(write).not.toHaveBeenCalled();
+  await clock.advance(1);
+  await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+  expect(write.mock.calls[0]![0].did).toBe(alice);
+  expect(write.mock.calls[0]![2]).toEqual({ kind: "read", convoId: "c", messageId: "newest" });
+  await waitFor(() => expect(screen.getByRole("button", { name: /^(?!More Actions).*bob\.test/ }).textContent).not.toContain("1"));
+  await clock.advance(2_000);
+  expect(write).toHaveBeenCalledTimes(1);
+});
+
+it("does not start message auto-read before history loads or for a pending request", async () => {
+  const clock = pageReadClock();
+  const request = { ...convo, id: "pending-conversation", status: "request" };
+  const list = spyOn(Chat, "getBlueskyConversations").mockImplementation(async args => ({ convos: args.status === "request" ? [request] : [convo] })); restores.push(() => list.mockRestore());
+  let resolve!: (page: Awaited<ReturnType<typeof Chat.getBlueskyMessages>>) => void;
+  const pending = new Promise<Awaited<ReturnType<typeof Chat.getBlueskyMessages>>>(done => { resolve = done; });
+  const messages = spyOn(Chat, "getBlueskyMessages").mockReturnValue(pending); restores.push(() => messages.mockRestore());
+  const write = spyOn(Chat, "performBlueskyChatAction").mockResolvedValue({ convo }); restores.push(() => write.mockRestore());
+  await mount();
+  fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*bob\.test/ }));
+  await waitFor(() => expect(messages).toHaveBeenCalledTimes(1));
+  await clock.advance(2_000);
+  expect(clock.pending).toBe(0);
+  expect(write).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Pending (1)" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*bob\.test/ }));
+  await act(async () => resolve({ messages: [{ $type: "chat.bsky.convo.defs#messageView", id: "pending", rev: "1", text: "Pending message", sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z" }] }));
+  await screen.findByRole("region", { name: "Message Request" });
+  await clock.advance(2_000);
+  expect(clock.pending).toBe(0);
+  expect(write).not.toHaveBeenCalled();
+});
+
+it("cancels message auto-read when navigating away before the delay", async () => {
+  const clock = pageReadClock();
+  const list = spyOn(Chat, "getBlueskyConversations").mockImplementation(async args => ({ convos: args.status === "request" ? [] : [convo] })); restores.push(() => list.mockRestore());
+  const messages = spyOn(Chat, "getBlueskyMessages").mockResolvedValue({ messages: [{ $type: "chat.bsky.convo.defs#messageView", id: "m", rev: "1", text: "Leave before reading", sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z" }] }); restores.push(() => messages.mockRestore());
+  const write = spyOn(Chat, "performBlueskyChatAction").mockResolvedValue({ convo }); restores.push(() => write.mockRestore());
+  await mount();
+  fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*bob\.test/ }));
+  await screen.findByText("Leave before reading");
+  await waitFor(() => expect(clock.pending).toBe(1));
+  await clock.advance(1_000);
+  cleanup();
+  expect(clock.pending).toBe(0);
+  await clock.advance(2_000);
+  expect(write).not.toHaveBeenCalled();
+});
+
+it("retains conversation unread state when automatic upstream read fails", async () => {
+  const clock = pageReadClock();
+  const list = spyOn(Chat, "getBlueskyConversations").mockImplementation(async args => ({ convos: args.status === "request" ? [] : [convo] })); restores.push(() => list.mockRestore());
+  const messages = spyOn(Chat, "getBlueskyMessages").mockResolvedValue({ messages: [{ $type: "chat.bsky.convo.defs#messageView", id: "m", rev: "1", text: "Read failure", sender: { did: bob }, sentAt: "2026-10-10T00:00:00Z" }] }); restores.push(() => messages.mockRestore());
+  const write = spyOn(Chat, "performBlueskyChatAction").mockRejectedValue(new Error("Upstream read unavailable")); restores.push(() => write.mockRestore());
+  await mount();
+  fireEvent.click(await screen.findByRole("button", { name: /^(?!More Actions).*bob\.test/ }));
+  await screen.findByText("Read failure");
+  await waitFor(() => expect(clock.pending).toBe(1));
+  await clock.advance(2_000);
+  await screen.findByRole("alert");
+  expect(screen.getByRole("button", { name: /^(?!More Actions).*bob\.test/ }).textContent).toContain("1");
+  await clock.advance(2_000);
+  expect(write).toHaveBeenCalledTimes(1);
+});
 describe("Messages workspace", () => {
   it("uses the supplied group name in the list, header, and deletion confirmation", async () => {
     const group = { ...convo, kind: { $type: "chat.bsky.convo.defs#groupConvo" as const, name: "Project Chat", memberCount: 20, createdAt: "2026-10-11T00:00:00Z", lockStatus: "unlocked" } };

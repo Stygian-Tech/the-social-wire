@@ -12,7 +12,7 @@ import * as ExploreDiscovery from "@/lib/socialExploreDiscoveryClient";
 import * as Interactive from "@/components/Social/InteractiveSocialPost";
 import { SocialExplore } from "@/components/Social/SocialExplore";
 import { SocialNotifications } from "@/components/Social/SocialNotifications";
-import { useSocialExplore, useSocialNotifications } from "@/hooks/useSocialDiscovery";
+import { useSocialExplore, useSocialNotifications, useMarkSocialNotificationsSeen } from "@/hooks/useSocialDiscovery";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
 const alice = "did:plc:alice";
@@ -28,7 +28,38 @@ let queryClient: QueryClient;
 const replaceRoute = mock(() => {});
 function Wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={queryClient}><SidebarProvider>{children}</SidebarProvider></QueryClientProvider>; }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
-function restoreSpy(spy: { mockRestore(): void }) { restores.push(() => spy.mockRestore()); return spy; }
+function restoreSpy<T extends { mockRestore(): void }>(spy: T) { restores.push(() => spy.mockRestore()); return spy; }
+// Control only the dwell timers; React Query and Testing Library keep real timers.
+function pageReadClock() {
+  let now = 0;
+  let nextId = -1;
+  const scheduled = new Map<number, { due: number; callback: () => void }>();
+  const originalTimeout = globalThis.setTimeout;
+  const originalClear = globalThis.clearTimeout;
+  const visibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  restores.push(() => { if (visibility) Object.defineProperty(document, "visibilityState", visibility); else Reflect.deleteProperty(document, "visibilityState"); });
+  globalThis.setTimeout = ((callback: () => void, delay?: number, ...args: unknown[]) => {
+    if (delay !== 2_000) return originalTimeout(callback, delay, ...args);
+    const id = nextId--; scheduled.set(id, { due: now + delay, callback });
+    return id;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = (id => {
+    if (!scheduled.delete(Number(id))) originalClear(id as Parameters<typeof clearTimeout>[0]);
+  }) as typeof clearTimeout;
+  restores.push(() => { globalThis.setTimeout = originalTimeout; globalThis.clearTimeout = originalClear; });
+  return {
+    get pending() { return scheduled.size; },
+    async advance(milliseconds: number) {
+      now += milliseconds;
+      await act(async () => {
+        for (const [id, timer] of scheduled) {
+          if (timer.due <= now) { scheduled.delete(id); timer.callback(); }
+        }
+      });
+    },
+  };
+}
 beforeEach(() => {
   replaceRoute.mockClear();
   restoreSpy(spyOn(ExploreDiscovery, "getSocialTrendingTopics").mockResolvedValue({ topics: [{ topic: "Trending Science", link: "/search?q=science" }], suggested: [] }));
@@ -214,4 +245,84 @@ it("groups Explore search, trends, feeds and people into separate cards", async 
     expect(region.className).toContain("p-3");
     expect(region.parentElement?.tagName).toBe("DIV");
   }
+});
+
+
+it("automatically marks loaded notifications seen only after two visible seconds at their loaded boundary", async () => {
+  const clock = pageReadClock();
+  let serverSeenAt = -Infinity;
+  const loaded = { ...notification("delayed-post"), indexedAt: "2026-10-13T22:21:22.275Z" };
+  const serverIsRead = () => Date.parse(loaded.indexedAt) < serverSeenAt;
+  const fetchPage = restoreSpy(spyOn(Client, "getSocialNotificationsPage").mockImplementation(async () => ({ notifications: [{ ...loaded, isRead: serverIsRead() }], posts: [post("delayed-post")] })));
+  restoreSpy(spyOn(Client, "getSocialNotificationUnread").mockImplementation(async () => serverIsRead() ? 0 : 1));
+  const seen = restoreSpy(spyOn(Client, "markSocialNotificationsSeen").mockImplementation(async (_session, seenAt) => { serverSeenAt = Date.parse(seenAt); }));
+  render(<SocialNotifications />, { wrapper: Wrapper });
+  await screen.findByText("delayed-post");
+  await waitFor(() => expect(clock.pending).toBe(1));
+  await clock.advance(1_999);
+  expect(seen).not.toHaveBeenCalled();
+  expect(screen.getByText("Unread")).toBeTruthy();
+  await clock.advance(1);
+  await waitFor(() => expect(seen).toHaveBeenCalledTimes(1));
+  expect(seen.mock.calls[0]![0].did).toBe(alice);
+  expect(seen.mock.calls[0]![1]).toBe("2026-10-13T22:21:22.276Z");
+  await screen.findByText("0 Unread");
+  await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2));
+  expect(serverIsRead()).toBe(true);
+  expect(screen.queryByText("Unread")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(3));
+  expect(screen.queryByText("Unread")).toBeNull();
+  await clock.advance(2_000);
+  expect(seen).toHaveBeenCalledTimes(1);
+});
+
+it("retains notification unread state when automatic upstream seen fails", async () => {
+  const clock = pageReadClock();
+  restoreSpy(spyOn(Client, "getSocialNotificationsPage").mockResolvedValue({ notifications: [notification("auto-failure")], posts: [post("auto-failure")] }));
+  restoreSpy(spyOn(Client, "getSocialNotificationUnread").mockResolvedValue(1));
+  const seen = restoreSpy(spyOn(Client, "markSocialNotificationsSeen").mockRejectedValue(new Error("Network failure")));
+  render(<SocialNotifications />, { wrapper: Wrapper });
+  await screen.findByText("auto-failure");
+  await waitFor(() => expect(clock.pending).toBe(1));
+  await clock.advance(2_000);
+  await screen.findByText("Notifications could not be loaded. Please retry.");
+  expect(screen.getByText("Unread")).toBeTruthy();
+  expect(screen.getByText("1 Unread")).toBeTruthy();
+  await clock.advance(2_000);
+  expect(seen).toHaveBeenCalledTimes(1);
+});
+
+it("cancels notification auto-read when leaving or switching away from the loaded account", async () => {
+  const clock = pageReadClock();
+  restoreSpy(spyOn(Client, "getSocialNotificationsPage").mockResolvedValue({ notifications: [notification("leaving-post")], posts: [post("leaving-post")] }));
+  restoreSpy(spyOn(Client, "getSocialNotificationUnread").mockResolvedValue(1));
+  const seen = restoreSpy(spyOn(Client, "markSocialNotificationsSeen").mockResolvedValue(undefined));
+  const view = render(<SocialNotifications />, { wrapper: Wrapper });
+  await screen.findByText("leaving-post");
+  await waitFor(() => expect(clock.pending).toBe(1));
+  await clock.advance(1_000);
+  viewer = null; oauthDid = null;
+  view.rerender(<SocialNotifications />);
+  expect(clock.pending).toBe(0);
+  await clock.advance(2_000);
+  expect(seen).not.toHaveBeenCalled();
+  view.unmount();
+});
+
+
+it("updates cached notifications strictly before seenAt while preserving later arrivals", async () => {
+  const seenAt = "2026-10-13T22:21:22.276Z";
+  const rows = [
+    { ...notification("loaded"), indexedAt: "2026-10-13T22:21:22.275Z" },
+    { ...notification("at-cutoff"), indexedAt: seenAt },
+    { ...notification("later"), indexedAt: "2026-10-13T22:21:22.277Z" },
+  ];
+  const key = ["blueskySocial", alice, "notifications", 0];
+  queryClient.setQueryData(key, { pages: [{ notifications: rows, posts: [] }], pageParams: [undefined] });
+  restoreSpy(spyOn(Client, "markSocialNotificationsSeen").mockResolvedValue(undefined));
+  const { result } = renderHook(() => useMarkSocialNotificationsSeen(), { wrapper: Wrapper });
+  await act(async () => { await result.current.mutateAsync(seenAt); });
+  const cached = queryClient.getQueryData<{ pages: Client.SocialNotificationPage[] }>(key)!;
+  expect(cached.pages[0]!.notifications.map(row => row.isRead)).toEqual([true, false, false]);
 });
