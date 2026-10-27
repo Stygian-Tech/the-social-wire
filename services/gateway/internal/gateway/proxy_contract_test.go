@@ -114,4 +114,37 @@ func TestEnrollmentBatchBudgetAndCallerCancellation(t *testing.T) {
 
 type contractTransport func(*http.Request) (*http.Response, error)
 
+func TestFeedFilterBudgetsAndCallerCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		query  string
+		budget time.Duration
+	}{
+		{"kind=subscribed&filter=all", 3 * time.Second},
+		{"kind=subscribed&filter=unread", 21 * time.Second},
+		{"kind=publication&id=fixture&filter=read", 21 * time.Second},
+		{"kind=list&id=fixture&filter=unread", 3 * time.Second},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			client := &http.Client{Transport: contractTransport(func(r *http.Request) (*http.Response, error) {
+				deadline, ok := r.Context().Deadline()
+				remaining := time.Until(deadline)
+				if !ok || remaining > tc.budget || remaining < tc.budget-time.Second {
+					t.Fatalf("feed budget %v present=%v", remaining, ok)
+				}
+				cancel()
+				if r.Context().Err() != context.Canceled {
+					t.Fatal("feed lost caller cancellation")
+				}
+				return nil, r.Context().Err()
+			})}
+			p := Proxy{Config: Config{AppViewURL: "http://appview.invalid"}, Internal: client}
+			r := httptest.NewRequest("GET", "https://gateway.invalid/xrpc/app.thesocialwire.appview.getFeed?"+tc.query, nil)
+			r = r.WithContext(gatewaycore.ContextWithAuth(ctx, gatewaycore.AuthContext{DID: "did:plc:viewer"}))
+			p.Handler(Route{Target: "/xrpc/app.thesocialwire.appview.getFeed", UpstreamMethod: "GET", Service: "appview"}).ServeHTTP(httptest.NewRecorder(), r)
+		})
+	}
+}
+
 func (f contractTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

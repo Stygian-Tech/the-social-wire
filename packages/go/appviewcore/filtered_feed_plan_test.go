@@ -18,7 +18,8 @@ func TestFilteredFeedIdentitySkipsBodyLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Exec(`DELETE FROM content_items WHERE uri=$1`, uri) })
-	raw, err := json.Marshal([]feedMetadata{{ID: 0, URI: uri, At: now, Publication: "pub", Author: "did:plc:identity-plan", Site: "site"}})
+	site := "site"
+	raw, err := json.Marshal([]feedMetadata{{ID: 0, URI: uri, At: now, Publication: "pub", Author: "did:plc:identity-plan", Site: &site}})
 	if err != nil {
 		t.Fatal(err)
 	}

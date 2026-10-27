@@ -77,6 +77,11 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, route Route) {
 	}
 	if strings.HasSuffix(path, "appview.getFeed") {
 		timeout = 3 * time.Second
+		filter := r.URL.Query().Get("filter")
+		if (filter == "read" || filter == "unread") && r.URL.Query().Get("kind") != "list" {
+			// Leave AppView's bounded sparse-filter scan time to return its result.
+			timeout = 21 * time.Second
+		}
 	}
 	if path == "/xrpc/app.thesocialwire.appview.enrollSources" || path == "/v1/appview/enroll" {
 		// A bounded source batch includes ingestion and its fresh-counter barrier.

@@ -114,7 +114,13 @@ func (a Routes) feed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// One feed budget covers pool waits, repair, and retry before Gateway times out.
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	budget := 2 * time.Second
+	if filter != "all" && kind != "list" {
+		// Sparse read filters may walk a large history to find matching stories
+		// and resolve duplicate article identities. Match the entries read budget.
+		budget = 20 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), budget)
 	defer cancel()
 	started := time.Now()
 	var page *appviewcore.FeedPage

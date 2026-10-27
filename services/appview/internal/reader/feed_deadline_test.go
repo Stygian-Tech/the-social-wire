@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -101,6 +102,37 @@ func TestListFeedUsesTwoSecondBudget(t *testing.T) {
 	w := httptest.NewRecorder()
 	routes.feed(w, deadlineRequest(context.Background(), "list"))
 	assertFeedCancellation(t, w)
+}
+
+func TestFilteredFeedBudgetPreservesEarlierCallerDeadline(t *testing.T) {
+	for _, filter := range []string{"read", "unread"} {
+		for _, earlier := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/earlier=%v", filter, earlier), func(t *testing.T) {
+				ctx := context.Background()
+				budget := 20 * time.Second
+				if earlier {
+					var cancel context.CancelFunc
+					budget = 100 * time.Millisecond
+					ctx, cancel = context.WithTimeout(ctx, budget)
+					defer cancel()
+				}
+				db := sql.OpenDB(feedDeadlineConnector{query: func(work context.Context) (driver.Rows, error) {
+					deadline, ok := work.Deadline()
+					remaining := time.Until(deadline)
+					if !ok || remaining > budget || remaining < budget-50*time.Millisecond {
+						t.Fatalf("filtered budget %v present=%v", remaining, ok)
+					}
+					return nil, context.Canceled
+				}})
+				defer db.Close()
+				r := deadlineRequest(ctx, "subscribed")
+				r.URL.RawQuery += "&filter=" + filter
+				w := httptest.NewRecorder()
+				Routes{DB: db}.feed(w, r)
+				assertFeedCancellation(t, w)
+			})
+		}
+	}
 }
 func TestFeedRepairAndRetryPreserveEarlierCallerDeadline(t *testing.T) {
 	t.Parallel()

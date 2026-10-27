@@ -22,8 +22,10 @@ type feedMetadata struct {
 	At          time.Time `json:"at"`
 	Publication string    `json:"publication"`
 	Author      string    `json:"author"`
-	Site        string    `json:"site"`
-	Frontier    bool      `json:"frontier"`
+	// Author-wide scopes can include content without a publication site. Preserve
+	// NULL for the read-state function instead of turning it into an empty key.
+	Site     *string `json:"site"`
+	Frontier bool    `json:"frontier"`
 }
 type feedChunkRequestValue struct {
 	ID     int       `json:"id"`
