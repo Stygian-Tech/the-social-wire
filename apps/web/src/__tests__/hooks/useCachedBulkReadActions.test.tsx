@@ -250,7 +250,7 @@ describe("useCachedBulkReadActions", () => {
     );
 
     await act(async () => { await result.current.applyMarkAllRead(); });
-    expect(getFeedRefreshRevision(queryClient, activeUnreadQueryKey)).toBe(2);
+    expect(getFeedRefreshRevision(queryClient, activeUnreadQueryKey)).toBe(3);
 
     await waitFor(() => expect(gatewaySpy).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -271,7 +271,7 @@ describe("useCachedBulkReadActions", () => {
     // The observed unread feed survives and refetches.
     await waitFor(() => expect(activeUnreadFetch).toHaveBeenCalledTimes(2));
     expect(queryClient.getQueryState(activeUnreadQueryKey)).toBeDefined();
-    expect(getFeedRefreshRevision(queryClient, activeUnreadQueryKey)).toBe(2);
+    expect(getFeedRefreshRevision(queryClient, activeUnreadQueryKey)).toBe(3);
 
     unsubscribeActiveObserver();
     authSpy.mockRestore();

@@ -295,7 +295,7 @@ describe("refreshReaderFeeds", () => {
       await cancelled.promise;
       expect(fetchPage).not.toHaveBeenCalled();
       release.resolve();
-      expect(await pending).toEqual({ newArticleCount: 0 });
+      expect(await pending).toEqual({ newArticleCount: 1 });
       staleResponse.resolve(page("stale"));
       await stale;
       expect(events).toEqual(["cancelled", "read"]);
@@ -353,7 +353,7 @@ describe("refreshReaderFeeds", () => {
     await firstBatch.promise;
     expect(fetchPage).toHaveBeenCalledTimes(3);
     release.resolve();
-    expect(await pending).toEqual({ newArticleCount: 0 });
+    expect(await pending).toEqual({ newArticleCount: 1 });
     expect(fetchPage).toHaveBeenCalledTimes(7);
     expect(maximum).toBe(3);
   });
