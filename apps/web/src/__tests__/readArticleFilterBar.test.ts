@@ -10,6 +10,8 @@ import * as Hydration from "@/hooks/useClientHydrated";
 import * as WireEdition from "@/hooks/useWireEdition";
 import * as WireFeed from "@/hooks/useWireFeed";
 import * as Circle from "@/hooks/useCircleFeed";
+import * as Auth from "@/hooks/useAuth";
+import * as ReadAge from "@/hooks/useFeedReadAgeActions";
 import { ReadArticleFilterBar } from "@/app/read/ReadArticleFilterBar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
@@ -32,6 +34,8 @@ beforeEach(() => {
   });
   const wireState = { isRefreshingFirstPage: false, isLoading: false, viewerModerationRetryUnavailable: false, retryTheWire: retryWire };
   const spies = [
+    spyOn(Auth, "useAuth").mockReturnValue({ session: null } as ReturnType<typeof Auth.useAuth>),
+    spyOn(ReadAge, "useFeedReadAgeActions").mockReturnValue({ loadOptions: mock(async () => []), markBefore: mock(async () => undefined) }),
     spyOn(Navigation, "usePathname").mockReturnValue("/read"),
     spyOn(Navigation, "useSearchParams").mockImplementation(() => new URLSearchParams({ feed }) as unknown as ReturnType<typeof Navigation.useSearchParams>),
     spyOn(ReadRoute, "useReadRoute").mockReturnValue({ articleListFilter: "all" } as unknown as ReturnType<typeof ReadRoute.useReadRoute>),
