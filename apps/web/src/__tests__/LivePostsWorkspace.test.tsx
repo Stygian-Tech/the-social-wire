@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import type { Agent } from "@atproto/api";
+import type { OAuthSession } from "@atproto/oauth-client-browser";
+import * as Atproto from "@/lib/atprotoClient";
+import { listViewerAtmoEvents } from "@/lib/livePosts/atmoEventClient";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Auth from "@/hooks/useAuth";
@@ -232,4 +236,21 @@ test("passes GIF attachments to publishing, retains failed media drafts, and ren
   fireEvent.click(screen.getByRole("button", { name: "Retry Publish" }));
   await waitFor(() => expect(screen.queryByRole("textbox", { name: "GIF URL" })).toBeNull());
   expect(screen.getByRole("img", { name: "Countdown" }).getAttribute("src")).toBe(gif.url);
+});
+
+
+test("renders ended live sessions and genuine discovered events without legacy article mirrors", async () => {
+  const collection = "community.lexicon.calendar.event", did = "did:plc:alice";
+  const cid = "bafyreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+  const article = { uri: `at://${did}/${collection}/article`, cid, value: { $type: collection, name: "First Offprint Test", createdAt: "2026-08-12T17:51:07Z", startsAt: "2026-08-12T17:51:07Z", mode: `${collection}#virtual`, status: `${collection}#scheduled`, uris: [{ name: "Article URL", uri: "https://blog.test/post" }, { name: "ATProto record", uri: `at://${did}/site.standard.document/post` }] } };
+  const conference = { uri: `at://${did}/${collection}/conference`, cid, value: { $type: collection, name: "Real Conference", createdAt: "2026-08-12T17:51:07Z", startsAt: "2026-09-23T17:00:00Z", endsAt: "2026-09-23T18:00:00Z", createdWith: "https://atmo.rsvp" } };
+  const pds = spyOn(Atproto, "createOAuthAgent").mockReturnValue({ com: { atproto: { repo: { listRecords: async (args: { collection: string }) => ({ data: { records: args.collection === collection ? [article, conference] : [] } }) } } } } as unknown as Agent);
+  restores.push(() => pds.mockRestore());
+  state.rsvpEvents = await listViewerAtmoEvents({ did } as unknown as OAuthSession);
+  state.events = [{ ...event, endedAt: "2026-10-26T23:00:00Z" }];
+  await mount();
+  expect(screen.queryByRole("button", { name: /First Offprint Test/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /Real Conference/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Launch.*Ended/ })).toBeTruthy();
+  expect(screen.getByText("Past").closest("details")?.querySelectorAll("button").length).toBe(2);
 });
