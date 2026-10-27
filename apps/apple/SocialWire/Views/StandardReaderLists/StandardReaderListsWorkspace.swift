@@ -2,8 +2,8 @@ import SwiftUI
 
 struct StandardReaderListsWorkspace: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    var usesExternalSidebar = false
-    var onShowSidebar: (() -> Void)?
+    @Binding var isProfilePresented: Bool
+    @GestureState private var isSwitchingLists = false
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showingManagement = false
@@ -74,46 +74,39 @@ struct StandardReaderListsWorkspace: View {
 
     @ViewBuilder
     private var workspaceColumns: some View {
-        if usesExternalSidebar {
-            NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
-                Group {
-                    if model.selectedList == nil { listsColumn }
-                    else { articlesColumn }
-                }
-                .navigationTitle(model.selectedList?.name ?? "Lists")
+        NavigationSplitView(preferredCompactColumn: $compactColumn) {
+            listsColumn
+                .navigationTitle("Lists")
+                .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
                 .toolbar { managementButton }
-            } detail: {
-                readerColumn
-                    .toolbar {
-                        ToolbarItem(placement: sidebarLeadingPlacement) {
-                            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
-                        }
-                    }
-            }
-        } else {
-            NavigationSplitView(preferredCompactColumn: $compactColumn) {
-                listsColumn
-                    .navigationTitle("Lists")
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
-                    .toolbar { managementButton }
-            } content: {
+        } content: {
+            ZStack {
                 articlesColumn
-                    .toolbar {
-                        ToolbarItem(placement: sidebarLeadingPlacement) {
-                            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
-                        }
-                    }
-                    .navigationTitle(model.selectedList?.name ?? "Articles")
-                    .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
-            } detail: {
-                readerColumn
-                    .toolbar {
-                        ToolbarItem(placement: sidebarLeadingPlacement) {
-                            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
-                        }
-                    }
+                    .allowsHitTesting(!isSwitchingLists)
             }
+            .simultaneousGesture(listSwipeGesture)
+            .navigationTitle(model.selectedList?.name ?? "Articles")
+            .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
+        } detail: {
+            readerColumn
         }
+    }
+
+    private var listSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .updating($isSwitchingLists) { value, isSwitching, _ in
+                isSwitching = abs(value.translation.width) > abs(value.translation.height)
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height),
+                      abs(value.translation.width) >= 60,
+                      let selected = model.selectedList,
+                      let index = model.lists.firstIndex(where: { $0.uri == selected.uri }) else { return }
+                let next = index + (value.translation.width < 0 ? 1 : -1)
+                guard model.lists.indices.contains(next) else { return }
+                let destination = model.lists[next]
+                Task { await model.select(destination) }
+            }
     }
 
     private var sidebarLeadingPlacement: ToolbarItemPlacement {
@@ -127,7 +120,8 @@ struct StandardReaderListsWorkspace: View {
     @ToolbarContentBuilder
     private var managementButton: some ToolbarContent {
         ToolbarItem(placement: sidebarLeadingPlacement) {
-            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
+            Button { isProfilePresented = true } label: { ViewerProfileAvatar(size: 30) }
+                .accessibilityLabel("Profile")
         }
         ToolbarItem(placement: .primaryAction) {
             Button("Manage Lists", systemImage: "plus") { showingManagement = true }

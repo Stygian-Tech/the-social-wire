@@ -19,9 +19,7 @@ final class SocialWireAppModel {
     let podcasts: PodcastLibraryModel
     let sportsTopic: SportsTopicModel
     let standardReaderLists: StandardReaderListsModel
-    private(set) var social: SocialWorkspaceModel
-    @ObservationIgnored private var socialSessionScope: SocialSessionScope
-    @ObservationIgnored private let socialTransport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    @ObservationIgnored private var readerSessionIdentity: ReaderSessionIdentity
     let readStateSync: PDSReadStateSyncService
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
@@ -244,19 +242,14 @@ final class SocialWireAppModel {
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService, urlSession: gatewayURLSession, transport: gatewayTransport)
-        let socialTransport = xrpcTransport ?? { try await URLSession.shared.data(for: $0) }
-        self.socialTransport = socialTransport
-        let socialScope = SocialSessionScope(session: authService.session, loginIdentity: authService.loginIdentity, auth: authService)
-        socialSessionScope = socialScope
-        let socialXRPC = XRPCClient(auth: authService, resolver: resolver, transport: socialScope.transport(using: socialTransport))
-        social = SocialWorkspaceModel(xrpc: socialXRPC, publicationService: PublicationService(xrpc: socialXRPC), gateway: gateway, viewerDID: authService.session?.did)
+        readerSessionIdentity = ReaderSessionIdentity(session: authService.session, loginIdentity: authService.loginIdentity)
         podcasts = PodcastLibraryModel(gateway: gateway, xrpc: xrpc)
         sportsTopic = SportsTopicModel(gateway: gateway, xrpc: xrpc)
         standardReaderLists = StandardReaderListsModel(gateway: gateway, xrpc: xrpc)
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         authService.setSessionChangeHandler { [weak self] session in
-            if let self, !self.socialSessionScope.matches(session: session, loginIdentity: self.authService.loginIdentity) {
+            if let self, !self.readerSessionIdentity.matches(session: session, loginIdentity: self.authService.loginIdentity) {
                 self.invalidateReaderRequests()
                 self.sidebarRefreshRevision += 1
                 self.restoredFeedViewerDID = nil
@@ -272,7 +265,9 @@ final class SocialWireAppModel {
             self?.isSignedIn = session != nil
             self?.sportsTopic.bind(viewer: session?.did)
             self?.standardReaderLists.bind(viewer: session?.did)
-            self?.bindSocialWorkspace(viewerDID: session?.did)
+            if let self {
+                self.readerSessionIdentity = ReaderSessionIdentity(session: session, loginIdentity: self.authService.loginIdentity)
+            }
         }
         readerFilter = ReaderFilter.loadSaved()
         applyReaderListSource(initialReaderListSource ?? ReaderListSourceStorage.load(), persist: false)
@@ -849,17 +844,6 @@ final class SocialWireAppModel {
                 ? nil
                 : error.localizedDescription
         }
-    }
-
-    private func bindSocialWorkspace(viewerDID: String?) {
-        if !socialSessionScope.matches(session: authService.session, loginIdentity: authService.loginIdentity) {
-            socialSessionScope.invalidate()
-            let scope = SocialSessionScope(session: authService.session, loginIdentity: authService.loginIdentity, auth: authService)
-            socialSessionScope = scope
-            let client = XRPCClient(auth: authService, resolver: resolver, transport: scope.transport(using: socialTransport))
-            social = SocialWorkspaceModel(xrpc: client, publicationService: PublicationService(xrpc: client), gateway: gateway, viewerDID: viewerDID)
-        }
-        social.proEntitlement.bind(viewerDID: viewerDID)
     }
 
     func signOut() {

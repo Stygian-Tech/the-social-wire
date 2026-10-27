@@ -20,8 +20,6 @@ settings:
     DEVELOPMENT_TEAM: G39TU2R26A
     CODE_SIGN_STYLE: Automatic
 packages:
-  QuillSocialKit:
-    path: ../../packages/swift/QuillSocialKit
   ReadStateCore:
     path: ../../packages/swift/ReadStateCore
   LatrKit:
@@ -40,8 +38,6 @@ targets:
       # `.xcassets` outside this folder — e.g. `apps/apple/Media.xcassets` — will NOT be merged in; move it under
       # `SocialWire/` or add a second `- path:` entry with `type: folder.assetcatalog`, then run `xcodegen generate`.
     dependencies:
-      - package: QuillSocialKit
-        product: QuillSocialUI
       - package: ReadStateCore
       - package: LatrKit
     info:

@@ -4,8 +4,6 @@ struct ArticleToolbar: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.openURL) private var openURL
     let entry: EntryDetail
-    @Binding var showingQuote: Bool
-    @Binding var showingReply: Bool
     @State private var reactionFeedback = 0
     @State private var showingTaggedSave = false
 
@@ -36,24 +34,6 @@ struct ArticleToolbar: View {
                     )
                 }
                 .buttonStyle(.bordered)
-
-                if entry.standardSiteDocumentURI != nil {
-                    Button {
-                        reactionFeedback += 1
-                        Task { await appModel.toggleStandardSiteRecommendation(for: entry) }
-                    } label: {
-                        Label(
-                            appModel.isStandardSiteRecommended(entry)
-                                ? "Remove Recommendation"
-                                : "Recommend",
-                            systemImage: appModel.isStandardSiteRecommended(entry)
-                                ? "hand.thumbsup.fill"
-                                : "hand.thumbsup"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(appModel.isArticleSocialStateLoading(for: entry))
-                }
 
                 if WireArticleFeedbackContract.normalizeCanonicalURL(
                     entry.wireFeedbackCanonicalUrl ?? ""
@@ -95,22 +75,6 @@ struct ArticleToolbar: View {
                     .disabled(appModel.isArticleSocialStateLoading(for: entry))
                 }
 
-                Button {
-                    showingQuote = true
-                } label: {
-                    Label("Quote", systemImage: "quote.bubble")
-                }
-                .buttonStyle(.bordered)
-
-                if entry.bskyPostUri != nil {
-                    Button {
-                        showingReply = true
-                    } label: {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
-                    }
-                    .buttonStyle(.bordered)
-                }
-
                 if let url = entry.canonicalURL {
                     ShareLink(item: url) {
                         Label("Share", systemImage: "square.and.arrow.up")
@@ -125,29 +89,6 @@ struct ArticleToolbar: View {
                     .buttonStyle(.bordered)
                 }
 
-                Button {
-                    reactionFeedback += 1
-                    Task { await appModel.likeEntry(entry) }
-                } label: {
-                    Label(
-                        appModel.isEntryLiked(entry) ? "Unlike" : "Like",
-                        systemImage: appModel.isEntryLiked(entry) ? "heart.fill" : "heart"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .disabled(entry.bskyPostUri == nil || appModel.isArticleSocialStateLoading(for: entry))
-
-                Button {
-                    reactionFeedback += 1
-                    Task { await appModel.repostEntry(entry) }
-                } label: {
-                    Label(
-                        appModel.isEntryReposted(entry) ? "Undo Repost" : "Repost",
-                        systemImage: "repeat"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .disabled(entry.bskyPostUri == nil || appModel.isArticleSocialStateLoading(for: entry))
             }
         }
         .sheet(isPresented: $showingTaggedSave) {

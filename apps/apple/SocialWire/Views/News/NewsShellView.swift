@@ -1,40 +1,21 @@
 import SwiftUI
 
-/// Adaptive application shell with configurable feed tabs, Read Later, and a leading-edge sidebar.
+/// Native Apple tabs adapt to a sidebar while each section retains its feed selection.
 struct NewsShellView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.scenePhase) private var scenePhase
-    #endif
     @SceneStorage("the-social-wire.news-window-id.v1") private var windowID = UUID().uuidString
     @State private var sceneModel = NewsSceneModel()
     @State private var selectedSlot = NewsTabSlot.wire
     @State private var selectedSection = NewsRootSection.feeds
-    @State private var selectedSocialDestination = SocialDestination.timeline
-    @State private var socialNavigation = SocialNavigationState()
-    @State private var isBrowsing = false
     @State private var sectionSelections: [NewsRootSection: NewsTabSlot] = [
         .readLater: .readLater,
         .feeds: .wire,
         .topics: .finance,
-        .media: .podcasts,
-        .social: .wire
+        .lists: .standardList("")
     ]
     @State private var slotFeeds: [NewsPrimaryFeed] = []
     @State private var isTabConfigurationLoaded = false
     @State private var isProfilePresented = false
-    @State private var isSidebarPresented = false
-    @State private var isPersistentSidebarPresented = true
-    @State private var isCustomizationPresented = false
-    @State private var sectionPreferences = NewsSectionPreferences()
-    #if os(iOS)
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var compactColumn = NavigationSplitViewColumn.detail
-
-    private var usesPhoneTabs: Bool { UIDevice.current.userInterfaceIdiom != .pad }
-    #endif
-
     private var availableTabs: [NewsTab] {
         NewsTab.available(
             wire: appModel.feedPreferences.showWire,
@@ -65,7 +46,7 @@ struct NewsShellView: View {
     }
 
     private var topicDestinations: [NewsPrimaryFeed] {
-        [.finance, .sports].filter(isVisibleInSettings)
+        [.finance, .sports, .podcasts].filter(isVisibleInSettings)
     }
 
     private func isVisibleInSettings(_ feed: NewsPrimaryFeed) -> Bool {
@@ -99,39 +80,16 @@ struct NewsShellView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                detailStack
+                feedTabs
             }
         }
-        #if os(iOS)
-        .onChange(of: horizontalSizeClass) { _, sizeClass in
-            if sizeClass == .regular { isSidebarPresented = false }
-        }
-        .task(id: NewsSocialBadgeContext(viewerDID: appModel.viewerDID,
-                                        modelIdentity: appModel.social.quill.map(ObjectIdentifier.init),
-                                        scenePhase: scenePhase)) {
-            guard scenePhase == .active, let social = appModel.social.quill else { return }
-            while !Task.isCancelled {
-                await social.refreshNotificationBadge()
-                do { try await Task.sleep(for: .seconds(60)) } catch { return }
-            }
-        }
-        #endif
         .task(bootstrap)
-        .onChange(of: sectionPreferences) { _, preferences in
-            preferences.save(viewerDID: appModel.viewerDID)
-        }
-        .sheet(isPresented: $isCustomizationPresented) {
-            NewsSectionCustomizationView(preferences: $sectionPreferences)
-        }
         .task(id: NewsDestinationLoadContext(viewerDID: appModel.viewerDID, slot: selectedSlot)) {
             await loadSelectedDestination(selectedSlot)
         }
         .onChange(of: selectedSlot, selectedSlotChanged)
         .onChange(of: selectedSection, selectedSectionChanged)
         .onChange(of: appModel.viewerDID, viewerDidChange)
-        .onChange(of: appModel.social.sessionID) { _, _ in
-            socialNavigation = SocialNavigationState()
-        }
         .onChange(of: appModel.primaryTabFeeds, primaryTabFeedsChanged)
         .onChange(of: appModel.feedPreferences) { _, _ in
             appModel.loadPrimaryTabPreferences()
@@ -158,219 +116,9 @@ struct NewsShellView: View {
         }
     }
 
-    private var detailStack: some View {
-        Group {
-            #if os(iOS)
-            adaptiveWorkspace
-            #else
-            feedTabs
-            #endif
-        }
-        #if os(macOS)
-        .accessibilityIdentifier("news-detail-column")
-        #endif
-    }
-
-    #if os(iOS)
-    @ViewBuilder
-    private var adaptiveWorkspace: some View {
-        if usesPhoneTabs {
-            phoneWorkspace
-        } else {
-            sectionWorkspace(selectedSection)
-        }
-    }
-
-    private var phoneWorkspace: some View {
-        NewsCompactSidebarContainer(isSidebarPresented: $isSidebarPresented) {
-            navigationSidebar
-                .navigationTitle("The Social Wire")
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Close Sidebar", systemImage: "sidebar.left") {
-                            isSidebarPresented = false
-                        }
-                        .accessibilityIdentifier("news-hide-sidebar")
-                    }
-                }
-        } content: {
-            HStack(spacing: 0) {
-                if horizontalSizeClass == .regular && isPersistentSidebarPresented {
-                    NavigationStack {
-                        navigationSidebar
-                            // The sidebar is an internal column, away from the trailing system bar.
-                            .ignoresSafeArea(.container, edges: .trailing)
-                            .navigationTitle("The Social Wire")
-                    }
-                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 320)
-                    .accessibilityIdentifier("news-persistent-sidebar")
-                    Divider()
-                }
-                phoneTabs
-            }
-        }
-    }
-
-    private func sectionWorkspace(_ section: NewsRootSection) -> some View {
-        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
-            navigationSidebar
-                .navigationTitle("The Social Wire")
-        } detail: {
-            sectionContent(section)
-        }
-        .navigationSplitViewStyle(.balanced)
-    }
-
-    // Keep the workspace alive across fold/resize transitions, including unsent drafts.
-    private var phoneTabs: some View {
-        TabView(selection: phoneTabSelection) {
-            ForEach(sectionPreferences.pinnedSections) { section in
-                Tab(value: NewsPhoneTab.section(section)) {
-                    sectionContent(section)
-                        .toolbar(horizontalSizeClass == .regular ? .hidden : .visible, for: .tabBar)
-                } label: {
-                    Label(section.title, systemImage: section.systemImage)
-                }
-                .badge(sectionPreferences.badgeCount(for: .section(section), unreadSocialNotifications: unreadSocialNotifications))
-            }
-            Tab("Browse", systemImage: "square.grid.3x3", value: NewsPhoneTab.browse) {
-                Group {
-                    if isBrowsing || sectionPreferences.pinnedSections.contains(selectedSection) {
-                        NavigationStack {
-                            navigationSidebar
-                                .navigationTitle("Browse")
-                        }
-                    } else {
-                        sectionContent(selectedSection)
-                    }
-                }
-                .toolbar(horizontalSizeClass == .regular ? .hidden : .visible, for: .tabBar)
-            }
-            .badge(sectionPreferences.badgeCount(for: .browse, unreadSocialNotifications: unreadSocialNotifications))
-        }
-        .tabViewStyle(.tabBarOnly)
-
-    }
-
-    private var unreadSocialNotifications: Int {
-        appModel.social.quill?.unreadNotificationCount ?? 0
-    }
-
-    private var phoneTabSelection: Binding<NewsPhoneTab> {
-        Binding(
-            get: {
-                isBrowsing ? .browse : sectionPreferences.tab(for: selectedSection)
-            },
-            set: { tab in
-                switch tab {
-                case .section(let section):
-                    if section == .social {
-                        selectedSocialDestination = .timeline
-                        socialNavigation.showHome()
-                    }
-                    isBrowsing = false
-                    selectedSection = section
-                case .browse:
-                    isBrowsing = true
-                }
-            }
-        )
-    }
-    #endif
-
-    @ViewBuilder
     private var feedTabs: some View {
         feedTabsContent
             .tabViewStyle(.sidebarAdaptable)
-    }
-
-    private var navigationSidebar: some View {
-        NewsSidebarView(
-            availableTabs: availableTabs,
-            sceneModel: sceneModel,
-            onSelection: {
-                sidebarDestinationSelected()
-                revealSelectedDestination()
-            },
-            onListsSelection: { selectSidebarSection(.lists) },
-            onSocialSelection: { selectSidebarSection(.social) },
-            onProfileSelection: showSocialProfile,
-            onStandardListSelection: { list in
-                selectSidebarSection(.lists)
-                Task { await appModel.standardReaderLists.select(list) }
-            },
-            selectedSection: selectedSection,
-            selectedSocialDestination: selectedSocialDestination,
-            onSocialDestinationSelection: { destination in
-                selectedSocialDestination = destination
-                selectSidebarSection(.social)
-            },
-            onSectionSelection: selectSidebarSection,
-            onCustomize: customizePhoneTabs
-        )
-    }
-
-    private var customizePhoneTabs: (() -> Void)? {
-        #if os(iOS)
-        usesPhoneTabs ? { isCustomizationPresented = true } : nil
-        #else
-        nil
-        #endif
-    }
-
-    private func showSocialProfile() {
-        #if os(iOS)
-        guard let viewerDID = appModel.social.quill?.viewerDID ?? appModel.viewerDID else { return }
-        #else
-        guard let viewerDID = appModel.viewerDID else { return }
-        #endif
-        socialNavigation.showProfile(viewerDID: viewerDID)
-        selectedSocialDestination = .timeline
-        selectSidebarSection(.social)
-    }
-
-    private func selectSidebarSection(_ section: NewsRootSection) {
-        selectedSection = section
-        reconcileSectionSelection(section)
-        revealSelectedDestination()
-    }
-
-    private func revealSelectedDestination() {
-        isBrowsing = false
-        isSidebarPresented = false
-        #if os(iOS)
-        compactColumn = .detail
-        #endif
-    }
-
-    private var sidebarLeadingPlacement: ToolbarItemPlacement {
-        #if os(iOS)
-        .topBarLeading
-        #else
-        .navigation
-        #endif
-    }
-
-    private func showSidebar() {
-        #if os(iOS)
-        if usesPhoneTabs {
-            if horizontalSizeClass == .regular {
-                isPersistentSidebarPresented.toggle()
-            } else {
-                isSidebarPresented.toggle()
-            }
-            return
-        }
-        if horizontalSizeClass == .compact {
-            columnVisibility = .all
-            compactColumn = .sidebar
-        } else {
-            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-            compactColumn = columnVisibility == .detailOnly ? .detail : .sidebar
-        }
-        #else
-        isSidebarPresented = true
-        #endif
     }
 
     private var readLaterNavigationItems: [NewsNavigationItem] {
@@ -443,8 +191,7 @@ struct NewsShellView: View {
             selection: selection,
             supportsUnreadFilter: supportsUnreadFilter,
             bulkReadScope: bulkReadScope,
-            usesSidebarNavigation: usesSidebarNavigation,
-            onShowSidebar: showSidebar
+            usesSidebarNavigation: usesSidebarNavigation
         )
     }
 
@@ -462,40 +209,12 @@ struct NewsShellView: View {
             Tab("Lists", systemImage: "list.bullet", value: NewsRootSection.lists) {
                 listsWorkspace
             }
-            Tab("Media", systemImage: "play.rectangle", value: NewsRootSection.media) {
-                sectionPager(.media, items: [.podcasts].filter(isVisibleInSettings).map(NewsNavigationItem.init(feed:)))
-            }
-            Tab("Social", systemImage: "bubble.left.and.text.bubble.right", value: NewsRootSection.social) {
-                SocialWorkspaceView(destination: $selectedSocialDestination, navigation: socialNavigation)
-                    .id(appModel.social.sessionID)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func sectionContent(_ section: NewsRootSection) -> some View {
-        switch section {
-        case .social:
-            SocialWorkspaceView(destination: $selectedSocialDestination, navigation: socialNavigation, onShowSidebar: showSidebar)
-                .id(appModel.social.sessionID)
-        case .lists:
-            listsWorkspace
-        default:
-            sectionPager(section, items: navigationItems(for: section), usesSidebarNavigation: usesExternalListsSidebar)
         }
     }
 
     private var listsWorkspace: some View {
-        StandardReaderListsWorkspace(usesExternalSidebar: usesExternalListsSidebar, onShowSidebar: showSidebar)
+        StandardReaderListsWorkspace(isProfilePresented: $isProfilePresented)
             .accessibilityIdentifier("news-tab-content-standardLists")
-    }
-
-    private var usesExternalListsSidebar: Bool {
-        #if os(iOS)
-        !usesPhoneTabs || horizontalSizeClass == .regular
-        #else
-        false
-        #endif
     }
 
     private func sectionPager(
@@ -519,8 +238,8 @@ struct NewsShellView: View {
                     description: Text(section.emptyDescription)
                 )
                 .toolbar {
-                    ToolbarItem(placement: sidebarLeadingPlacement) {
-                        NewsSidebarButton(action: showSidebar)
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Profile", systemImage: "person.crop.circle") { isProfilePresented = true }
                     }
                 }
             }
@@ -562,26 +281,12 @@ struct NewsShellView: View {
             topicDestinations.map(NewsNavigationItem.init(feed:))
         case .lists:
             standardListNavigationItems
-        case .media:
-            [.podcasts].filter(isVisibleInSettings).map(NewsNavigationItem.init(feed:))
-        case .social:
-            []
         }
     }
 
     private func selectedSectionChanged(_ oldValue: NewsRootSection, _ section: NewsRootSection) {
-        guard section != .lists, section != .social else { return }
+        guard section != .lists else { return }
         reconcileSectionSelection(section)
-    }
-
-    private func sidebarDestinationSelected() {
-        switch sceneModel.selectedTab {
-        case .finance, .sports: selectedSection = .topics
-        case .podcasts: selectedSection = .media
-        case .saved: selectedSection = .readLater
-        default: selectedSection = .feeds
-        }
-        sceneTabChanged(sceneModel.selectedTab, sceneModel.selectedTab)
     }
 
     private func reconcileSectionSelection(_ section: NewsRootSection) {
@@ -597,8 +302,6 @@ struct NewsShellView: View {
 
     private func bootstrap() async {
         guard !isTabConfigurationLoaded else { return }
-        socialNavigation.bind(viewerDID: appModel.viewerDID)
-        sectionPreferences = NewsSectionPreferences.load(viewerDID: appModel.viewerDID)
         sceneModel.configureWindow(identifier: windowID)
         if let viewerDID = appModel.viewerDID,
            let preferences = ReaderFeedPreferencesStorage.load(viewerDid: viewerDID) {
@@ -681,17 +384,11 @@ struct NewsShellView: View {
         if slot.savedListSource != nil { return .readLater }
         if case .standardList = slot { return .lists }
         guard let feed = slot.primaryFeed else { return nil }
-        if feed == .podcasts { return .media }
+        if feed == .podcasts { return .topics }
         return [.finance, .sports].contains(feed) ? .topics : .feeds
     }
 
     private func viewerDidChange(_ oldValue: String?, _ viewerDID: String?) {
-        socialNavigation.bind(viewerDID: viewerDID)
-        sectionPreferences = NewsSectionPreferences.load(viewerDID: viewerDID)
-        selectedSocialDestination = .timeline
-        isBrowsing = false
-        isSidebarPresented = false
-        isCustomizationPresented = false
         isTabConfigurationLoaded = false
         sceneModel.updateContext(viewerDID: viewerDID, availableTabs: availableTabs)
         appModel.loadPrimaryTabPreferences()
@@ -704,7 +401,7 @@ struct NewsShellView: View {
         _ feeds: [NewsPrimaryFeed]
     ) {
         slotFeeds = feeds
-        guard selectedSection != .lists, selectedSection != .social else { return }
+        guard selectedSection != .lists else { return }
 
         if let selectedFeed = selectedSlot.primaryFeed,
            !appModel.visiblePrimaryTabFeedChoices.contains(selectedFeed) {
@@ -723,7 +420,7 @@ struct NewsShellView: View {
     }
 
     private func sceneTabChanged(_ oldValue: NewsTab, _ tab: NewsTab) {
-        guard isTabConfigurationLoaded, selectedSection != .lists, selectedSection != .social else { return }
+        guard isTabConfigurationLoaded, selectedSection != .lists else { return }
         switch tab {
         case .wire:
             selectPrimaryFeed(.wire)
@@ -762,7 +459,6 @@ struct NewsShellView: View {
     ) {
         guard isTabConfigurationLoaded,
               selectedSection != .lists,
-              selectedSection != .social,
               sceneModel.selectedTab == .library,
               let feed = primaryFeed(for: source)
         else { return }
@@ -860,7 +556,6 @@ private struct NewsFeedShellView: View {
     let supportsUnreadFilter: Bool
     let bulkReadScope: ReaderMarkReadScope
     let usesSidebarNavigation: Bool
-    let onShowSidebar: () -> Void
 
     private enum NewsShellSheet: String, Identifiable {
         case addPublication
@@ -900,11 +595,7 @@ private struct NewsFeedShellView: View {
                 .toolbar { toolbarContent }
                 .navigationDestination(for: NewsRoute.self) { route in
                     NewsRouteDestination(route: route, tab: tab, sceneModel: sceneModel)
-                        .toolbar {
-                            ToolbarItem(placement: leadingPlacement) {
-                                NewsSidebarButton(action: onShowSidebar)
-                            }
-                        }
+
                 }
         }
         .sheet(item: $presentedSheet) { sheet in
@@ -929,13 +620,7 @@ private struct NewsFeedShellView: View {
                 NewsHorizontalNavigationBar(items: navigationItems, selection: $selection)
             }
         }
-        #if os(iOS)
-        ToolbarItem(placement: .topBarLeading) {
-            NewsSidebarButton(action: onShowSidebar)
-        }
-        #endif
         if !usesSidebarNavigation {
-            #if os(macOS)
             ToolbarItem(placement: leadingPlacement) {
                 Button {
                     isProfilePresented = true
@@ -945,7 +630,6 @@ private struct NewsFeedShellView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Profile")
             }
-            #endif
             if tab == .library && appModel.readerListSource == .subscribed {
                 ToolbarItem(placement: trailingPlacement) {
                     Menu {
@@ -1175,11 +859,3 @@ private struct NewsHorizontalNavigationBar: View {
         }
     }
 }
-
-#if os(iOS)
-private struct NewsSocialBadgeContext: Equatable {
-    let viewerDID: String?
-    let modelIdentity: ObjectIdentifier?
-    let scenePhase: ScenePhase
-}
-#endif

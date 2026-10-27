@@ -5,13 +5,9 @@ struct SavedLinkToolbar: View {
     @Environment(\.openURL) private var openURL
 
     let save: MergedLatrSave
-    let entry: EntryDetail?
     let resolvedURL: URL?
     let isArchivedView: Bool
-    @Binding var showingQuote: Bool
-    @Binding var showingReply: Bool
     @State private var confirmingDelete = false
-    @State private var reactionFeedback = 0
     @State private var deleteFeedback = 0
 
     var body: some View {
@@ -27,38 +23,6 @@ struct SavedLinkToolbar: View {
                         openURL(url)
                     } label: {
                         Label("Open", systemImage: "safari")
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-                Button {
-                    showingQuote = true
-                } label: {
-                    Label("Quote", systemImage: "quote.bubble")
-                }
-                .buttonStyle(.bordered)
-
-                if entry?.bskyPostUri != nil {
-                    Button {
-                        reactionFeedback += 1
-                        Task { await appModel.likeEntry(entry!) }
-                    } label: {
-                        Label("Like", systemImage: "heart")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        reactionFeedback += 1
-                        Task { await appModel.repostEntry(entry!) }
-                    } label: {
-                        Label("Repost", systemImage: "repeat")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        showingReply = true
-                    } label: {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
                     }
                     .buttonStyle(.bordered)
                 }
@@ -97,7 +61,6 @@ struct SavedLinkToolbar: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .sensoryFeedback(.success, trigger: reactionFeedback)
         .sensoryFeedback(.success, trigger: deleteFeedback)
     }
 }

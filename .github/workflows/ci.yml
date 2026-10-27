@@ -140,12 +140,10 @@ jobs:
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.apple == 'true'
     runs-on: macos-26
-    # Includes a clean Quill/app build and the full native UI regression suite.
+    # Includes a clean app build and the full native UI regression suite.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
-      - name: Test Quill feed contracts
-        run: swift test --package-path packages/swift/QuillSocialKit -Xswiftc -warnings-as-errors
       - name: Prepare iOS simulator
         id: simulator
         timeout-minutes: 10

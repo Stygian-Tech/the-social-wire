@@ -94,16 +94,10 @@ struct NewsShellUITestHarness: View {
             } else {
                 ProgressView()
                     .task {
-                        if ProcessInfo.processInfo.arguments.contains("--ui-testing-reset-tabs") {
-                            NewsSectionPreferences().save(viewerDID: nil)
-                        }
                         fixtureModel.feedPreferences = ReaderFeedPreferences(
                             visibleFeeds: [.readLater, .archive, .subscribed, .following],
                             feedsWithUnreadCounts: [], showWire: false, showCircle: false)
-                        if ProcessInfo.processInfo.arguments.contains("--ui-testing-quill-social") {
-                            do { try fixtureModel.social.configureQuillFixture() }
-                            catch { assertionFailure("Quill fixture failed: \(error)") }
-                        }
+
                         if ProcessInfo.processInfo.arguments.contains("--ui-testing-sidebar-publications") {
                             configureSidebarPublications()
                         }
@@ -117,7 +111,12 @@ struct NewsShellUITestHarness: View {
                                     uri: "at://did:plc:fixture/app.standard-reader.list/main",
                                     name: "Fixture List", description: "Stories From Fixture Publications",
                                     creatorDid: "did:plc:fixture", publications: [Self.fixturePublication.publicationId],
-                                    publicationDetails: nil, users: [], owned: true, saved: true)],
+                                    publicationDetails: nil, users: [], owned: true, saved: true)] +
+                                    (ProcessInfo.processInfo.arguments.contains("--ui-testing-list-swipes") ? [
+                                        StandardReaderList(uri: "at://did:plc:fixture/app.standard-reader.list/second",
+                                            name: "Second List", description: nil, creatorDid: "did:plc:fixture",
+                                            publications: [], publicationDetails: nil, users: [], owned: true, saved: true)
+                                    ] : []),
                                 entries: [Self.entry(index: 1)])
                             if ProcessInfo.processInfo.arguments.contains("--ui-testing-empty-lists") {
                                 fixtureModel.standardReaderLists.configureFixture(lists: [], entries: [])

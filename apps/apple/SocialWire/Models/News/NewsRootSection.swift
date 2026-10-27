@@ -9,8 +9,6 @@ enum NewsRootSection: String, CaseIterable, Codable, Identifiable, Hashable {
         case .feeds: "News"
         case .topics: "Topics"
         case .lists: "Lists"
-        case .social: "Social"
-        case .media: "Media"
         }
     }
 
@@ -18,8 +16,6 @@ enum NewsRootSection: String, CaseIterable, Codable, Identifiable, Hashable {
     case feeds
     case topics
     case lists
-    case social
-    case media
 
     var systemImage: String {
         switch self {
@@ -27,8 +23,6 @@ enum NewsRootSection: String, CaseIterable, Codable, Identifiable, Hashable {
         case .feeds: "newspaper"
         case .topics: "square.grid.2x2"
         case .lists: "list.bullet"
-        case .social: "bubble.left.and.text.bubble.right"
-        case .media: "play.rectangle"
         }
     }
 
@@ -38,8 +32,6 @@ enum NewsRootSection: String, CaseIterable, Codable, Identifiable, Hashable {
         case .feeds: .wire
         case .topics: .finance
         case .lists: .standardList("")
-        case .social: .wire
-        case .media: .podcasts
         }
     }
 
@@ -49,8 +41,6 @@ enum NewsRootSection: String, CaseIterable, Codable, Identifiable, Hashable {
         case .feeds: "No Feeds"
         case .topics: "No Topics"
         case .lists: "No Lists"
-        case .social: "Social Unavailable"
-        case .media: "No Media"
         }
     }
 
@@ -60,8 +50,6 @@ enum NewsRootSection: String, CaseIterable, Codable, Identifiable, Hashable {
         case .feeds: "Available feeds will appear here."
         case .topics: "Available topics will appear here."
         case .lists: "Your reader lists will appear here."
-        case .social: "Your social workspace will appear here."
-        case .media: "Available podcasts will appear here."
         }
     }
 }

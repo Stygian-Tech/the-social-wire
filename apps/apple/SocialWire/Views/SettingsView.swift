@@ -1,7 +1,4 @@
 import SwiftUI
-#if os(iOS)
-import QuillSocialUI
-#endif
 
 struct SettingsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
@@ -43,16 +40,6 @@ struct SettingsView: View {
                 }
                 Toggle("Bold Text", isOn: $boldText)
             }
-
-            #if os(iOS)
-            if let socialModel = appModel.social.quill {
-                Section("Social") {
-                    NavigationLink("Social Settings") {
-                        QuillSocialSettingsView(model: socialModel)
-                    }
-                }
-            }
-            #endif
 
             Section("Articles") {
                 Picker(
