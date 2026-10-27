@@ -71,7 +71,6 @@ struct SocialWireApp: App {
         RootView()
             .environment(appModel)
             .modelContainer(Self.readerModelContainer)
-            .tint(.indigo)
             .appAppearance()
     }
 }

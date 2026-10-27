@@ -748,7 +748,7 @@ final class SocialWireGatewayClient {
     }
 
     func consumeBootstrapStream(
-        onEvent: @escaping @Sendable (BootstrapStreamEventDTO) -> Void
+        onEvent: @escaping @Sendable (BootstrapStreamEventDTO) async -> Void
     ) async throws {
         guard let url = URL(
             string: "/v1/appview/bootstrap-stream?includeLists=true",
@@ -766,7 +766,7 @@ final class SocialWireGatewayClient {
         }
 
         for try await line in bytes.lines {
-            try Self.consumeBootstrapLine(line, onEvent: onEvent)
+            try await Self.consumeBootstrapLine(line, onEvent: onEvent)
         }
     }
 
@@ -798,15 +798,15 @@ final class SocialWireGatewayClient {
 
     private static func consumeBootstrapLine(
         _ rawLine: String,
-        onEvent: @escaping @Sendable (BootstrapStreamEventDTO) -> Void
-    ) throws {
+        onEvent: @escaping @Sendable (BootstrapStreamEventDTO) async -> Void
+    ) async throws {
         let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return }
         let event = try BootstrapStreamNDJSON.decoder.decode(
             BootstrapStreamEventDTO.self,
             from: Data(line.utf8)
         )
-        onEvent(event)
+        await onEvent(event)
     }
 
     // MARK: - Private

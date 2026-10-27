@@ -5,11 +5,6 @@ struct SavedLinkDetailView: View {
 
     let save: MergedLatrSave
     @State private var socialEntry: EntryDetail?
-    @State private var isLoadingSocialEntry = false
-    @State private var quoteText = ""
-    @State private var replyText = ""
-    @State private var showingQuote = false
-    @State private var showingReply = false
 
     private var isArchivedView: Bool {
         appModel.readerListSource == .archive || save.state == "archived"
@@ -29,11 +24,8 @@ struct SavedLinkDetailView: View {
                 VStack(spacing: 0) {
                     SavedLinkToolbar(
                         save: save,
-                        entry: socialEntry,
                         resolvedURL: url,
-                        isArchivedView: isArchivedView,
-                        showingQuote: $showingQuote,
-                        showingReply: $showingReply
+                        isArchivedView: isArchivedView
                     )
                     .padding(.horizontal)
                     .padding(.vertical, 8)
@@ -53,66 +45,9 @@ struct SavedLinkDetailView: View {
         .task(id: save.id) {
             await loadSocialEntry()
         }
-        .sheet(isPresented: $showingQuote) {
-            socialComposeSheet(title: "Quote Post", text: $quoteText) {
-                guard let entry = socialEntry else { return }
-                try await appModel.quoteEntry(entry, text: quoteText)
-                quoteText = ""
-                showingQuote = false
-            }
-        }
-        .sheet(isPresented: $showingReply) {
-            socialComposeSheet(title: "Reply", text: $replyText) {
-                guard let entry = socialEntry else { return }
-                try await appModel.replyToEntry(entry, text: replyText)
-                replyText = ""
-                showingReply = false
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func socialComposeSheet(
-        title: String,
-        text: Binding<String>,
-        onPost: @escaping () async throws -> Void
-    ) -> some View {
-        NavigationStack {
-            Form {
-                TextEditor(text: text)
-                    .frame(minHeight: 160)
-                    .accessibilityLabel("Compose \(title)")
-            }
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        if title == "Quote Post" {
-                            showingQuote = false
-                        } else {
-                            showingReply = false
-                        }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Post") {
-                        Task {
-                            do {
-                                try await onPost()
-                            } catch {
-                                appModel.errorMessage = error.localizedDescription
-                            }
-                        }
-                    }
-                    .disabled(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
     }
 
     private func loadSocialEntry() async {
-        isLoadingSocialEntry = true
-        defer { isLoadingSocialEntry = false }
         socialEntry = await appModel.savedLinkSocialEntry(for: save)
     }
 }

@@ -2,7 +2,8 @@ import SwiftUI
 
 struct StandardReaderListsWorkspace: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    var usesExternalSidebar = false
+    @Binding var isProfilePresented: Bool
+    @State private var listPage = ""
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showingManagement = false
@@ -46,7 +47,8 @@ struct StandardReaderListsWorkspace: View {
             openedEntryID = nil
             Task { await model.loadFeed() }
         }
-        .onChange(of: model.selectedList?.uri) { _, _ in
+        .onChange(of: model.selectedList?.uri) { _, uri in
+            listPage = uri ?? ""
             settleDeferredRead()
             entryOpenRevision += 1
         }
@@ -73,35 +75,66 @@ struct StandardReaderListsWorkspace: View {
 
     @ViewBuilder
     private var workspaceColumns: some View {
-        if usesExternalSidebar {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                Group {
-                    if model.selectedList == nil { listsColumn }
-                    else { articlesColumn }
-                }
-                .navigationTitle(model.selectedList?.name ?? "Lists")
+        NavigationSplitView(preferredCompactColumn: $compactColumn) {
+            listsColumn
+                .navigationTitle("Lists")
+                .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
                 .toolbar { managementButton }
-            } detail: {
-                readerColumn
+        } content: {
+            pagedArticles
+            .navigationTitle(model.selectedList?.name ?? "Articles")
+            .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
+        } detail: {
+            readerColumn
+        }
+    }
+
+    @ViewBuilder
+    private var pagedArticles: some View {
+        #if os(iOS)
+        if let selected = model.selectedList {
+            TabView(selection: $listPage) {
+                ForEach(model.lists) { list in
+                    Group {
+                        if list.uri == listPage, list.uri == model.selectedList?.uri {
+                            articlesColumn
+                        } else {
+                            ProgressView("Loading Articles")
+                        }
+                    }
+                    .tag(list.uri)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .onAppear { listPage = selected.uri }
+            .task(id: listPage) {
+                guard let list = model.lists.first(where: { $0.uri == listPage }),
+                      list.uri != model.selectedList?.uri else { return }
+                openedEntryID = nil
+                await model.select(list)
             }
         } else {
-            NavigationSplitView(preferredCompactColumn: $compactColumn) {
-                listsColumn
-                    .navigationTitle("Lists")
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
-                    .toolbar { managementButton }
-            } content: {
-                articlesColumn
-                    .navigationTitle(model.selectedList?.name ?? "Articles")
-                    .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
-            } detail: {
-                readerColumn
-            }
+            articlesColumn
         }
+        #else
+        articlesColumn
+        #endif
+    }
+
+    private var sidebarLeadingPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
     }
 
     @ToolbarContentBuilder
     private var managementButton: some ToolbarContent {
+        ToolbarItem(placement: sidebarLeadingPlacement) {
+            Button { isProfilePresented = true } label: { ViewerProfileAvatar(size: 30) }
+                .accessibilityLabel("Profile")
+        }
         ToolbarItem(placement: .primaryAction) {
             Button("Manage Lists", systemImage: "plus") { showingManagement = true }
                 .disabled(!model.signedIn)

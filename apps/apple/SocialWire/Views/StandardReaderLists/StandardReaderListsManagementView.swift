@@ -22,8 +22,7 @@ struct StandardReaderListsManagementView: View {
             Form {
                 Section("Find Lists") {
                     TextField("Creator Handle, DID, or List Link", text: $input)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                        .platformUncapitalizedTextInput()
                         .accessibilityIdentifier("lists.searchInput")
                     Button("Search Lists") { Task { await search() } }
                         .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || searching)
@@ -50,7 +49,7 @@ struct StandardReaderListsManagementView: View {
                             set: { if $0 { selectedPublications.insert(publication.publicationId) } else { selectedPublications.remove(publication.publicationId) } }))
                     }
                     TextField("Author Handles or DIDs (Comma Separated)", text: $authors)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .platformUncapitalizedTextInput()
                     Button("Create List") { Task { await create() } }
                         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isSaving)
                         .accessibilityIdentifier("lists.create")

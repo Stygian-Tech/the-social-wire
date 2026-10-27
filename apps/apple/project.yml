@@ -50,6 +50,8 @@ targets:
               - app.thesocialwire.testing.api
         LSRequiresIPhoneOS: true
         UIApplicationSupportsIndirectInputEvents: true
+        UIBackgroundModes:
+          - audio
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

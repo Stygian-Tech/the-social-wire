@@ -3,9 +3,15 @@ import Foundation
 actor ATProtoResolver {
     private let publicAppView = URL(string: "https://public.api.bsky.app")!
     private let typeaheadService = URL(string: "https://typeahead.waow.tech")!
-    private let plcDirectory = URL(string: "https://plc.directory")!
     private var pdsCache: [String: URL] = [:]
     private var handleCache: [String: String] = [:]
+    private let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+
+    init(transport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
+        try await URLSession.shared.data(for: $0)
+    }) {
+        self.transport = transport
+    }
 
     func resolveDID(handleOrDID: String) async throws -> String {
         let normalized = handleOrDID.trimmingCharacters(in: .whitespacesAndNewlines).trimmingPrefix("@")
@@ -23,7 +29,7 @@ actor ATProtoResolver {
 
     func resolvePDSURL(did: String) async throws -> URL {
         if let cached = pdsCache[did] { return cached }
-        let url = plcDirectory.appending(path: did)
+        let url = try Self.didDocumentURL(did: did)
         let doc: DIDDocument = try await fetchJSON(url)
         guard let endpoint = doc.service?.first(where: {
             $0.id == "#atproto_pds" || $0.id.hasSuffix("#atproto_pds") || $0.type == "AtprotoPersonalDataServer"
@@ -32,6 +38,24 @@ actor ATProtoResolver {
         else { throw SocialWireError.badResponse("Could not resolve PDS for \(did).") }
         pdsCache[did] = pdsURL
         return pdsURL
+    }
+
+    /// AT Protocol's did:web identities use a hostname and the well-known DID document.
+    /// Do not send these identities to the PLC directory or interpret DID input as a URL.
+    nonisolated static func didDocumentURL(did: String) throws -> URL {
+        if did.hasPrefix("did:plc:"), !did.dropFirst("did:plc:".count).isEmpty {
+            return URL(string: "https://plc.directory")!.appending(path: did)
+        }
+        guard did.hasPrefix("did:web:") else { throw SocialWireError.invalidURL }
+        let host = String(did.dropFirst("did:web:".count))
+        guard !host.isEmpty, !host.contains(where: { $0.isWhitespace }),
+              !host.contains(where: { ":%/@?#\\".contains($0) }) else { throw SocialWireError.invalidURL }
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = host
+        components.path = "/.well-known/did.json"
+        guard let url = components.url, url.host == host else { throw SocialWireError.invalidURL }
+        return url
     }
 
     func searchLoginActors(_ value: String, limit: Int = 6) async throws -> [LoginActorSuggestion] {
@@ -63,7 +87,7 @@ actor ATProtoResolver {
     private func fetchJSON<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await transport(request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw SocialWireError.badResponse("Request failed for \(url.host ?? url.absoluteString).")
         }

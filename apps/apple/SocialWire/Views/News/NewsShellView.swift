@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// Adaptive application shell with configurable feed tabs, Read Later, and a leading-edge sidebar.
+/// Native Apple tabs adapt to a sidebar while each section retains its feed selection.
 struct NewsShellView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
     @SceneStorage("the-social-wire.news-window-id.v1") private var windowID = UUID().uuidString
     @State private var sceneModel = NewsSceneModel()
     @State private var selectedSlot = NewsTabSlot.wire
@@ -14,22 +11,18 @@ struct NewsShellView: View {
         .readLater: .readLater,
         .feeds: .wire,
         .topics: .finance,
-        .social: .wire
+        .lists: .standardList("")
     ]
     @State private var slotFeeds: [NewsPrimaryFeed] = []
     @State private var isTabConfigurationLoaded = false
     @State private var isProfilePresented = false
-    #if os(iOS)
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
-    #endif
-
     private var availableTabs: [NewsTab] {
         NewsTab.available(
             wire: appModel.feedPreferences.showWire,
             circle: appModel.feedPreferences.showCircle,
             finance: appModel.feedPreferences.showFinance,
             sports: appModel.feedPreferences.showSports,
-            podcasts: false
+            podcasts: appModel.feedPreferences.showPodcasts && appModel.podcasts.available
         )
     }
 
@@ -45,8 +38,7 @@ struct NewsShellView: View {
 
     private var navigableFeeds: [NewsPrimaryFeed] {
         let available = appModel.visiblePrimaryTabFeedChoices
-        return (slotFeeds + available.filter { !slotFeeds.contains($0) })
-            .filter { $0 != .podcasts }
+        return slotFeeds + available.filter { !slotFeeds.contains($0) }
     }
 
     private var feedDestinations: [NewsPrimaryFeed] {
@@ -54,7 +46,7 @@ struct NewsShellView: View {
     }
 
     private var topicDestinations: [NewsPrimaryFeed] {
-        [.finance, .sports].filter(isVisibleInSettings)
+        [.finance, .sports, .podcasts].filter(isVisibleInSettings)
     }
 
     private func isVisibleInSettings(_ feed: NewsPrimaryFeed) -> Bool {
@@ -72,7 +64,7 @@ struct NewsShellView: View {
         case .following:
             appModel.feedPreferences.visibleFeeds.contains(.following)
         case .podcasts:
-            false
+            appModel.feedPreferences.showPodcasts && appModel.podcasts.available
         }
     }
 
@@ -88,7 +80,7 @@ struct NewsShellView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                detailStack
+                feedTabs
             }
         }
         .task(bootstrap)
@@ -124,56 +116,6 @@ struct NewsShellView: View {
         }
     }
 
-    private var detailStack: some View {
-        Group {
-            #if os(iOS)
-            if horizontalSizeClass == .regular {
-                regularWidthSplitView
-            } else {
-                feedTabs
-            }
-            #else
-            feedTabs
-            #endif
-        }
-        .accessibilityIdentifier("news-detail-column")
-    }
-
-    #if os(iOS)
-    @ViewBuilder private var regularWidthSplitView: some View {
-        if selectedSection == .social {
-            SocialWorkspaceView().id(appModel.social.sessionID)
-        } else {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-            NewsSidebarView(
-                availableTabs: availableTabs,
-                sceneModel: sceneModel,
-                onSelection: sidebarDestinationSelected,
-                onListsSelection: { selectedSection = .lists },
-                onStandardListSelection: { list in
-                    selectedSection = .lists
-                    Task { await appModel.standardReaderLists.select(list) }
-                }
-            )
-        } detail: {
-            if selectedSection == .lists {
-                StandardReaderListsWorkspace(usesExternalSidebar: true)
-                    .accessibilityIdentifier("news-tab-content-standardLists")
-            } else {
-                destinationContent(
-                    for: selectedSlot,
-                    navigationItems: navigationItems(for: selectedSection),
-                    selection: sectionSelectionBinding(for: selectedSection),
-                    usesSidebarNavigation: true
-                )
-            }
-        }
-            .navigationSplitViewStyle(.balanced)
-        }
-    }
-    #endif
-
-    @ViewBuilder
     private var feedTabs: some View {
         feedTabsContent
             .tabViewStyle(.sidebarAdaptable)
@@ -218,7 +160,7 @@ struct NewsShellView: View {
                 bulkReadScope: .unavailable,
                 usesSidebarNavigation: usesSidebarNavigation
             )
-        } else if let feed = selectedSlot.primaryFeed {
+        } else if let feed = slot.primaryFeed {
             destinationView(
                 title: feed.title,
                 tab: feed.newsTab,
@@ -258,7 +200,7 @@ struct NewsShellView: View {
             Tab("Read Later", systemImage: "bookmark", value: NewsRootSection.readLater) {
                 sectionPager(.readLater, items: readLaterNavigationItems)
             }
-            Tab("Feeds", systemImage: "newspaper", value: NewsRootSection.feeds) {
+            Tab("News", systemImage: "newspaper", value: NewsRootSection.feeds) {
                 sectionPager(.feeds, items: feedDestinations.map(NewsNavigationItem.init(feed:)))
             }
             Tab("Topics", systemImage: "square.grid.2x2", value: NewsRootSection.topics) {
@@ -267,27 +209,40 @@ struct NewsShellView: View {
             Tab("Lists", systemImage: "list.bullet", value: NewsRootSection.lists) {
                 listsWorkspace
             }
-            Tab("Social", systemImage: "bubble.left.and.text.bubble.right", value: NewsRootSection.social) {
-                SocialWorkspaceView().id(appModel.social.sessionID)
-            }
         }
     }
 
     private var listsWorkspace: some View {
-        StandardReaderListsWorkspace()
+        StandardReaderListsWorkspace(isProfilePresented: $isProfilePresented)
             .accessibilityIdentifier("news-tab-content-standardLists")
     }
 
-    private func sectionPager(_ section: NewsRootSection, items: [NewsNavigationItem]) -> some View {
+    private func sectionPager(
+        _ section: NewsRootSection,
+        items: [NewsNavigationItem],
+        usesSidebarNavigation: Bool = false
+    ) -> some View {
         let selection = sectionSelectionBinding(for: section)
         return NewsSectionPager(items: items, selection: selection) { slot in
-            destinationContent(for: slot, navigationItems: items, selection: selection)
-        } emptyContent: {
-            ContentUnavailableView(
-                section.emptyTitle,
-                systemImage: section.systemImage,
-                description: Text(section.emptyDescription)
+            destinationContent(
+                for: slot,
+                navigationItems: items,
+                selection: selection,
+                usesSidebarNavigation: usesSidebarNavigation
             )
+        } emptyContent: {
+            NavigationStack {
+                ContentUnavailableView(
+                    section.emptyTitle,
+                    systemImage: section.systemImage,
+                    description: Text(section.emptyDescription)
+                )
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Profile", systemImage: "person.crop.circle") { isProfilePresented = true }
+                    }
+                }
+            }
         }
     }
 
@@ -303,6 +258,13 @@ struct NewsShellView: View {
             set: { slot in
                 sectionSelections[section] = slot
                 if selectedSection == section {
+                    // A publication/folder shares its root slot with the aggregate feed.
+                    // Explicitly tapping that shortcut must still return to the full feed.
+                    if let source = slot.savedListSource ?? slot.primaryFeed?.readerListSource,
+                       appModel.feedSelection != .topLevel(source) {
+                        sceneModel.resetPath(for: slot.primaryFeed?.newsTab ?? .saved)
+                        appModel.selectReaderListSource(source)
+                    }
                     selectedSlot = slot
                 }
             }
@@ -319,23 +281,12 @@ struct NewsShellView: View {
             topicDestinations.map(NewsNavigationItem.init(feed:))
         case .lists:
             standardListNavigationItems
-        case .social:
-            []
         }
     }
 
     private func selectedSectionChanged(_ oldValue: NewsRootSection, _ section: NewsRootSection) {
-        guard section != .lists, section != .social else { return }
+        guard section != .lists else { return }
         reconcileSectionSelection(section)
-    }
-
-    private func sidebarDestinationSelected() {
-        switch sceneModel.selectedTab {
-        case .finance, .sports: selectedSection = .topics
-        case .saved: selectedSection = .readLater
-        default: selectedSection = .feeds
-        }
-        sceneTabChanged(sceneModel.selectedTab, sceneModel.selectedTab)
     }
 
     private func reconcileSectionSelection(_ section: NewsRootSection) {
@@ -350,13 +301,14 @@ struct NewsShellView: View {
     }
 
     private func bootstrap() async {
+        guard !isTabConfigurationLoaded else { return }
         sceneModel.configureWindow(identifier: windowID)
         if let viewerDID = appModel.viewerDID,
            let preferences = ReaderFeedPreferencesStorage.load(viewerDid: viewerDID) {
             appModel.feedPreferences = preferences
         }
         appModel.loadPrimaryTabPreferences()
-        slotFeeds = appModel.primaryTabFeeds.filter { $0 != .podcasts }
+        slotFeeds = appModel.primaryTabFeeds
         sceneModel.updateContext(viewerDID: appModel.viewerDID, availableTabs: availableTabs)
 
         if let viewerDID = appModel.viewerDID,
@@ -432,6 +384,7 @@ struct NewsShellView: View {
         if slot.savedListSource != nil { return .readLater }
         if case .standardList = slot { return .lists }
         guard let feed = slot.primaryFeed else { return nil }
+        if feed == .podcasts { return .topics }
         return [.finance, .sports].contains(feed) ? .topics : .feeds
     }
 
@@ -439,7 +392,7 @@ struct NewsShellView: View {
         isTabConfigurationLoaded = false
         sceneModel.updateContext(viewerDID: viewerDID, availableTabs: availableTabs)
         appModel.loadPrimaryTabPreferences()
-        slotFeeds = appModel.primaryTabFeeds.filter { $0 != .podcasts }
+        slotFeeds = appModel.primaryTabFeeds
         isTabConfigurationLoaded = true
     }
 
@@ -447,7 +400,7 @@ struct NewsShellView: View {
         _ oldValue: [NewsPrimaryFeed],
         _ feeds: [NewsPrimaryFeed]
     ) {
-        slotFeeds = feeds.filter { $0 != .podcasts }
+        slotFeeds = feeds
         guard selectedSection != .lists else { return }
 
         if let selectedFeed = selectedSlot.primaryFeed,
@@ -642,6 +595,7 @@ private struct NewsFeedShellView: View {
                 .toolbar { toolbarContent }
                 .navigationDestination(for: NewsRoute.self) { route in
                     NewsRouteDestination(route: route, tab: tab, sceneModel: sceneModel)
+
                 }
         }
         .sheet(item: $presentedSheet) { sheet in
@@ -663,7 +617,7 @@ private struct NewsFeedShellView: View {
                 Text(effectiveTitle)
                     .font(.headline)
             } else {
-                NewsHorizontalNavigationBar(items: navigationItems, selection: $selection)
+                NewsFeedPicker(items: navigationItems, selection: $selection)
             }
         }
         if !usesSidebarNavigation {
@@ -814,54 +768,6 @@ private struct NewsFeedShellView: View {
     }
 }
 
-private enum NewsRootSection: String, Hashable {
-    case readLater
-    case feeds
-    case topics
-    case lists
-    case social
-
-    var systemImage: String {
-        switch self {
-        case .readLater: "bookmark"
-        case .feeds: "newspaper"
-        case .topics: "square.grid.2x2"
-        case .lists: "list.bullet"
-        case .social: "bubble.left.and.text.bubble.right"
-        }
-    }
-
-    var fallbackSlot: NewsTabSlot {
-        switch self {
-        case .readLater: .readLater
-        case .feeds: .wire
-        case .topics: .finance
-        case .lists: .standardList("")
-        case .social: .wire
-        }
-    }
-
-    var emptyTitle: LocalizedStringResource {
-        switch self {
-        case .readLater: "Nothing Saved"
-        case .feeds: "No Feeds"
-        case .topics: "No Topics"
-        case .lists: "No Lists"
-        case .social: "Social Unavailable"
-        }
-    }
-
-    var emptyDescription: LocalizedStringResource {
-        switch self {
-        case .readLater: "Saved articles will appear here."
-        case .feeds: "Available feeds will appear here."
-        case .topics: "Available topics will appear here."
-        case .lists: "Your reader lists will appear here."
-        case .social: "Your social workspace will appear here."
-        }
-    }
-}
-
 private struct NewsDestinationLoadContext: Equatable {
     let viewerDID: String?
     let slot: NewsTabSlot
@@ -901,55 +807,25 @@ private struct NewsNavigationItem: Identifiable, Hashable {
     }
 }
 
-private struct NewsHorizontalNavigationBar: View {
+private struct NewsFeedPicker: View {
     let items: [NewsNavigationItem]
     @Binding var selection: NewsTabSlot
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(items) { item in
-                        Button {
-                            selection = item.slot
-                        } label: {
-                            Label(item.title, systemImage: item.systemImage)
-                                .font(.subheadline.weight(selection == item.slot ? .semibold : .regular))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(
-                                    selection == item.slot
-                                        ? AnyShapeStyle(Color.accentColor.opacity(0.18))
-                                        : AnyShapeStyle(.thinMaterial),
-                                    in: .capsule
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(selection == item.slot ? .isSelected : [])
-                        .id(item.slot)
-                    }
+        Menu {
+            ForEach(items) { item in
+                Button {
+                    selection = item.slot
+                } label: {
+                    Label(item.title, systemImage: selection == item.slot ? "checkmark" : item.systemImage)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
             }
-            .scrollIndicators(.hidden)
-            .onAppear { scrollToSelection(using: proxy, animated: false) }
-            .onChange(of: selection) { _, _ in
-                scrollToSelection(using: proxy, animated: true)
-            }
-            .onChange(of: items) { _, _ in
-                scrollToSelection(using: proxy, animated: false)
+        } label: {
+            if let selected = items.first(where: { $0.slot == selection }) {
+                Label(selected.title, systemImage: selected.systemImage)
             }
         }
-    }
-
-    private func scrollToSelection(using proxy: ScrollViewProxy, animated: Bool) {
-        if animated {
-            withAnimation(.snappy) {
-                proxy.scrollTo(selection, anchor: .center)
-            }
-        } else {
-            proxy.scrollTo(selection, anchor: .center)
-        }
+        .accessibilityIdentifier("news-feed-picker")
+        .accessibilityValue(items.first(where: { $0.slot == selection })?.title ?? "")
     }
 }

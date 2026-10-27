@@ -39,30 +39,19 @@ struct ProfileView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 PublicationAvatar(publication: publication, size: 40)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(publication.title)
-                                        .font(.headline)
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(2)
-                                    if !publication.authorHandle.isEmpty {
-                                        Text(publication.authorHandle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
+                                Text(publication.title)
+                                    .font(.headline)
+                                    .foregroundStyle(Color.primary)
+                                    .lineLimit(2)
                                 Spacer(minLength: 8)
                                 Image(systemName: "chevron.right")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.tertiary)
                             }
-                            .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.thinMaterial, in: .rect(cornerRadius: 14))
+                            .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     }
                 }
             }
@@ -72,12 +61,14 @@ struct ProfileView: View {
                     NavigationLink(value: settingsRoute) {
                         Label("Settings", systemImage: "gearshape")
                     }
+                    .accessibilityIdentifier("account-open-settings")
                 } else {
                     NavigationLink {
                         SettingsView(showsDoneButton: false)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
                     }
+                    .accessibilityIdentifier("account-open-settings")
                 }
 
                 NavigationLink {
@@ -115,6 +106,7 @@ struct ProfileView: View {
                     appModel.signOut()
                     dismiss()
                 }
+                .accessibilityIdentifier("account-log-out")
             }
 
             if SocialWireAPIEnvironment.useThinAppView && !appModel.readStateSync.isPDSAuthoritative {

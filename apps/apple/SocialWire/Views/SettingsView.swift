@@ -6,6 +6,7 @@ struct SettingsView: View {
 
     /// When pushed from **Profile**, use the navigation back button instead of **Done**.
     var showsDoneButton: Bool = true
+    @AppStorage(AppAccentColor.storageKey) private var accentRaw = AppAccentColor.indigo.rawValue
     @AppStorage("the-social-wire.theme.v1") private var themeRaw = AppThemePreference.system.rawValue
     @AppStorage("the-social-wire.font.v1") private var fontRaw = AppFontPreference.sans.rawValue
     @AppStorage("the-social-wire.bold-text.v1") private var boldText = false
@@ -19,6 +20,19 @@ struct SettingsView: View {
                         Text(theme.title).tag(theme.rawValue)
                     }
                 }
+                Picker("Theme Color", selection: $accentRaw) {
+                    ForEach(AppAccentColor.allCases) { accent in
+                        Label {
+                            Text(accent.title)
+                        } icon: {
+                            Circle()
+                                .fill(accent.color)
+                                .frame(width: 16, height: 16)
+                        }
+                        .tag(accent.rawValue)
+                    }
+                }
+                .accessibilityIdentifier("settings-theme-color")
                 Picker("Typography", selection: $fontRaw) {
                     ForEach(AppFontPreference.allCases) { font in
                         Text(font.title).tag(font.rawValue)
@@ -168,10 +182,6 @@ struct SettingsView: View {
                 FeedDisplayPicker(title: "Sports", supportsCount: false, canHide: true,
                     selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showSports, showsCount: false) },
                         set: { option in Task { await appModel.setSportsVisible(option != .hideFeed) } }))
-                FeedDisplayPicker(title: "Social", supportsCount: false, canHide: true,
-                    selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showSocial, showsCount: false) },
-                        set: { option in Task { await appModel.setSocialVisible(option != .hideFeed) } }))
-                    .disabled(appModel.isSavingDiscoveryFeedVisibility)
                 FeedDisplayPicker(title: "Podcasts", supportsCount: false, canHide: true,
                     selection: Binding(get: { .current(isVisible: appModel.feedPreferences.showPodcasts, showsCount: false) },
                         set: { option in Task { await appModel.setPodcastsVisible(option != .hideFeed) } }))
