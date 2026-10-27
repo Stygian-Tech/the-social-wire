@@ -25,6 +25,7 @@ struct NewsShellView: View {
     @State private var isTabConfigurationLoaded = false
     @State private var isProfilePresented = false
     @State private var isSidebarPresented = false
+    @State private var isPersistentSidebarPresented = true
     @State private var isCustomizationPresented = false
     @State private var sectionPreferences = NewsSectionPreferences()
     #if os(iOS)
@@ -191,12 +192,15 @@ struct NewsShellView: View {
                 }
         } content: {
             HStack(spacing: 0) {
-                if horizontalSizeClass == .regular {
+                if horizontalSizeClass == .regular && isPersistentSidebarPresented {
                     NavigationStack {
                         navigationSidebar
+                            // The sidebar is an internal column, away from the trailing system bar.
+                            .ignoresSafeArea(.container, edges: .trailing)
                             .navigationTitle("The Social Wire")
                     }
                     .frame(minWidth: 240, idealWidth: 280, maxWidth: 320)
+                    .accessibilityIdentifier("news-persistent-sidebar")
                     Divider()
                 }
                 phoneTabs
@@ -339,11 +343,15 @@ struct NewsShellView: View {
     private func showSidebar() {
         #if os(iOS)
         if usesPhoneTabs {
-            if horizontalSizeClass != .regular { isSidebarPresented = true }
+            if horizontalSizeClass == .regular {
+                isPersistentSidebarPresented.toggle()
+            } else {
+                isSidebarPresented.toggle()
+            }
             return
         }
-        columnVisibility = .all
-        compactColumn = .sidebar
+        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+        compactColumn = columnVisibility == .detailOnly ? .detail : .sidebar
         #else
         isSidebarPresented = true
         #endif

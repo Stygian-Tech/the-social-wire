@@ -25,14 +25,26 @@ final class QuillSocialParityUITests: XCTestCase {
         app.launch()
         let sidebar = app.descendants(matching: .any)["news-sidebar"].firstMatch
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
+        let sidebarColumn = app.descendants(matching: .any)["news-persistent-sidebar"].firstMatch
+        if UIDevice.current.userInterfaceIdiom != .pad {
+            XCTAssertTrue(sidebarColumn.exists)
+            XCTAssertGreaterThanOrEqual(sidebar.frame.width, sidebarColumn.frame.width - 2,
+                                        "The sidebar must not reserve a second trailing toolbar gutter")
+        }
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         XCTAssertFalse(app.buttons["Browse"].exists)
         let home = app.buttons["news-social-timeline"]
-        reveal(home, in: app)
+        XCTAssertTrue(home.waitForExistence(timeout: 10))
         XCTAssertGreaterThan(home.frame.width, sidebar.frame.width * 0.8)
         home.tap()
         XCTAssertTrue(post("Quill Fixture Root", in: app).waitForExistence(timeout: 10))
         XCTAssertTrue(sidebar.exists)
+        app.buttons["news-show-sidebar"].firstMatch.tap()
+        XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(post("Quill Fixture Root", in: app).exists)
+        app.buttons["news-show-sidebar"].firstMatch.tap()
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        XCTAssertTrue(post("Quill Fixture Root", in: app).exists)
         app.buttons["news-social-notifications"].tap()
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 5))
         home.tap()
