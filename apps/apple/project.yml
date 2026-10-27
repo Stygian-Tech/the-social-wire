@@ -29,10 +29,6 @@ targets:
   SocialWire:
     type: application
     platform: iOS
-    configFiles:
-      Debug: Config/SocialWire.xcconfig
-      Beta: Config/SocialWire.xcconfig
-      Release: Config/SocialWire.xcconfig
     sources:
       - path: SocialWire
       # `.xcassets` outside this folder — e.g. `apps/apple/Media.xcassets` — will NOT be merged in; move it under
@@ -46,8 +42,6 @@ targets:
         CFBundleDisplayName: The Social Wire
         # Short bundle name (Settings, Spotlight, etc.); **`PRODUCT_NAME`** stays `SocialWire` for module / binary paths.
         CFBundleName: The Social Wire
-        NSCameraUsageDescription: Take photos to share in stories.
-        KLIPY_API_KEY: $(KLIPY_API_KEY)
         CFBundleURLTypes:
           - CFBundleURLName: com.samclemente.the-social-wire.oauth
             CFBundleURLSchemes:

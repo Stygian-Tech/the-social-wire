@@ -3,10 +3,22 @@ import SwiftUI
 struct LibraryNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     let sceneModel: NewsSceneModel
+    @State private var showingPublications = false
 
     var body: some View {
         articlesContent
         .accessibilityIdentifier("news-tab-content-library")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Publications", systemImage: "books.vertical") {
+                    showingPublications = true
+                }
+                .accessibilityIdentifier("news-browse-publications")
+            }
+        }
+        .sheet(isPresented: $showingPublications) {
+            NavigationStack { LibraryPublicationChooser() }
+        }
         .task(id: appModel.feedSelection) {
             await appModel.loadSelectedArticleFeedIfNeeded()
         }
@@ -23,7 +35,7 @@ struct LibraryNewsView: View {
             ContentUnavailableView(
                 "Select a Publication",
                 systemImage: "newspaper",
-                description: Text("Choose a folder or publication from the sidebar to browse its latest stories.")
+                description: Text("Choose Publications to browse a folder or publication’s latest stories.")
             )
         }
     }

@@ -8,7 +8,7 @@ final class UnifiedNavigationUITests: XCTestCase {
         app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists", "--ui-testing-reset-tabs"] + additionalArguments
         if compactWindow { app.launchArguments.append("--ui-testing-compact-window") }
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-library"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-library"].firstMatch.waitForExistence(timeout: 8))
         return app
     }
 
@@ -37,9 +37,9 @@ final class UnifiedNavigationUITests: XCTestCase {
     func testReadLaterAndArchiveSwitchWithHorizontalSwipes() {
         let app = launch()
         selectRoot("Read Later", in: app)
-        let saved = app.descendants(matching: .any)["news-tab-content-saved"]
+        let saved = app.descendants(matching: .any)["news-tab-content-saved"].firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars.buttons["Read Later"].firstMatch.isSelected)
+        assertSelectedFeed("Read Later", in: app)
         saved.swipeLeft()
         assertSelectedFeed("Archive", in: app)
         saved.swipeRight()
@@ -48,7 +48,7 @@ final class UnifiedNavigationUITests: XCTestCase {
 
     func testNewsFeedsSwitchWithHorizontalSwipesAndRememberSelection() {
         let app = launch()
-        let library = app.descendants(matching: .any)["news-tab-content-library"]
+        let library = app.descendants(matching: .any)["news-tab-content-library"].firstMatch
         assertSelectedFeed("Subscribed", in: app)
         library.swipeLeft()
         assertSelectedFeed("Following", in: app)
@@ -59,20 +59,34 @@ final class UnifiedNavigationUITests: XCTestCase {
         assertSelectedFeed("Subscribed", in: app)
     }
 
+    func testSubscribedPublicationsRemainReachableWithoutCustomSidebar() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-sidebar-publications"]
+        app.launch()
+        let browse = app.buttons["news-browse-publications"]
+        XCTAssertTrue(browse.waitForExistence(timeout: 5))
+        browse.tap()
+        let publication = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Subscribed Publication'" )).firstMatch
+        XCTAssertTrue(publication.waitForExistence(timeout: 5))
+        publication.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-library"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(browse.isHittable)
+    }
+
     func testTopicsFeedsSwitchWithHorizontalSwipes() {
         let app = launch()
         selectRoot("Topics", in: app)
-        let finance = app.descendants(matching: .any)["news-tab-content-finance"]
+        let finance = app.descendants(matching: .any)["news-tab-content-finance"].firstMatch
         XCTAssertTrue(finance.waitForExistence(timeout: 5))
         finance.swipeLeft()
-        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-sports"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-sports"].firstMatch.waitForExistence(timeout: 5))
     }
 
     func testListFeedsSwitchWithHorizontalSwipes() {
         let app = launch(additionalArguments: ["--ui-testing-list-swipes"])
         selectRoot("Lists", in: app)
         app.buttons["lists.row.at://did:plc:fixture/app.standard-reader.list/main"].tap()
-        let articles = app.descendants(matching: .any)["lists.articles"]
+        let articles = app.descendants(matching: .any)["lists.articles"].firstMatch
         XCTAssertTrue(articles.waitForExistence(timeout: 5))
         articles.swipeLeft()
         XCTAssertTrue(app.navigationBars["Second List"].waitForExistence(timeout: 5))
@@ -92,7 +106,7 @@ final class UnifiedNavigationUITests: XCTestCase {
         for _ in 0..<6 where !logout.isHittable { app.swipeUp() }
         XCTAssertTrue(logout.isHittable)
         app.navigationBars["Profile"].buttons["Done"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-library"].firstMatch.waitForExistence(timeout: 5))
     }
 
     private func assertSections(in app: XCUIApplication) {
@@ -105,8 +119,8 @@ final class UnifiedNavigationUITests: XCTestCase {
     }
 
     private func assertSelectedFeed(_ title: String, in app: XCUIApplication) {
-        let button = app.navigationBars.buttons[title].firstMatch
-        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND isSelected == true"), object: button)
+        let picker = app.buttons["news-feed-picker"].firstMatch
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND value == %@", title), object: picker)
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
     }
 

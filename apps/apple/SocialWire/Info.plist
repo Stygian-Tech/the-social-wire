@@ -33,12 +33,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>KLIPY_API_KEY</key>
-	<string>$(KLIPY_API_KEY)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>Take photos to share in stories.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

@@ -617,7 +617,7 @@ private struct NewsFeedShellView: View {
                 Text(effectiveTitle)
                     .font(.headline)
             } else {
-                NewsHorizontalNavigationBar(items: navigationItems, selection: $selection)
+                NewsFeedPicker(items: navigationItems, selection: $selection)
             }
         }
         if !usesSidebarNavigation {
@@ -807,55 +807,25 @@ private struct NewsNavigationItem: Identifiable, Hashable {
     }
 }
 
-private struct NewsHorizontalNavigationBar: View {
+private struct NewsFeedPicker: View {
     let items: [NewsNavigationItem]
     @Binding var selection: NewsTabSlot
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(items) { item in
-                        Button {
-                            selection = item.slot
-                        } label: {
-                            Label(item.title, systemImage: item.systemImage)
-                                .font(.subheadline.weight(selection == item.slot ? .semibold : .regular))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(
-                                    selection == item.slot
-                                        ? AnyShapeStyle(Color.accentColor.opacity(0.18))
-                                        : AnyShapeStyle(.thinMaterial),
-                                    in: .capsule
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(selection == item.slot ? .isSelected : [])
-                        .id(item.slot)
-                    }
+        Menu {
+            ForEach(items) { item in
+                Button {
+                    selection = item.slot
+                } label: {
+                    Label(item.title, systemImage: selection == item.slot ? "checkmark" : item.systemImage)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
             }
-            .scrollIndicators(.hidden)
-            .onAppear { scrollToSelection(using: proxy, animated: false) }
-            .onChange(of: selection) { _, _ in
-                scrollToSelection(using: proxy, animated: true)
-            }
-            .onChange(of: items) { _, _ in
-                scrollToSelection(using: proxy, animated: false)
+        } label: {
+            if let selected = items.first(where: { $0.slot == selection }) {
+                Label(selected.title, systemImage: selected.systemImage)
             }
         }
-    }
-
-    private func scrollToSelection(using proxy: ScrollViewProxy, animated: Bool) {
-        if animated {
-            withAnimation(.snappy) {
-                proxy.scrollTo(selection, anchor: .center)
-            }
-        } else {
-            proxy.scrollTo(selection, anchor: .center)
-        }
+        .accessibilityIdentifier("news-feed-picker")
+        .accessibilityValue(items.first(where: { $0.slot == selection })?.title ?? "")
     }
 }

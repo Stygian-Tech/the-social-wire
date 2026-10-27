@@ -7,9 +7,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-reset-tabs"]
         app.launch()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
-        let subscribed = tabButton("Subscribed", in: app)
-        XCTAssertTrue(subscribed.waitForExistence(timeout: 3))
-        XCTAssertTrue(subscribed.isHittable)
+        assertSelectedFeed("Subscribed", in: app)
         let add = app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout: 3))
         add.tap()
@@ -18,19 +16,11 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Add Publication"].waitForExistence(timeout: 3))
         app.buttons["Cancel"].firstMatch.tap()
         selectRoot("Read Later", in: app)
-        let archive = tabButton("Archive", in: app)
-        XCTAssertTrue(archive.waitForExistence(timeout: 3))
-        archive.tap()
-        XCTAssertTrue(archive.isSelected)
+        selectFeed("Archive", in: app)
         XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
-
-        let readLater = app.navigationBars.buttons["Read Later"]
-        XCTAssertTrue(readLater.waitForExistence(timeout: 3))
-        readLater.tap()
-        XCTAssertTrue(readLater.isSelected)
-
+        selectFeed("Read Later", in: app)
         selectRoot("News", in: app)
-        subscribed.tap()
+        selectFeed("Subscribed", in: app)
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
         XCTAssertTrue(add.waitForExistence(timeout: 3))
     }
@@ -40,15 +30,20 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-reset-tabs", "--ui-testing-shell-routing"]
         app.launch()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
-        let following = tabButton("Following", in: app)
-        XCTAssertTrue(following.waitForExistence(timeout: 3))
+        let picker = app.buttons["news-feed-picker"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        picker.tap()
+        XCTAssertTrue(app.buttons["Following"].waitForExistence(timeout: 3))
+        app.buttons["Subscribed"].firstMatch.tap()
         app.buttons["fixture-hide-following"].tap()
-        XCTAssertTrue(following.waitForNonExistence(timeout: 3))
+        picker.tap()
+        XCTAssertFalse(app.buttons["Following"].exists)
+        app.buttons["Subscribed"].firstMatch.tap()
         selectRoot("Read Later", in: app)
         XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
         app.buttons["fixture-select-publication"].tap()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
-        XCTAssertTrue(tabButton("Subscribed", in: app).isSelected)
+        assertSelectedFeed("Subscribed", in: app)
         XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
         let markRead = app.buttons["feed-mark-all-read"]
         XCTAssertTrue(markRead.waitForExistence(timeout: 3))
@@ -58,18 +53,6 @@ final class NewsShellSmokeUITests: XCTestCase {
         // The fixture selects a publication without loading the sidebar's title index.
         XCTAssertTrue(confirmation.staticTexts["Mark every unread story in This Publication as read?"].exists)
         confirmation.buttons["Cancel"].tap()
-    }
-
-    private func tabButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
-        let tabBarButton = app.tabBars.buttons[label]
-        if tabBarButton.waitForExistence(timeout: 1) {
-            return tabBarButton
-        }
-        let button = app.buttons[label]
-        if button.waitForExistence(timeout: 1) {
-            return button
-        }
-        return app.descendants(matching: .any)[label].firstMatch
     }
 
     func testTopicFeedsRemainReachableFromNativeTopicsTab() {
@@ -184,18 +167,25 @@ final class NewsShellSmokeUITests: XCTestCase {
         }
         selectRoot(root, in: app)
         if label == "Lists" { return }
-        let target = app.navigationBars.buttons[label].firstMatch
-        guard target.waitForExistence(timeout: 5) else {
-            XCTFail("Missing feed: \(label)")
-            return
-        }
-        let rail = app.navigationBars.scrollViews.firstMatch
-        if rail.exists { revealHorizontally(target, in: rail) }
-        guard waitUntilHittable(target) else {
-            XCTFail("Unreachable feed: \(label)")
-            return
-        }
-        target.tap()
+        selectFeed(label, in: app)
+    }
+
+    private func selectFeed(_ title: String, in app: XCUIApplication) {
+        let picker = app.buttons["news-feed-picker"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitUntilHittable(picker))
+        picker.tap()
+        let option = app.buttons[title].firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitUntilHittable(option))
+        option.tap()
+        assertSelectedFeed(title, in: app)
+    }
+
+    private func assertSelectedFeed(_ title: String, in app: XCUIApplication) {
+        let picker = app.buttons["news-feed-picker"].firstMatch
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND value == %@", title), object: picker)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
     }
 
     private func selectRoot(_ title: String, in app: XCUIApplication) {

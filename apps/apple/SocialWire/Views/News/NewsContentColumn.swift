@@ -11,10 +11,12 @@ struct NewsContentColumn: View {
                 WireNewsView(sceneModel: sceneModel)
             case .finance:
                 FinanceNewsView(sceneModel: sceneModel)
+                    .accessibilityIdentifier("news-tab-content-finance")
             case .podcasts:
                 PodcastsView()
             case .sports:
                 SportsNewsView()
+                    .accessibilityIdentifier("news-tab-content-sports")
             case .circle:
                 CircleNewsView(sceneModel: sceneModel)
             case .library:

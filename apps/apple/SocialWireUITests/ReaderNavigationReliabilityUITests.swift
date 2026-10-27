@@ -19,10 +19,9 @@ final class ReaderNavigationReliabilityUITests: XCTestCase {
         assertScope("One Publication", in: app)
         XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
 
-        let subscribed = app.navigationBars.buttons["Subscribed"].firstMatch
-        XCTAssertTrue(subscribed.isSelected)
-        XCTAssertTrue(subscribed.isHittable)
-        subscribed.tap()
+        let picker = app.buttons["news-feed-picker"].firstMatch
+        XCTAssertEqual(picker.value as? String, "Subscribed")
+        selectFeed("Subscribed", in: app)
         assertScope("All Subscribed", in: app)
     }
 
@@ -33,7 +32,7 @@ final class ReaderNavigationReliabilityUITests: XCTestCase {
         app.buttons["fixture-refresh-preferences"].tap()
         assertScope("One Publication", in: app)
         XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["Read Later"].tap()
+        app.tabBars.buttons["Topics"].tap()
         app.tabBars.buttons["News"].tap()
         assertScope("One Publication", in: app)
         XCTAssertTrue(app.staticTexts["A Short Headline"].waitForExistence(timeout: 5))
@@ -41,14 +40,20 @@ final class ReaderNavigationReliabilityUITests: XCTestCase {
 
     func testFollowingShortcutChangesTheActiveFeed() throws {
         let app = try launch(sidebarPublications: true)
-        let following = app.navigationBars.buttons["Following"].firstMatch
-        XCTAssertTrue(following.waitForExistence(timeout: 5))
-        let rail = app.navigationBars.scrollViews.firstMatch
-        for _ in 0..<4 where !following.isHittable { rail.swipeLeft() }
-        XCTAssertTrue(following.isHittable)
-        following.tap()
+        selectFeed("Following", in: app)
         assertScope("All Following", in: app)
         XCTAssertTrue(app.tabBars.buttons["News"].isSelected)
+    }
+
+    private func selectFeed(_ title: String, in app: XCUIApplication) {
+        let picker = app.buttons["news-feed-picker"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        picker.tap()
+        let option = app.buttons[title].firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 3))
+        option.tap()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", title), object: picker)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
     }
 
     private func assertScope(_ expected: String, in app: XCUIApplication) {

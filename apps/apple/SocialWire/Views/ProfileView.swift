@@ -6,21 +6,12 @@ struct ProfileView: View {
     @State private var showPurgeIndexedDataConfirm = false
     @State private var showPublicReadHistoryConfirm = false
     var settingsRoute: NewsRoute? = nil
-    var onShowSocialProfile: (() -> Void)? = nil
 
     var body: some View {
         List {
             Section {
                 HStack(spacing: 16) {
-                    if let onShowSocialProfile {
-                        Button(action: onShowSocialProfile) {
-                            ViewerProfileAvatar(size: 56)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("View Social Profile")
-                    } else {
-                        ViewerProfileAvatar(size: 56)
-                    }
+                    ViewerProfileAvatar(size: 56)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(displayName)
                             .font(.headline)

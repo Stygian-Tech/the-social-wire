@@ -3,7 +3,7 @@ import SwiftUI
 struct StandardReaderListsWorkspace: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Binding var isProfilePresented: Bool
-    @GestureState private var isSwitchingLists = false
+    @State private var listPage = ""
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showingManagement = false
@@ -47,7 +47,8 @@ struct StandardReaderListsWorkspace: View {
             openedEntryID = nil
             Task { await model.loadFeed() }
         }
-        .onChange(of: model.selectedList?.uri) { _, _ in
+        .onChange(of: model.selectedList?.uri) { _, uri in
+            listPage = uri ?? ""
             settleDeferredRead()
             entryOpenRevision += 1
         }
@@ -80,11 +81,7 @@ struct StandardReaderListsWorkspace: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
                 .toolbar { managementButton }
         } content: {
-            ZStack {
-                articlesColumn
-                    .allowsHitTesting(!isSwitchingLists)
-            }
-            .simultaneousGesture(listSwipeGesture)
+            pagedArticles
             .navigationTitle(model.selectedList?.name ?? "Articles")
             .navigationSplitViewColumnWidth(min: 260, ideal: 380, max: 520)
         } detail: {
@@ -92,21 +89,36 @@ struct StandardReaderListsWorkspace: View {
         }
     }
 
-    private var listSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 20)
-            .updating($isSwitchingLists) { value, isSwitching, _ in
-                isSwitching = abs(value.translation.width) > abs(value.translation.height)
+    @ViewBuilder
+    private var pagedArticles: some View {
+        #if os(iOS)
+        if let selected = model.selectedList {
+            TabView(selection: $listPage) {
+                ForEach(model.lists) { list in
+                    Group {
+                        if list.uri == listPage, list.uri == model.selectedList?.uri {
+                            articlesColumn
+                        } else {
+                            ProgressView("Loading Articles")
+                        }
+                    }
+                    .tag(list.uri)
+                }
             }
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height),
-                      abs(value.translation.width) >= 60,
-                      let selected = model.selectedList,
-                      let index = model.lists.firstIndex(where: { $0.uri == selected.uri }) else { return }
-                let next = index + (value.translation.width < 0 ? 1 : -1)
-                guard model.lists.indices.contains(next) else { return }
-                let destination = model.lists[next]
-                Task { await model.select(destination) }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .onAppear { listPage = selected.uri }
+            .task(id: listPage) {
+                guard let list = model.lists.first(where: { $0.uri == listPage }),
+                      list.uri != model.selectedList?.uri else { return }
+                openedEntryID = nil
+                await model.select(list)
             }
+        } else {
+            articlesColumn
+        }
+        #else
+        articlesColumn
+        #endif
     }
 
     private var sidebarLeadingPlacement: ToolbarItemPlacement {
