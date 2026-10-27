@@ -4,14 +4,19 @@ import XCTest
 final class NewsShellSmokeUITests: XCTestCase {
     func testSocialDestinationOpensItsDetailOnCompactScreens() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing-news-shell"]
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-reset-tabs"]
         app.launch()
         let social = app.tabBars.buttons["Social"]
         XCTAssertTrue(social.waitForExistence(timeout: 5))
         social.tap()
-        let timeline = app.buttons["social.destination.timeline"]
+        XCTAssertTrue(app.buttons["Compose Post"].waitForExistence(timeout: 3))
+        let sidebar = app.buttons["news-show-sidebar"].firstMatch
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        sidebar.tap()
+        let timeline = app.buttons["news-social-timeline"]
         XCTAssertTrue(timeline.waitForExistence(timeout: 3))
         timeline.tap()
+        XCTAssertTrue(timeline.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Compose Post"].waitForExistence(timeout: 3))
     }
 
