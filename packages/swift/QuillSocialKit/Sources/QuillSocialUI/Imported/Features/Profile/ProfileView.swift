@@ -70,11 +70,14 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            if showsStickyIdentity, let profile = model.profile {
+            if let profile = model.profile {
                 ToolbarItem(placement: .principal) {
                     ProfileStickyIdentityView(profile: profile)
                         .accessibilityIdentifier("social-profile-sticky-identity")
-                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        // Keep navigation-bar geometry stable while scrolling the header.
+                        .opacity(showsStickyIdentity ? 1 : 0)
+                        .allowsHitTesting(showsStickyIdentity)
+                        .accessibilityHidden(!showsStickyIdentity)
                 }
             }
             if model.isCurrentProfile {
@@ -90,7 +93,6 @@ struct ProfileView: View {
                 }
             }
         }
-        .animation(.snappy(duration: 0.2), value: showsStickyIdentity)
         .sheet(isPresented: $showsSettings) {
             NavigationStack { ProfileSettingsView() }
         }

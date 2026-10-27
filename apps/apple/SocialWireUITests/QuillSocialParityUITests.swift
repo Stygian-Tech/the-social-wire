@@ -19,14 +19,39 @@ final class QuillSocialParityUITests: XCTestCase {
     }
 
     func testLongProfileRemainsResponsiveAfterScrolling() {
+        assertProfileRemainsResponsiveAfterScrolling(actor: "fixtureauthor")
+    }
+
+    func testOwnProfileRemainsResponsiveAfterScrolling() {
+        assertProfileRemainsResponsiveAfterScrolling(actor: "fixtureviewer")
+    }
+
+    private func assertProfileRemainsResponsiveAfterScrolling(actor: String) {
         let app = launch(additionalArguments: ["--ui-testing-long-profile"])
-        let avatar = app.buttons["Open @did:plc:fixtureauthor Profile"].firstMatch
+        let avatar = app.buttons["Open @did:plc:\(actor) Profile"].firstMatch
+        reveal(avatar, in: app)
         avatar.tap()
         let scroll = app.scrollViews["social-profile-scroll"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        let identity = app.descendants(matching: .any)["social-profile-sticky-identity"]
+        XCTAssertFalse(identity.isHittable)
+        for _ in 0..<2 {
+            scroll.swipeUp()
+            scroll.swipeUp()
+            XCTAssertTrue(identity.waitForExistence(timeout: 5))
+            XCTAssertTrue(identity.isHittable)
+            let picture = app.buttons["Profile picture"].firstMatch
+            for _ in 0..<4 {
+                if picture.isHittable && !identity.isHittable { break }
+                scroll.swipeDown()
+            }
+            XCTAssertTrue(picture.isHittable)
+            XCTAssertFalse(identity.isHittable)
+        }
         scroll.swipeUp()
         scroll.swipeUp()
-        XCTAssertTrue(app.descendants(matching: .any)["social-profile-sticky-identity"].waitForExistence(timeout: 5))
+        XCTAssertTrue(identity.waitForExistence(timeout: 5))
+        XCTAssertTrue(identity.isHittable)
         let account = app.buttons["social-open-account"].firstMatch
         XCTAssertTrue(account.isHittable)
         account.tap()
