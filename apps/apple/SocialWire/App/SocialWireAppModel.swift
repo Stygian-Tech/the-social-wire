@@ -246,7 +246,7 @@ final class SocialWireAppModel {
         gateway = SocialWireGatewayClient(auth: authService, urlSession: gatewayURLSession, transport: gatewayTransport)
         let socialTransport = xrpcTransport ?? { try await URLSession.shared.data(for: $0) }
         self.socialTransport = socialTransport
-        let socialScope = SocialSessionScope(viewerDID: authService.session?.did, auth: authService)
+        let socialScope = SocialSessionScope(session: authService.session, loginIdentity: authService.loginIdentity, auth: authService)
         socialSessionScope = socialScope
         let socialXRPC = XRPCClient(auth: authService, resolver: resolver, transport: socialScope.transport(using: socialTransport))
         social = SocialWorkspaceModel(xrpc: socialXRPC, publicationService: PublicationService(xrpc: socialXRPC), gateway: gateway, viewerDID: authService.session?.did)
@@ -256,16 +256,16 @@ final class SocialWireAppModel {
         readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         authService.setSessionChangeHandler { [weak self] session in
-            if self?.socialSessionScope.viewerDID != session?.did {
-                self?.invalidateReaderRequests()
-                self?.sidebarRefreshRevision += 1
-                self?.restoredFeedViewerDID = nil
-                self?.pendingRestoredFeedSelection = nil
-                self?.pendingRestorationRevision = nil
-                self?.bootstrapCoordinator.reset()
-                self?.isLoading = false
-                self?.sidebarFetching = false
-                self?.folderPublicationsLoading = false
+            if let self, !self.socialSessionScope.matches(session: session, loginIdentity: self.authService.loginIdentity) {
+                self.invalidateReaderRequests()
+                self.sidebarRefreshRevision += 1
+                self.restoredFeedViewerDID = nil
+                self.pendingRestoredFeedSelection = nil
+                self.pendingRestorationRevision = nil
+                self.bootstrapCoordinator.reset()
+                self.isLoading = false
+                self.sidebarFetching = false
+                self.folderPublicationsLoading = false
             }
             self?.articleSocialStateContextID = UUID()
             self?.articleSocialStateLoadingKeys = []
@@ -852,9 +852,9 @@ final class SocialWireAppModel {
     }
 
     private func bindSocialWorkspace(viewerDID: String?) {
-        if socialSessionScope.viewerDID != viewerDID {
+        if !socialSessionScope.matches(session: authService.session, loginIdentity: authService.loginIdentity) {
             socialSessionScope.invalidate()
-            let scope = SocialSessionScope(viewerDID: viewerDID, auth: authService)
+            let scope = SocialSessionScope(session: authService.session, loginIdentity: authService.loginIdentity, auth: authService)
             socialSessionScope = scope
             let client = XRPCClient(auth: authService, resolver: resolver, transport: scope.transport(using: socialTransport))
             social = SocialWorkspaceModel(xrpc: client, publicationService: PublicationService(xrpc: client), gateway: gateway, viewerDID: viewerDID)
