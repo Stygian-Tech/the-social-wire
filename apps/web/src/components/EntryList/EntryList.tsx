@@ -9,6 +9,7 @@ import {
   useRef,
 } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RefreshCw } from "lucide-react";
 import {
   useAggregateFeedEntries,
   useEntries,
@@ -318,10 +319,12 @@ export function EntryList({
         <button
           type="button"
           disabled={activeIsFetching}
-          className="text-primary underline-offset-4 hover:underline"
-          onClick={() => void activeRefetch()}
+          aria-busy={activeIsFetching}
+          className="inline-flex min-h-11 items-center gap-2 text-primary underline-offset-4 hover:underline"
+          onClick={() => void activeRefetch().catch(() => undefined)}
         >
-          Retry
+          {activeIsFetching ? <RefreshCw aria-hidden="true" className="size-4 animate-spin" /> : null}
+          <span role="status" aria-live="polite">{activeIsFetching ? "Retrying…" : "Retry"}</span>
         </button>
       </div>
     );
