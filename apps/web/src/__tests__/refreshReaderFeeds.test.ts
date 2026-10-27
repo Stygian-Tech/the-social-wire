@@ -5,7 +5,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { EntriesPage } from "@/hooks/useEntries";
 import * as appView from "@/lib/thinAppViewClient";
 import { refreshReaderFeeds } from "@/lib/refreshReaderFeeds";
-import { cancelViewerFeedRefreshes } from "@/lib/feedRefreshCoordinator";
+import { cancelViewerFeedRefreshes, advanceFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 
 const viewerDid = "did:plc:viewer";
 const oauthSession = { did: viewerDid } as unknown as OAuthSession;
@@ -138,7 +138,7 @@ describe("refreshReaderFeeds", () => {
     }
   }
 
-  it("captures each queued request's revision when that read starts", async () => {
+  it("fences queued requests at operation start when read state changes", async () => {
     for (let index = 0; index < 4; index++) { const key = publication(`pub-${index}`); seed(key); activate(key); }
     const started = deferred<void>(), release = deferred<void>();
     let count = 0;
@@ -151,9 +151,10 @@ describe("refreshReaderFeeds", () => {
     await started.promise;
     await cancelViewerFeedRefreshes(client, viewerDid);
     release.resolve();
-    expect(await pending).toEqual({ newArticleCount: 1 });
+    expect(await pending).toEqual({ newArticleCount: 0 });
     expect(client.getQueryData<InfiniteData<EntriesPage>>(publication("pub-0"))?.pages[0]).toEqual(page("old"));
-    expect(client.getQueryData<InfiniteData<EntriesPage>>(publication("pub-3"))?.pages[0].entries[0].entryId).toBe("current-new");
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(publication("pub-3"))?.pages[0].entries[0].entryId).toBe("old");
+    expect(fetchPage).toHaveBeenCalledTimes(3);
   });
 
   it("rejects a response owned by a removed and recreated exact query", async () => {
@@ -233,6 +234,22 @@ describe("refreshReaderFeeds", () => {
       await expect(pending).rejects.toHaveProperty("name", "TimeoutError");
       expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(original);
     } finally { timeout.mockRestore(); }
+  });
+
+  it("does not replace a newer refresh while a manual source batch is pending", async () => {
+    const key = aggregate();
+    seed(key);
+    activate(key);
+    const started = deferred<void>();
+    const response = deferred<EntriesPage>();
+    fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+    const pending = refresh();
+    await started.promise;
+    advanceFeedRefreshRevision(client, key);
+    const latest = seed(key, [page("latest")]);
+    response.resolve(page("obsolete"));
+    expect(await pending).toEqual({ newArticleCount: 0 });
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(latest);
   });
 
   it("does no work for an already-aborted signal", async () => {

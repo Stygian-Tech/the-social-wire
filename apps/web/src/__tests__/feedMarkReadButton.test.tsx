@@ -191,3 +191,23 @@ it("clears partial ages on failure and aborts when closed", async () => {
   fireEvent.keyDown(menu, { key: "Escape" });
   await waitFor(() => expect(signal.aborted).toBe(true));
 });
+
+it("keeps the all-read confirmation pending until accepted and lets failures retry", async () => {
+  let finish!: (accepted: boolean) => void;
+  const submit = mock(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+  render(<FeedMarkReadButton {...props} onMarkAllRead={submit} />);
+  fireEvent.click(screen.getByRole("button", { name: "Mark All As Read" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mark All As Read" }));
+  expect(within(dialog).getByRole("button", { name: "Marking…" }).getAttribute("aria-busy")).toBe("true");
+  expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  await act(async () => finish(false));
+  expect(within(dialog).getByRole("alert").textContent).toContain("Couldn’t Mark Stories As Read");
+  expect(submit).toHaveBeenCalledTimes(1);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mark All As Read" }));
+  expect(submit).toHaveBeenCalledTimes(2);
+  await act(async () => finish(true));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});

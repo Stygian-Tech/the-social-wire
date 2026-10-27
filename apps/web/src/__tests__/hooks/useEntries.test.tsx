@@ -319,6 +319,27 @@ describe("useEntry", () => {
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeUndefined();
   });
+
+  it("refreshes the Subscribed head when returning to the visible tab", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, unmount } = renderHook(() => useAggregateFeedEntries({ kind: "subscribed" }), {
+      wrapper: ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    try {
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      const requests = () => mockFetchHandler.mock.calls.filter(([url]) => url.includes("app.thesocialwire.appview.getFeed"));
+      const previous = requests().length;
+      act(() => window.dispatchEvent(new window.Event("focus")));
+      await waitFor(() => expect(requests().length).toBe(previous + 1));
+      expect(result.current.data?.pages).toHaveLength(1);
+    } finally {
+      unmount(); client.clear();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
   it("refreshes only the resolved list metadata after its prepared first page", async () => {
     const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
     const invalidate = mock(client.invalidateQueries.bind(client));
@@ -597,6 +618,32 @@ describe("reader lifecycle refreshes", () => {
         });
       }
     }
+
+    it(`${scope} cancels a visible refresh and permits later invalidation with installed options`, async () => {
+      seed(scope);
+      client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)));
+      const { result } = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      await settle();
+      let finish!: (page: EntriesPage) => void;
+      const feed = spyOn(appviewClient, "listAggregateFeedFromAppView")
+        .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+        .mockResolvedValue({ entries: [row("confirmed-successor")] });
+      lifecycleRestores.push(() => feed.mockRestore());
+      const lifetime = new AbortController();
+      await act(async () => {
+        const refreshing = result.current.refetch(lifetime.signal);
+        await waitFor(() => expect(feed).toHaveBeenCalledTimes(1));
+        lifetime.abort();
+        await refreshing.catch(() => undefined);
+        await client.invalidateQueries({ queryKey: keyFor(scope), exact: true });
+      });
+      expect(feed.mock.calls[0][0].signal?.aborted).toBe(true);
+      expect(feed).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(ids(result.current.data)).toContain("confirmed-successor"));
+      await act(async () => { finish({ entries: [row("retired-visible")] }); });
+      expect(ids(result.current.data)).not.toContain("retired-visible");
+      expect(result.current.isError).toBe(false);
+    });
 
     for (const settlement of ["before", "after"] as const) {
       it(`${scope} remount starts fresh before aborted fetch settles ${settlement} replacement resolution`, async () => {

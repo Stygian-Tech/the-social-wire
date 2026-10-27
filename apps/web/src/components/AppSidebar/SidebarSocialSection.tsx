@@ -31,7 +31,10 @@ export function SidebarSocialSection({ active, activeSection = "home", onHome, o
       {SOCIAL_DESTINATIONS.map(({ name, section, icon: Icon, href }) => {
         const selected = active && activeSection === section;
         return <SidebarMenuItem key={section}>
-          <SidebarMenuButton type="button" aria-label={`Social ${name}`} aria-current={selected ? "page" : undefined} isActive={selected} tooltip={name} onClick={() => section === "home" ? onHome() : onNavigate?.(href)} onDoubleClick={() => { if (section === "home" && selected) requestSocialHomeRefresh(); }}>
+          <SidebarMenuButton type="button" aria-label={`Social ${name}`} aria-current={selected ? "page" : undefined} isActive={selected} tooltip={name} onClick={() => {
+            if (section === "home") { requestSocialHomeRefresh(); onHome(); }
+            else onNavigate?.(href);
+          }}>
             <Icon aria-hidden="true" /><span className="truncate">{name}</span>
           </SidebarMenuButton>
           {section === "notifications" ? <UnreadSidebarBadge count={notificationCount} /> : section === "messages" ? <UnreadSidebarBadge count={messageCount} /> : null}

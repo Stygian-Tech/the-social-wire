@@ -18,7 +18,7 @@ import { SocialTimelineSkeleton } from "./SocialTimelineSkeleton";
 import { moderateSocialPost } from "./socialModeration";
 import { SocialFeedsSheet } from "./SocialFeedsSheet";
 import { SocialComposeButton } from "./SocialComposeButton";
-import { SOCIAL_HOME_REFRESH_EVENT } from "@/lib/socialHomeRefresh";
+import { consumeSocialHomeRefresh, SOCIAL_HOME_REFRESH_EVENT } from "@/lib/socialHomeRefresh";
 import { groupSocialFeedItems } from "@/lib/socialFeedGrouping";
 
 export function SocialTimeline() {
@@ -36,8 +36,8 @@ export function SocialTimeline() {
   const selected = catalog.data?.feeds.find(item => item.kind === feed.kind && item.uri === feed.uri) ?? feed;
   const posts = moderation ? groupSocialFeedItems(flattenSocialPages(timeline.data?.pages ?? []), moderation).filter(item => !moderateSocialPost(item.post, moderation).ui("contentList").filter) : [];
   useFeedFirstContentTiming(`social:${session?.did}:${feed.kind}:${feed.uri ?? ""}`, !!moderation && posts.length > 0, !timeline.isFetchedAfterMount);
-  const backgroundError = moderation && timeline.data ? (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError ? socialErrorMessage(timeline.error) : undefined) : undefined;
-  const error = routeError || (!backgroundError && catalog.isError ? socialErrorMessage(catalog.error) : !backgroundError && timeline.isError ? socialErrorMessage(timeline.error) : undefined);
+  const backgroundError = moderation && timeline.data ? (catalog.isError ? socialErrorMessage(catalog.error) : timeline.isError && !timeline.isFetchNextPageError ? socialErrorMessage(timeline.error) : undefined) : undefined;
+  const error = routeError || (!backgroundError && catalog.isError ? socialErrorMessage(catalog.error) : !backgroundError && timeline.isError && !timeline.isFetchNextPageError ? socialErrorMessage(timeline.error) : undefined);
   const refreshError = backgroundError ?? (timeline.refreshError ? socialErrorMessage(timeline.refreshError) : undefined);
   const loading = !error && (catalog.isPending || timeline.isPending);
   const scrollContainer = useSocialFeedScroll(session?.did, `${feed.kind}:${feed.uri ?? ""}`, !loading && !error && !!moderation);
@@ -58,13 +58,14 @@ export function SocialTimeline() {
 
   useEffect(() => {
     const returnHome = () => {
-      if (routeError) return;
+      if (routeError || feed.kind !== "following" || !consumeSocialHomeRefresh()) return;
       if (scrollContainer.current) scrollContainer.current.scrollTop = 0;
       void refresh();
     };
     window.addEventListener(SOCIAL_HOME_REFRESH_EVENT, returnHome);
+    returnHome();
     return () => window.removeEventListener(SOCIAL_HOME_REFRESH_EVENT, returnHome);
-  }, [refresh, routeError, scrollContainer]);
+  }, [refresh, routeError, feed.kind, scrollContainer]);
 
   return <div className="relative flex min-h-0 w-full flex-1 flex-col">
     <FeedHeader title={selected.name} subtitle="Social">
@@ -94,6 +95,7 @@ export function SocialTimeline() {
           <h2 className="text-lg font-semibold">No Posts to Show</h2>
           <p className="text-sm text-muted-foreground">{timeline.data?.pages.some(page => page.feed.length) ? "Posts on this page are hidden by your moderation settings." : "New posts will appear here when this feed updates."}</p>
         </section> : null}
+        {timeline.isFetchNextPageError ? <p role="alert" className="px-2 text-sm text-destructive">Older posts could not be loaded. {socialErrorMessage(timeline.error)} Use Load More to retry.</p> : null}
         {timeline.hasNextPage ? <Button variant="outline" disabled={timeline.isFetchingNextPage || timeline.isRefreshing} onClick={() => { void timeline.fetchNextPage(); }}>{timeline.isFetchingNextPage ? "Loading…" : "Load More"}</Button> : null}
       </div> : null}
     </div>

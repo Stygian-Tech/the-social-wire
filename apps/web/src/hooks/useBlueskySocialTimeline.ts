@@ -108,6 +108,8 @@ export function useBlueskySocialTimeline(feed: SocialFeed, moderation: Moderatio
       if (getOAuthSession() !== oauth || !ownsRefresh(owner)) return;
       const freshKey = timelineKey(oauth.did, freshModeration);
       const page = await coalesceFeedFirstPage(client, requestOwner(route, oauth), [...freshKey, owner.target, owner.generation + (owner.target === owner.source ? 0 : 1)], async () => {
+        await client.cancelQueries({ queryKey: freshKey, exact: true });
+        if (getOAuthSession() !== oauth || !ownsRefresh(owner)) throw new Error(SCOPE_RECOVERY_MESSAGE);
         const fresh = await getBlueskySocialPage({ session: oauth, feed, moderation: freshModeration, deferReplyHydration: true });
         return mediaMode ? projectMediaPage(oauth, fresh, mediaMode) : fresh;
       });

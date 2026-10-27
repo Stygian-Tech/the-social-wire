@@ -20,7 +20,9 @@ beforeEach(() => {
   spyOn(BulkReadActions, "useCachedBulkReadActions").mockReturnValue({
     cachedEntryIds: [],
     bulkDisabled: false,
-    applyMarkAllRead: () => undefined,
+    isMarkingRead: false,
+    error: null,
+    applyMarkAllRead: async () => true,
     applyMarkAllUnread: () => undefined,
   });
 });
