@@ -155,8 +155,19 @@ test("bounds long event navigation and event history in separate desktop scroll 
   const workspace = screen.getByRole("region", { name: "Live Event Workspace" });
   expect(sidebar.classList.contains("lg:overflow-y-auto")).toBe(true);
   expect(workspace.classList.contains("lg:overflow-y-auto")).toBe(true);
-  expect(sidebar.parentElement!.classList.contains("lg:grid-rows-[minmax(0,1fr)]")).toBe(true);
-  expect(sidebar.parentElement!.classList.contains("lg:h-full")).toBe(true);
+  const header = screen.getByRole("heading", { name: "Live Post", level: 1 }).closest("header")!;
+  const shell = header.parentElement!;
+  expect(shell.classList.contains("lg:grid-cols-[minmax(0,1fr)_18rem]")).toBe(true);
+  expect(shell.classList.contains("lg:grid-rows-[auto_minmax(0,1fr)]")).toBe(true);
+  expect(header.classList.contains("lg:col-start-1")).toBe(true);
+  expect(workspace.classList.contains("lg:col-start-1")).toBe(true);
+  expect(workspace.classList.contains("lg:row-start-2")).toBe(true);
+  expect(sidebar.classList.contains("lg:row-span-2")).toBe(true);
+  // One shared header keeps the same adjacent mobile scroll pane and overlay.
+  expect(header.nextElementSibling?.contains(sidebar)).toBe(true);
+  expect(header.nextElementSibling?.contains(workspace)).toBe(true);
+  expect(sidebar.compareDocumentPosition(workspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getAllByRole("heading", { name: "Live Post", level: 1 })).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: /Event 39/ }));
   expect(screen.getByRole("heading", { name: "Event 39" })).toBeTruthy();
 });
