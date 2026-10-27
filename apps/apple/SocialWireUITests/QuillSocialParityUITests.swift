@@ -3,9 +3,9 @@ import UIKit
 
 @MainActor
 final class QuillSocialParityUITests: XCTestCase {
-    private func launch() -> XCUIApplication {
+    private func launch(additionalArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-quill-social", "--ui-testing-reset-tabs"]
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-quill-social", "--ui-testing-reset-tabs"] + additionalArguments
         app.launch()
         if app.tabBars.buttons["Social"].waitForExistence(timeout: 5) {
             app.tabBars.buttons["Social"].tap()
@@ -16,6 +16,23 @@ final class QuillSocialParityUITests: XCTestCase {
         }
         XCTAssertTrue(post("Quill Fixture Root", in: app).waitForExistence(timeout: 10))
         return app
+    }
+
+    func testLongProfileRemainsResponsiveAfterScrolling() {
+        let app = launch(additionalArguments: ["--ui-testing-long-profile"])
+        let avatar = app.buttons["Open @did:plc:fixtureauthor Profile"].firstMatch
+        avatar.tap()
+        let scroll = app.scrollViews["social-profile-scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        scroll.swipeUp()
+        scroll.swipeUp()
+        XCTAssertTrue(app.descendants(matching: .any)["social-profile-sticky-identity"].waitForExistence(timeout: 5))
+        let account = app.buttons["social-open-account"].firstMatch
+        XCTAssertTrue(account.isHittable)
+        account.tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: 5))
+        app.navigationBars["Profile"].buttons["Done"].tap()
+        XCTAssertTrue(scroll.exists)
     }
 
     func testAccountAndLogoutRemainReachableFromSocialProfile() {

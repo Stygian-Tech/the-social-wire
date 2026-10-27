@@ -41,6 +41,12 @@ public enum QuillSocialFixtures {
             ]]]])
         case "app.bsky.feed.getTimeline", "app.bsky.feed.getFeed", "app.bsky.feed.getListFeed", "app.bsky.feed.getAuthorFeed":
             guard parameters["cursor"] == nil else { return try json(["feed": []]) }
+            if method == "app.bsky.feed.getAuthorFeed",
+               ProcessInfo.processInfo.arguments.contains("--ui-testing-long-profile") {
+                return try json(["feed": (0..<40).map { index in
+                    ["post": post(id: "profile-\(index)", text: "Profile Scroll Fixture Post \(index)", time: index)]
+                }])
+            }
             let root = post(id: "root", text: "Quill Fixture Root", time: 0)
             let reply = post(id: "reply", text: "Quill Fixture Reply", time: 1, parent: "root")
             let repost = post(id: "reposted", text: "Quill Fixture Reposted Post", time: 2)
@@ -152,9 +158,10 @@ public enum QuillSocialFixtures {
     }
 
     private static func profile(did: String) -> [String: Any] {
-        ["did": did,
-         "handle": did == viewer ? "viewer.fixture.test" : did == reposter ? "reposter.fixture.test" : "fixture.test",
-         "displayName": did == viewer ? "Fixture Viewer" : did == reposter ? "Fixture Reposter" : "Fixture Author",
+        let longIdentity = ProcessInfo.processInfo.arguments.contains("--ui-testing-long-profile")
+        return ["did": did,
+         "handle": longIdentity ? "a-long-profile-handle.with-several-subdomains.fixture.test" : did == viewer ? "viewer.fixture.test" : did == reposter ? "reposter.fixture.test" : "fixture.test",
+         "displayName": longIdentity ? "A Long Profile Display Name With Multiple Words And Emoji 🌱🦋" : did == viewer ? "Fixture Viewer" : did == reposter ? "Fixture Reposter" : "Fixture Author",
          "description": "Offline Quill Social Fixture", "followersCount": 12, "followsCount": 8,
          "postsCount": 3, "viewer": [:], "labels": []]
     }

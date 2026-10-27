@@ -48,6 +48,7 @@ struct ProfileView: View {
                                 }
                         }
                     }
+                    .accessibilityIdentifier("social-profile-scroll")
                     .onScrollGeometryChange(for: Bool.self) { scrollGeometry in
                         scrollGeometry.visibleRect.minY > 150
                     } action: { _, isPastIdentity in
@@ -72,6 +73,7 @@ struct ProfileView: View {
             if showsStickyIdentity, let profile = model.profile {
                 ToolbarItem(placement: .principal) {
                     ProfileStickyIdentityView(profile: profile)
+                        .accessibilityIdentifier("social-profile-sticky-identity")
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
