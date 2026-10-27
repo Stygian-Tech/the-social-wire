@@ -70,6 +70,8 @@ describe("read feed header", () => {
     rerender(createElement(SidebarProvider, null, createElement(ReadArticleFilterBar)));
     expect(screen.queryByRole("alert")).toBeNull();
     expect((screen.getByRole("button", { name: "Refreshing Publications" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Refreshing Publications" }).querySelector(".animate-spin")).not.toBeNull();
+    expect(screen.getAllByRole("status").some(status => status.textContent === "Refreshing Publications…")).toBe(true);
   });
   it.each([["finance", "Finance"], ["sports", "Sports"]])("provides the shared route header for %s without unrelated reader actions", (routeFeed, title) => {
     feed = routeFeed;
