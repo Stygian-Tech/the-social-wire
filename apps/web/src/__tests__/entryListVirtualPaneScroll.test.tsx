@@ -1,5 +1,5 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { beforeAll, describe, expect, it } from "bun:test";
+import { fireEvent, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
@@ -12,25 +12,13 @@ const globalWithResizeObserver = globalThis as typeof globalThis & {
   ResizeObserver?: new (callback: ResizeObserverCallback) => ResizeObserver;
 };
 
-let originalResizeObserver: PropertyDescriptor | undefined;
-
-beforeEach(() => {
-  originalResizeObserver = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
-  if (!globalWithResizeObserver.ResizeObserver) {
-    globalWithResizeObserver.ResizeObserver = class ResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-afterEach(() => {
-  cleanup();
-  if (originalResizeObserver) Object.defineProperty(globalThis, "ResizeObserver", originalResizeObserver);
-  else Reflect.deleteProperty(globalThis, "ResizeObserver");
-  clearEntryListScrollOffsetsForTests();
-});
+if (!globalWithResizeObserver.ResizeObserver) {
+  globalWithResizeObserver.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
 
 beforeAll(() => {
   Object.defineProperty(globalThis, "Element", {

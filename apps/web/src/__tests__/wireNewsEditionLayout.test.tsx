@@ -390,11 +390,6 @@ describe("WireNewsEditionLayout", () => {
     const { WireHorizontalRail } = await import(
       "@/components/Wire/WireHorizontalRail"
     );
-    const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
-    restores.push(() => {
-      if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia);
-      else Reflect.deleteProperty(window, "matchMedia");
-    });
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: () => ({ matches: false }),
