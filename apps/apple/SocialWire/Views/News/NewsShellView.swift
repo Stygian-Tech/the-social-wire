@@ -129,6 +129,9 @@ struct NewsShellView: View {
         .onChange(of: selectedSlot, selectedSlotChanged)
         .onChange(of: selectedSection, selectedSectionChanged)
         .onChange(of: appModel.viewerDID, viewerDidChange)
+        .onChange(of: appModel.social.sessionID) { _, _ in
+            socialNavigation = SocialNavigationState()
+        }
         .onChange(of: appModel.primaryTabFeeds, primaryTabFeedsChanged)
         .onChange(of: appModel.feedPreferences) { _, _ in
             appModel.loadPrimaryTabPreferences()
@@ -464,6 +467,7 @@ struct NewsShellView: View {
             }
             Tab("Social", systemImage: "bubble.left.and.text.bubble.right", value: NewsRootSection.social) {
                 SocialWorkspaceView(destination: $selectedSocialDestination, navigation: socialNavigation)
+                    .id(appModel.social.sessionID)
             }
         }
     }
@@ -473,6 +477,7 @@ struct NewsShellView: View {
         switch section {
         case .social:
             SocialWorkspaceView(destination: $selectedSocialDestination, navigation: socialNavigation, onShowSidebar: showSidebar)
+                .id(appModel.social.sessionID)
         case .lists:
             listsWorkspace
         default:

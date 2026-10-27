@@ -19,7 +19,7 @@ struct ArticleSocialStateLifecycleTests {
         store.set(try JSONSerialization.data(withJSONObject: record).base64EncodedString(), for: "oauth.session.v2")
         await auth.restoreSession()
         let transport = ArticleSocialStateTransport()
-        let model = SocialWireAppModel(authService: auth, xrpcTransport: { try await transport.send($0) })
+        let model = SocialWireAppModel(authService: auth, xrpcTransport: { try await transport.send($0) }, initialReaderListSource: .subscribed)
         return (model, transport)
     }
 

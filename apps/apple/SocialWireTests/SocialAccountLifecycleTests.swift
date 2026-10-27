@@ -31,7 +31,7 @@ struct SocialAccountLifecycleTests {
         let transport = OAuthTestTransport([
             .init(status: 200, body: #"{"convos":[{"id":"alice-private-conversation","members":[],"unreadCount":1,"muted":false}]}"#)
         ])
-        let model = SocialWireAppModel(authService: auth, xrpcTransport: { try await transport.send($0) })
+        let model = SocialWireAppModel(authService: auth, xrpcTransport: { try await transport.send($0) }, initialReaderListSource: .subscribed)
         let aliceWorkspace = model.social
         let aliceScope = SocialSessionScope(session: auth.session, loginIdentity: auth.loginIdentity, auth: auth)
         await aliceWorkspace.messages.refreshConversations()
@@ -61,7 +61,7 @@ struct SocialAccountLifecycleTests {
         let store = OAuthTestSessionStore()
         let auth = ATProtoOAuthService(keychain: store)
         try await restore("did:plc:alice", auth: auth, store: store)
-        let model = SocialWireAppModel(authService: auth)
+        let model = SocialWireAppModel(authService: auth, initialReaderListSource: .subscribed)
         let originalWorkspace = model.social
         let scope = SocialSessionScope(viewerDID: auth.session?.did, auth: auth)
         let loginIdentity = auth.loginIdentity
