@@ -64,8 +64,9 @@ export async function refreshReaderFeeds({
 
   // Cancellation can restore pre-request data/state. Await it before invalidating
   // or reading the merge baseline so an older request cannot undo the refresh.
+  const revisions = new Map<object, number>();
   for (const query of queryClient.getQueryCache().findAll(filters)) {
-    advanceFeedRefreshRevision(queryClient, query.queryKey);
+    revisions.set(query, advanceFeedRefreshRevision(queryClient, query.queryKey));
   }
   await queryClient.cancelQueries(filters);
   signal?.throwIfAborted();
@@ -85,7 +86,9 @@ export async function refreshReaderFeeds({
       signal?.throwIfAborted();
       const query = activeQueries[nextIndex++];
       const scope = feedScope(query.queryKey)!;
-      const revision = getFeedRefreshRevision(queryClient, query.queryKey);
+      const revision = revisions.get(query);
+      if (revision === undefined || getFeedRefreshRevision(queryClient, query.queryKey) !== revision ||
+        queryClient.getQueryCache().find({ queryKey: query.queryKey, exact: true }) !== query) continue;
       try {
         const freshPage = await awaitWithAbort(listAggregateFeedFromAppView({
           ...scope,

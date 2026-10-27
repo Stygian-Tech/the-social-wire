@@ -55,8 +55,12 @@ export function FeedHeader({
             <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p>
           ) : null}
         </div>
-        {children}
       </div>
+      {children ? (
+        <div data-slot="feed-header-actions" className="ml-auto flex w-full min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {children}
+        </div>
+      ) : null}
       {mobileStatus ? <div className="w-full px-1 pb-1 text-[11px] text-muted-foreground sm:hidden">{mobileStatus}</div> : null}
     </FloatingChromeSurface>
   );

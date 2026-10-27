@@ -1,8 +1,7 @@
 "use client";
 
 import { CachedImage } from "@/components/shared/CachedImage";
-
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { AppBskyEmbedImages } from "@atproto/api";
 import { socialHttpsUrl } from "./socialUrls";
@@ -10,14 +9,24 @@ import { SocialAltTextBadge } from "./SocialAltTextBadge";
 import { SocialImageDialog } from "./SocialImageDialog";
 
 export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedImages.ViewImage[] }) {
-  const [active, setActive] = useState(0);
+  const safeImages = useMemo(() => images.filter(image => socialHttpsUrl(image.thumb)), [images]);
+  const [gallery, setGallery] = useState({ active: 0, displayedThumb: "", loaded: new Set<string>(), failed: new Set<string>() });
+  const navigate = useCallback((next: number | ((previous: number) => number)) => {
+    setGallery(current => {
+      const active = Math.min(current.active, safeImages.length - 1);
+      const image = safeImages[active];
+      const displayedThumb = image && (current.loaded.has(image.thumb) || current.failed.has(image.thumb))
+        ? image.thumb : current.displayedThumb;
+      const target = typeof next === "function" ? next(active) : next;
+      return { ...current, active: Math.max(0, Math.min(target, safeImages.length - 1)), displayedThumb };
+    });
+  }, [safeImages]);
   const carousel = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const drag = useRef<{ id: number; x: number; y: number; horizontal: boolean; vertical: boolean } | null>(null);
   const suppressClick = useRef(false);
   const clearClick = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(clearClick.current), []);
-  const safeImages = images.filter(image => socialHttpsUrl(image.thumb));
   useEffect(() => {
     const element = carousel.current;
     if (!element || safeImages.length < 2) return;
@@ -38,20 +47,23 @@ export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedIm
       if (Math.abs(accumulated) < 40) return;
       navigated = true;
       const direction = accumulated > 0 ? 1 : -1;
-      setActive(previous => Math.max(0, Math.min(Math.min(previous, safeImages.length - 1) + direction, safeImages.length - 1)));
+      navigate(previous => previous + direction);
     };
     element.addEventListener("wheel", wheel, { passive: false });
     return () => element.removeEventListener("wheel", wheel);
-  }, [safeImages.length]);
+  }, [navigate, safeImages.length]);
   if (!safeImages.length) return null;
-  const index = Math.min(active, safeImages.length - 1);
+  const index = Math.min(gallery.active, safeImages.length - 1);
   const image = safeImages[index];
+  const ready = gallery.loaded.has(image.thumb) || gallery.failed.has(image.thumb);
+  const displayedThumb = ready ? image.thumb
+    : safeImages.find(item => item.thumb === gallery.displayedThumb)?.thumb ?? safeImages[0].thumb;
+  const displayedIndex = ready ? index : safeImages.findIndex(item => item.thumb === displayedThumb);
   // Keep the feed row fixed while paging or loading differently sized photos.
   const ratio = safeImages[0].aspectRatio;
   const aspectRatio = ratio && Number.isFinite(ratio.width) && Number.isFinite(ratio.height) && ratio.width > 0 && ratio.height > 0
     ? `${ratio.width} / ${ratio.height}` : "1 / 1";
   const multiple = safeImages.length > 1;
-  const navigate = (next: number) => setActive(Math.max(0, Math.min(next, safeImages.length - 1)));
   const select = (next: number) => { navigate(next); setSelected(next); };
   const selectedIndex = selected === null ? null : Math.min(selected, safeImages.length - 1);
   return <>
@@ -96,10 +108,16 @@ export function SocialImageGallery({ images }: { images: readonly AppBskyEmbedIm
       <div className="relative min-w-0">
         <button type="button" data-gallery-image aria-label={`Open Image ${index + 1}${image.alt ? `: ${image.alt}` : ""}`}
           style={{ aspectRatio }}
-          className="block w-full min-w-0 overflow-hidden rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+          aria-busy={!ready}
+          className="relative block w-full min-w-0 overflow-hidden rounded-xl bg-muted outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
           onClick={event => { event.stopPropagation(); setSelected(index); }}>
-          <CachedImage src={socialHttpsUrl(image.thumb)} alt={image.alt} width={image.aspectRatio?.width ?? 1200} height={image.aspectRatio?.height ?? 800}
-            loading="lazy" draggable={false} className="block h-full w-full object-contain" />
+          {safeImages.map((item, position) => <CachedImage key={`${item.thumb}:${position}`} src={socialHttpsUrl(item.thumb)} alt={item.alt}
+            aria-hidden={position !== displayedIndex} width={item.aspectRatio?.width ?? 1200} height={item.aspectRatio?.height ?? 800}
+            loading="eager" draggable={false}
+            onLoad={() => setGallery(current => ({ ...current, loaded: new Set(current.loaded).add(item.thumb) }))}
+            onError={() => setGallery(current => ({ ...current, failed: new Set(current.failed).add(item.thumb) }))}
+            className={`absolute inset-0 block h-full w-full object-contain ${position === displayedIndex && !gallery.failed.has(item.thumb) ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`} />)}
+          {gallery.failed.has(image.thumb) ? <span role="status" className="absolute inset-0 flex items-center justify-center p-4 text-sm text-muted-foreground">Image Couldn’t Be Loaded</span> : null}
         </button>
         <SocialAltTextBadge key={`${image.thumb}:${index}`} alt={image.alt} label={`View Image ${index + 1} Alt Text`} />
       </div>

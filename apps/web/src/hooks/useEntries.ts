@@ -41,6 +41,8 @@ import { recordClientPerformance } from "@/lib/clientPerformanceTelemetry";
 import { useAuth } from "./useAuth";
 import { coalesceFeedFirstPage, getFeedRefreshRevision } from "@/lib/feedRefreshCoordinator";
 import { refreshPublicationUnreadCount } from "@/lib/feedRefresh";
+import { useVisibleFeedRefresh } from "./useVisibleFeedRefresh";
+import { awaitWithAbort } from "@/lib/awaitWithAbort";
 import { useFeedFirstContentTiming } from "./useFeedFirstContentTiming";
 
 export type { EntryListItem, EntryDetail };
@@ -136,14 +138,16 @@ function useGuardedFeedRefresh(args: {
 }) {
   const { queryKey, feed, articleFilter, enabled, hasData, isFetchedAfterMount, getOAuthSession, fetchInitial } = args;
   const queryClient = useQueryClient();
+  const { oauthSessionReloadSeq } = useAuth();
   const oauthSession = getOAuthSession();
   const mountedScope = useRef<{ queryKey: readonly string[]; session: OAuthSession; hasData: boolean } | null>(null);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (callerSignal?: AbortSignal) => {
+    callerSignal?.throwIfAborted();
     const oauth = getOAuthSession();
     if (!enabled || !oauth || !feed) return false;
     const cachedQuery = queryClient.getQueryCache().find({ queryKey, exact: true });
     if (!cachedQuery?.state.data) {
-      await fetchInitial();
+      await (callerSignal ? awaitWithAbort(fetchInitial(), callerSignal) : fetchInitial());
       return true;
     }
     const revision = getFeedRefreshRevision(queryClient, queryKey);
@@ -160,7 +164,13 @@ function useGuardedFeedRefresh(args: {
       void queryClient.cancelQueries({ queryKey, exact: true }, { revert: false, silent: true });
       cachedQuery.setState({ fetchStatus: "idle" });
     }
-    const fetchMerged = async (signal: AbortSignal): Promise<InfiniteData<EntriesPage>> => {
+    let ownerSignal: AbortSignal | undefined;
+    const fetchMerged = async (querySignal: AbortSignal): Promise<InfiniteData<EntriesPage>> => {
+      // Installed options can serve later invalidation; its new retryer must not
+      // inherit an aborted timer/navigation signal from this invocation.
+      ownerSignal ??= querySignal;
+      const signal = callerSignal && ownerSignal === querySignal
+        ? AbortSignal.any([querySignal, callerSignal]) : querySignal;
       // fetchQuery leaves these options installed until an observer restores its
       // own options. Confirmation can refetch first, so each invocation owns a
       // new session/revision snapshot rather than the original refresh's fence.
@@ -215,7 +225,7 @@ function useGuardedFeedRefresh(args: {
       outcome: "success",
     }).catch(() => undefined);
     if (feed.kind === "publication" && feed.id) {
-      await refreshPublicationUnreadCount({ queryClient, viewerDid: oauth.did, publicationId: feed.id, oauthSession: oauth });
+      await refreshPublicationUnreadCount({ queryClient, viewerDid: oauth.did, publicationId: feed.id, oauthSession: oauth, signal: callerSignal });
     }
     return true;
   }, [articleFilter, enabled, feed, fetchInitial, getOAuthSession, queryClient, queryKey]);
@@ -251,6 +261,11 @@ function useGuardedFeedRefresh(args: {
       void refresh().catch(() => undefined);
     }
   }), [enabled, queryClient, queryKey, refresh]);
+
+  useVisibleFeedRefresh(
+    enabled && hasData && oauthSession && feed?.kind !== "publication" ? JSON.stringify([queryKey, oauthSessionReloadSeq]) : null,
+    refresh,
+  );
 
   return refresh;
 }
@@ -645,7 +660,7 @@ export function useAggregateFeedEntries(
     query.isPlaceholderData,
   ]);
 
-  return { ...query, refetch: async () => { await refetch(); } };
+  return { ...query, refetch: async (signal?: AbortSignal) => { await refetch(signal); } };
 }
 
 /**

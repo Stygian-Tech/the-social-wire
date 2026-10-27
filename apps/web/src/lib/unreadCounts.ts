@@ -1,5 +1,6 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
+import { effectiveEntryReadState } from "@/lib/pendingReadStateOverlay";
 import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 import {
   normalizeAtRepoParam,
@@ -26,14 +27,16 @@ export function flattenCachedInfiniteEntries(
  */
 export function countUnreadCachedEntries(
   entries: EntryListItem[],
-  isEntryRead: (entryId: string) => boolean
+  isEntryRead: (entryId: string) => boolean,
+  pendingEntryReadState?: (entryId: string) => boolean | undefined
 ): number {
   const seen = new Set<string>();
   let count = 0;
   for (const entry of entries) {
     if (seen.has(entry.entryId)) continue;
     seen.add(entry.entryId);
-    if (!isEntryRead(entry.entryId)) count += 1;
+    const isRead = effectiveEntryReadState(entry.entryId, entry.isRead, isEntryRead, pendingEntryReadState);
+    if (!isRead) count += 1;
   }
   return count;
 }
@@ -61,6 +64,7 @@ export type EffectivePublicationUnreadCountOptions = {
    * (sidebar prefetch). Local read marks can still lower the badge.
    */
   capRaiseToServerCount?: boolean;
+  pendingEntryReadState?: (entryId: string) => boolean | undefined;
 };
 
 /**
@@ -77,7 +81,7 @@ export function effectivePublicationUnreadCount(
   const cached = getCachedEntriesForPublication(queryClient, viewerDid, publicationId);
   if (cached.length === 0) return serverCount;
 
-  const cachedUnread = countUnreadCachedEntries(cached, isEntryRead);
+  const cachedUnread = countUnreadCachedEntries(cached, isEntryRead, options?.pendingEntryReadState);
   const cachedRead = countCachedReadEntries(cached, isEntryRead);
   const reconciled = Math.max(cachedUnread, serverCount - cachedRead);
   if (options?.capRaiseToServerCount && serverCount > 0) {
@@ -180,14 +184,22 @@ export function distinctCachedEntryIdsForPublications(
   viewerDid: string,
   publications: Array<{ publicationId: string }>
 ): string[] {
+  const publicationIds = new Set(publications.map(pub => normalizeAtRepoParam(pub.publicationId)));
   const seen = new Set<string>();
-  for (const pub of publications) {
-    for (const entry of getCachedEntriesForPublication(
-      queryClient,
-      viewerDid,
-      pub.publicationId
-    )) {
-      seen.add(entry.entryId);
+  // Scan aggregate pages once. Calling getCachedEntriesForPublication for every
+  // subscription scans the entire aggregate feed once per publication.
+  const queries = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
+    predicate: ({ queryKey }) => queryKey[1] === viewerDid &&
+      (queryKey[0] === "entries" || queryKey[0] === "aggregateEntries"),
+  });
+  for (const [key, data] of queries) {
+    const publicationQuery = key[0] === "entries" && typeof key[2] === "string"
+      && publicationIds.has(normalizeAtRepoParam(key[2]));
+    if (key[0] === "entries" && !publicationQuery) continue;
+    for (const entry of flattenCachedInfiniteEntries(data)) {
+      if (publicationQuery || (entry.publicationId && publicationIds.has(normalizeAtRepoParam(entry.publicationId)))) {
+        seen.add(entry.entryId);
+      }
     }
   }
   return [...seen];

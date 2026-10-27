@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import type { InfiniteData } from "@tanstack/react-query";
+import { QueryClient, type InfiniteData } from "@tanstack/react-query";
 
 import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 import type { EntryListItem } from "@/lib/atprotoClient";
@@ -55,6 +55,17 @@ describe("countUnreadCachedEntries", () => {
     ).toBe(1);
   });
 
+  it("honors authoritative read flags without requiring local marks", () => {
+    const read = { ...makeEntry("at://did/a/x/read"), isRead: true };
+    const unread = { ...makeEntry("at://did/a/x/new"), isRead: false };
+    expect(countUnreadCachedEntries([read, unread], () => false)).toBe(1);
+  });
+
+  it("keeps pending unread intents ahead of authoritative read flags", () => {
+    const read = { ...makeEntry("at://did/a/x/read"), isRead: true };
+    expect(countUnreadCachedEntries([read], () => true, () => false)).toBe(1);
+  });
+
   it("returns zero when all read", () => {
     const a = makeEntry("at://did/a/x/1");
     expect(countUnreadCachedEntries([a], () => true)).toBe(0);
@@ -92,23 +103,31 @@ describe("distinctCachedEntryIdsForPublications", () => {
         pageParams: [undefined],
       }
     );
-    const queryClient = {
-      getQueriesData: <T,>({ queryKey }: { queryKey: readonly unknown[] }) => {
-        const prefix = JSON.stringify(queryKey).slice(0, -1);
-        const out: [unknown, T][] = [];
-        for (const [key, value] of store) {
-          if (key.startsWith(prefix)) {
-            out.push([JSON.parse(key), value as T]);
-          }
-        }
-        return out;
-      },
-    } as unknown as import("@tanstack/react-query").QueryClient;
+    const queryClient = new QueryClient();
+    for (const [key, data] of store) queryClient.setQueryData(JSON.parse(key), data);
     const ids = distinctCachedEntryIdsForPublications(queryClient, viewerDid, [
       { publicationId: pubDid },
       { publicationId: otherDid },
     ]);
     expect(ids).toEqual([e1.entryId, e2.entryId]);
+  });
+
+  it("scopes aggregate rows and normalized publication caches to the current viewer", () => {
+    const queryClient = new QueryClient();
+    const publicationId = "at://did:plc:alice/site.standard.publication/main";
+    const selected = { ...makeEntry("at://alice/doc/one"), publicationId };
+    const other = { ...makeEntry("at://bob/doc/two"), publicationId: "did:plc:bob" };
+    queryClient.setQueryData(["aggregateEntries", viewerDid, "subscribed", "", "all"], {
+      pages: [{ entries: [selected, other] }], pageParams: [undefined],
+    });
+    queryClient.setQueryData(["entries", viewerDid, encodeURIComponent(publicationId), "unread"], {
+      pages: [{ entries: [makeEntry("at://alice/doc/three")] }], pageParams: [undefined],
+    });
+    queryClient.setQueryData(["entries", "did:plc:someone-else", publicationId, "all"], {
+      pages: [{ entries: [makeEntry("at://alice/doc/private")] }], pageParams: [undefined],
+    });
+    expect(distinctCachedEntryIdsForPublications(queryClient, viewerDid, [{ publicationId }]))
+      .toEqual([selected.entryId, "at://alice/doc/three"]);
   });
 
   it("returns empty when cache is missing", () => {

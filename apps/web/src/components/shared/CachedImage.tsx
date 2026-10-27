@@ -12,6 +12,8 @@ interface CachedImageProps {
   className?: string;
   loading?: "eager" | "lazy";
   onError?: () => void;
+  onLoad?: () => void;
+  "aria-hidden"?: boolean;
   draggable?: boolean;
 }
 
@@ -24,6 +26,8 @@ export function CachedImage({
   className = "",
   loading = "lazy",
   onError,
+  onLoad,
+  "aria-hidden": ariaHidden,
   draggable,
 }: CachedImageProps) {
   const { objectUrl, failed } = useCachedImageUrl(src);
@@ -51,6 +55,8 @@ export function CachedImage({
     <img
       src={objectUrl}
       alt={alt}
+      aria-hidden={ariaHidden}
+      onLoad={onLoad}
       width={width}
       height={height}
       loading={loading}
