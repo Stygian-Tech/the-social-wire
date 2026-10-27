@@ -68,8 +68,16 @@ struct SocialWorkspaceView: View {
             // Signed-out shell fixtures and the existing login flow retain their host shell.
             workspace
         } else {
-            ContentUnavailableView("Social Unavailable", systemImage: "exclamationmark.bubble",
-                                   description: Text(appModel.social.quillInitializationError ?? "Social could not be initialized."))
+            NavigationStack {
+                ContentUnavailableView("Social Unavailable", systemImage: "exclamationmark.bubble",
+                                       description: Text(appModel.social.quillInitializationError ?? "Social could not be initialized."))
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) { accountButton }
+                    }
+            }
         }
         #else
         workspace
@@ -105,14 +113,31 @@ struct SocialWorkspaceView: View {
                 .navigationTitle(destination.title)
                 .navigationDestination(for: SocialRoute.self, destination: routeView)
                 .toolbar {
-                    ToolbarItem(placement: .navigation) {
+                    ToolbarItem(placement: sidebarLeadingPlacement) {
                         if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
                     }
+                    ToolbarItem(placement: .primaryAction) { accountButton }
                     ToolbarItem(placement: .primaryAction) {
                         Button("Compose Post", systemImage: "square.and.pencil") { composerContext = .init() }
                     }
                 }
         }
+    }
+
+    private var accountButton: some View {
+        Button("Account", systemImage: "person.crop.circle") {
+            showsAccountSettings = true
+        }
+        .labelStyle(.iconOnly)
+        .accessibilityIdentifier("social-open-account")
+    }
+
+    private var sidebarLeadingPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
     }
 
     /// Each sidebar destination keeps its own drill-down history.

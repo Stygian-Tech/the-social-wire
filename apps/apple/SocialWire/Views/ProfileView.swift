@@ -115,6 +115,7 @@ struct ProfileView: View {
                     appModel.signOut()
                     dismiss()
                 }
+                .accessibilityIdentifier("account-log-out")
             }
 
             if SocialWireAPIEnvironment.useThinAppView && !appModel.readStateSync.isPDSAuthoritative {

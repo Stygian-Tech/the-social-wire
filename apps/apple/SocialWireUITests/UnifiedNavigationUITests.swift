@@ -13,6 +13,74 @@ final class UnifiedNavigationUITests: XCTestCase {
         return app
     }
 
+    func testSidebarCanReopenAfterClosingInRegularWidth() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-topics-lists",
+                               "--ui-testing-reset-tabs", "--ui-testing-regular-window"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["news-tab-content-library"].waitForExistence(timeout: 8))
+        let toggle = app.buttons["news-show-sidebar"].firstMatch
+        for _ in 0..<2 {
+            XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+            XCTAssertTrue(toggle.isHittable)
+            toggle.tap()
+            let sidebarControl = app.buttons["Profile"].firstMatch
+            let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == false"), object: sidebarControl)
+            XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 5), .completed)
+            XCTAssertTrue(toggle.isHittable, "Closing the sidebar must preserve its leading toggle")
+            toggle.tap()
+            let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: sidebarControl)
+            XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)
+        }
+    }
+
+    func testCompactSidebarCanReopenAfterClosing() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "Phone overlay sidebar")
+        let app = launch()
+        let toggle = app.buttons["news-show-sidebar"].firstMatch
+        for _ in 0..<2 {
+            XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+            toggle.tap()
+            let close = app.buttons["news-hide-sidebar"]
+            XCTAssertTrue(close.waitForExistence(timeout: 3))
+            close.tap()
+            XCTAssertTrue(close.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(toggle.isHittable)
+        }
+    }
+
+    func testCompactPadCanReopenSidebarAfterDestinationSelection() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Compact iPad sidebar")
+        let app = launch(compactWindow: true)
+        let toggle = app.buttons["news-show-sidebar"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        let profile = app.buttons["Profile"].firstMatch
+        XCTAssertTrue(profile.waitForExistence(timeout: 5))
+        XCTAssertTrue(profile.isHittable)
+        let explore = app.buttons["news-social-explore"]
+        reveal(explore, in: app)
+        explore.tap()
+        XCTAssertTrue(app.navigationBars["Explore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        XCTAssertTrue(profile.waitForExistence(timeout: 5))
+        XCTAssertTrue(profile.isHittable)
+    }
+
+    func testAccountIsReachableWithoutSocialProfileData() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "Phone Social fallback")
+        let app = launch()
+        app.tabBars.buttons["Social"].tap()
+        let account = app.buttons["social-open-account"].firstMatch
+        XCTAssertTrue(account.waitForExistence(timeout: 5))
+        account.tap()
+        let logout = app.buttons["account-log-out"]
+        XCTAssertTrue(logout.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !logout.isHittable { app.swipeUp() }
+        XCTAssertTrue(logout.isHittable)
+    }
+
     func testPhoneUsesNativeFavoritesAndBrowse() throws {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "Phone tab layout")
         let app = launch()

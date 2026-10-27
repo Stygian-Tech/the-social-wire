@@ -340,6 +340,14 @@ struct NewsShellView: View {
         #endif
     }
 
+    private var sidebarLeadingPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
     private func showSidebar() {
         #if os(iOS)
         if usesPhoneTabs {
@@ -350,8 +358,13 @@ struct NewsShellView: View {
             }
             return
         }
-        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-        compactColumn = columnVisibility == .detailOnly ? .detail : .sidebar
+        if horizontalSizeClass == .compact {
+            columnVisibility = .all
+            compactColumn = .sidebar
+        } else {
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+            compactColumn = columnVisibility == .detailOnly ? .detail : .sidebar
+        }
         #else
         isSidebarPresented = true
         #endif
@@ -501,7 +514,7 @@ struct NewsShellView: View {
                     description: Text(section.emptyDescription)
                 )
                 .toolbar {
-                    ToolbarItem(placement: .navigation) {
+                    ToolbarItem(placement: sidebarLeadingPlacement) {
                         NewsSidebarButton(action: showSidebar)
                     }
                 }
@@ -883,7 +896,7 @@ private struct NewsFeedShellView: View {
                 .navigationDestination(for: NewsRoute.self) { route in
                     NewsRouteDestination(route: route, tab: tab, sceneModel: sceneModel)
                         .toolbar {
-                            ToolbarItem(placement: .primaryAction) {
+                            ToolbarItem(placement: leadingPlacement) {
                                 NewsSidebarButton(action: onShowSidebar)
                             }
                         }
@@ -911,11 +924,14 @@ private struct NewsFeedShellView: View {
                 NewsHorizontalNavigationBar(items: navigationItems, selection: $selection)
             }
         }
+        #if os(iOS)
+        ToolbarItem(placement: .topBarLeading) {
+            NewsSidebarButton(action: onShowSidebar)
+        }
+        #endif
         if !usesSidebarNavigation {
+            #if os(macOS)
             ToolbarItem(placement: leadingPlacement) {
-                #if os(iOS)
-                NewsSidebarButton(action: onShowSidebar)
-                #else
                 Button {
                     isProfilePresented = true
                 } label: {
@@ -923,8 +939,8 @@ private struct NewsFeedShellView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Profile")
-                #endif
             }
+            #endif
             if tab == .library && appModel.readerListSource == .subscribed {
                 ToolbarItem(placement: trailingPlacement) {
                     Menu {

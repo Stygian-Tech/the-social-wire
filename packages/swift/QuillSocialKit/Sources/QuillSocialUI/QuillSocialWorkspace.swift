@@ -48,12 +48,6 @@ public struct QuillSocialWorkspace: View {
                     configured(QuillSocialRouteView(route: route), stack: stack)
                 }
                 .toolbar {
-                    if let onShowSidebar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Show Sidebar", systemImage: "sidebar.left", action: onShowSidebar)
-                                .accessibilityIdentifier("news-show-sidebar")
-                        }
-                    }
                     if stack.path.isEmpty, destination != .notifications, let onShowNotifications {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: onShowNotifications) {
@@ -74,6 +68,23 @@ public struct QuillSocialWorkspace: View {
 
     private func configured<Content: View>(_ content: Content, stack: RouteStack) -> some View {
         AppThemeView(accentColor: accentColor) { content }
+            .toolbar {
+                if let onShowSidebar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Show Sidebar", systemImage: "sidebar.left", action: onShowSidebar)
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("news-show-sidebar")
+                    }
+                }
+                // Apply to pushed routes as well, even while profile data is unavailable.
+                if let onShowSettings {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Account", systemImage: "person.crop.circle", action: onShowSettings)
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("social-open-account")
+                    }
+                }
+            }
             .environment(\.hostAccountSettings, onShowSettings)
             .environment(model.services)
             .environment(model.homeFeeds)

@@ -18,6 +18,30 @@ final class QuillSocialParityUITests: XCTestCase {
         return app
     }
 
+    func testAccountAndLogoutRemainReachableFromSocialProfile() {
+        let app = launch()
+        let account = app.buttons["social-open-account"].firstMatch
+        XCTAssertTrue(account.waitForExistence(timeout: 5))
+        account.tap()
+        let logout = app.buttons["account-log-out"]
+        reveal(logout, in: app)
+        XCTAssertTrue(logout.isHittable)
+        app.navigationBars["Profile"].buttons["Done"].tap()
+
+        let ownAvatar = app.buttons["Open @did:plc:fixtureviewer Profile"].firstMatch
+        reveal(ownAvatar, in: app)
+        ownAvatar.tap()
+        XCTAssertTrue(app.buttons["news-show-sidebar"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["news-show-sidebar"].firstMatch.isHittable)
+        XCTAssertTrue(account.waitForExistence(timeout: 5))
+        XCTAssertTrue(account.isHittable)
+        account.tap()
+        reveal(logout, in: app)
+        XCTAssertTrue(logout.isHittable)
+        logout.tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForNonExistence(timeout: 5))
+    }
+
     func testRegularWidthUsesSidebarWithoutPhoneTabs() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-quill-social",

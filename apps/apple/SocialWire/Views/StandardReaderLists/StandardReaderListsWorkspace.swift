@@ -85,7 +85,7 @@ struct StandardReaderListsWorkspace: View {
             } detail: {
                 readerColumn
                     .toolbar {
-                        ToolbarItem(placement: .navigation) {
+                        ToolbarItem(placement: sidebarLeadingPlacement) {
                             if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
                         }
                     }
@@ -99,7 +99,7 @@ struct StandardReaderListsWorkspace: View {
             } content: {
                 articlesColumn
                     .toolbar {
-                        ToolbarItem(placement: .navigation) {
+                        ToolbarItem(placement: sidebarLeadingPlacement) {
                             if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
                         }
                     }
@@ -108,7 +108,7 @@ struct StandardReaderListsWorkspace: View {
             } detail: {
                 readerColumn
                     .toolbar {
-                        ToolbarItem(placement: .navigation) {
+                        ToolbarItem(placement: sidebarLeadingPlacement) {
                             if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
                         }
                     }
@@ -116,9 +116,17 @@ struct StandardReaderListsWorkspace: View {
         }
     }
 
+    private var sidebarLeadingPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
     @ToolbarContentBuilder
     private var managementButton: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: sidebarLeadingPlacement) {
             if let onShowSidebar { NewsSidebarButton(action: onShowSidebar) }
         }
         ToolbarItem(placement: .primaryAction) {
