@@ -7777,8 +7777,8 @@
         },
         {
           "path": "packages/swift/QuillSocialKit/Sources/QuillSocialUI/Imported/Features/Profile/ProfileView.swift",
-          "sha256": "2bde8cc41adc11b0c377f99c38dad45e458f8e837383a5ab7cf4f82078e54a59",
-          "lines": 314,
+          "sha256": "4e8828c88f1f8bec8b058f1704101afca9e91e2247de42a8bbb4b1d9267239c9",
+          "lines": 318,
           "publicDeclarations": []
         },
         {
@@ -8411,8 +8411,8 @@
         },
         {
           "path": "packages/swift/QuillSocialKit/Sources/QuillSocialUI/QuillSocialFixtures.swift",
-          "sha256": "277af1df8be5c6fabf7c3e8d490c280498a4a36f6d370e188d88ea10ac275f13",
-          "lines": 188,
+          "sha256": "c2734610bcbdae243779051b2c28103a2893a74260be9a49f67b55280f000e62",
+          "lines": 195,
           "publicDeclarations": [
             "public enum QuillSocialFixtures {",
             "public static func model() throws -> QuillSocialModel {"
