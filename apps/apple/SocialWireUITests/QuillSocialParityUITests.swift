@@ -26,6 +26,7 @@ final class QuillSocialParityUITests: XCTestCase {
         let sidebar = app.descendants(matching: .any)["news-sidebar"].firstMatch
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
         XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertFalse(app.buttons["Browse"].exists)
         let home = app.buttons["news-social-timeline"]
         reveal(home, in: app)
         XCTAssertGreaterThan(home.frame.width, sidebar.frame.width * 0.8)
@@ -37,6 +38,7 @@ final class QuillSocialParityUITests: XCTestCase {
         home.tap()
         XCTAssertTrue(post("Quill Fixture Root", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertFalse(app.buttons["Browse"].exists)
     }
 
     func testQuillTimelineIncludesStoriesFeedGeneratorsAndRepostAttribution() {

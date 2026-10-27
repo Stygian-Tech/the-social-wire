@@ -214,31 +214,35 @@ struct NewsShellView: View {
         .navigationSplitViewStyle(.balanced)
     }
 
+    // Keep the workspace alive across fold/resize transitions, including unsent drafts.
     private var phoneTabs: some View {
         TabView(selection: phoneTabSelection) {
             ForEach(sectionPreferences.pinnedSections) { section in
                 Tab(value: NewsPhoneTab.section(section)) {
                     sectionContent(section)
+                        .toolbar(horizontalSizeClass == .regular ? .hidden : .visible, for: .tabBar)
                 } label: {
                     Label(section.title, systemImage: section.systemImage)
                 }
                 .badge(sectionPreferences.badgeCount(for: .section(section), unreadSocialNotifications: unreadSocialNotifications))
             }
             Tab("Browse", systemImage: "square.grid.3x3", value: NewsPhoneTab.browse) {
-                if isBrowsing || sectionPreferences.pinnedSections.contains(selectedSection) {
-                    NavigationStack {
-                        navigationSidebar
-                            .navigationTitle("Browse")
+                Group {
+                    if isBrowsing || sectionPreferences.pinnedSections.contains(selectedSection) {
+                        NavigationStack {
+                            navigationSidebar
+                                .navigationTitle("Browse")
+                        }
+                    } else {
+                        sectionContent(selectedSection)
                     }
-                } else {
-                    sectionContent(selectedSection)
                 }
+                .toolbar(horizontalSizeClass == .regular ? .hidden : .visible, for: .tabBar)
             }
             .badge(sectionPreferences.badgeCount(for: .browse, unreadSocialNotifications: unreadSocialNotifications))
         }
         .tabViewStyle(.tabBarOnly)
-        // Keep the workspace alive across fold/resize transitions, including unsent drafts.
-        .toolbar(horizontalSizeClass == .regular ? .hidden : .visible, for: .tabBar)
+
     }
 
     private var unreadSocialNotifications: Int {
