@@ -222,6 +222,22 @@ describe("refreshReaderFeeds", () => {
     } finally { timeout.mockRestore(); }
   });
 
+  it("does not replace a newer refresh while a manual source batch is pending", async () => {
+    const key = aggregate();
+    seed(key);
+    activate(key);
+    const started = deferred<void>();
+    const response = deferred<EntriesPage>();
+    fetchPage.mockImplementation(async () => { started.resolve(); return response.promise; });
+    const pending = refresh();
+    await started.promise;
+    advanceFeedRefreshRevision(client, key);
+    const latest = seed(key, [page("latest")]);
+    response.resolve(page("obsolete"));
+    expect(await pending).toEqual({ newArticleCount: 0 });
+    expect(client.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(latest);
+  });
+
   it("does no work for an already-aborted signal", async () => {
     const key = publication("pub");
     seed(key);

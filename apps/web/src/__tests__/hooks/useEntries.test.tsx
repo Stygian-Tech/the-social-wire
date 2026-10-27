@@ -315,6 +315,27 @@ describe("useEntry", () => {
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeUndefined();
   });
+
+  it("refreshes the Subscribed head when returning to the visible tab", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, unmount } = renderHook(() => useAggregateFeedEntries({ kind: "subscribed" }), {
+      wrapper: ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    try {
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      const requests = () => mockFetchHandler.mock.calls.filter(([url]) => url.includes("app.thesocialwire.appview.getFeed"));
+      const previous = requests().length;
+      act(() => window.dispatchEvent(new window.Event("focus")));
+      await waitFor(() => expect(requests().length).toBe(previous + 1));
+      expect(result.current.data?.pages).toHaveLength(1);
+    } finally {
+      unmount(); client.clear();
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
   it("refreshes only the resolved list metadata after its prepared first page", async () => {
     const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
     const invalidate = mock(client.invalidateQueries.bind(client));
@@ -425,6 +446,44 @@ describe("reader lifecycle refreshes", () => {
     process.env = { ...ORIG_ENV };
     globalThis.fetch = ORIG_FETCH;
   });
+
+  for (const supersede of ["read", "account", "generation", "unmount"] as const) {
+    it(`visible aggregate refresh preserves Production guards after ${supersede}`, async () => {
+      const scope = "subscribed";
+      const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      seed(scope);
+      client.setQueryData(keyFor(scope), client.getQueryData(keyFor(scope)));
+      let finish!: (response: Response) => void;
+      respond = () => new Promise(resolve => { finish = resolve; });
+      const hook = renderHook(() => useFeed(scope), { wrapper: Wrapper });
+      try {
+        await settle();
+        expect(requests).toEqual([]);
+        act(() => { window.dispatchEvent(new window.Event("focus")); });
+        await waitFor(() => expect(requests).toHaveLength(1));
+        if (supersede === "read") {
+          recordReadEntryMutations(client, activeOAuthSession, ["cached-head"]);
+          client.setQueryData<InfiniteData<EntriesPage>>(keyFor(scope), current => ({ ...current!, pages: current!.pages.map(page => ({ ...page, entries: page.entries.map(entry => ({ ...entry, isRead: true })) })) }));
+        } else if (supersede === "account") {
+          activeOAuthSession = Object.assign({}, mockOAuthSession) as never;
+          activeReloadSeq++;
+        } else if (supersede === "generation") {
+          advanceFeedRefreshRevision(client, keyFor(scope));
+        } else hook.unmount();
+        const updatedAt = client.getQueryState(keyFor(scope))?.dataUpdatedAt;
+        await act(async () => { finish(json([row("late-visible")])); });
+        await settle();
+        expect(ids(client.getQueryData(keyFor(scope)))).toEqual(["cached-head", "cached-tail"]);
+        expect(client.getQueryState(keyFor(scope))?.dataUpdatedAt).toBe(updatedAt);
+        if (supersede === "read") expect(client.getQueryData<InfiniteData<EntriesPage>>(keyFor(scope))?.pages[0].entries[0].isRead).toBe(true);
+      } finally {
+        hook.unmount();
+        if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+        else Reflect.deleteProperty(document, "visibilityState");
+      }
+    });
+  }
 
   for (const transition of ["filter", "disable", "unmount"] as const) {
     it(`does not restart a cold replacement after ${transition} during cancellation`, async () => {
