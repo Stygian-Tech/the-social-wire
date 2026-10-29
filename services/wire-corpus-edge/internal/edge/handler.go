@@ -276,7 +276,10 @@ func (c *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		seen := map[string]bool{}
-		valid := len(input.ActorHashes) > 0 && len(input.ActorHashes) <= 5000 && input.Limit >= 1 && input.Limit <= 500 && !input.Since.After(now.Add(time.Minute)) && !input.Since.Before(now.Add(-7*24*time.Hour))
+		oldest := now.Add(-7 * 24 * time.Hour)
+		// App View captures its cutoff before moderation, graph work and transport.
+		// Allow bounded processing/clock skew, but keep the query within seven days.
+		valid := len(input.ActorHashes) > 0 && len(input.ActorHashes) <= 5000 && input.Limit >= 1 && input.Limit <= 500 && !input.Since.After(now.Add(time.Minute)) && !input.Since.Before(oldest.Add(-time.Minute))
 		for _, actor := range input.ActorHashes {
 			if seen[actor] || !actorPattern.MatchString(actor) {
 				valid = false
@@ -286,6 +289,9 @@ func (c *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !valid {
 			respondStatus(w, 400)
 			return
+		}
+		if input.Since.Before(oldest) {
+			input.Since = oldest
 		}
 		input.Language = primaryLanguage(input.Language)
 		result, err = c.Store.CircleCandidates(ctx, input, now)
