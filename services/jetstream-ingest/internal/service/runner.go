@@ -24,18 +24,22 @@ import (
 var errSnapshotComplete = errors.New("bounded Jetstream archive snapshot completed")
 
 type Runner struct {
-	cfg                 config.Config
-	store               *store.Postgres
-	health              *health.State
-	logger              *slog.Logger
-	budget              *ingest.ReplayBudget
-	registry            *DIDRegistry
-	lease               store.Lease
-	evidence            *ingest.TransportEvidence
-	lastSeq             atomic.Uint64
-	lastSealed          atomic.Uint64
-	admissionLimiter    *ingest.AdmissionRateLimiter
-	initializationError error
+	liveOnly             bool
+	liveCursor           uint64
+	sharedRecoveryBudget bool
+	providerRejections   *ingest.ProviderRejections
+	cfg                  config.Config
+	store                *store.Postgres
+	health               *health.State
+	logger               *slog.Logger
+	budget               *ingest.ReplayBudget
+	registry             *DIDRegistry
+	lease                store.Lease
+	evidence             *ingest.TransportEvidence
+	lastSeq              atomic.Uint64
+	lastSealed           atomic.Uint64
+	admissionLimiter     *ingest.AdmissionRateLimiter
+	initializationError  error
 }
 
 func NewRunner(cfg config.Config, database *store.Postgres, lease store.Lease, state *health.State, logger *slog.Logger) *Runner {
@@ -61,6 +65,13 @@ func NewRunner(cfg config.Config, database *store.Postgres, lease store.Lease, s
 }
 
 func (r *Runner) Run(ctx context.Context) error {
+	if r.cfg.AutomaticRecoveryEnabled && !r.cfg.ReplaySnapshotOnly {
+		return r.runAutomatic(ctx)
+	}
+	return r.runReplay(ctx)
+}
+
+func (r *Runner) runReplay(ctx context.Context) error {
 	if r.initializationError != nil {
 		return r.initializationError
 	}
@@ -94,6 +105,14 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := requireBootstrapSeam(checkpoint, r.cfg.BootstrapAfterSeq); err != nil {
 		return err
 	}
+	if err := r.store.EnablePoisonProtection(ctx, r.lease, checkpoint); err != nil {
+		return err
+	}
+	pruneContext, stopPrune := context.WithCancel(ctx)
+	defer stopPrune()
+	pruneDone := make(chan struct{})
+	go func() { defer close(pruneDone); r.prunePoisonEvidence(pruneContext) }()
+	defer func() { stopPrune(); <-pruneDone }()
 	if r.cfg.ReplaySnapshotOnly {
 		if err := r.store.EnsureSnapshotRange(
 			ctx, r.lease, *r.cfg.BootstrapAfterSeq, *r.cfg.ReplayBeforeSeq,
@@ -149,6 +168,14 @@ func (r *Runner) Run(ctx context.Context) error {
 		r.health.Stream(false)
 		r.health.Error(err)
 		r.recordIncident(ctx, err)
+		if errors.Is(err, store.ErrSourceDiscontinuity) {
+			if blockErr := r.store.BlockSourceDiscontinuity(ctx, r.lease, err.Error()); blockErr != nil {
+				return blockErr
+			}
+			r.health.Paused(true)
+			<-ctx.Done()
+			return nil
+		}
 		var capacityError *store.WireCapacityExceededError
 		if errors.As(err, &capacityError) {
 			r.health.Paused(true)
@@ -264,13 +291,18 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		// complete default policy until the upstream option initializes every field.
 		jetstream.WithAPIKey(r.cfg.APIKey),
 		jetstream.WithLogger(r.logger),
-		jetstream.WithHTTPClient(&http.Client{Transport: ingest.BudgetTransport{
+		jetstream.WithHTTPClient(&http.Client{Transport: ingest.ProviderTransport{LiveOnly: r.liveOnly, Rejections: r.providerRejections, Base: ingest.BudgetTransport{
 			Base: http.DefaultTransport, Budget: r.budget, RecordUsage: r.store.RecordReplayBytes,
 			Evidence: r.evidence,
-		}}),
+		}}}),
 	}
 	replayAfter, replaying := replayStart(r.cfg, checkpoint)
-	options = append(options, replayOptions(r.cfg, replayAfter)...)
+	if r.liveOnly {
+		options = append(options, jetstream.WithLiveCursor(r.liveCursor))
+		replaying = false
+	} else {
+		options = append(options, replayOptions(r.cfg, replayAfter)...)
+	}
 
 	client, err := jetstream.Subscribe(r.cfg.Host, options...)
 	if err != nil {
@@ -278,14 +310,36 @@ func (r *Runner) runOnce(ctx context.Context) error {
 	}
 	defer client.Close()
 	r.health.Stream(true)
+	subscriptionContext, stopSubscription := context.WithCancelCause(ctx)
+	progressTicker := time.NewTicker(30 * time.Second)
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		watchLiveProgress(subscriptionContext, progressTicker.C, r.lastSeq.Load, client.Stats, r.cfg.ReplaySnapshotOnly, stopSubscription, r.liveOnly)
+	}()
+	defer func() {
+		stopSubscription(nil)
+		progressTicker.Stop()
+		<-progressDone
+	}()
 
-	for batch, streamErr := range client.Events(ctx) {
+	for batch, streamErr := range client.Events(subscriptionContext) {
 		if streamErr != nil {
-			// The SDK can surface recoverable transport errors while retaining the
-			// ordered stream and retrying internally. Closing that healthy client
-			// here turns one transient failure into an avoidable archive replay.
-			// ErrFatal is the boundary at which ordering can no longer continue;
-			// reconnect it from the last committed database cursor.
+			if r.liveOnly {
+				switch pinnedLiveFrameCode(streamErr) {
+				case "FutureCursor":
+					return fmt.Errorf("%w: %v", store.ErrSourceDiscontinuity, streamErr)
+				case "CursorTooOld":
+					return fmt.Errorf("%w: %v", errLiveCursorRequiresArchive, streamErr)
+				}
+			}
+			if errors.Is(context.Cause(subscriptionContext), errLiveProgressStalled) {
+				return errLiveProgressStalled
+			}
+			// Archive fetch/decode errors are emitted in order, but the pinned SDK
+			// then continues with the next entry. Stop before later batches can
+			// checkpoint past that gap. Only its explicit live-session reconnect
+			// notification retains the same ordered tail safely inside the SDK.
 			if streamErrorRequiresReconnect(streamErr) {
 				return fmt.Errorf("Jetstream V2 stream: %w", streamErr)
 			}
@@ -313,7 +367,9 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		}
 		if state == "live" && !r.cfg.ReplaySnapshotOnly {
 			replaying = false
-			r.budget.ResetIncident()
+			if !r.sharedRecoveryBudget {
+				r.budget.ResetIncident()
+			}
 		}
 		evidence := r.evidence.Snapshot()
 		progressAfterSeq := replayAfter
@@ -342,6 +398,9 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			r.health.Progress(lastSeq)
 		}
 	}
+	if errors.Is(context.Cause(subscriptionContext), errLiveProgressStalled) {
+		return errLiveProgressStalled
+	}
 	stats := client.Stats()
 	completionError := subscriptionEndError(
 		ctx.Err(), r.cfg.ReplaySnapshotOnly, stats, r.cfg.ReplayBeforeSeq,
@@ -365,7 +424,13 @@ func (r *Runner) runOnce(ctx context.Context) error {
 }
 
 func streamErrorRequiresReconnect(err error) bool {
-	return errors.Is(err, jetstream.ErrFatal)
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, jetstream.ErrFatal) {
+		return true
+	}
+	return !strings.HasPrefix(err.Error(), "jetstream: live tail reconnecting: ")
 }
 
 type wireStagingBatch struct {
@@ -429,10 +494,22 @@ func (r *Runner) stagePreparedBatch(
 				r.health.AdmissionPacing(false, 0)
 			}
 		}
-		if err := r.store.StageBatch(
-			ctx, r.lease, batch.events, batch.lastSeq, batch.lastEventTime, progress,
-		); err != nil {
-			return err
+		for {
+			err := r.store.StageBatch(ctx, r.lease, batch.events, batch.lastSeq, batch.lastEventTime, progress)
+			if err == nil {
+				break
+			}
+			var capacity *store.WireCapacityExceededError
+			if !r.sharedRecoveryBudget || !r.cfg.ReplaySnapshotOnly || !errors.As(err, &capacity) {
+				return err
+			}
+			// Keep this already-downloaded bounded chunk and its one rate
+			// reservation. A full inbox must not repeatedly download an archive.
+			r.health.Backpressure(true, capacity.InboxRows, capacity.InboxMaxRows, capacity.DatabaseBytes, capacity.DatabaseMaxBytes)
+			r.logger.Warn("holding prepared recovery batch at admission boundary", "lastSeq", batch.lastSeq, "pause", r.cfg.WireAdmissionPause)
+			if !sleepContext(ctx, r.cfg.WireAdmissionPause) {
+				return ctx.Err()
+			}
 		}
 	}
 	return nil
