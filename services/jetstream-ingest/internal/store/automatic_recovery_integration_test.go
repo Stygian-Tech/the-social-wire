@@ -193,7 +193,7 @@ func TestAutomaticRecoverySeamRestartFencingAndCanonicalInboxIntegration(t *test
 
 func TestAutomaticRecoveryPoisonRollbackRetentionAndReplayIntegration(t *testing.T) {
 	ctx, p, lease := automaticFixture(t)
-	if err := p.EnablePoisonProtection(ctx, lease, nil); err != nil {
+	if _, err := p.StartAutomaticRecovery(ctx, lease, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	good := automaticEvent(10)
@@ -300,9 +300,6 @@ func TestAutomaticRecoveryCarriesSequentialBudgetAndDeadlineIntegration(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.EnablePoisonProtection(ctx, lease, checkpoint); err != nil {
-		t.Fatal(err)
-	}
 	if err := p.RecordReplayBytes(ctx, 500); err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +336,7 @@ func TestAutomaticRecoveryCarriesSequentialBudgetAndDeadlineIntegration(t *testi
 
 func TestAutomaticPoisonCapacityAllowsExactReplayButRejectsNewEvidenceIntegration(t *testing.T) {
 	ctx, p, lease := automaticFixture(t)
-	if err := p.EnablePoisonProtection(ctx, lease, nil); err != nil {
+	if _, err := p.StartAutomaticRecovery(ctx, lease, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	poison := automaticEvent(11)

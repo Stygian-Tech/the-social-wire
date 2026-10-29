@@ -238,18 +238,3 @@ func (r *Runner) runRecoveryJobs(ctx context.Context) {
 		}
 	}
 }
-
-func (r *Runner) prunePoisonEvidence(ctx context.Context) {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for {
-		if err := r.store.PrunePoisonPayloads(ctx); err != nil && ctx.Err() == nil {
-			r.logger.Warn("prune bounded poison evidence", "error", err)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}

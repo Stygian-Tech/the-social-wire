@@ -23,7 +23,7 @@ import (
 )
 
 func TestAutomaticRecoveryRunnerKeepsLiveIntakeDuringArchivePauseIntegration(t *testing.T) {
-	for _, failure := range []string{"paused_budget", "expired"} {
+	for _, failure := range []string{"paused_budget", "expired", "preexhausted_budget"} {
 		t.Run(failure, func(t *testing.T) {
 			databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
 			if databaseURL == "" {
@@ -92,6 +92,12 @@ func TestAutomaticRecoveryRunnerKeepsLiveIntakeDuringArchivePauseIntegration(t *
 				ReplayIncidentBytes: 16, ReplayDailyBytes: 1 << 20, BackoffMin: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 				WireAdmissionRate: 1000, WireAdmissionBurst: 1,
 			}
+			if failure == "preexhausted_budget" {
+				cfg.ReplayIncidentBytes = 1 << 30
+				cfg.ReplayDailyBytes = 1 << 30
+				expiry := time.Now().Add(time.Hour)
+				cfg.ReplayCanaryExpiresAt = &expiry
+			}
 			if failure == "expired" {
 				expiry := time.Now().Add(3 * time.Second)
 				cfg.ReplayCanaryExpiresAt = &expiry
@@ -122,6 +128,16 @@ func TestAutomaticRecoveryRunnerKeepsLiveIntakeDuringArchivePauseIntegration(t *
 			if err != nil {
 				t.Fatal(err)
 			}
+			if failure == "preexhausted_budget" {
+				// Model the sequential dev lane before automatic support exists:
+				// preserve its paused checkpoint and already-spent 1 GiB allowance.
+				if err := p.StageBatch(ctx, lease, nil, 150, time.Now(), store.ReplayProgress{State: "paused_budget", BytesDownloaded: 1 << 30}); err != nil {
+					t.Fatal(err)
+				}
+				if err := p.RecordReplayBytes(ctx, 1<<30); err != nil {
+					t.Fatal(err)
+				}
+			}
 			runner := NewRunner(cfg, p, lease, &health.State{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			finished := make(chan error, 1)
 			go func() { finished <- runner.Run(ctx) }()
@@ -139,9 +155,12 @@ func TestAutomaticRecoveryRunnerKeepsLiveIntakeDuringArchivePauseIntegration(t *
 			liveEvents <- 200
 			waitAutomaticRunner(t, ctx, func() bool {
 				var status string
+				if failure == "preexhausted_budget" {
+					return db.QueryRowContext(ctx, "SELECT status FROM ingestion_recovery_jobs WHERE environment=$1", cfg.Environment).Scan(&status) == nil && status == "pending"
+				}
 				return db.QueryRowContext(ctx, "SELECT status FROM ingestion_recovery_jobs WHERE environment=$1", cfg.Environment).Scan(&status) == nil && status == failure
 			})
-			if archiveRequests.Load() == 0 {
+			if failure != "preexhausted_budget" && archiveRequests.Load() == 0 {
 				t.Fatal("historical recovery never reached the mocked archive")
 			}
 			// Once historical recovery is durably stopped, a new real WebSocket
@@ -154,6 +173,20 @@ func TestAutomaticRecoveryRunnerKeepsLiveIntakeDuringArchivePauseIntegration(t *
 			var rows int
 			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM wire_ingestion_inbox WHERE environment=$1 AND source_generation=$2 AND seq IN(200,201)", cfg.Environment, cfg.SourceGeneration).Scan(&rows); err != nil || rows != 2 {
 				t.Fatalf("live canonical rows=%d err=%v", rows, err)
+			}
+			if failure == "preexhausted_budget" {
+				if archiveRequests.Load() != 0 {
+					t.Fatalf("exhausted lane requested archive %d times", archiveRequests.Load())
+				}
+				var spent int64
+				var expiry time.Time
+				if err := db.QueryRowContext(ctx, "SELECT incident_bytes_downloaded,canary_expires_at FROM ingestion_recovery_controllers WHERE environment=$1", cfg.Environment).Scan(&spent, &expiry); err != nil || spent != 1<<30 || expiry.Sub(*cfg.ReplayCanaryExpiresAt).Abs() > time.Microsecond {
+					t.Fatalf("live transition changed archive authority: bytes=%d expiry=%s err=%v", spent, expiry, err)
+				}
+				var after, before uint64
+				if err := db.QueryRowContext(ctx, "SELECT after_seq,before_seq FROM ingestion_recovery_jobs WHERE environment=$1", cfg.Environment).Scan(&after, &before); err != nil || after != 149 || before != 200 {
+					t.Fatalf("lost retained checkpoint seam: (%d,%d] err=%v", after, before, err)
+				}
 			}
 			if liveConnections.Load() != 1 {
 				t.Fatalf("archive failure restarted live connection: %d", liveConnections.Load())

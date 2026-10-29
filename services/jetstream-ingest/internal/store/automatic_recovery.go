@@ -382,17 +382,3 @@ func (p *Postgres) PauseAutomaticRecovery(ctx context.Context, lease Lease, reas
 	}
 	return tx.Commit()
 }
-
-func (p *Postgres) EnablePoisonProtection(ctx context.Context, lease Lease, checkpoint *ingest.Checkpoint) error {
-	var baseline *ingest.Checkpoint
-	if checkpoint != nil {
-		copy := *checkpoint
-		copy.ReplayState = "live"
-		baseline = &copy
-	}
-	if _, err := p.StartAutomaticRecovery(ctx, lease, baseline, nil, nil); err != nil {
-		return err
-	}
-	p.liveIntake = false
-	return nil
-}

@@ -105,14 +105,6 @@ func (r *Runner) runReplay(ctx context.Context) error {
 	if err := requireBootstrapSeam(checkpoint, r.cfg.BootstrapAfterSeq); err != nil {
 		return err
 	}
-	if err := r.store.EnablePoisonProtection(ctx, r.lease, checkpoint); err != nil {
-		return err
-	}
-	pruneContext, stopPrune := context.WithCancel(ctx)
-	defer stopPrune()
-	pruneDone := make(chan struct{})
-	go func() { defer close(pruneDone); r.prunePoisonEvidence(pruneContext) }()
-	defer func() { stopPrune(); <-pruneDone }()
 	if r.cfg.ReplaySnapshotOnly {
 		if err := r.store.EnsureSnapshotRange(
 			ctx, r.lease, *r.cfg.BootstrapAfterSeq, *r.cfg.ReplayBeforeSeq,
@@ -168,14 +160,6 @@ func (r *Runner) runReplay(ctx context.Context) error {
 		r.health.Stream(false)
 		r.health.Error(err)
 		r.recordIncident(ctx, err)
-		if errors.Is(err, store.ErrSourceDiscontinuity) {
-			if blockErr := r.store.BlockSourceDiscontinuity(ctx, r.lease, err.Error()); blockErr != nil {
-				return blockErr
-			}
-			r.health.Paused(true)
-			<-ctx.Done()
-			return nil
-		}
 		var capacityError *store.WireCapacityExceededError
 		if errors.As(err, &capacityError) {
 			r.health.Paused(true)

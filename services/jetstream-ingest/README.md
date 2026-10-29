@@ -330,7 +330,7 @@ all configured collections are `site.standard.document`, `site.standard.entry`,
 or `site.standard.publication`. These projections have durable mutation fences;
 account events also retain their monotonic account fence. AppView, external
 records, feedback, recommendations, and explicit snapshot jobs keep sequential
-replay. Their deterministic poison protection still applies.
+replay. Deterministic poison protection is enabled only for automatic lanes.
 
 Live reconnects use the saved live cursor directly. A provider `CursorTooOld`
 response records an owed gap, then the first fresh batch atomically registers an
@@ -360,8 +360,8 @@ rows and checkpoint advancement. Per canonical lane, evidence is capped at
 capacity. Exhaustion stops admission instead of dropping evidence. Raw bytes
 expire after seven days through bounded batches of 500, retaining unresolved
 identity/hash evidence. Transient SQL, lease, capacity, and transport errors are
-never treated as poison. Controller, gap, and poison states remain visible in
-Operations and public coverage stays degraded while obligations are unresolved.
+never treated as poison. Controller, gap, and poison states remain durable for
+operational inspection; unresolved obligations are never marked complete.
 
 Failed automatic archive attempts use bounded exponential backoff with jitter;
 only durable job-cursor advancement resets retry pressure. A full Wire inbox
