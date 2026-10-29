@@ -143,6 +143,11 @@ func runLane(
 	state *health.State,
 	logger *slog.Logger,
 ) error {
+	if lane.Config.AutomaticRecoveryEnabled && !lane.Config.ReplaySnapshotOnly {
+		// Automatic live intake survives a historical-recovery canary expiry.
+		// Its recovery worker retains the original absolute deadline separately.
+		return runLaneWork(ctx, lane, state, logger)
+	}
 	return service.RunWithReplayCanary(ctx, lane.Config, state, func(laneContext context.Context) error {
 		return runLaneWork(laneContext, lane, state, logger)
 	})

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	mathrand "math/rand/v2"
 	"os"
 	"time"
 
@@ -35,6 +36,9 @@ func (e *WireCapacityExceededError) Error() string {
 func (e *WireCapacityExceededError) Unwrap() error { return ErrWireAdmissionPaused }
 
 type Postgres struct {
+	liveIntake               bool
+	quarantineEnabled        bool
+	recoveryJob              *RecoveryJob
 	wirePreprocessing        wirePreprocessingMetrics
 	wireCompactIngestEnabled bool
 	db                       *sql.DB
@@ -220,6 +224,9 @@ func (p *Postgres) ReconcileWireAdmission(ctx context.Context, lease Lease) (boo
 }
 
 func (p *Postgres) LoadCheckpoint(ctx context.Context) (*ingest.Checkpoint, error) {
+	if p.recoveryJob != nil {
+		return p.loadRecoveryCheckpoint(ctx)
+	}
 	row := p.db.QueryRowContext(ctx, `
 		SELECT source_host, stream_nsid, filter_fingerprint, cursor_kind,
 		       last_staged_seq, replay_bytes_downloaded, replay_state,
@@ -296,6 +303,9 @@ func (p *Postgres) ReplayUsageBuckets(ctx context.Context) ([]ingest.ReplayUsage
 func (p *Postgres) RecordReplayBytes(ctx context.Context, bytes int64) error {
 	if bytes <= 0 {
 		return nil
+	}
+	if p.liveIntake || p.recoveryJob != nil {
+		return p.recordAutomaticReplayBytes(ctx, bytes)
 	}
 	_, err := p.db.ExecContext(ctx, `
 		INSERT INTO appview_ingestion_replay_usage
@@ -468,6 +478,20 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	if checkpointSeq == 0 {
 		return errors.New("cannot stage a zero Jetstream checkpoint")
 	}
+	if p.recoveryJob != nil {
+		if checkpointSeq <= p.recoveryJob.AfterSeq || checkpointSeq > p.recoveryJob.BeforeSeq {
+			return errors.New("recovery checkpoint is outside its immutable range")
+		}
+		for _, event := range events {
+			if event.Seq <= p.recoveryJob.AfterSeq || event.Seq > p.recoveryJob.BeforeSeq {
+				return errors.New("recovery event is outside its immutable range")
+			}
+		}
+	}
+	var poison []poisonRecord
+	if p.quarantineEnabled {
+		events, poison = preparePoisonRecords(events)
+	}
 	// Normalize once before retries; never change caller-owned event payloads.
 	var subjects wireSignalSubjects
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
@@ -485,15 +509,12 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 		p.wirePreprocessing.recordInput(len(prepared), originalBytes, compactBytes)
 		events = prepared
 	}
-	if !p.source.IsWire() || !p.wireCompactIngestEnabled {
-		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects)
-	}
 	return retryStageSerialization(ctx, func() error {
-		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects)
+		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects, poison)
 	})
 }
 
-func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, events []ingest.InboxEvent, checkpointSeq uint64, checkpointEventTime time.Time, progress ReplayProgress, subjects wireSignalSubjects) error {
+func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, events []ingest.InboxEvent, checkpointSeq uint64, checkpointEventTime time.Time, progress ReplayProgress, subjects wireSignalSubjects, poison []poisonRecord) error {
 	isolation := sql.LevelDefault
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
 		isolation = sql.LevelRepeatableRead
@@ -540,6 +561,14 @@ func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, event
 	}
 
 	var preprocessing wireCommittedMetrics
+	if p.liveIntake {
+		if err := p.stageLiveSeam(ctx, tx, checkpointSeq); err != nil {
+			return err
+		}
+	}
+	if err := p.stagePoisonRecords(ctx, tx, poison); err != nil {
+		return err
+	}
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
 		var err error
 		events, err = filterPreparedWireSignals(ctx, tx, events, subjects, &preprocessing)
@@ -602,6 +631,19 @@ func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, event
 		}
 	}
 
+	if p.recoveryJob != nil {
+		if err := p.stageRecoveryCheckpoint(ctx, tx, lease, checkpointSeq, progress, false); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit recovery stage batch: %w", err)
+		}
+		if p.source.IsWire() && p.wireCompactIngestEnabled {
+			preprocessing.insertedEvents = uint64(admittedWireEvents)
+			p.wirePreprocessing.recordCommitted(preprocessing)
+		}
+		return nil
+	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO appview_jetstream_checkpoints
 		  (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
@@ -749,6 +791,9 @@ func (p *Postgres) CompleteSnapshot(
 	beforeSeq uint64,
 	progress ReplayProgress,
 ) error {
+	if p.recoveryJob != nil {
+		return p.CompleteRecoveryJob(ctx, lease, afterSeq, beforeSeq, progress)
+	}
 	if beforeSeq == 0 || afterSeq >= beforeSeq || progress.SealedSeq != beforeSeq {
 		return errors.New("invalid bounded snapshot completion range")
 	}
@@ -949,16 +994,23 @@ func postgresInterval(duration time.Duration) string {
 	return fmt.Sprintf("%f seconds", duration.Seconds())
 }
 
-// A snapshot conflict must replay the complete fenced unit, including membership,
+// A transaction conflict must replay the complete fenced unit, including membership,
 // inbox insertion, counters, anchors and checkpoint. Never retry just an INSERT.
+// Eight attempts add at most 2.26 seconds of backoff, all bounded by the caller.
 func retryStageSerialization(ctx context.Context, stage func() error) error {
 	for attempt := 0; ; attempt++ {
-		err := stage()
-		var postgresError *pgconn.PgError
-		if !errors.As(err, &postgresError) || postgresError.Code != "40001" || attempt == 4 {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		timer := time.NewTimer(time.Duration(10<<attempt) * time.Millisecond)
+		err := stage()
+		var postgresError *pgconn.PgError
+		if !errors.As(err, &postgresError) || (postgresError.Code != "40001" && postgresError.Code != "40P01") || attempt == 7 {
+			return err
+		}
+		// Live and recovery lanes contend on the same admission row. Spread
+		// retries so a busy lane cannot keep winning synchronized retries.
+		backoff := min(time.Duration(20<<attempt)*time.Millisecond, time.Second)
+		timer := time.NewTimer(backoff/2 + mathrand.N(backoff/2))
 		select {
 		case <-ctx.Done():
 			timer.Stop()

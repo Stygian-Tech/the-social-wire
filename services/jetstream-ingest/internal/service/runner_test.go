@@ -71,12 +71,29 @@ func TestIncidentClassification(t *testing.T) {
 	}
 }
 
-func TestOnlyFatalStreamErrorsRequireOuterReconnect(t *testing.T) {
-	if streamErrorRequiresReconnect(errors.New("temporary upstream failure")) {
-		t.Fatal("recoverable SDK error incorrectly requires an outer reconnect")
-	}
-	if !streamErrorRequiresReconnect(fmt.Errorf("download failed: %w", jetstream.ErrFatal)) {
-		t.Fatal("wrapped fatal SDK error did not require an outer reconnect")
+func TestOnlyExplicitLiveReconnectNotificationsCanContinue(t *testing.T) {
+	for _, fixture := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"no error", nil, false},
+		{"live session retry", errors.New("jetstream: live tail reconnecting: websocket: unexpected EOF"), false},
+		{"live session timeout", errors.New("jetstream: live tail reconnecting: failed to read: context deadline exceeded"), false},
+		{"segment retry exhausted", errors.New("jetstream: getSegment failed: resume stalled: status 429"), true},
+		{"block fetch", errors.New("jetstream: getBlock failed: status 503"), true},
+		{"block decode", errors.New("jetstream: decode block: invalid zstd frame"), true},
+		{"row decode", errors.New("jetstream: decode event: invalid record"), true},
+		{"unknown transient", errors.New("temporary upstream failure"), true},
+		{"embedded live marker", errors.New("jetstream: getSegment: jetstream: live tail reconnecting: EOF"), true},
+		{"wrapped fatal", fmt.Errorf("download failed: %w", jetstream.ErrFatal), true},
+		{"live marker cannot mask fatal", fmt.Errorf("jetstream: live tail reconnecting: %w", jetstream.ErrFatal), true},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			if got := streamErrorRequiresReconnect(fixture.err); got != fixture.want {
+				t.Fatalf("reconnect = %t, want %t for %v", got, fixture.want, fixture.err)
+			}
+		})
 	}
 }
 
