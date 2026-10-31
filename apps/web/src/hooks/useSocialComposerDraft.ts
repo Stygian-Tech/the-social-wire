@@ -80,6 +80,13 @@ export function useSocialComposerDraft(options: Options) {
   const [cleanupPending, setCleanupPending] = useState(false);
   const [pendingCleanups, setPendingCleanups] = useState(false);
   const cleanupWork = useRef<Promise<void> | undefined>(undefined);
+  const cleanupController = useRef(new AbortController());
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    cleanupController.current = controller;
+    cleanupWork.current = undefined;
+    return () => controller.abort();
+  }, [options.ownerDid, options.session]);
   const [hasConflict, setHasConflict] = useState(false);
   const [unsupportedPublishSettings, setUnsupportedPublishSettings] = useState(false);
   useLayoutEffect(() => { latest.current = options; segments.current = options.segments; });
@@ -158,7 +165,7 @@ export function useSocialComposerDraft(options: Options) {
     } catch (error) {
       // These responses prove the replacement was rejected. Transport failures
       // remain uncertain, including across reloads and renewed authorization.
-      if (definiteUpdateRejection(error)) {
+      if (definiteUpdateRejection(error) || error instanceof DraftInputRejectedError) {
         guard(run);
         if (run.cloud.pendingUpdate === pending) delete run.cloud.pendingUpdate;
         await persist(run);
@@ -559,16 +566,25 @@ export function useSocialComposerDraft(options: Options) {
   async function retryCleanups() {
     if (cleanupWork.current) return cleanupWork.current;
     const run = active();
+    const session = run.session;
+    const signal = cleanupController.current.signal;
+    const assertCurrentActor = () => {
+      signal.throwIfAborted();
+      if (!session || session.did !== run.ownerDid || latest.current.ownerDid !== run.ownerDid || latest.current.session !== session) throw new Error("Your Account Changed. Reopen The Composer.");
+    };
     const work = (async () => {
       const pending = await pendingPublicationCleanups(run.ownerDid);
-      guard(run);
+      assertCurrentActor();
       setPendingCleanups(pending.length > 0);
+      let failure: unknown;
       for (const item of pending) {
-        await cleanupPublishedComposition(actor(run), item.context, item.draft);
-        guard(run);
+        try { await cleanupPublishedComposition({ session: session!, viewerDid: run.ownerDid, signal, assertCurrentActor }, item.context, item.draft); }
+        catch (error) { assertCurrentActor(); failure ??= error; }
+        assertCurrentActor();
       }
-      setPendingCleanups(false);
+      setPendingCleanups(!!failure);
       if (pending.length) latest.current.onChanged?.();
+      if (failure) throw failure;
     })();
     cleanupWork.current = work;
     try { await work; } finally { if (cleanupWork.current === work) cleanupWork.current = undefined; }

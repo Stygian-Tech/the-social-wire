@@ -42,7 +42,8 @@ function validateInput(method: string, payload: unknown): void {
 
 function validateId(id: string): void {
   // createDraft's output only declares a string; deleteDraft declares the TID format.
-  validateInput("deleteDraft", { id });
+  // This checks a create response after the write, so it must remain uncertain.
+  lexicons.assertValidXrpcInput("app.bsky.draft.deleteDraft", { id });
 }
 
 /** Private AppView stash only. No repo records, public fallback, or mutation retries. */

@@ -17,6 +17,18 @@ export async function archivePublishedComposition(ownerDid: string, context: str
     await saveComposerDraft(ownerDid, `social-draft:${draft.cloud.id}`, completed);
     guard();
   }
+  // Opening a cloud draft may leave its original New Post recovery behind.
+  // Retire that copy before cleanup can fail or a later composer can restore it.
+  if (context !== "new-post" && draft.cloud?.id) {
+    const active = await loadComposerDraft(ownerDid, "new-post");
+    guard();
+    if (active?.cloud?.id === draft.cloud.id) {
+      await saveComposerDraft(ownerDid, "new-post", { ...active, cloud: { ...active.cloud!, completed: true } });
+      guard();
+      await saveComposerDraft(ownerDid, "new-post");
+      guard();
+    }
+  }
   // The recovery slot and cloud tombstone are durable before New Post is freed.
   if (context !== `social-draft:${draft.cloud?.id}`) await saveComposerDraft(ownerDid, context);
   guard();
