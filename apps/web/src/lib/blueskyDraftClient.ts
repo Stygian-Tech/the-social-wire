@@ -32,14 +32,18 @@ async function request<T>(args: DraftActor, send: (signal: AbortSignal) => Promi
   }
 }
 
+export class DraftInputRejectedError extends Error {}
+
 function validateInput(method: string, payload: unknown): void {
   // Validate the original object; rebuilding known fields would lose future SDK data.
-  lexicons.assertValidXrpcInput(`app.bsky.draft.${method}`, payload);
+  try { lexicons.assertValidXrpcInput(`app.bsky.draft.${method}`, payload); }
+  catch (error) { throw new DraftInputRejectedError(error instanceof Error ? error.message : "Invalid Draft Payload", { cause: error }); }
 }
 
 function validateId(id: string): void {
   // createDraft's output only declares a string; deleteDraft declares the TID format.
-  validateInput("deleteDraft", { id });
+  // This checks a create response after the write, so it must remain uncertain.
+  lexicons.assertValidXrpcInput("app.bsky.draft.deleteDraft", { id });
 }
 
 /** Private AppView stash only. No repo records, public fallback, or mutation retries. */

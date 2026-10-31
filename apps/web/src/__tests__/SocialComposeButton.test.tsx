@@ -78,6 +78,8 @@ beforeEach(() => {
   restores.push(() => list.mockRestore(), () => create.mockRestore(), () => update.mockRestore(), () => remove.mockRestore());
   const load = spyOn(draftStorage, "loadComposerDraft").mockImplementation(async (did, context) => clone(localDrafts.get(`${did}:${context}`)));
   const save = spyOn(draftStorage, "saveComposerDraft").mockImplementation(async (did, context, draft) => { const key = `${did}:${context}`; if (draft) localDrafts.set(key, clone(draft)); else localDrafts.delete(key); });
+  const pending = spyOn(draftStorage, "pendingPublicationCleanups").mockImplementation(async did => Array.from(localDrafts).filter(([key, draft]) => key.startsWith(`${did}:publication-cleanup:`) && draft.cloud?.completed).map(([key, draft]) => ({ context: key.slice(did.length + 1), draft: clone(draft) })));
+  restores.push(() => pending.mockRestore());
   restores.push(() => load.mockRestore(), () => save.mockRestore());
   isPro = true;
   const entitlement = spyOn(Pro, "useProEntitlements").mockImplementation(() => ({ isPro }) as ReturnType<typeof Pro.useProEntitlements>); restores.push(() => entitlement.mockRestore());
@@ -597,15 +599,17 @@ it("retries failed draft cleanup without publishing the successful post again", 
   render(<QueryClientProvider client={cache}><SocialComposeButton initialDraft={initial} autoOpen hideTrigger /></QueryClientProvider>);
   await loadedField();
   fireEvent.click(screen.getByRole("button", { name: "Post" }));
-  await screen.findByRole("button", { name: "Finish Draft Cleanup" });
-  expect(publish).toHaveBeenCalledTimes(1);
-  const submit = screen.getByRole("button", { name: "Post" });
-  expect(submit.hasAttribute("disabled")).toBe(true);
-  fireEvent.click(submit);
-  remove.mockResolvedValue(undefined);
-  fireEvent.click(screen.getByRole("button", { name: "Finish Draft Cleanup" }));
+  await screen.findByText("Post Published");
   await waitForDialogClosed();
-  expect(remove).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("button", { name: "Finish Draft Cleanup" })).toBeNull();
+  expect(publish).toHaveBeenCalledTimes(1);
+  await act(async () => { cleanup(); });
+  const field = await open();
+  expect(field.value).toBe("");
+  await screen.findByRole("button", { name: "Retry Draft Cleanup" });
+  remove.mockResolvedValue(undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Retry Draft Cleanup" }));
+  await waitFor(() => expect(Array.from(localDrafts.keys()).some(key => key.includes(":publication-cleanup:"))).toBe(false));
   expect(publish).toHaveBeenCalledTimes(1);
 });
 
@@ -642,8 +646,8 @@ it("does not restore the imported external fallback after its visible preview is
   remoteDrafts.set(initial.id, initial);
   const metadata = spyOn(ogPreview, "fetchLatrOgPreview").mockResolvedValue({ title: "Imported Article", excerpt: "Article summary" });
   const publish = spyOn(compose, "createBlueskyPost").mockImplementation(async () => {
-    // Publish flushes autosave first; the native embed must already be gone.
-    expect(remoteDrafts.get(initial.id)?.draft.posts[0].embedExternals).toBeUndefined();
+    // Publishing checkpoints local intent without requiring a cloud update.
+    expect(localDrafts.get(`${oauth.did}:social-draft:${initial.id}`)?.segments[0].removedLinkUrl).toBe(uri);
     return { uri: "at://did:plc:viewer/app.bsky.feed.post/no-external", cid: "cid" };
   });
   restores.push(() => metadata.mockRestore(), () => publish.mockRestore());
@@ -659,4 +663,26 @@ it("does not restore the imported external fallback after its visible preview is
   expect(publish.mock.calls[0][0].text).toBe("Read this");
   expect(publish.mock.calls[0][0].linkPreview).toBeUndefined();
   expect(publish.mock.calls[0][0].publication?.segments[0].draft.linkPreview).toBeUndefined();
+});
+
+it("publishes when draft sync is down using the durable local publication journal", async () => {
+  const list = spyOn(cloudDrafts, "listSocialDrafts").mockRejectedValue(new Error("Draft service down"));
+  const create = spyOn(cloudDrafts, "createSocialDraft").mockRejectedValue(new Error("Draft service down"));
+  const publish = spyOn(compose, "createBlueskyPost").mockImplementation(async args => {
+    expect(localDrafts.get(`${oauth.did}:new-post`)?.segments[0].text).toBe("Independent post");
+    args.publication!.segments[0].attempted = true;
+    await args.checkpoint?.();
+    expect(localDrafts.get(`${oauth.did}:new-post`)?.publication?.segments[0].rkey).toBe(args.publication!.segments[0].rkey);
+    return { uri: `at://${oauth.did}/app.bsky.feed.post/local`, cid: "cid" };
+  });
+  restores.push(() => list.mockRestore(), () => create.mockRestore(), () => publish.mockRestore());
+  fireEvent.change(await open(), { target: { value: "Independent post" } });
+  await screen.findByText("Draft service down", {}, { timeout: 2000 });
+  fireEvent.click(screen.getByRole("button", { name: "Post" }));
+  await screen.findByText("Post Published");
+  await waitForDialogClosed();
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(create).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Compose Post" }));
+  expect((await loadedField()).value).toBe("");
 });
