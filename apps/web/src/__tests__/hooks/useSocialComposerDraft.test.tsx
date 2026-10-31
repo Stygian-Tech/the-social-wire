@@ -153,10 +153,11 @@ it("persists completion before failed cloud cleanup and never restores a publish
   await act(async () => { await expect(hook.result.current.clear()).rejects.toThrow("Offline"); });
   hook.unmount(); const reopened = harness(); await waitFor(() => expect(reopened.result.current.loaded).toBe(true));
   expect(reopened.result.current.segments[0].text).toBe("");
-  await act(async () => { await expect(reopened.result.current.flush()).rejects.toThrow("Already Published"); });
+  await act(async () => reopened.result.current.flush());
+  expect((await Storage.pendingPublicationCleanups(did)).length).toBe(1);
   remove.mockImplementation(async () => {});
-  await act(async () => reopened.result.current.retry());
-  expect(await Storage.loadComposerDraft(did, "new-post")).toBeUndefined();
+  await act(async () => reopened.result.current.retryCleanups());
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("");
 });
 it("stops on changed remote payloads and retains the local copy", async () => {
   const initial = view("existing", { posts: [{ text: "Original" }], langs: ["de"] }); remote = [initial];
@@ -812,4 +813,84 @@ it.each([false, true])("converges retired shared GIF files to canonical IDs on R
   const { socialDraftToSegments } = await import("@/lib/socialDraftConversion");
   const saved = remote.find(view => view.id === hook.result.current.cloudId)!;
   expect(socialDraftToSegments(saved.draft).map(segment => segment.media?.kind === "gif" ? segment.media.alt : undefined)).toEqual(["A celebratory animation", "Second post description"]);
+});
+
+it.each([
+  Object.assign(new Error("Unauthorized"), { status: 401 }),
+  Object.assign(new Error("Forbidden"), { statusCode: 403 }),
+  Object.assign(new Error("Limit"), { status: 400, error: "DraftLimitReached" }),
+  Object.assign(new Error("Payload"), { status: 400, error: "InvalidRequest" }),
+  new Transport.DraftInputRejectedError("Invalid Input"),
+])("clears a definitely rejected create intent and permits a renewed explicit save: %j", async error => {
+  const create = spyOn(Transport, "createSocialDraft").mockRejectedValue(error); restores.push(() => create.mockRestore());
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Retry after rejection" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow(error.message); });
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.createIntent).toBeUndefined();
+  hook.unmount(); hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  create.mockImplementation(async ({ draft }) => { remote.push(view("renewed", draft)); return { id: "renewed" }; });
+  await act(async () => hook.result.current.retry());
+  expect(hook.result.current.cloudId).toBe("renewed");
+  expect(create).toHaveBeenCalledTimes(2);
+});
+
+it.each([500, 502, 503, 400])("retains ambiguous create authority after HTTP %i", async status => {
+  const create = spyOn(Transport, "createSocialDraft").mockRejectedValue(Object.assign(new Error("Uncertain"), { status })); restores.push(() => create.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Potentially saved" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Uncertain"); });
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.createIntent).toBeDefined();
+  await act(async () => { await expect(hook.result.current.retry()).rejects.toThrow("Without Creating Another"); });
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it("checkpoints for publication without cloud service, and fails closed on local storage loss", async () => {
+  const list = spyOn(Transport, "listSocialDrafts").mockRejectedValue(new Error("Cloud offline")); restores.push(() => list.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Publish locally" }]));
+  await act(async () => { expect(await hook.result.current.beginPublication()).toEqual([{ id: "s", text: "Publish locally" }]); });
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Publish locally");
+  expect(list).not.toHaveBeenCalled(); expect(Transport.createSocialDraft).not.toHaveBeenCalled();
+  hook.result.current.endPublication();
+  const save = spyOn(Storage, "saveComposerDraft").mockRejectedValue(new Error("Quota")); restores.push(() => save.mockRestore());
+  await act(async () => { await expect(hook.result.current.beginPublication()).rejects.toThrow("Quota"); });
+});
+
+it("settles in-flight create identity without syncing later edits over the publication snapshot", async () => {
+  const gate = deferred<{ id: string }>();
+  const create = spyOn(Transport, "createSocialDraft").mockReturnValue(gate.promise); restores.push(() => create.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Old autosave" }]));
+  let saving!: Promise<void>;
+  act(() => { saving = hook.result.current.flush(); });
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Publication snapshot" }]));
+  let barrier!: Promise<ThreadSegment[]>;
+  act(() => { barrier = hook.result.current.beginPublication(); });
+  await act(async () => { gate.resolve({ id: "created" }); await saving; expect((await barrier)[0].text).toBe("Publication snapshot"); });
+  expect(Transport.updateSocialDraft).not.toHaveBeenCalled();
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.id).toBe("created");
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Publication snapshot");
+});
+
+it("keeps unknown-create cleanup discoverable across a new composition and reconciles without resurrecting it", async () => {
+  let payload!: AppBskyDraftDefs.Draft;
+  const create = spyOn(Transport, "createSocialDraft").mockImplementation(async args => { payload = args.draft; throw new Error("Timeout"); }); restores.push(() => create.mockRestore());
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Published despite lost create" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Timeout"); await hook.result.current.beginPublication(); await hook.result.current.complete(); });
+  await waitFor(() => expect(hook.result.current.pendingCleanups).toBe(true));
+  expect(await Storage.loadComposerDraft(did, "new-post")).toBeUndefined();
+  expect((await Storage.pendingPublicationCleanups(did))[0].draft.cloud?.createIntent?.draft).toEqual(payload);
+  hook.unmount(); hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  expect(hook.result.current.segments[0].text).toBe("");
+  act(() => hook.result.current.setSegments([{ id: "next", text: "Next composition" }]));
+  await act(async () => hook.result.current.checkpoint());
+  remote = [view("late-create", payload)];
+  await act(async () => hook.result.current.retryCleanups());
+  expect(remote).toEqual([]);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect((await Storage.pendingPublicationCleanups(did)).length).toBe(0);
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Next composition");
+  expect((await Storage.loadComposerDraft(did, "social-draft:late-create"))?.cloud).toMatchObject({ completed: true, cleaned: true });
 });

@@ -32,9 +32,12 @@ async function request<T>(args: DraftActor, send: (signal: AbortSignal) => Promi
   }
 }
 
+export class DraftInputRejectedError extends Error {}
+
 function validateInput(method: string, payload: unknown): void {
   // Validate the original object; rebuilding known fields would lose future SDK data.
-  lexicons.assertValidXrpcInput(`app.bsky.draft.${method}`, payload);
+  try { lexicons.assertValidXrpcInput(`app.bsky.draft.${method}`, payload); }
+  catch (error) { throw new DraftInputRejectedError(error instanceof Error ? error.message : "Invalid Draft Payload", { cause: error }); }
 }
 
 function validateId(id: string): void {
