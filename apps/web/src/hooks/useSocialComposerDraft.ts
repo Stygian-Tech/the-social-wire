@@ -4,8 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import type { AppBskyDraftDefs } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { ThreadPublication, ThreadSegment } from "@/lib/blueskyThreadClient";
-import { loadComposerDraft, saveComposerDraft, type ComposerDraft } from "@/lib/composerDraftStorage";
-import { createSocialDraft, deleteSocialDraft, listSocialDrafts, updateSocialDraft } from "@/lib/blueskyDraftClient";
+import { loadComposerDraft, saveComposerDraft, pendingPublicationCleanups, type ComposerDraft } from "@/lib/composerDraftStorage";
+import { createSocialDraft, deleteSocialDraft, listSocialDrafts, updateSocialDraft, DraftInputRejectedError } from "@/lib/blueskyDraftClient";
+import { archivePublishedComposition, cleanupPublishedComposition } from "@/lib/socialPublicationCleanup";
 import { isMissingOAuthScope, SCOPE_RECOVERY_MESSAGE } from "@/lib/oauthScopeRecovery";
 import { segmentsToSocialDraft, socialDraftDeviceId, socialDraftFingerprint, socialDraftHasContent, socialDraftToSegments, preparePrivateDraftPhotos, privateDraftPhotoRefs, hasPrivateDraftPhotos, restorePrivateDraftPhotos, hasDraftGifs, restorePrivateDraftGifs, preparePrivateDraftGifs, privateDraftGifRefs } from "@/lib/socialDraftConversion";
 
@@ -35,8 +36,11 @@ type Composition = {
   conflict?: string;
   conflictingRemote?: AppBskyDraftDefs.DraftView;
   resolving?: boolean;
+  publishing?: boolean;
+  restoring?: Promise<void>;
   inFlight?: Promise<void>;
 };
+const publicationFence = new Error("Draft Sync Paused For Publishing.");
 const blank = (): ThreadSegment[] => [{ id: crypto.randomUUID(), text: "" }];
 const attempted = (publication?: ThreadPublication) => publication?.segments.some(segment => segment.attempted) ?? false;
 const conflictMessage = "This Draft Changed On Another Device. Your Local Copy Is Safe. Reopen The Remote Draft To Resolve The Conflict.";
@@ -53,6 +57,14 @@ const definiteUpdateRejection = (error: unknown): boolean => {
   return [response.status, response.statusCode, response.response?.status].some(status => status === 401 || status === 403);
 };
 
+// Upstream createDraft rejects malformed inputs and DraftLimitReached before
+// enqueueing a create. Other 400 errors (for example proxy failures) stay uncertain.
+const isDefiniteCreateRejection = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { status?: number; error?: string };
+  return value.status === 400 && ["DraftLimitReached", "InvalidRequest"].includes(value.error ?? "");
+};
+
 /** Local recovery and the publication journal are authoritative until explicitly cleared. */
 export function useSocialComposerDraft(options: Options) {
   const latest = useRef(options);
@@ -66,6 +78,15 @@ export function useSocialComposerDraft(options: Options) {
   const [cloudId, setCloudId] = useState<string>();
   const [completed, setCompleted] = useState(false);
   const [cleanupPending, setCleanupPending] = useState(false);
+  const [pendingCleanups, setPendingCleanups] = useState(false);
+  const cleanupWork = useRef<Promise<void> | undefined>(undefined);
+  const cleanupController = useRef(new AbortController());
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    cleanupController.current = controller;
+    cleanupWork.current = undefined;
+    return () => controller.abort();
+  }, [options.ownerDid, options.session]);
   const [hasConflict, setHasConflict] = useState(false);
   const [unsupportedPublishSettings, setUnsupportedPublishSettings] = useState(false);
   useLayoutEffect(() => { latest.current = options; segments.current = options.segments; });
@@ -144,7 +165,7 @@ export function useSocialComposerDraft(options: Options) {
     } catch (error) {
       // These responses prove the replacement was rejected. Transport failures
       // remain uncertain, including across reloads and renewed authorization.
-      if (definiteUpdateRejection(error)) {
+      if (definiteUpdateRejection(error) || error instanceof DraftInputRejectedError) {
         guard(run);
         if (run.cloud.pendingUpdate === pending) delete run.cloud.pendingUpdate;
         await persist(run);
@@ -212,7 +233,7 @@ export function useSocialComposerDraft(options: Options) {
         }
       }
       guard(run);
-      if (attempted(latest.current.publicationRef.current) || run.stopped) return;
+      if (attempted(latest.current.publicationRef.current) || run.stopped || run.publishing) return;
       await sendPendingUpdate(run, pending);
       // One resend per invocation. Its result must pass bounded readback too.
       await confirmUpdate(run);
@@ -287,7 +308,7 @@ export function useSocialComposerDraft(options: Options) {
     guard(run);
     if (!run.loaded) throw new Error("Wait For Draft Recovery Before Continuing.");
     if (run.cloud.completed) throw new Error("This Composition Was Already Published. Retry Draft Cleanup.");
-    if (run.stopped || run.resolving) return;
+    if (run.stopped || run.resolving || run.publishing) return;
     await persist(run);
     if (attempted(latest.current.publicationRef.current)) return;
     if (run.conflict) throw new Error(run.conflict);
@@ -295,11 +316,12 @@ export function useSocialComposerDraft(options: Options) {
     if (run.cloud.pendingUpdate) await confirmUpdate(run, allowResend);
     for (;;) {
       guard(run);
-      if (attempted(latest.current.publicationRef.current) || run.stopped) return;
+      if (attempted(latest.current.publicationRef.current) || run.stopped || run.publishing) return;
       if (!run.cloud.id && !socialDraftHasContent(segments.current)) { setStatus("Draft Saved Locally"); return; }
       if (segments.current.some(segment => segment.unavailableDraftMedia && segment.nativeDraftPost?.embedImages?.some(image => image.localRef.path.startsWith("socialwire-private:")))) throw new Error("Private Draft Photos Are Unavailable. Retry Loading Them Or Reattach Them On The Original Device Before Publishing.");
       await preparePrivateDraftPhotos(actor(run), segments.current, async prepared => {
         guard(run);
+        if (run.publishing) throw publicationFence;
         // Carry only attachment metadata onto current edits; never overwrite text,
         // removals, or a photo replaced while the upload was in flight.
         const photos = prepared.flatMap(segment => segment.media?.kind === "photos" ? segment.media.photos : []);
@@ -315,6 +337,7 @@ export function useSocialComposerDraft(options: Options) {
       });
       await preparePrivateDraftGifs(actor(run), segments.current, async prepared => {
         guard(run);
+        if (run.publishing) throw publicationFence;
         let changed = false;
         segments.current = segments.current.map(segment => {
           if (segment.media?.kind !== "gif") return segment;
@@ -329,6 +352,7 @@ export function useSocialComposerDraft(options: Options) {
         await persist(run);
       });
       guard(run);
+      if (run.publishing) return;
       if (segments.current.some(segment => segment.media?.kind === "photos" && segment.media.photos.some(photo => photo.privateAttachment?.ownerDid !== run.ownerDid || photo.privateAttachment.original.state !== "ready" || photo.privateAttachment.prepared.state !== "ready"))) continue;
       if (segments.current.some(segment => segment.media?.kind === "gif" && (!segment.media.privateFiles || segment.media.privateFiles.ownerDid !== run.ownerDid || segment.media.unavailable))) continue;
       const payloadSegments = segments.current;
@@ -353,24 +377,23 @@ export function useSocialComposerDraft(options: Options) {
         return;
       }
       await persist(run);
-      if (attempted(latest.current.publicationRef.current) || run.stopped) return;
+      if (attempted(latest.current.publicationRef.current) || run.stopped || run.publishing) return;
       if (!run.cloud.id) {
         const baselineIds = (await list(run)).map(view => view.id);
         guard(run);
-        if (attempted(latest.current.publicationRef.current) || run.stopped) return;
+        if (attempted(latest.current.publicationRef.current) || run.stopped || run.publishing) return;
         run.cloud.createIntent = { draft: payload, baselineIds };
         // Persist intent BEFORE the non-idempotent request, including across reloads.
         await persist(run);
-        if (attempted(latest.current.publicationRef.current) || run.stopped) {
+        if (attempted(latest.current.publicationRef.current) || run.stopped || run.publishing) {
           delete run.cloud.createIntent;
           await persist(run);
           return;
         }
         const created = await createSocialDraft({ ...actor(run), draft: payload }).catch(async error => {
-          // A rejected permission check cannot have created a stash operation.
-          // Retain uncertain intents for transport failures, but allow renewed
-          // authorization to retry a definitively rejected creation.
-          if (isMissingOAuthScope(error) || error instanceof Error && error.message === SCOPE_RECOVERY_MESSAGE) {
+          // Input/auth/limit rejection occurs before a stash write. Keep
+          // ambiguous transport and server failures for readback reconciliation.
+          if (definiteUpdateRejection(error) || error instanceof DraftInputRejectedError || isDefiniteCreateRejection(error)) {
             guard(run);
             delete run.cloud.createIntent;
             await persist(run);
@@ -398,7 +421,7 @@ export function useSocialComposerDraft(options: Options) {
           throw new Error(conflictMessage);
         }
         guard(run);
-        if (attempted(latest.current.publicationRef.current) || run.stopped) return;
+        if (attempted(latest.current.publicationRef.current) || run.stopped || run.publishing) return;
         run.cloud.pendingUpdate = { draft: payload, previous: run.cloud.acknowledged };
         await persist(run);
         await sendPendingUpdate(run, run.cloud.pendingUpdate);
@@ -412,7 +435,7 @@ export function useSocialComposerDraft(options: Options) {
   function flushRun(run: Composition, allowResend = false): Promise<void> {
     if (run.inFlight) return run.inFlight;
     setSaving(true);
-    const promise = saveRemote(run, allowResend).catch(error => { report(run, error); throw error; }).finally(() => {
+    const promise = saveRemote(run, allowResend).catch(error => { if (error !== publicationFence) report(run, error); throw error; }).finally(() => {
       if (run.inFlight === promise) run.inFlight = undefined;
       if (current.current === run) setSaving(false);
     });
@@ -432,7 +455,11 @@ export function useSocialComposerDraft(options: Options) {
       setLoaded(false); setSaving(false); setCloudId(undefined); setCompleted(false); setCleanupPending(false); setHasConflict(false); setUnsupportedPublishSettings(false); setStorageError(undefined); setSyncError(undefined); setStatus("Loading Draft");
       await acquireEditor(run);
       run.cloud.deviceId = socialDraftDeviceId();
-      const local = await loadComposerDraft(run.ownerDid, run.context);
+      let local = await loadComposerDraft(run.ownerDid, run.context);
+      if (run.context === "new-post" && local?.cloud?.completed) {
+        await archivePublishedComposition(run.ownerDid, run.context, local, () => guard(run));
+        local = undefined;
+      }
       guard(run);
       let restored = blank();
       latest.current.publicationRef.current = undefined;
@@ -480,6 +507,7 @@ export function useSocialComposerDraft(options: Options) {
       setHasConflict(!!run.conflict);
       if (run.cloud.createIntent) setSyncError(uncertainMessage);
       await persist(run);
+      void retryCleanups().catch(() => {});
     })().catch(error => {
       if (current.current === run && !run.controller.signal.aborted) { setStorageError(error instanceof Error ? error.message : "Draft Could Not Be Restored."); setStatus("Draft Recovery Failed"); }
     });
@@ -498,7 +526,7 @@ export function useSocialComposerDraft(options: Options) {
 
   useEffect(() => {
     const run = current.current;
-    if (!options.enabled || !loaded || !run?.loaded || run.stopped || run.cloud.completed) return;
+    if (!options.enabled || !loaded || !run?.loaded || run.stopped || run.publishing || run.cloud.completed) return;
     run.cloud.updatedAt = Date.now();
     void persist(run).catch(() => {});
     if (attempted(options.publicationRef.current)) return;
@@ -515,6 +543,64 @@ export function useSocialComposerDraft(options: Options) {
   }
   async function checkpoint() { await persist(active()); }
   async function flush() { await flushRun(active()); }
+  async function beginPublication() {
+    const run = active();
+    if (run.stopped || run.cloud.completed) throw new Error("This Composition Was Already Published.");
+    if (run.resolving) throw new Error("Wait For Draft Recovery Before Publishing.");
+    run.publishing = true;
+    const snapshot = segments.current;
+    try {
+      // Stop new autosaves, settle the one already holding cloud identity, and
+      // prevent attachment restoration from changing the submitted snapshot.
+      await run.inFlight?.catch(() => {});
+      await run.restoring?.catch(() => {});
+      guard(run);
+      if (unsupportedSettings(run.cloud.nativeDraft)) throw new Error("This Draft Has Unsupported Publish Settings.");
+      if (snapshot.some(segment => segment.unavailableDraftMedia || segment.media?.kind === "gif" && segment.media.unavailable)) throw new Error("Some Attachments Are Unavailable.");
+      segments.current = snapshot;
+      await persist(run);
+      return snapshot;
+    } catch (error) { run.publishing = false; throw error; }
+  }
+  function endPublication() { const run = current.current; if (run) run.publishing = false; }
+  async function retryCleanups() {
+    if (cleanupWork.current) return cleanupWork.current;
+    const run = active();
+    const session = run.session;
+    const signal = cleanupController.current.signal;
+    const assertCurrentActor = () => {
+      signal.throwIfAborted();
+      if (!session || session.did !== run.ownerDid || latest.current.ownerDid !== run.ownerDid || latest.current.session !== session) throw new Error("Your Account Changed. Reopen The Composer.");
+    };
+    const work = (async () => {
+      const pending = await pendingPublicationCleanups(run.ownerDid);
+      assertCurrentActor();
+      setPendingCleanups(pending.length > 0);
+      let failure: unknown;
+      for (const item of pending) {
+        try { await cleanupPublishedComposition({ session: session!, viewerDid: run.ownerDid, signal, assertCurrentActor }, item.context, item.draft); }
+        catch (error) { assertCurrentActor(); failure ??= error; }
+        assertCurrentActor();
+      }
+      setPendingCleanups(!!failure);
+      if (pending.length) latest.current.onChanged?.();
+      if (failure) throw failure;
+    })();
+    cleanupWork.current = work;
+    try { await work; } finally { if (cleanupWork.current === work) cleanupWork.current = undefined; }
+  }
+  async function complete() {
+    const run = active();
+    run.stopped = true;
+    run.cloud.completed = true;
+    await run.inFlight?.catch(() => {});
+    guard(run);
+    await persist(run);
+    await archivePublishedComposition(run.ownerDid, run.context, { version: 1, did: run.ownerDid, segments: segments.current, publication: latest.current.publicationRef.current, cloud: run.cloud }, () => guard(run));
+    setCompleted(true); setStatus("Published");
+    // Completion is durable. Cloud cleanup is independent of publish success.
+    void retryCleanups().catch(() => {});
+  }
   async function cleanupPublished(run: Composition) {
     if (run.cleaned) return;
     await persist(run);
@@ -577,7 +663,7 @@ export function useSocialComposerDraft(options: Options) {
     // A failed exclusive-lock/recovery initialization has never admitted edits.
     if (!current.current?.loaded) return;
     const run = active();
-    if (run.cleaned) return;
+    if (run.cleaned || run.cloud.completed) return;
     await flushRun(run);
     guard(run);
     if (attempted(latest.current.publicationRef.current)) return;
@@ -595,7 +681,7 @@ export function useSocialComposerDraft(options: Options) {
       latest.current.restore(segments.current);
     } else throw new Error("Draft Has Unsynced Changes. Keep The Composer Open And Retry.");
   }
-  async function retry() {
+  async function retryWork() {
     const run = active();
     if (run.cloud.completed) {
       try { await cleanupPublished(run); } catch (error) { report(run, error); throw error; }
@@ -608,6 +694,7 @@ export function useSocialComposerDraft(options: Options) {
         try {
           const restored = await restoreAttachments(run, segmentsToSocialDraft(segments.current, run.cloud.deviceId, run.cloud.nativeDraft), segments.current);
           guard(run);
+          if (run.publishing) return;
           segments.current = restored;
           latest.current.restore(restored);
           await persist(run);
@@ -615,6 +702,13 @@ export function useSocialComposerDraft(options: Options) {
       }
       await flushRun(run, true);
     }
+  }
+  async function retry() {
+    const run = active();
+    if (run.publishing) return;
+    const work = retryWork();
+    run.restoring = work;
+    try { await work; } finally { if (run.restoring === work) run.restoring = undefined; }
   }
   async function preserveConflictCopy(run: Composition) {
     const context = `social-conflict:${run.cloud.id ?? "new"}:${crypto.randomUUID()}`;
@@ -675,5 +769,5 @@ export function useSocialComposerDraft(options: Options) {
     } catch (error) { report(run, error); throw error; }
     finally { run.resolving = false; if (current.current === run) setSaving(false); }
   }
-  return { loaded: options.enabled && loaded, saving, status, storageError, syncError, cloudId, completed, cleanupPending, hasConflict, unsupportedPublishSettings, checkpoint, flush, clear, close, retry, forkLocal, openRemote, hasUnavailableMedia: options.segments.some(segment => !!segment.unavailableDraftMedia || segment.media?.kind === "gif" && !!segment.media.unavailable) };
+  return { loaded: options.enabled && loaded, saving, status, storageError, syncError, cloudId, completed, cleanupPending, hasConflict, unsupportedPublishSettings, checkpoint, flush, beginPublication, endPublication, complete, pendingCleanups, retryCleanups, clear, close, retry, forkLocal, openRemote, hasUnavailableMedia: options.segments.some(segment => !!segment.unavailableDraftMedia || segment.media?.kind === "gif" && !!segment.media.unavailable) };
 }

@@ -153,10 +153,11 @@ it("persists completion before failed cloud cleanup and never restores a publish
   await act(async () => { await expect(hook.result.current.clear()).rejects.toThrow("Offline"); });
   hook.unmount(); const reopened = harness(); await waitFor(() => expect(reopened.result.current.loaded).toBe(true));
   expect(reopened.result.current.segments[0].text).toBe("");
-  await act(async () => { await expect(reopened.result.current.flush()).rejects.toThrow("Already Published"); });
+  await act(async () => reopened.result.current.flush());
+  expect((await Storage.pendingPublicationCleanups(did)).length).toBe(1);
   remove.mockImplementation(async () => {});
-  await act(async () => reopened.result.current.retry());
-  expect(await Storage.loadComposerDraft(did, "new-post")).toBeUndefined();
+  await act(async () => reopened.result.current.retryCleanups());
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("");
 });
 it("stops on changed remote payloads and retains the local copy", async () => {
   const initial = view("existing", { posts: [{ text: "Original" }], langs: ["de"] }); remote = [initial];
@@ -435,9 +436,10 @@ it.each([
   { status: 401 },
   { statusCode: 403 },
   { response: { status: 403 } },
+  new Transport.DraftInputRejectedError("Rejected update"),
 ])("clears a definitively rejected update so renewed authorization can retry: %j", async failure => {
   const initial = view("existing", { posts: [{ text: "Original" }] }); remote = [initial];
-  const update = spyOn(Transport, "updateSocialDraft").mockRejectedValue(Object.assign(new Error("Rejected update"), failure)); restores.push(() => update.mockRestore());
+  const update = spyOn(Transport, "updateSocialDraft").mockRejectedValue(failure instanceof Error ? failure : Object.assign(new Error("Rejected update"), failure)); restores.push(() => update.mockRestore());
   const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
   act(() => hook.result.current.setSegments(previous => [{ ...previous[0], text: "Keep this local edit" }]));
   await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Rejected update"); });
@@ -812,4 +814,187 @@ it.each([false, true])("converges retired shared GIF files to canonical IDs on R
   const { socialDraftToSegments } = await import("@/lib/socialDraftConversion");
   const saved = remote.find(view => view.id === hook.result.current.cloudId)!;
   expect(socialDraftToSegments(saved.draft).map(segment => segment.media?.kind === "gif" ? segment.media.alt : undefined)).toEqual(["A celebratory animation", "Second post description"]);
+});
+
+it.each([
+  Object.assign(new Error("Unauthorized"), { status: 401 }),
+  Object.assign(new Error("Forbidden"), { statusCode: 403 }),
+  Object.assign(new Error("Limit"), { status: 400, error: "DraftLimitReached" }),
+  Object.assign(new Error("Payload"), { status: 400, error: "InvalidRequest" }),
+  new Transport.DraftInputRejectedError("Invalid Input"),
+])("clears a definitely rejected create intent and permits a renewed explicit save: %j", async error => {
+  const create = spyOn(Transport, "createSocialDraft").mockRejectedValue(error); restores.push(() => create.mockRestore());
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Retry after rejection" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow(error.message); });
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.createIntent).toBeUndefined();
+  hook.unmount(); hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  create.mockImplementation(async ({ draft }) => { remote.push(view("renewed", draft)); return { id: "renewed" }; });
+  await act(async () => hook.result.current.retry());
+  expect(hook.result.current.cloudId).toBe("renewed");
+  expect(create).toHaveBeenCalledTimes(2);
+});
+
+it.each([500, 502, 503, 400])("retains ambiguous create authority after HTTP %i", async status => {
+  const create = spyOn(Transport, "createSocialDraft").mockRejectedValue(Object.assign(new Error("Uncertain"), { status })); restores.push(() => create.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Potentially saved" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Uncertain"); });
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.createIntent).toBeDefined();
+  await act(async () => { await expect(hook.result.current.retry()).rejects.toThrow("Without Creating Another"); });
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it("checkpoints for publication without cloud service, and fails closed on local storage loss", async () => {
+  const list = spyOn(Transport, "listSocialDrafts").mockRejectedValue(new Error("Cloud offline")); restores.push(() => list.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Publish locally" }]));
+  await act(async () => { expect(await hook.result.current.beginPublication()).toEqual([{ id: "s", text: "Publish locally" }]); });
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Publish locally");
+  expect(list).not.toHaveBeenCalled(); expect(Transport.createSocialDraft).not.toHaveBeenCalled();
+  hook.result.current.endPublication();
+  const save = spyOn(Storage, "saveComposerDraft").mockRejectedValue(new Error("Quota")); restores.push(() => save.mockRestore());
+  await act(async () => { await expect(hook.result.current.beginPublication()).rejects.toThrow("Quota"); });
+});
+
+it("settles in-flight create identity without syncing later edits over the publication snapshot", async () => {
+  const gate = deferred<{ id: string }>();
+  const create = spyOn(Transport, "createSocialDraft").mockReturnValue(gate.promise); restores.push(() => create.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Old autosave" }]));
+  let saving!: Promise<void>;
+  act(() => { saving = hook.result.current.flush(); });
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Publication snapshot" }]));
+  let barrier!: Promise<ThreadSegment[]>;
+  act(() => { barrier = hook.result.current.beginPublication(); });
+  await act(async () => { gate.resolve({ id: "created" }); await saving; expect((await barrier)[0].text).toBe("Publication snapshot"); });
+  expect(Transport.updateSocialDraft).not.toHaveBeenCalled();
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.cloud?.id).toBe("created");
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Publication snapshot");
+});
+
+it("keeps unknown-create cleanup discoverable across a new composition and reconciles without resurrecting it", async () => {
+  let payload!: AppBskyDraftDefs.Draft;
+  const create = spyOn(Transport, "createSocialDraft").mockImplementation(async args => { payload = args.draft; throw new Error("Timeout"); }); restores.push(() => create.mockRestore());
+  let hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Published despite lost create" }]));
+  await act(async () => { await expect(hook.result.current.flush()).rejects.toThrow("Timeout"); await hook.result.current.beginPublication(); await hook.result.current.complete(); });
+  await waitFor(() => expect(hook.result.current.pendingCleanups).toBe(true));
+  expect(await Storage.loadComposerDraft(did, "new-post")).toBeUndefined();
+  expect((await Storage.pendingPublicationCleanups(did))[0].draft.cloud?.createIntent?.draft).toEqual(payload);
+  hook.unmount(); hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  expect(hook.result.current.segments[0].text).toBe("");
+  act(() => hook.result.current.setSegments([{ id: "next", text: "Next composition" }]));
+  await act(async () => hook.result.current.checkpoint());
+  remote = [view("late-create", payload)];
+  await act(async () => hook.result.current.retryCleanups());
+  expect(remote).toEqual([]);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect((await Storage.pendingPublicationCleanups(did)).length).toBe(0);
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Next composition");
+  expect((await Storage.loadComposerDraft(did, "social-draft:late-create"))?.cloud).toMatchObject({ completed: true, cleaned: true });
+});
+
+it("fences late private photo metadata while settling autosave before publication", async () => {
+  const gate = deferred<Attachments.DraftAttachment>();
+  let pending!: Attachments.DraftAttachment;
+  const upload = spyOn(Attachments, "uploadDraftAttachment").mockImplementation(async (_actor, asset) => { pending = asset; return gate.promise; }); restores.push(() => upload.mockRestore());
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  const photo = { id: "p", name: "p.jpg", original: new Blob(["original"], { type: "image/jpeg" }), blob: new Blob(["prepared"], { type: "image/jpeg" }), width: 10, height: 20, alt: "Photo", status: "ready" as const };
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Old", media: { kind: "photos", photos: [photo] } }]));
+  let saving!: Promise<void>;
+  act(() => { saving = hook.result.current.flush().catch(() => {}); });
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+  act(() => hook.result.current.setSegments(previous => previous.map(segment => ({ ...segment, text: "Publish this" }))));
+  let barrier!: Promise<ThreadSegment[]>;
+  act(() => { barrier = hook.result.current.beginPublication(); });
+  await act(async () => { gate.resolve({ ...pending, state: "ready" }); await saving; await barrier; });
+  expect(hook.result.current.segments[0].text).toBe("Publish this");
+  const snapshot = (await barrier)[0];
+  expect(snapshot.text).toBe("Publish this");
+  expect(snapshot.media?.kind).toBe("photos");
+  if (snapshot.media?.kind !== "photos") throw new Error("Missing Photo");
+  expect(snapshot.media.photos[0].privateAttachment?.original.state).toBe("reserved");
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(Transport.createSocialDraft).not.toHaveBeenCalled();
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("Publish this");
+});
+
+it("allows publication after an in-flight cloud update fails while preserving its uncertainty", async () => {
+  const initial = view("existing", { posts: [{ text: "Old" }] }); remote = [initial];
+  const gate = deferred<void>();
+  const update = spyOn(Transport, "updateSocialDraft").mockReturnValue(gate.promise); restores.push(() => update.mockRestore());
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Publish replacement" }]));
+  let saving!: Promise<void>;
+  act(() => { saving = hook.result.current.flush().catch(() => {}); });
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  let barrier!: Promise<ThreadSegment[]>;
+  act(() => { barrier = hook.result.current.beginPublication(); });
+  await act(async () => { gate.reject(new Error("Cloud down")); await saving; expect((await barrier)[0].text).toBe("Publish replacement"); });
+  expect((await Storage.loadComposerDraft(did, "social-draft:existing"))?.cloud?.pendingUpdate).toBeDefined();
+});
+
+it("retries attachment cleanup after native deletion without deleting the successor composition", async () => {
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  const photo = { id: "p", name: "p.jpg", original: new Blob(["original"], { type: "image/jpeg" }), blob: new Blob(["prepared"], { type: "image/jpeg" }), width: 10, height: 20, alt: "Photo", status: "ready" as const };
+  act(() => hook.result.current.setSegments([{ id: "s", text: "Published photo", media: { kind: "photos", photos: [photo] } }]));
+  await act(async () => hook.result.current.flush());
+  const id = hook.result.current.cloudId!;
+  const remove = spyOn(Attachments, "deleteDraftAttachmentManifest").mockRejectedValue(new Error("Attachments offline")); restores.push(() => remove.mockRestore());
+  await act(async () => { await hook.result.current.beginPublication(); await hook.result.current.complete(); });
+  await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+  expect(remote).toEqual([]);
+  expect((await Storage.pendingPublicationCleanups(did))[0].draft.cloud?.nativeDeleted).toBe(true);
+  hook.unmount();
+  const next = harness(); await waitFor(() => expect(next.result.current.loaded).toBe(true));
+  act(() => next.result.current.setSegments([{ id: "next", text: "New unsent post" }]));
+  await act(async () => next.result.current.checkpoint());
+  await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
+  remove.mockImplementation(async () => ({ draftId: id, revision: 2, deleted: true, attachments: [] }));
+  await act(async () => next.result.current.retryCleanups());
+  expect(Transport.deleteSocialDraft).toHaveBeenCalledTimes(1);
+  expect((await Storage.loadComposerDraft(did, "new-post"))?.segments[0].text).toBe("New unsent post");
+  expect((await Storage.loadComposerDraft(did, `social-draft:${id}`))?.cloud).toMatchObject({ completed: true, cleaned: true });
+});
+
+it("retires matching New Post recovery before failed cleanup when publishing from its cloud editor", async () => {
+  const original = harness(); await waitFor(() => expect(original.result.current.loaded).toBe(true));
+  act(() => original.result.current.setSegments([{ id: "s", text: "Only once" }]));
+  await act(async () => original.result.current.flush());
+  const initial = remote[0];
+  original.unmount();
+  const editing = harness(initial); await waitFor(() => expect(editing.result.current.loaded).toBe(true));
+  const remove = spyOn(Transport, "deleteSocialDraft").mockRejectedValue(new Error("Cleanup offline")); restores.push(() => remove.mockRestore());
+  await act(async () => { await editing.result.current.beginPublication(); await editing.result.current.complete(); });
+  expect(await Storage.loadComposerDraft(did, "new-post")).toBeUndefined();
+  expect((await Storage.loadComposerDraft(did, `social-draft:${initial.id}`))?.cloud?.completed).toBe(true);
+  editing.unmount();
+  const next = harness(); await waitFor(() => expect(next.result.current.loaded).toBe(true));
+  expect(next.result.current.segments[0].text).toBe("");
+});
+
+it("continues independent cleanup jobs when an unknown create cannot yet be reconciled", async () => {
+  const payload = { deviceId: "device", posts: [{ text: "Published" }] };
+  await Storage.saveComposerDraft(did, "publication-cleanup:unknown", { version: 1, did, segments: [{ id: "s", text: "Published" }], cloud: { deviceId: "device", updatedAt: Date.now(), completed: true, createIntent: { draft: payload, baselineIds: [] } } });
+  await Storage.saveComposerDraft(did, "publication-cleanup:known", { version: 1, did, segments: [{ id: "s", text: "Published" }], cloud: { id: "known", deviceId: "device", updatedAt: Date.now(), completed: true, nativeDraft: payload } });
+  const hook = harness(); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  await waitFor(async () => expect((await Storage.loadComposerDraft(did, "social-draft:known"))?.cloud?.cleaned).toBe(true));
+  await waitFor(async () => expect((await Storage.pendingPublicationCleanups(did)).map(item => item.context)).toEqual(["publication-cleanup:unknown"]));
+  expect(hook.result.current.pendingCleanups).toBe(true);
+  expect(Transport.createSocialDraft).not.toHaveBeenCalled();
+});
+
+it("continues durable background cleanup after closing the composer while the same account remains mounted", async () => {
+  const initial = view("background", { posts: [{ text: "Published" }] }); remote = [initial];
+  const gate = deferred<void>();
+  const remove = spyOn(Transport, "deleteSocialDraft").mockReturnValue(gate.promise); restores.push(() => remove.mockRestore());
+  const hook = harness(initial); await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  await act(async () => { await hook.result.current.beginPublication(); await hook.result.current.complete(); });
+  await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+  hook.rerender({ enabled: false, actor: session });
+  await act(async () => { gate.resolve(); });
+  await waitFor(async () => expect((await Storage.pendingPublicationCleanups(did)).length).toBe(0));
+  expect((await Storage.loadComposerDraft(did, "social-draft:background"))?.cloud?.cleaned).toBe(true);
 });

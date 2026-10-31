@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import type { AppBskyDraftDefs } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import * as Network from "@/lib/atprotoNetwork";
-import { createSocialDraft, deleteSocialDraft, listSocialDrafts, updateSocialDraft } from "@/lib/blueskyDraftClient";
+import { createSocialDraft, deleteSocialDraft, listSocialDrafts, updateSocialDraft, DraftInputRejectedError } from "@/lib/blueskyDraftClient";
 
 const viewerDid = "did:plc:alice";
 const id = "3l7g2w2w2w22a";
@@ -137,7 +137,7 @@ describe("private Bluesky draft client", () => {
       await expect(updateSocialDraft({ ...args, id: invalid, draft })).rejects.toThrow();
     }
     for (const invalid of [{}, { posts: [{ text: 123 }] }, { posts: [{ text: "x".repeat(10001) }] }, { posts: [], deviceName: "x".repeat(101) }]) {
-      await expect(createSocialDraft({ ...args, draft: invalid as AppBskyDraftDefs.Draft })).rejects.toThrow();
+      await expect(createSocialDraft({ ...args, draft: invalid as AppBskyDraftDefs.Draft })).rejects.toBeInstanceOf(DraftInputRejectedError);
       await expect(updateSocialDraft({ ...args, id, draft: invalid as AppBskyDraftDefs.Draft })).rejects.toThrow();
     }
     await expect(listSocialDrafts({ ...args, cursor: 12 as unknown as string })).rejects.toThrow();
@@ -181,4 +181,13 @@ describe("private Bluesky draft client", () => {
       expect(calls[0].url.pathname).toBe("/xrpc/app.bsky.draft.createDraft");
     }
   });
+});
+
+it("does not classify an invalid create response ID as a pre-write rejection", async () => {
+  const { session, calls } = sessionFor(() => Response.json({ id: "not-a-tid" }));
+  let failure: unknown;
+  try { await createSocialDraft({ session, viewerDid, draft }); } catch (error) { failure = error; }
+  expect(calls).toHaveLength(1);
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure).not.toBeInstanceOf(DraftInputRejectedError);
 });
