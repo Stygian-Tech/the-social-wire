@@ -57,7 +57,6 @@ function SocialAccountComposeButton({ initialDraft, autoOpen = false, hideTrigge
   const [scheduledAt, setScheduledAt] = useState("");
   const [scheduled, setScheduled] = useState(false);
   const [segments, setSegments] = useState<ThreadSegment[]>([{ id: "first", text: "" }]);
-  const text = segments[0].text;
   const previewResolvers = useRef(new Map<string, () => Promise<ComposeLinkPreview | undefined>>());
   const [removedPreviews, setRemovedPreviews] = useState<Record<string, string | undefined>>({});
   const [discardRequested, setDiscardRequested] = useState(false);
@@ -156,9 +155,9 @@ function SocialAccountComposeButton({ initialDraft, autoOpen = false, hideTrigge
         if (currentDid.current !== did || getStoredOAuthDid() !== did || getOAuthSession()?.did !== did || oauth.did !== did) throw new Error("Your account changed. Please reopen the composer.");
       };
       assertCurrentAccount();
-      if (!publication.current?.segments.some(item => item.attempted)) await draft.flush();
+      const snapshot = await draft.beginPublication();
       assertCurrentAccount();
-      const previews = publication.current ? [] : await Promise.all(segments.map(async segment => {
+      const previews = publication.current ? [] : await Promise.all(snapshot.map(async segment => {
         if (segment.media) return undefined;
         const resolved = await previewResolvers.current.get(segment.id)?.();
         // Native drafts may attach a link independently of their text. Preserve
@@ -170,20 +169,20 @@ function SocialAccountComposeButton({ initialDraft, autoOpen = false, hideTrigge
       if (isPro && mode === "schedule") {
         const instant = scheduledInstant(scheduledAt);
         if (!instant || !scheduler.readiness.data?.connected) throw new Error("Scheduling Is Not Ready.");
-        await scheduler.schedule(text, instant, linkPreview);
+        await scheduler.schedule(snapshot[0].text, instant, linkPreview);
         assertCurrentAccount();
       } else if (segments.length > 1) {
-        publication.current ??= newThreadPublication(did, segments.map((segment, index) => ({ ...segment, linkPreview: previews[index] })));
+        publication.current ??= newThreadPublication(did, snapshot.map((segment, index) => ({ ...segment, linkPreview: previews[index] })));
         setLocked(true);
         await publishBlueskyThread({ session: oauth, publication: publication.current, assertCurrentAccount, onProgress: setCompleted, onMediaProgress: setMediaProgress, checkpoint: draft.checkpoint });
       } else {
-        publication.current ??= newThreadPublication(did, [{ ...segments[0], linkPreview }]);
+        publication.current ??= newThreadPublication(did, [{ ...snapshot[0], linkPreview }]);
         setLocked(true);
-        await createBlueskyPost({ session: oauth, text, linkPreview, media: segments[0].media, assertCurrentAccount, publication: publication.current, checkpoint: draft.checkpoint, onMediaProgress: setMediaProgress });
+        await createBlueskyPost({ session: oauth, text: snapshot[0].text, linkPreview, media: snapshot[0].media, assertCurrentAccount, publication: publication.current, checkpoint: draft.checkpoint, onMediaProgress: setMediaProgress });
       }
       if (currentDid.current !== did) return;
       publishedRef.current = true; setPublished(true);
-      await draft.clear();
+      await draft.complete();
       setOpen(false);
       resetDraft();
       setScheduled((isPro && mode === "schedule"));
@@ -195,6 +194,7 @@ function SocialAccountComposeButton({ initialDraft, autoOpen = false, hideTrigge
       if (currentDid.current === did && publication.current?.segments.some(segment => segment.result)) void cache.invalidateQueries({ predicate: query => query.queryKey[0] === "blueskySocial" && query.queryKey[1] === did && ["timeline", "profileTimeline"].includes(String(query.queryKey[2])) });
       if (currentDid.current === did) setError(composerErrorMessage(failure, segments.length > 1));
     } finally {
+      draft.endPublication();
       busy.current = false;
       setPending(false); setMediaProgress(undefined);
     }
@@ -218,6 +218,7 @@ function SocialAccountComposeButton({ initialDraft, autoOpen = false, hideTrigge
           {isPro && segments.length === 1 ? <ScheduleTimingControls mode={mode} value={scheduledAt} disabled={pending || locked || !draft.loaded} onModeChange={setMode} onChange={setScheduledAt} /> : !isPro && toolsAvailable ? <p className="text-xs text-muted-foreground">Multi-account support and scheduling require Pro.</p> : null}
           {(isPro && mode === "schedule") ? <SchedulingReadiness connected={scheduler.readiness.data?.connected} pending={scheduler.readiness.isPending} failed={scheduler.readiness.isError} connectUrl={scheduler.connectUrl} retry={() => { void scheduler.readiness.refetch(); }} /> : null}
           {!draft.loaded ? <p role="status">Restoring Draft…</p> : <p role="status" aria-live="polite" className="text-xs text-muted-foreground">{draft.saving ? "Saving Draft…" : draft.status}</p>}
+          {draft.pendingCleanups ? <div role="status" className="text-sm text-muted-foreground">Post Published. Draft Cleanup Will Retry.<Button type="button" variant="outline" disabled={pending} onClick={() => { void draft.retryCleanups().catch(() => {}); }}>Retry Draft Cleanup</Button></div> : null}
           {draft.completed || published ? <Button type="button" variant="outline" disabled={pending || draft.saving} onClick={() => { void retryDraftSync(); }}>Finish Draft Cleanup</Button> : null}
           {draft.hasUnavailableMedia ? <div role="alert" className="space-y-2 rounded-xl border p-3 text-sm"><p>Some Attachments Are Unavailable. Retry Loading Private Photos, Reattach Them on the Original Device, or Remove Them Here.</p><Button type="button" variant="outline" disabled={pending || locked} onClick={removeUnavailableAttachments}>Remove Unavailable Attachments</Button></div> : null}
           {unsupportedDraftSettings ? <p role="alert" className="text-sm text-muted-foreground">This Draft Has Quote, Language, Content Label, or Audience Settings That This Composer Cannot Publish Yet. Continue in the Original App to Keep Those Settings.</p> : null}

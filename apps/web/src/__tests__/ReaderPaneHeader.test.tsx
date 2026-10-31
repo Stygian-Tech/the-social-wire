@@ -1,30 +1,13 @@
-import { expect, it, mock } from "bun:test";
-import { fireEvent, render, screen } from "@testing-library/react";
-import type React from "react";
+import { afterEach, expect, it, mock, spyOn } from "bun:test";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { EntryDetail } from "@/lib/atprotoClient";
+import * as Toolbar from "@/components/EntryDetail/ArticleSocialToolbar";
 
-mock.module("@/components/EntryDetail/ArticleSocialToolbar", () => ({
-  ArticleSocialToolbar: ({
-    entry,
-    variant,
-  }: {
-    entry: EntryDetail | null;
-    variant?: string;
-  }) =>
-    entry && variant === "menu" ? (
-      <button type="button" aria-label="Article Actions" />
-    ) : null,
-}));
-
-mock.module("@/components/ui/button", () => ({
-  buttonVariants: () => "",
-  Button: ({
-    children,
-    ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
-  ),
-}));
+const restores: (() => void)[] = [];
+afterEach(() => {
+  cleanup();
+  restores.splice(0).reverse().forEach(restore => restore());
+});
 
 const entry: EntryDetail = {
   entryId: "at://did:plc:author/site.standard.document/article",
@@ -34,6 +17,10 @@ const entry: EntryDetail = {
 };
 
 it("shows the selected title and a single action menu in the reader header", async () => {
+  const toolbar = spyOn(Toolbar, "ArticleSocialToolbar").mockImplementation(({ entry, variant }) =>
+    entry && variant === "menu" ? <button type="button" aria-label="Article Actions" /> : null,
+  );
+  restores.push(() => toolbar.mockRestore());
   const onBack = mock(() => undefined);
   const { ReaderPaneHeader } = await import(
     "@/components/EntryDetail/ReaderPaneHeader"

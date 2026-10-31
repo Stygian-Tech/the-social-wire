@@ -24,4 +24,19 @@ for (const name of ["HTMLElement", "Element", "Node", "DOMRect", "MutationObserv
   }
 }
 
+// jsdom does not implement Web Animations. Base UI inspects active animations
+// after rendering scroll areas; the shared DOM has no running animations.
+// Keep Base UI's existing no-animation completion path when supplying this stub.
+Object.defineProperty(globalThis, "BASE_UI_ANIMATIONS_DISABLED", {
+  configurable: true,
+  value: true,
+});
+if (typeof window.Element.prototype.getAnimations !== "function") {
+  Object.defineProperty(window.Element.prototype, "getAnimations", {
+    configurable: true,
+    writable: true,
+    value: () => [],
+  });
+}
+
 expect.extend(matchers);

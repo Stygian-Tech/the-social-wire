@@ -74,3 +74,21 @@ export function saveComposerDraft(did: string, context: string, draft?: Composer
   queues.set(key, work);
   return work;
 }
+
+/** Completed compositions have their own recovery slots, independent of New Post. */
+export async function pendingPublicationCleanups(did: string): Promise<{ context: string; draft: ComposerDraft }[]> {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const result: { context: string; draft: ComposerDraft }[] = [];
+    const request = db.transaction("drafts").objectStore("drafts").openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) { resolve(result); return; }
+      const key = String(cursor.key);
+      const draft = cursor.value as ComposerDraft;
+      if (key.startsWith(`${did}:publication-cleanup:`) && draft.did === did && draft.cloud?.completed) result.push({ context: key.slice(did.length + 1), draft });
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
